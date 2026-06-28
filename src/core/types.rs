@@ -56,12 +56,14 @@ pub enum UnaryOp {
 
 /// 求值结果。
 ///
-/// v0.1 仅支持标量；v0.2+ 将扩展 BigInt/Matrix/Vector/Symbolic/LaTeX/Steps。
+/// v0.1 仅支持标量；v0.5 扩展 Complex（design.md D4）。
 /// 派生 Serialize/Deserialize 以支持 oxcache 缓存序列化（ADD ADR-001）。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EvalResult {
     /// 标量浮点结果。
     Scalar(f64),
+    /// 复数结果（实部, 虚部）。
+    Complex(f64, f64),
 }
 
 impl EvalResult {
@@ -69,6 +71,15 @@ impl EvalResult {
     pub fn as_scalar(&self) -> Option<f64> {
         match self {
             EvalResult::Scalar(v) => Some(*v),
+            EvalResult::Complex(_, _) => None,
+        }
+    }
+
+    /// 获取复数值 (re, im)，若非 Complex 返回 None。
+    pub fn as_complex(&self) -> Option<(f64, f64)> {
+        match self {
+            EvalResult::Complex(re, im) => Some((*re, *im)),
+            EvalResult::Scalar(_) => None,
         }
     }
 }

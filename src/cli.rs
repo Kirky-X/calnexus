@@ -7,7 +7,7 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::{ArithmeticDomain, ScientificDomain};
+use crate::{ArithmeticDomain, ComplexDomain, ScientificDomain};
 use crate::{
     AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, parse,
 };
@@ -51,15 +51,26 @@ pub fn run() -> i32 {
 
     // 求值
     match evaluate(&expr, &ctx) {
-        Ok((value, domain, cache_hit)) => {
+        Ok((result, domain, cache_hit)) => {
             if cli.json {
                 let cache_str = if cache_hit { "hit" } else { "miss" };
-                println!(
-                    r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
-                    value, domain, cache_str
-                );
+                match &result {
+                    EvalResult::Scalar(v) => println!(
+                        r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
+                        v, domain, cache_str
+                    ),
+                    EvalResult::Complex(re, im) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        format_complex(*re, *im),
+                        domain,
+                        cache_str
+                    ),
+                }
             } else {
-                println!("{}", value);
+                match &result {
+                    EvalResult::Scalar(v) => println!("{}", v),
+                    EvalResult::Complex(re, im) => println!("{}", format_complex(*re, *im)),
+                }
             }
             0
         }
@@ -113,8 +124,8 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, String> {
 
 /// 全链路求值：parse → canonicalize → cache → route → evaluate。
 ///
-/// 返回 (value, domain_name, cache_hit)。
-fn evaluate(expr: &str, ctx: &EvalContext) -> Result<(f64, String, bool), CalcError> {
+/// 返回 (result, domain_name, cache_hit)。
+fn evaluate(expr: &str, ctx: &EvalContext) -> Result<(EvalResult, String, bool), CalcError> {
     // 1. 解析
     let ast = parse(expr)?;
 
@@ -124,14 +135,14 @@ fn evaluate(expr: &str, ctx: &EvalContext) -> Result<(f64, String, bool), CalcEr
     // 3. 初始化缓存与路由器
     let cache = CacheManager::new();
     let mut router = DomainRouter::new();
+    router.register(Box::new(ComplexDomain));
     router.register(Box::new(ScientificDomain));
     router.register(Box::new(ArithmeticDomain));
 
     // 4. 缓存查询
     if let Some(cached) = cache.get(&cf) {
-        let EvalResult::Scalar(v) = cached;
         let domain = router.route(&canonical_ast)?;
-        return Ok((v, domain.domain_name().to_string(), true));
+        return Ok((cached, domain.domain_name().to_string(), true));
     }
 
     // 5. 路由 + 求值
@@ -141,6 +152,14 @@ fn evaluate(expr: &str, ctx: &EvalContext) -> Result<(f64, String, bool), CalcEr
     // 6. 写入缓存（仅 Ok 结果）
     cache.insert(&cf, &Ok(result.clone()));
 
-    let EvalResult::Scalar(v) = result;
-    Ok((v, domain.domain_name().to_string(), false))
+    Ok((result, domain.domain_name().to_string(), false))
+}
+
+/// 格式化复数为 `re+imi` 形式（如 `3+4i`、`-2-3i`、`5+0i`）。
+fn format_complex(re: f64, im: f64) -> String {
+    if im >= 0.0 {
+        format!("{}+{}i", re, im)
+    } else {
+        format!("{}{}i", re, im)
+    }
 }

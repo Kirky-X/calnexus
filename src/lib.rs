@@ -13,4 +13,5 @@ pub use core::types::{
     AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp,
 };
 pub use domains::arithmetic::ArithmeticDomain;
+pub use domains::complex::ComplexDomain;
 pub use domains::scientific::ScientificDomain;
