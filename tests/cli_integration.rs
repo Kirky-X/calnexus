@@ -242,3 +242,261 @@ fn test_short_help_flag() {
     let stdout = String::from_utf8(output).unwrap();
     assert!(!stdout.is_empty(), "help output should not be empty");
 }
+
+// ===== --precision flag 覆盖（precision 模式 + BigRational 输出） =====
+
+#[test]
+fn test_precision_flag_with_division() {
+    // --precision 5 "1/3" → "0.33333"
+    // 覆盖 cli.rs lines 168, 172-175（precision 模式）+ lines 85, 87, 98（BigRational 输出）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--precision").arg("5").arg("1/3")
+        .assert()
+        .success()
+        .stdout("0.33333\n");
+}
+
+#[test]
+fn test_precision_flag_with_integer_result() {
+    // --precision 3 "4/2" → "2"（整数结果仍走 precision 路径，但 rational_to_result 返回 BigInt）
+    // 覆盖 precision 模式 + BigInt 输出
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--precision").arg("3").arg("4/2")
+        .assert()
+        .success()
+        .stdout("2\n");
+}
+
+#[test]
+fn test_precision_flag_zero_decimals() {
+    // --precision 0 "1/2" → "0"（0 位小数）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--precision").arg("0").arg("1/2")
+        .assert()
+        .success()
+        .stdout("0\n");
+}
+
+// ===== precision(N, expr) 函数调用覆盖 =====
+
+#[test]
+fn test_precision_function_call() {
+    // precision(5, 1/3) → "0.33333"
+    // 覆盖 cli.rs lines 210-214（extract_format_precision）+ lines 85, 87, 98（BigRational 输出）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("precision(5, 1/3)")
+        .assert()
+        .success()
+        .stdout("0.33333\n");
+}
+
+#[test]
+fn test_precision_function_call_json() {
+    // --json precision(5, 1/3) → JSON with BigRational
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("precision(5, 1/3)")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"0.33333","domain":"precision","cache":"miss"}
+"#);
+}
+
+// ===== BigInt 输出覆盖 =====
+
+#[test]
+fn test_bigint_addition_output() {
+    // 大整数 + 1 → BigInt 输出
+    // 覆盖 cli.rs lines 81, 97（BigInt 输出）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("123456789012345678901234567890 + 1")
+        .assert()
+        .success()
+        .stdout("123456789012345678901234567891\n");
+}
+
+#[test]
+fn test_bigint_literal_output() {
+    // 单个大整数字面量 → BigInt 输出
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("123456789012345678901234567890")
+        .assert()
+        .success()
+        .stdout("123456789012345678901234567890\n");
+}
+
+#[test]
+fn test_bigint_json_output() {
+    // --json 大整数 → JSON with BigInt
+    // 覆盖 cli.rs line 81（BigInt JSON 输出）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("123456789012345678901234567890")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"123456789012345678901234567890","domain":"precision","cache":"miss"}
+"#);
+}
+
+// ===== Complex 输出覆盖 =====
+
+#[test]
+fn test_complex_output_standard() {
+    // 3+4i → "3+4i"
+    // 覆盖 cli.rs lines 69, 71, 95（Complex 输出 + format_complex 正虚部）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("3+4i")
+        .assert()
+        .success()
+        .stdout("3+4i\n");
+}
+
+#[test]
+fn test_complex_output_negative_imaginary() {
+    // 3-4i → "3-4i"
+    // 覆盖 cli.rs line 225（format_complex 负虚部分支）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("3-4i")
+        .assert()
+        .success()
+        .stdout("3-4i\n");
+}
+
+#[test]
+fn test_complex_json_output() {
+    // --json 3+4i → JSON with Complex
+    // 覆盖 cli.rs lines 69, 71（Complex JSON 输出）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("3+4i")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"3+4i","domain":"complex","cache":"miss"}
+"#);
+}
+
+// ===== Matrix 输出覆盖 =====
+
+#[test]
+fn test_matrix_output_2x2() {
+    // [[1,2],[3,4]] → "[[1,2],[3,4]]"
+    // 覆盖 cli.rs lines 75, 77, 96（Matrix 输出 + format_matrix）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("[[1,2],[3,4]]")
+        .assert()
+        .success()
+        .stdout("[[1,2],[3,4]]\n");
+}
+
+#[test]
+fn test_matrix_json_output() {
+    // --json [[1,2],[3,4]] → JSON with Matrix
+    // 覆盖 cli.rs lines 75, 77（Matrix JSON 输出）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("[[1,2],[3,4]]")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"[[1,2],[3,4]]","domain":"matrix","cache":"miss"}
+"#);
+}
+
+#[test]
+fn test_matrix_output_1x3() {
+    // [[1,2,3]] → "[[1,2,3]]"
+    // 覆盖 format_matrix 不同维度
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("[[1,2,3]]")
+        .assert()
+        .success()
+        .stdout("[[1,2,3]]\n");
+}
+
+// ===== BigRational JSON 输出覆盖 =====
+
+#[test]
+fn test_bigrational_json_output_with_precision_flag() {
+    // --json --precision 5 "1/3" → JSON with BigRational
+    // 覆盖 cli.rs lines 85, 87（BigRational JSON 输出）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("--precision").arg("5").arg("1/3")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"0.33333","domain":"precision","cache":"miss"}
+"#);
+}
+
+#[test]
+fn test_bigrational_output_fraction_form() {
+    // 无 --precision 时 precision(0, 1/3) 应当走 precision 域
+    // 但 precision(N, expr) 中 N 必须为正整数，N=0 会报错；
+    // 改用 precision(5, 2/3) 验证非整数 BigRational 输出
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("precision(5, 2/3)")
+        .assert()
+        .success()
+        .stdout("0.66666\n");
+}
+
+// ===== 错误路径覆盖 =====
+
+#[test]
+fn test_invalid_var_missing_equals_exit_code() {
+    // --var invalid（无 `=`）→ exit 2
+    // 覆盖 cli.rs lines 52-54, 141（parse_vars 错误 + run 返回 2）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--var").arg("invalid").arg("2+3")
+        .assert()
+        .failure()
+        .code(2);
+}
+
+#[test]
+fn test_invalid_var_non_numeric_value_exit_code() {
+    // --var x=abc（值非数字）→ exit 2
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--var").arg("x=abc").arg("x*2")
+        .assert()
+        .failure()
+        .code(2);
+}
+
+#[test]
+fn test_empty_stdin_exit_code() {
+    // echo "" | calnexus（空 stdin）→ exit 1
+    // 覆盖 cli.rs lines 129-130（empty stdin 错误）+ line 46（get_expression Err 返回）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+}
+
+#[test]
+fn test_whitespace_only_stdin_exit_code() {
+    // echo "   " | calnexus（仅空白 stdin）→ exit 1
+    // 覆盖 cli.rs lines 129-130
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.write_stdin("   \n  ")
+        .assert()
+        .failure()
+        .code(1);
+}
+
+// ===== 额外 BigInt 运算覆盖 =====
+
+#[test]
+fn test_bigint_multiplication_output() {
+    // 大整数乘法 → BigInt 输出
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("123456789012345678901234567890 * 2")
+        .assert()
+        .success()
+        .stdout("246913578024691357802469135780\n");
+}
+
+#[test]
+fn test_bigint_subtraction_output() {
+    // 大整数减法 → BigInt 输出
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("123456789012345678901234567890 - 1")
+        .assert()
+        .success()
+        .stdout("123456789012345678901234567889\n");
+}

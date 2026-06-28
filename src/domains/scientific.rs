@@ -660,6 +660,326 @@ mod tests {
         assert!(scientific.priority() > arithmetic.priority());
     }
 
+    // ===== 覆盖未覆盖分支的补充测试 =====
+
+    #[test]
+    fn test_pi_e_auto_binding() {
+        // lines 63-68: pi/e 自动绑定（EvalContext::new() 无 pi/e）
+        let ast = parse("sin(pi/2) + ln(e)").unwrap();
+        let domain = ScientificDomain;
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert!(approx(result.as_scalar().unwrap(), 2.0));
+    }
+
+    #[test]
+    fn test_unary_factorial_manual_ast() {
+        // line 91: UnaryOp::Factorial（parser 不产生此节点，需手动构造）
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert!(approx(result.as_scalar().unwrap(), 120.0));
+    }
+
+    #[test]
+    fn test_unary_abs_manual_ast() {
+        // line 92: UnaryOp::Abs（parser 不产生此节点，需手动构造）
+        let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-3.5)));
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert!(approx(result.as_scalar().unwrap(), 3.5));
+    }
+
+    #[test]
+    fn test_domain_error_complex_node() {
+        // lines 97-100: Complex 节点 DomainError
+        let ast = AstNode::Complex(1.0, 2.0);
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_domain_error_matrix_node() {
+        // lines 97-100: Matrix 节点 DomainError
+        let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_domain_error_list_node() {
+        // lines 97-100: List 节点 DomainError
+        let ast = AstNode::List(vec![AstNode::Number(1.0)]);
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_domain_error_bignumber_node() {
+        // lines 97-100: BigNumber 节点 DomainError
+        let ast = AstNode::BigNumber("123".to_string());
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_scalar_mul_finite() {
+        // line 110: BinaryOp::Mul 正常路径
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mul,
+            Box::new(AstNode::Number(3.0)),
+            Box::new(AstNode::Number(4.0)),
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert!(approx(result.as_scalar().unwrap(), 12.0));
+    }
+
+    #[test]
+    fn test_scalar_zero_div_zero() {
+        // lines 113-115: 0/0 → NaNOrInf
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(0.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    #[test]
+    fn test_scalar_div_by_zero() {
+        // line 116: x/0 (x≠0) → DivisionByZero
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(5.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_scalar_zero_pow_zero() {
+        // line 122: 0^0 → 1.0
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Number(0.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert!(approx(result.as_scalar().unwrap(), 1.0));
+    }
+
+    #[test]
+    fn test_scalar_mod_by_zero() {
+        // lines 127-130: mod by zero → DivisionByZero
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_scalar_mod_normal() {
+        // line 130: mod 正常路径
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(3.0)),
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert!(approx(result.as_scalar().unwrap(), 1.0));
+    }
+
+    #[test]
+    fn test_scalar_result_not_finite() {
+        // line 134: 标量运算结果非有限 → NaNOrInf
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Number(1e308)),
+            Box::new(AstNode::Number(1e308)),
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    #[test]
+    fn test_factorial_negative_input() {
+        // lines 141-146: factorial 负数输入 → DomainError
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(-1.0)));
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_factorial_fractional_input() {
+        // lines 141-146: factorial 小数输入 → DomainError
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(2.5)));
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_factorial_overflow_input_too_large() {
+        // lines 148-149: factorial 输入超过 10000 → Overflow
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(10001.0)));
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::Overflow)));
+    }
+
+    #[test]
+    fn test_factorial_overflow_during_computation() {
+        // lines 154-156: factorial 计算过程中溢出 → Overflow
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(171.0)));
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::Overflow)));
+    }
+
+    #[test]
+    fn test_factorial_normal_computation() {
+        // lines 151-158: factorial 正常计算路径
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(6.0)));
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert!(approx(result.as_scalar().unwrap(), 720.0));
+    }
+
+    #[test]
+    fn test_log2_non_positive() {
+        // lines 230-234: log2(0) → DomainError
+        let result = eval("log2(0)");
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_log_wrong_arg_count() {
+        // lines 240-244: log() 参数数量错误
+        let ast = AstNode::FunctionCall("log".to_string(), vec![AstNode::Number(100.0)]);
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    #[test]
+    fn test_log_non_positive_value() {
+        // lines 248-252: log(-1, 10) → DomainError
+        let ast = AstNode::FunctionCall(
+            "log".to_string(),
+            vec![AstNode::Number(-1.0), AstNode::Number(10.0)],
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_log_non_positive_base() {
+        // lines 254-258: log(100, -1) → DomainError
+        let ast = AstNode::FunctionCall(
+            "log".to_string(),
+            vec![AstNode::Number(100.0), AstNode::Number(-1.0)],
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_log_base_equal_one() {
+        // lines 254-258: log(100, 1) → DomainError
+        let ast = AstNode::FunctionCall(
+            "log".to_string(),
+            vec![AstNode::Number(100.0), AstNode::Number(1.0)],
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_unknown_function() {
+        // line 291: unknown function
+        let ast = AstNode::FunctionCall("unknown_func".to_string(), vec![AstNode::Number(1.0)]);
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    #[test]
+    fn test_eval_one_arg_wrong_count() {
+        // lines 302-307: eval_one_arg 参数数量错误
+        let ast = AstNode::FunctionCall(
+            "sin".to_string(),
+            vec![AstNode::Number(1.0), AstNode::Number(2.0)],
+        );
+        let domain = ScientificDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    #[test]
+    fn test_check_finite_nan_or_inf() {
+        // line 315: check_finite 返回 NaNOrInf
+        let result = eval("exp(1000)");
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        // lines 322-324: Default impl
+        let domain = ScientificDomain::default();
+        assert_eq!(domain.domain_name(), "scientific");
+        assert_eq!(domain.priority(), 20);
+    }
+
+    #[test]
+    fn test_contains_scientific_matrix() {
+        // lines 337-341: contains_scientific for Matrix
+        let ast = AstNode::Matrix(vec![vec![AstNode::FunctionCall(
+            "sin".to_string(),
+            vec![AstNode::Number(1.0)],
+        )]]);
+        let domain = ScientificDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_contains_scientific_list() {
+        // line 341: contains_scientific for List
+        let ast = AstNode::List(vec![AstNode::FunctionCall(
+            "cos".to_string(),
+            vec![AstNode::Number(1.0)],
+        )]);
+        let domain = ScientificDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_lanczos_gamma_reflection() {
+        // line 350: lanczos_gamma 反射公式（x < 0.5）
+        // gamma(-0.5) = -2*sqrt(pi) ≈ -3.5449077018
+        let result = eval("gamma(-0.5)").unwrap();
+        assert!(approx(result, -2.0 * std::f64::consts::PI.sqrt()));
+    }
+
     // ===== proptest 属性测试 =====
 
     use proptest::prelude::*;

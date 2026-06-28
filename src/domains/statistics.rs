@@ -512,6 +512,199 @@ mod tests {
         assert_eq!(eval("sum([42])").unwrap(), 42.0);
     }
 
+    // ===== 覆盖未覆盖分支的补充测试 =====
+
+    #[test]
+    fn test_evaluate_result_not_finite() {
+        // line 48: evaluate() 结果非有限 → NaNOrInf
+        // sum([1e308, 1e308]) = inf
+        let ast = AstNode::FunctionCall(
+            "sum".to_string(),
+            vec![AstNode::List(vec![AstNode::Number(1e308), AstNode::Number(1e308)])],
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    #[test]
+    fn test_unbound_variable_in_list() {
+        // lines 59-61: 列表中含未绑定变量 → EvalError
+        let ast = AstNode::FunctionCall(
+            "mean".to_string(),
+            vec![AstNode::List(vec![AstNode::Variable("y".to_string())])],
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    #[test]
+    fn test_unary_abs_manual_ast() {
+        // line 71: UnaryOp::Abs（parser 不产生此节点）
+        let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-5.0)));
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_unary_factorial_not_supported() {
+        // lines 72-74: UnaryOp::Factorial → DomainError
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_scalar_zero_div_zero() {
+        // lines 94-96: 0/0 → NaNOrInf
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(0.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    #[test]
+    fn test_scalar_div_by_zero() {
+        // line 98: x/0 (x≠0) → DivisionByZero
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(5.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_scalar_div_normal() {
+        // line 100: 正常除法 a / b
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_scalar_zero_pow_zero() {
+        // lines 103-104: 0^0 → 1.0
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Number(0.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_scalar_pow_normal() {
+        // line 106: a.powf(b) 正常路径
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Number(2.0)),
+            Box::new(AstNode::Number(3.0)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 8.0);
+    }
+
+    #[test]
+    fn test_scalar_mod_by_zero() {
+        // lines 110-111: mod by zero → DivisionByZero
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_scalar_mod_normal() {
+        // line 113: a % b 正常路径
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(3.0)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_scalar_result_not_finite() {
+        // line 117: eval_binary 结果非有限 → NaNOrInf
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Number(1e308)),
+            Box::new(AstNode::Number(1e308)),
+        );
+        let domain = StatisticsDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        // lines 203-205: Default impl
+        let domain = StatisticsDomain::default();
+        assert_eq!(domain.domain_name(), "statistics");
+        assert_eq!(domain.priority(), 20);
+    }
+
+    #[test]
+    fn test_contains_statistics_unary_op() {
+        // line 216: contains_statistics_function for UnaryOp
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Neg,
+            Box::new(AstNode::FunctionCall(
+                "mean".to_string(),
+                vec![AstNode::List(vec![AstNode::Number(1.0)])],
+            )),
+        );
+        let domain = StatisticsDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_contains_statistics_matrix() {
+        // line 217: contains_statistics_function for Matrix
+        let ast = AstNode::Matrix(vec![vec![AstNode::FunctionCall(
+            "sum".to_string(),
+            vec![AstNode::List(vec![AstNode::Number(1.0)])],
+        )]]);
+        let domain = StatisticsDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_contains_statistics_list() {
+        // line 218: contains_statistics_function for List
+        let ast = AstNode::List(vec![AstNode::FunctionCall(
+            "count".to_string(),
+            vec![AstNode::List(vec![AstNode::Number(1.0)])],
+        )]);
+        let domain = StatisticsDomain;
+        assert!(domain.supports(&ast));
+    }
+
     // ===== proptest 属性测试（任务 14.7）=====
 
     use proptest::prelude::*;

@@ -506,4 +506,154 @@ mod tests {
             _ => panic!("expected List variant"),
         }
     }
+
+    // ===== EvalResult helper methods 覆盖（v0.5 新增类型） =====
+
+    #[test]
+    fn eval_result_as_scalar_non_scalar_variants() {
+        // 覆盖 as_scalar 中所有非 Scalar 分支
+        assert_eq!(EvalResult::Complex(1.0, 2.0).as_scalar(), None);
+        assert_eq!(EvalResult::Matrix(vec![vec![1.0]]).as_scalar(), None);
+        assert_eq!(
+            EvalResult::BigInt(num_bigint::BigInt::from(42)).as_scalar(),
+            None
+        );
+        assert_eq!(
+            EvalResult::BigRational(num_rational::BigRational::new(
+                num_bigint::BigInt::from(1),
+                num_bigint::BigInt::from(3)
+            ))
+            .as_scalar(),
+            None
+        );
+    }
+
+    #[test]
+    fn eval_result_as_complex_with_complex() {
+        // 覆盖 as_complex 中 Complex 分支
+        let r = EvalResult::Complex(3.0, 4.0);
+        assert_eq!(r.as_complex(), Some((3.0, 4.0)));
+    }
+
+    #[test]
+    fn eval_result_as_complex_non_complex_variants() {
+        // 覆盖 as_complex 中所有非 Complex 分支
+        assert_eq!(EvalResult::Scalar(1.0).as_complex(), None);
+        assert_eq!(EvalResult::Matrix(vec![vec![1.0]]).as_complex(), None);
+        assert_eq!(
+            EvalResult::BigInt(num_bigint::BigInt::from(42)).as_complex(),
+            None
+        );
+        assert_eq!(
+            EvalResult::BigRational(num_rational::BigRational::new(
+                num_bigint::BigInt::from(1),
+                num_bigint::BigInt::from(3)
+            ))
+            .as_complex(),
+            None
+        );
+    }
+
+    #[test]
+    fn eval_result_as_matrix_with_matrix() {
+        // 覆盖 as_matrix 中 Matrix 分支
+        let r = EvalResult::Matrix(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        let m = r.as_matrix().expect("expected Some for Matrix");
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[0], vec![1.0, 2.0]);
+        assert_eq!(m[1], vec![3.0, 4.0]);
+    }
+
+    #[test]
+    fn eval_result_as_matrix_non_matrix_variants() {
+        // 覆盖 as_matrix 中所有非 Matrix 分支
+        assert_eq!(EvalResult::Scalar(1.0).as_matrix(), None);
+        assert_eq!(EvalResult::Complex(1.0, 2.0).as_matrix(), None);
+        assert_eq!(
+            EvalResult::BigInt(num_bigint::BigInt::from(42)).as_matrix(),
+            None
+        );
+        assert_eq!(
+            EvalResult::BigRational(num_rational::BigRational::new(
+                num_bigint::BigInt::from(1),
+                num_bigint::BigInt::from(3)
+            ))
+            .as_matrix(),
+            None
+        );
+    }
+
+    #[test]
+    fn eval_result_as_bigint_with_bigint() {
+        // 覆盖 as_bigint 中 BigInt 分支
+        let r = EvalResult::BigInt(num_bigint::BigInt::from(123));
+        let b = r.as_bigint().expect("expected Some for BigInt");
+        assert_eq!(b, &num_bigint::BigInt::from(123));
+    }
+
+    #[test]
+    fn eval_result_as_bigint_non_bigint_variants() {
+        // 覆盖 as_bigint 中 _ => None 分支
+        assert_eq!(EvalResult::Scalar(1.0).as_bigint(), None);
+        assert_eq!(EvalResult::Complex(1.0, 2.0).as_bigint(), None);
+        assert_eq!(EvalResult::Matrix(vec![vec![1.0]]).as_bigint(), None);
+        assert_eq!(
+            EvalResult::BigRational(num_rational::BigRational::new(
+                num_bigint::BigInt::from(1),
+                num_bigint::BigInt::from(3)
+            ))
+            .as_bigint(),
+            None
+        );
+    }
+
+    #[test]
+    fn eval_result_as_bigrational_with_bigrational() {
+        // 覆盖 as_bigrational 中 BigRational 分支
+        let r = EvalResult::BigRational(num_rational::BigRational::new(
+            num_bigint::BigInt::from(1),
+            num_bigint::BigInt::from(3),
+        ));
+        let rat = r.as_bigrational().expect("expected Some for BigRational");
+        assert_eq!(
+            rat,
+            &num_rational::BigRational::new(
+                num_bigint::BigInt::from(1),
+                num_bigint::BigInt::from(3)
+            )
+        );
+    }
+
+    #[test]
+    fn eval_result_as_bigrational_non_bigrational_variants() {
+        // 覆盖 as_bigrational 中 _ => None 分支
+        assert_eq!(EvalResult::Scalar(1.0).as_bigrational(), None);
+        assert_eq!(EvalResult::Complex(1.0, 2.0).as_bigrational(), None);
+        assert_eq!(EvalResult::Matrix(vec![vec![1.0]]).as_bigrational(), None);
+        assert_eq!(
+            EvalResult::BigInt(num_bigint::BigInt::from(42)).as_bigrational(),
+            None
+        );
+    }
+
+    #[test]
+    fn eval_result_bigint_negative_value() {
+        // 验证 BigInt 负数也能通过 as_bigint 获取
+        let r = EvalResult::BigInt(num_bigint::BigInt::from(-999));
+        assert_eq!(r.as_bigint(), Some(&num_bigint::BigInt::from(-999)));
+    }
+
+    #[test]
+    fn eval_result_bigrational_integer_value() {
+        // 验证 BigRational 整数值（分母为 1）也能通过 as_bigrational 获取
+        let r = EvalResult::BigRational(num_rational::BigRational::from_integer(
+            num_bigint::BigInt::from(42),
+        ));
+        assert_eq!(
+            r.as_bigrational(),
+            Some(&num_rational::BigRational::from_integer(num_bigint::BigInt::from(
+                42
+            )))
+        );
+    }
 }

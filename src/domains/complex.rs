@@ -661,6 +661,246 @@ mod tests {
         assert!(matches!(result, Err(CalcError::DivisionByZero)));
     }
 
+    // ===== 额外覆盖：pi/e 自动绑定（ctx 无 pi/e 时触发）=====
+
+    #[test]
+    fn test_pi_e_auto_binding() {
+        // 使用无 pi/e 的上下文，触发 evaluate 中的自动绑定（lines 37, 40）
+        let ast = parse("conj(3+4i)").unwrap();
+        let domain = ComplexDomain;
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_complex_approx(&result, 3.0, -4.0);
+    }
+
+    // ===== 额外覆盖：标量结果 NaNOrInf =====
+
+    #[test]
+    fn test_scalar_nan_or_inf() {
+        // abs(3+4i)^1000 → 标量结果为 infinity → NaNOrInf（line 47）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::FunctionCall(
+                "abs".to_string(),
+                vec![AstNode::Complex(3.0, 4.0)],
+            )),
+            Box::new(AstNode::Number(1000.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    // ===== 额外覆盖：复数结果 NaNOrInf =====
+
+    #[test]
+    fn test_complex_nan_or_inf() {
+        // exp(1000+0i) → 复数结果 re 为 infinity → NaNOrInf（line 53）
+        let ast = AstNode::FunctionCall(
+            "exp".to_string(),
+            vec![AstNode::Complex(1000.0, 0.0)],
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    // ===== 额外覆盖：标量取负（Neg on Scalar）=====
+
+    #[test]
+    fn test_neg_on_scalar_in_complex() {
+        // (1+2i) + (-3) → Neg 作用于标量 -3（line 90）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Complex(1.0, 2.0)),
+            Box::new(AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(3.0)))),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_complex_approx(&result, -2.0, 2.0);
+    }
+
+    // ===== 额外覆盖：标量二元运算（Sub, Mul, Div, Pow, Mod）=====
+
+    #[test]
+    fn test_scalar_sub_in_complex() {
+        // abs(3+4i) - 1 → 5 - 1 = 4（line 119/120 Sub）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Sub,
+            Box::new(AstNode::FunctionCall(
+                "abs".to_string(),
+                vec![AstNode::Complex(3.0, 4.0)],
+            )),
+            Box::new(AstNode::Number(1.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 4.0);
+    }
+
+    #[test]
+    fn test_scalar_mul_in_complex() {
+        // abs(3+4i) * 2 → 5 * 2 = 10（line 120/121 Mul）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mul,
+            Box::new(AstNode::FunctionCall(
+                "abs".to_string(),
+                vec![AstNode::Complex(3.0, 4.0)],
+            )),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 10.0);
+    }
+
+    #[test]
+    fn test_scalar_div_in_complex() {
+        // abs(3+4i) / 2 → 5 / 2 = 2.5（line 125/126 Div normal）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::FunctionCall(
+                "abs".to_string(),
+                vec![AstNode::Complex(3.0, 4.0)],
+            )),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 2.5);
+    }
+
+    #[test]
+    fn test_scalar_div_by_zero_in_complex() {
+        // abs(3+4i) / 0 → DivisionByZero（line 123/124 Div by zero）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::FunctionCall(
+                "abs".to_string(),
+                vec![AstNode::Complex(3.0, 4.0)],
+            )),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_scalar_pow_in_complex() {
+        // abs(3+4i) ^ 2 → 5 ^ 2 = 25（line 127/128 Pow）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::FunctionCall(
+                "abs".to_string(),
+                vec![AstNode::Complex(3.0, 4.0)],
+            )),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 25.0);
+    }
+
+    #[test]
+    fn test_scalar_mod_in_complex() {
+        // 两个标量的 Mod → DomainError（lines 129-132 Mod not supported）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::FunctionCall(
+                "abs".to_string(),
+                vec![AstNode::Complex(3.0, 4.0)],
+            )),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：复数 Mod 不支持 =====
+
+    #[test]
+    fn test_complex_mod_unsupported() {
+        // Complex % Complex → DomainError（lines 152-155）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Complex(1.0, 2.0)),
+            Box::new(AstNode::Complex(3.0, 4.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：complex() 函数调用 =====
+
+    #[test]
+    fn test_complex_function_normal() {
+        // complex(1, 2) 作为函数调用 → Complex(1, 2)（lines 176-178）
+        let ast = AstNode::FunctionCall(
+            "complex".to_string(),
+            vec![AstNode::Number(1.0), AstNode::Number(2.0)],
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_complex_approx(&result, 1.0, 2.0);
+    }
+
+    #[test]
+    fn test_complex_function_wrong_arg_count() {
+        // complex(1) → DomainError（lines 171-175 参数数量错误）
+        let ast = AstNode::FunctionCall(
+            "complex".to_string(),
+            vec![AstNode::Number(1.0)],
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：contains_complex 对 UnaryOp/Matrix/List 的路由 =====
+
+    #[test]
+    fn test_supports_unary_op_with_complex() {
+        // -(3+4i) → UnaryOp 包含 Complex → supports 返回 true（line 265）
+        let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Complex(3.0, 4.0)));
+        let domain = ComplexDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_matrix_with_complex() {
+        // Matrix 包含 Complex → supports 返回 true（line 266）
+        let ast = AstNode::Matrix(vec![vec![AstNode::Complex(1.0, 2.0)]]);
+        let domain = ComplexDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_list_with_complex() {
+        // List 包含 Complex → supports 返回 true（line 267）
+        let ast = AstNode::List(vec![AstNode::Complex(1.0, 2.0)]);
+        let domain = ComplexDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    // ===== 覆盖测试辅助函数的 panic 分支（lines 294, 302）=====
+
+    #[test]
+    #[should_panic(expected = "expected Complex result")]
+    fn test_assert_complex_approx_panics_on_non_complex() {
+        // 传入 Scalar 而非 Complex → panic（line 294）
+        assert_complex_approx(&EvalResult::Scalar(1.0), 1.0, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected Scalar")]
+    fn test_assert_scalar_panics_on_non_scalar() {
+        // 传入 Complex 而非 Scalar → panic（line 302）
+        assert_scalar(&EvalResult::Complex(1.0, 2.0), 1.0);
+    }
+
     // ===== proptest 属性测试（task 12.7）=====
 
     use proptest::prelude::*;

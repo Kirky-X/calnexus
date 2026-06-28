@@ -237,3 +237,87 @@ fn format_matrix(m: &[Vec<f64>]) -> String {
         .collect();
     format!("[{}]", rows.join(","))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::types::BinaryOp;
+
+    // 覆盖 extract_format_precision lines 213-214：
+    // 当 precision(N, expr) 中 N 为 Number 但非正整数（如浮点数）时，
+    // 内层 if 条件为 false，控制流穿过闭合大括号（lines 213-214）后返回 None。
+    #[test]
+    fn test_extract_format_precision_float_n() {
+        let ast = AstNode::FunctionCall(
+            "precision".to_string(),
+            vec![
+                AstNode::Number(2.5),
+                AstNode::BinaryOp(
+                    BinaryOp::Div,
+                    Box::new(AstNode::Number(1.0)),
+                    Box::new(AstNode::Number(3.0)),
+                ),
+            ],
+        );
+        assert_eq!(extract_format_precision(&ast), None);
+    }
+
+    // 覆盖 extract_format_precision line 214：
+    // 当 precision(N, expr) 中 N 非 Number（如 Variable）时，
+    // if let 不匹配，控制流穿过 line 214 后返回 None。
+    #[test]
+    fn test_extract_format_precision_non_number_n() {
+        let ast = AstNode::FunctionCall(
+            "precision".to_string(),
+            vec![
+                AstNode::Variable("x".to_string()),
+                AstNode::Number(1.0),
+            ],
+        );
+        assert_eq!(extract_format_precision(&ast), None);
+    }
+
+    // 覆盖 extract_format_precision line 214：
+    // 当 precision(N, expr) 中 N 为 BigNumber 时，if let Number 不匹配。
+    #[test]
+    fn test_extract_format_precision_bignumber_n() {
+        let ast = AstNode::FunctionCall(
+            "precision".to_string(),
+            vec![
+                AstNode::BigNumber("5".to_string()),
+                AstNode::Number(1.0),
+            ],
+        );
+        assert_eq!(extract_format_precision(&ast), None);
+    }
+
+    // 正常路径：precision(5, expr) → Some(5)
+    #[test]
+    fn test_extract_format_precision_valid() {
+        let ast = AstNode::FunctionCall(
+            "precision".to_string(),
+            vec![
+                AstNode::Number(5.0),
+                AstNode::Number(1.0),
+            ],
+        );
+        assert_eq!(extract_format_precision(&ast), Some(5));
+    }
+
+    // 非 precision 函数调用 → None
+    #[test]
+    fn test_extract_format_precision_non_precision_call() {
+        let ast = AstNode::FunctionCall(
+            "sin".to_string(),
+            vec![AstNode::Number(1.0)],
+        );
+        assert_eq!(extract_format_precision(&ast), None);
+    }
+
+    // 非函数调用节点 → None
+    #[test]
+    fn test_extract_format_precision_non_function() {
+        let ast = AstNode::Number(42.0);
+        assert_eq!(extract_format_precision(&ast), None);
+    }
+}

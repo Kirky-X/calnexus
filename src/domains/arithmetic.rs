@@ -471,6 +471,142 @@ mod tests {
         assert!(!domain.supports(&parse("foo(1)").unwrap()));
     }
 
+    // ===== 额外覆盖：UnaryOp 路径（parser 不产生这些形式，需手动构造）=====
+
+    #[test]
+    fn test_unary_op_factorial() {
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
+        let domain = ArithmeticDomain;
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 120.0);
+    }
+
+    #[test]
+    fn test_unary_op_abs() {
+        let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-5.0)));
+        let domain = ArithmeticDomain;
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 5.0);
+    }
+
+    // ===== 额外覆盖：不支持的节点类型 =====
+
+    #[test]
+    fn test_unsupported_complex_node() {
+        let ast = AstNode::Complex(1.0, 2.0);
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_unsupported_matrix_node() {
+        let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_unsupported_list_node() {
+        let ast = AstNode::List(vec![AstNode::Number(1.0)]);
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_unsupported_bignumber_node() {
+        let ast = AstNode::BigNumber("123".to_string());
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：阶乘输入校验 =====
+
+    #[test]
+    fn test_factorial_negative_input() {
+        let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(-1.0)]);
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_factorial_fractional_input() {
+        let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(2.5)]);
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：函数参数数量校验 =====
+
+    #[test]
+    fn test_mod_wrong_arg_count() {
+        let ast = AstNode::FunctionCall("mod".to_string(), vec![AstNode::Number(1.0)]);
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    #[test]
+    fn test_abs_wrong_arg_count() {
+        let ast = AstNode::FunctionCall(
+            "abs".to_string(),
+            vec![AstNode::Number(1.0), AstNode::Number(2.0)],
+        );
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    #[test]
+    fn test_unknown_function() {
+        let ast = AstNode::FunctionCall("foo".to_string(), vec![AstNode::Number(1.0)]);
+        let domain = ArithmeticDomain;
+        let result = domain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    // ===== 额外覆盖：Default impl =====
+
+    #[test]
+    fn test_default_impl() {
+        let domain = ArithmeticDomain::default();
+        assert_eq!(domain.domain_name(), "arithmetic");
+        assert_eq!(domain.priority(), 10);
+    }
+
+    // ===== 额外覆盖：supports() 对不支持节点类型返回 false =====
+
+    #[test]
+    fn test_supports_returns_false_for_complex() {
+        let domain = ArithmeticDomain;
+        assert!(!domain.supports(&AstNode::Complex(1.0, 2.0)));
+    }
+
+    #[test]
+    fn test_supports_returns_false_for_matrix() {
+        let domain = ArithmeticDomain;
+        assert!(!domain.supports(&AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])));
+    }
+
+    #[test]
+    fn test_supports_returns_false_for_list() {
+        let domain = ArithmeticDomain;
+        assert!(!domain.supports(&AstNode::List(vec![AstNode::Number(1.0)])));
+    }
+
+    #[test]
+    fn test_supports_returns_false_for_bignumber() {
+        let domain = ArithmeticDomain;
+        assert!(!domain.supports(&AstNode::BigNumber("123".to_string())));
+    }
+
     // ===== proptest 属性测试 =====
 
     use proptest::prelude::*;

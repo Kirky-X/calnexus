@@ -808,6 +808,391 @@ mod tests {
         assert_matrix(&result, &[&[1.0, 0.0], &[0.0, 1.0]]);
     }
 
+    // ===== 额外覆盖：pi/e 自动绑定 =====
+
+    #[test]
+    fn test_pi_e_auto_binding() {
+        // 使用无 pi/e 的上下文（lines 35, 38）
+        let ast = parse("[[1,2],[3,4]]").unwrap();
+        let domain = MatrixDomain;
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_matrix(&result, &[&[1.0, 2.0], &[3.0, 4.0]]);
+    }
+
+    // ===== 额外覆盖：标量结果 NaNOrInf =====
+
+    #[test]
+    fn test_scalar_nan_or_inf() {
+        // det([[1e308, 0], [0, 1e308]]) → infinity → NaNOrInf（line 45）
+        let ast = AstNode::FunctionCall(
+            "det".to_string(),
+            vec![AstNode::Matrix(vec![
+                vec![AstNode::Number(1e308), AstNode::Number(0.0)],
+                vec![AstNode::Number(0.0), AstNode::Number(1e308)],
+            ])],
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    // ===== 额外覆盖：未绑定变量 =====
+
+    #[test]
+    fn test_unbound_variable_in_matrix() {
+        // det([[x]]) → x 未绑定 → EvalError（lines 64-67）
+        let ast = AstNode::FunctionCall(
+            "det".to_string(),
+            vec![AstNode::Matrix(vec![vec![AstNode::Variable("x".to_string())]])],
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    #[test]
+    fn test_bound_variable_in_matrix() {
+        // det([[x]]) → x=5 → det = 5（lines 64-67 正常路径）
+        let ast = AstNode::FunctionCall(
+            "det".to_string(),
+            vec![AstNode::Matrix(vec![vec![AstNode::Variable("x".to_string())]])],
+        );
+        let domain = MatrixDomain;
+        let ctx = default_ctx().with_var("x", 5.0);
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_scalar(&result, 5.0);
+    }
+
+    // ===== 额外覆盖：UnaryOp 路径 =====
+
+    #[test]
+    fn test_neg_on_scalar_in_matrix() {
+        // UnaryOp(Neg, Number(5)) → -5（line 78）
+        let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, -5.0);
+    }
+
+    #[test]
+    fn test_abs_on_scalar_in_matrix() {
+        // UnaryOp(Abs, Number(-5)) → 5（lines 81-82）
+        let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-5.0)));
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 5.0);
+    }
+
+    #[test]
+    fn test_abs_on_matrix_unsupported() {
+        // UnaryOp(Abs, Matrix) → DomainError（lines 83-85）
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Abs,
+            Box::new(AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_factorial_in_matrix_unsupported() {
+        // UnaryOp(Factorial, ...) → DomainError（lines 87-89）
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：矩阵字面量校验 =====
+
+    #[test]
+    fn test_empty_matrix_row() {
+        // Matrix(vec![vec![]]) → DomainError（line 113 空行）
+        let ast = AstNode::Matrix(vec![vec![]]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_matrix_element_must_be_scalar() {
+        // Matrix 内嵌 Matrix → DomainError（lines 131-133）
+        let ast = AstNode::Matrix(vec![vec![AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])]]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：标量二元运算 =====
+
+    #[test]
+    fn test_scalar_zero_div_zero_in_matrix() {
+        // 0/0 → NaNOrInf（lines 157-158）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(0.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    #[test]
+    fn test_scalar_div_by_zero_in_matrix() {
+        // 1/0 → DivisionByZero（lines 159-160）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(1.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_scalar_zero_pow_zero_in_matrix() {
+        // 0^0 → 1.0（lines 165-166）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Number(0.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 1.0);
+    }
+
+    #[test]
+    fn test_scalar_pow_in_matrix() {
+        // 2^3 → 8.0（line 168）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Number(2.0)),
+            Box::new(AstNode::Number(3.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 8.0);
+    }
+
+    #[test]
+    fn test_scalar_mod_by_zero_in_matrix() {
+        // 10 % 0 → DivisionByZero（lines 172-175）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_scalar_result_not_finite_in_matrix() {
+        // 1e308 + 1e308 → infinity → NaNOrInf（line 179）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Number(1e308)),
+            Box::new(AstNode::Number(1e308)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+    }
+
+    // ===== 额外覆盖：矩阵运算错误路径 =====
+
+    #[test]
+    fn test_scalar_plus_matrix_unsupported() {
+        // 1 + Matrix → DomainError（lines 203-205）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Number(1.0)),
+            Box::new(AstNode::Matrix(vec![vec![AstNode::Number(2.0)]])),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_scalar_div_matrix_unsupported() {
+        // 1 / Matrix → DomainError（lines 235-237）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(1.0)),
+            Box::new(AstNode::Matrix(vec![vec![AstNode::Number(2.0)]])),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_matrix_pow_unsupported() {
+        // Matrix ^ 2 → DomainError（lines 239-241）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_matrix_mod_unsupported() {
+        // Matrix % 2 → DomainError（lines 242-244）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：函数参数校验 =====
+
+    #[test]
+    fn test_det_non_matrix_arg() {
+        // det(5) → DomainError（lines 275-277）
+        let ast = AstNode::FunctionCall("det".to_string(), vec![AstNode::Number(5.0)]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_transpose_wrong_arg_count() {
+        // transpose() 无参数 → DomainError（lines 282-285）
+        let ast = AstNode::FunctionCall("transpose".to_string(), vec![]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_transpose_non_matrix_arg() {
+        // transpose(5) → DomainError（lines 290-292）
+        let ast = AstNode::FunctionCall("transpose".to_string(), vec![AstNode::Number(5.0)]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_inverse_wrong_arg_count() {
+        // inverse() 无参数 → DomainError（lines 297-300）
+        let ast = AstNode::FunctionCall("inverse".to_string(), vec![]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_inverse_non_matrix_arg() {
+        // inverse(5) → DomainError（lines 319-321）
+        let ast = AstNode::FunctionCall("inverse".to_string(), vec![AstNode::Number(5.0)]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_identity_wrong_arg_count() {
+        // identity() 无参数 → DomainError（lines 326-329）
+        let ast = AstNode::FunctionCall("identity".to_string(), vec![]);
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_identity_non_scalar_arg() {
+        // identity(Matrix) → DomainError（lines 343-345）
+        let ast = AstNode::FunctionCall(
+            "identity".to_string(),
+            vec![AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])],
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    // ===== 额外覆盖：contains_matrix 路由 =====
+
+    #[test]
+    fn test_supports_unary_op_with_matrix() {
+        // -(matrix) → UnaryOp 包含 Matrix → supports true（line 377）
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Neg,
+            Box::new(AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])),
+        );
+        let domain = MatrixDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_complex_node_not_matrix() {
+        // Complex 节点 → supports false（line 378）
+        let domain = MatrixDomain;
+        assert!(!domain.supports(&AstNode::Complex(1.0, 2.0)));
+    }
+
+    #[test]
+    fn test_supports_bignumber_node_not_matrix() {
+        // BigNumber 节点 → supports false（line 378）
+        let domain = MatrixDomain;
+        assert!(!domain.supports(&AstNode::BigNumber("123".to_string())));
+    }
+
+    #[test]
+    fn test_supports_list_with_matrix() {
+        // List 包含 Matrix → supports true（line 379）
+        let ast = AstNode::List(vec![AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])]);
+        let domain = MatrixDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    // ===== 覆盖标量 Mod 非零路径（lines 174-175）=====
+
+    #[test]
+    fn test_scalar_mod_non_zero_in_matrix() {
+        // 10 % 3 → 1（lines 174-175: Mod 标量运算非零路径）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(3.0)),
+        );
+        let domain = MatrixDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_scalar(&result, 1.0);
+    }
+
+    // ===== 覆盖测试辅助函数的 panic 分支（lines 401, 417）=====
+
+    #[test]
+    #[should_panic(expected = "expected Scalar")]
+    fn test_assert_scalar_panics_on_non_scalar() {
+        // 传入 Matrix 而非 Scalar → panic（line 401）
+        assert_scalar(&EvalResult::Matrix(vec![vec![1.0]]), 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected Matrix")]
+    fn test_assert_matrix_panics_on_non_matrix() {
+        // 传入 Scalar 而非 Matrix → panic（line 417）
+        assert_matrix(&EvalResult::Scalar(1.0), &[&[1.0]]);
+    }
+
     // ===== proptest 属性测试 =====
 
     use proptest::prelude::*;

@@ -1048,6 +1048,199 @@ mod tests {
         assert_eq!(ast, AstNode::List(vec![num(42.0)]));
     }
 
+    // ===== 覆盖 parse_bracket_literal else 分支 =====
+
+    #[test]
+    fn test_parse_bracket_literal_non_bracket_input() {
+        // 直接调用 parse_bracket_literal 传入非括号字符串
+        // 覆盖 else 分支（lines 134-137）
+        let result = parse_bracket_literal("abc");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("expected bracket literal")));
+    }
+
+    // ===== 覆盖 preprocess_brackets 未匹配 '[' 错误 =====
+
+    #[test]
+    fn test_unmatched_open_bracket_rejected() {
+        // `[[1,2]` — 只有一个 `]`，深度不为 0
+        // 覆盖 lines 170-172
+        let result = parse("[[1,2]");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("unmatched '['")));
+    }
+
+    // ===== 覆盖 replace_placeholders Matrix/List 分支 =====
+
+    #[test]
+    fn test_replace_placeholders_in_matrix() {
+        // 直接调用 replace_placeholders，覆盖 Matrix 分支（lines 265-269）
+        let mut ast = AstNode::Matrix(vec![
+            vec![
+                AstNode::Variable("__bn_0".to_string()),
+                AstNode::Number(1.0),
+            ],
+        ]);
+        let mut placeholders = std::collections::HashMap::new();
+        placeholders.insert(
+            "__bn_0".to_string(),
+            AstNode::BigNumber("1234567890123456".to_string()),
+        );
+        replace_placeholders(&mut ast, &placeholders);
+        match ast {
+            AstNode::Matrix(rows) => {
+                assert_eq!(rows[0][0], AstNode::BigNumber("1234567890123456".to_string()));
+                assert_eq!(rows[0][1], AstNode::Number(1.0));
+            }
+            _ => panic!("expected Matrix after placeholder replacement"),
+        }
+    }
+
+    #[test]
+    fn test_replace_placeholders_in_list() {
+        // 直接调用 replace_placeholders，覆盖 List 分支（lines 272-275）
+        let mut ast = AstNode::List(vec![
+            AstNode::Variable("__bn_0".to_string()),
+            AstNode::Number(2.0),
+        ]);
+        let mut placeholders = std::collections::HashMap::new();
+        placeholders.insert(
+            "__bn_0".to_string(),
+            AstNode::BigNumber("9876543210987654".to_string()),
+        );
+        replace_placeholders(&mut ast, &placeholders);
+        match ast {
+            AstNode::List(elements) => {
+                assert_eq!(elements[0], AstNode::BigNumber("9876543210987654".to_string()));
+                assert_eq!(elements[1], AstNode::Number(2.0));
+            }
+            _ => panic!("expected List after placeholder replacement"),
+        }
+    }
+
+    // ===== 覆盖 parse_matrix_literal / parse_list_literal 无效输入 =====
+
+    #[test]
+    fn test_parse_matrix_literal_invalid_input() {
+        // 直接调用 parse_matrix_literal 传入非矩阵字符串
+        // 覆盖 lines 288-291
+        let result = parse_matrix_literal("[1,2]");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("invalid matrix literal")));
+    }
+
+    #[test]
+    fn test_parse_list_literal_invalid_input() {
+        // 直接调用 parse_list_literal 传入非列表字符串
+        // 覆盖 lines 325-328
+        let result = parse_list_literal("1,2");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("invalid list literal")));
+    }
+
+    // ===== 覆盖 split_by_pattern 括号深度分支 =====
+
+    #[test]
+    fn test_list_with_parens_in_elements() {
+        // 列表元素含括号表达式：覆盖 split_by_pattern 的 paren_depth 分支（lines 374, 376）
+        let ast = parse("[sin(x), 2]").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::List(vec![call("sin", vec![var("x")]), num(2.0)])
+        );
+    }
+
+    #[test]
+    fn test_matrix_with_parens_in_elements() {
+        // 矩阵元素含括号表达式：覆盖 split_by_pattern 的 paren_depth 分支
+        let ast = parse("[[sin(x), 2]]").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::Matrix(vec![vec![call("sin", vec![var("x")]), num(2.0)]])
+        );
+    }
+
+    // ===== 覆盖 find_operand_start 边界 =====
+
+    #[test]
+    fn test_factorial_with_space_before_operator() {
+        // `5 !` → factorial(5)
+        // 覆盖 find_operand_start 中跳过尾部空格的循环（lines 444-445）
+        let ast = parse("5 !").unwrap();
+        assert_eq!(ast, call("factorial", vec![num(5.0)]));
+    }
+
+    #[test]
+    fn test_factorial_no_operand_error() {
+        // `!5` — `!` 前无操作数
+        // 覆盖 find_operand_start 中 pos==0 错误路径（lines 447-450）
+        let result = parse("!5");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("no operand")));
+    }
+
+    #[test]
+    fn test_factorial_on_nested_parens() {
+        // `((1+2))!` → factorial(((1+2)))
+        // 覆盖 find_operand_start 中嵌套 `)` 的 depth+=1 分支（line 460）
+        let ast = parse("((1+2))!").unwrap();
+        assert_eq!(
+            ast,
+            call("factorial", vec![binop(BinaryOp::Add, num(1.0), num(2.0))])
+        );
+    }
+
+    #[test]
+    fn test_factorial_unmatched_paren_error() {
+        // `1+2)!` — `!` 前有未匹配的 `)`，向左扫描括号时 depth 始终 > 0
+        // 覆盖 find_operand_start lines 465-468（unmatched parenthesis 错误）
+        let result = parse("1+2)!");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("unmatched parenthesis")));
+    }
+
+    // ===== 覆盖 convert_with_depth CurrentValue =====
+
+    #[test]
+    fn test_parse_current_value_underscore() {
+        // `_` → mathexpr CurrentValue → AstNode::Variable("_")
+        // 覆盖 line 509
+        let ast = parse("_").unwrap();
+        assert_eq!(ast, var("_"));
+    }
+
+    // ===== 覆盖 complex() 函数非 Number 参数路径 =====
+
+    #[test]
+    fn test_complex_call_with_variable_real() {
+        // `complex(x, 4)` — re 不是 Number，覆盖 line 543 (_ => None for re_val)
+        let ast = parse("complex(x, 4)").unwrap();
+        assert_eq!(ast, call("complex", vec![var("x"), num(4.0)]));
+    }
+
+    #[test]
+    fn test_complex_call_with_variable_imag() {
+        // `complex(3, x)` — im 不是 Number/Neg，覆盖 line 554 (_ => None for im_val)
+        let ast = parse("complex(3, x)").unwrap();
+        assert_eq!(ast, call("complex", vec![num(3.0), var("x")]));
+    }
+
+    #[test]
+    fn test_complex_call_with_neg_variable_imag() {
+        // `complex(3, -x)` — im 是 Neg(Variable)，覆盖 line 551 (None for Neg non-Number)
+        let ast = parse("complex(3, -x)").unwrap();
+        assert_eq!(
+            ast,
+            call("complex", vec![num(3.0), unary(UnaryOp::Neg, var("x"))])
+        );
+    }
+
     // ===== proptest 属性测试（任务 2.5） =====
 
     use proptest::prelude::*;
