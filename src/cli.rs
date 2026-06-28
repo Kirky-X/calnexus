@@ -57,7 +57,8 @@ pub fn run() -> i32 {
     ctx.precision = cli.precision;
 
     // 求值
-    match evaluate(&expr, &ctx, cli.precision) {
+    let cache = CacheManager::new();
+    match evaluate(&expr, &ctx, cli.precision, &cache) {
         Ok((result, domain, cache_hit, fmt_prec)) => {
             if cli.json {
                 let cache_str = if cache_hit { "hit" } else { "miss" };
@@ -154,17 +155,16 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, String> {
 /// 进行 BigRational 求值，输出格式化为 N 位小数。
 /// 返回 (result, domain_name, cache_hit, format_precision)。
 /// format_precision 用于 BigRational 输出格式化（--precision N 或 precision(N, expr)）。
-fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
+///
+/// `cache` 参数允许调用方注入预填充的缓存（测试用），生产代码传入空缓存。
+fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>, cache: &CacheManager) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     // 1. 解析
     let ast = parse(expr)?;
 
     // 2. 规范化
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
 
-    // 3. 初始化缓存
-    let cache = CacheManager::new();
-
-    // 4. precision 模式：直接使用 PrecisionDomain（绕过路由器）
+    // 3. precision 模式：直接使用 PrecisionDomain（绕过路由器）
     if precision.is_some() {
         if let Some(cached) = cache.get(&cf) {
             return Ok((cached, "precision".to_string(), true, precision));
@@ -175,7 +175,7 @@ fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>) -> Result<(
         return Ok((result, "precision".to_string(), false, precision));
     }
 
-    // 5. 常规模式：路由器分发
+    // 4. 常规模式：路由器分发
     let mut router = DomainRouter::new();
     router.register(Box::new(PrecisionDomain));
     router.register(Box::new(ComplexDomain));
@@ -184,21 +184,21 @@ fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>) -> Result<(
     router.register(Box::new(StatisticsDomain));
     router.register(Box::new(ArithmeticDomain));
 
-    // 6. 缓存查询
+    // 5. 缓存查询
     if let Some(cached) = cache.get(&cf) {
         let domain = router.route(&canonical_ast)?;
         let fmt_prec = extract_format_precision(&canonical_ast);
         return Ok((cached, domain.domain_name().to_string(), true, fmt_prec));
     }
 
-    // 7. 路由 + 求值
+    // 6. 路由 + 求值
     let domain = router.route(&canonical_ast)?;
     let result = domain.evaluate(&canonical_ast, ctx)?;
 
-    // 8. 写入缓存（仅 Ok 结果）
+    // 7. 写入缓存（仅 Ok 结果）
     cache.insert(&cf, &Ok(result.clone()));
 
-    // 9. 提取格式化精度（precision(N, expr) 的 N）
+    // 8. 提取格式化精度（precision(N, expr) 的 N）
     let fmt_prec = extract_format_precision(&canonical_ast);
     Ok((result, domain.domain_name().to_string(), false, fmt_prec))
 }
@@ -319,5 +319,47 @@ mod tests {
     fn test_extract_format_precision_non_function() {
         let ast = AstNode::Number(42.0);
         assert_eq!(extract_format_precision(&ast), None);
+    }
+
+    // 覆盖 line 170：precision 模式缓存命中路径
+    // 预填充缓存后，evaluate 应直接返回缓存值，标记 cache_hit=true
+    #[test]
+    fn test_evaluate_precision_mode_cache_hit() {
+        let cache = CacheManager::new();
+        let ast = parse("2+3").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+
+        // 预填充缓存
+        cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
+
+        let ctx = EvalContext::new();
+        let (result, domain, cache_hit, fmt_prec) =
+            evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+
+        assert_eq!(result, EvalResult::Scalar(5.0));
+        assert_eq!(domain, "precision");
+        assert!(cache_hit);
+        assert_eq!(fmt_prec, Some(5));
+    }
+
+    // 覆盖 lines 189-191：常规模式缓存命中路径
+    // 预填充缓存后，evaluate 应直接返回缓存值，标记 cache_hit=true
+    #[test]
+    fn test_evaluate_regular_mode_cache_hit() {
+        let cache = CacheManager::new();
+        let ast = parse("2+3").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+
+        // 预填充缓存
+        cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
+
+        let ctx = EvalContext::new();
+        let (result, domain, cache_hit, fmt_prec) =
+            evaluate("2+3", &ctx, None, &cache).unwrap();
+
+        assert_eq!(result, EvalResult::Scalar(5.0));
+        assert_eq!(domain, "arithmetic");
+        assert!(cache_hit);
+        assert_eq!(fmt_prec, None);
     }
 }

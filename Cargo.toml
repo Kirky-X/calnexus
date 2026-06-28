@@ -27,6 +27,9 @@ clap = { version = "4", features = ["derive"], optional = true }
 proptest = "1"
 assert_cmd = "2"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
 [package.metadata.tarpaulin]
 fail-under = 100
 exclude-files = ["src/main.rs"]

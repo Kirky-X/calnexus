@@ -100,7 +100,8 @@ impl Default for DomainRouter {
     }
 }
 
-// 编译期 Send + Sync 检查
+// 编译期 Send + Sync 检查（coverage 运行时排除：const fn 在编译期执行，无法被行覆盖）
+#[cfg(not(coverage))]
 const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<DomainRouter>();
@@ -407,11 +408,8 @@ mod tests {
         let router = default_router();
         let ast = parse("foo(1)").unwrap();
         let result = router.route(&ast);
-        assert!(result.is_err());
-        match result {
-            Err(e) => assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e),
-            Ok(_) => panic!("expected error, got domain"),
-        }
+        let e = result.err().expect("expected error");
+        assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e);
     }
 
     #[test]
@@ -420,11 +418,8 @@ mod tests {
         let router = DomainRouter::new();
         let ast = parse("1+2").unwrap();
         let result = router.route(&ast);
-        assert!(result.is_err());
-        match result {
-            Err(e) => assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e),
-            Ok(_) => panic!("expected error, got domain"),
-        }
+        let e = result.err().expect("expected error");
+        assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e);
     }
 
     #[test]
@@ -432,16 +427,9 @@ mod tests {
         // bar(2) → error message contains "bar" (Req 5 Scen 3)
         let router = default_router();
         let ast = parse("bar(2)").unwrap();
-        let err = match router.route(&ast) {
-            Err(e) => e,
-            Ok(_) => panic!("expected error, got domain"),
-        };
-        match err {
-            CalcError::DomainError(msg) => {
-                assert!(msg.contains("bar"), "error message should contain 'bar': {}", msg);
-            }
-            _ => panic!("expected DomainError, got {:?}", err),
-        }
+        let err = router.route(&ast).err().expect("expected error");
+        let CalcError::DomainError(msg) = err else { panic!("expected DomainError, got {:?}", err) };
+        assert!(msg.contains("bar"), "error message should contain 'bar': {}", msg);
     }
 
     // ===== Requirement 6: 计算域注册机制 =====
@@ -501,6 +489,71 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>(_: &T) {}
         let router = DomainRouter::new();
         assert_send_sync(&router);
+    }
+
+    // ===== 覆盖 Default impl 与 Mock evaluate 方法 =====
+
+    #[test]
+    fn test_domain_router_default() {
+        // 覆盖 impl Default for DomainRouter（lines 98-100）
+        let router = DomainRouter::default();
+        assert_eq!(router.domain_count(), 0);
+    }
+
+    #[test]
+    fn test_mock_arithmetic_domain_evaluate() {
+        // 覆盖 MockArithmeticDomain::evaluate（lines 190-192）
+        let domain = MockArithmeticDomain;
+        let ast = parse("1+2").unwrap();
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_eq!(result, EvalResult::Scalar(0.0));
+    }
+
+    #[test]
+    fn test_mock_scientific_domain_evaluate() {
+        // 覆盖 MockScientificDomain::evaluate（lines 204-206）
+        let domain = MockScientificDomain;
+        let ast = parse("sin(1)").unwrap();
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_eq!(result, EvalResult::Scalar(0.0));
+    }
+
+    #[test]
+    fn test_configurable_mock_domain_evaluate() {
+        // 覆盖 ConfigurableMockDomain::evaluate（lines 220-222）
+        let domain = ConfigurableMockDomain {
+            name: "test".to_string(),
+            priority: 10,
+            supports_result: true,
+        };
+        let ast = parse("1").unwrap();
+        let ctx = EvalContext::new();
+        let result = domain.evaluate(&ast, &ctx).unwrap();
+        assert_eq!(result, EvalResult::Scalar(0.0));
+    }
+
+    #[test]
+    fn test_is_arithmetic_only_non_arithmetic_nodes() {
+        // 覆盖 is_arithmetic_only 中 Complex/Matrix/List/BigNumber → false 分支（line 177）
+        assert!(!is_arithmetic_only(&AstNode::Complex(1.0, 2.0)));
+        assert!(!is_arithmetic_only(&AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])));
+        assert!(!is_arithmetic_only(&AstNode::List(vec![AstNode::Number(1.0)])));
+        assert!(!is_arithmetic_only(&AstNode::BigNumber("123".to_string())));
+    }
+
+    #[test]
+    fn test_collect_function_names_unary_op_branch() {
+        // 覆盖 collect_function_names_recursive 的 UnaryOp 分支（lines 130-132）
+        // -foo(1) → 路由失败时递归收集函数名，应处理 UnaryOp 节点
+        let router = default_router();
+        let ast = AstNode::UnaryOp(
+            crate::core::types::UnaryOp::Neg,
+            Box::new(AstNode::FunctionCall("foo".to_string(), vec![AstNode::Number(1.0)])),
+        );
+        let err = router.route(&ast).err().expect("expected error");
+        assert!(err.to_string().contains("foo"), "错误信息应包含 'foo': {}", err);
     }
 
     // ===== proptest 属性测试 =====

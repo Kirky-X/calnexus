@@ -524,24 +524,16 @@ mod tests {
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(result.is_err());
-        match result {
-            Err(CalcError::DomainError(_)) => {}
-            Err(e) => panic!("expected DomainError, got {:?}", e),
-            Ok(_) => panic!("expected error, got Ok"),
-        }
+        let e = result.unwrap_err();
+        assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e);
     }
 
     #[test]
     fn test_invalid_complex_literal_parse_error() {
         // 3+*4i → 语法错误（Req 10 Scen 2，非法复数字面量）
         let result = parse("3+*4i");
-        assert!(result.is_err());
-        match result {
-            Err(CalcError::ParseError(_)) => {}
-            Err(e) => panic!("expected ParseError, got {:?}", e),
-            Ok(_) => panic!("expected error, got Ok"),
-        }
+        let e = result.unwrap_err();
+        assert!(matches!(e, CalcError::ParseError(_)), "expected ParseError, got {:?}", e);
     }
 
     // ===== 额外覆盖：域优先级与名称 =====

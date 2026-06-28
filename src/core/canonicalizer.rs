@@ -713,6 +713,21 @@ mod tests {
         assert_eq!(ast_depth(&ast), 1);
     }
 
+    // ===== 覆盖 compare_nodes 的 Number-Number 分支 =====
+
+    #[test]
+    fn test_compare_nodes_number_vs_number() {
+        // 覆盖 compare_nodes 中 (Number, Number) 分支（lines 143-144）
+        // 该分支在常规规范化流程中不可达（常量折叠优先于排序），
+        // 通过直接调用 compare_nodes 验证其正确性
+        use std::cmp::Ordering;
+        let a = AstNode::Number(1.0);
+        let b = AstNode::Number(2.0);
+        assert_eq!(AstCanonicalizer::compare_nodes(&a, &b), Ordering::Less);
+        assert_eq!(AstCanonicalizer::compare_nodes(&b, &a), Ordering::Greater);
+        assert_eq!(AstCanonicalizer::compare_nodes(&a, &a), Ordering::Equal);
+    }
+
     // ===== proptest 属性测试（任务 3.5） =====
 
     use proptest::prelude::*;

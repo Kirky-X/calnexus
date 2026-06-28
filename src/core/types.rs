@@ -236,10 +236,8 @@ mod tests {
     #[test]
     fn ast_node_number_construct_and_match() {
         let node = AstNode::Number(3.14);
-        match node {
-            AstNode::Number(v) => assert!((v - 3.14).abs() < f64::EPSILON),
-            _ => panic!("expected Number variant"),
-        }
+        let AstNode::Number(v) = node else { panic!("expected Number variant") };
+        assert!((v - 3.14).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -253,35 +251,25 @@ mod tests {
         let lhs = Box::new(AstNode::Number(2.0));
         let rhs = Box::new(AstNode::Number(3.0));
         let node = AstNode::BinaryOp(BinaryOp::Add, lhs, rhs);
-        match node {
-            AstNode::BinaryOp(BinaryOp::Add, l, r) => {
-                assert_eq!(*l, AstNode::Number(2.0));
-                assert_eq!(*r, AstNode::Number(3.0));
-            }
-            _ => panic!("expected BinaryOp variant"),
-        }
+        let AstNode::BinaryOp(BinaryOp::Add, l, r) = node else { panic!("expected BinaryOp variant") };
+        assert_eq!(*l, AstNode::Number(2.0));
+        assert_eq!(*r, AstNode::Number(3.0));
     }
 
     #[test]
     fn ast_node_unary_op_construct() {
         let expr = Box::new(AstNode::Number(5.0));
         let node = AstNode::UnaryOp(UnaryOp::Neg, expr);
-        match node {
-            AstNode::UnaryOp(UnaryOp::Neg, inner) => assert_eq!(*inner, AstNode::Number(5.0)),
-            _ => panic!("expected UnaryOp variant"),
-        }
+        let AstNode::UnaryOp(UnaryOp::Neg, inner) = node else { panic!("expected UnaryOp variant") };
+        assert_eq!(*inner, AstNode::Number(5.0));
     }
 
     #[test]
     fn ast_node_function_call_construct() {
         let node = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Variable("x".to_string())]);
-        match node {
-            AstNode::FunctionCall(name, args) => {
-                assert_eq!(name, "sin");
-                assert_eq!(args.len(), 1);
-            }
-            _ => panic!("expected FunctionCall variant"),
-        }
+        let AstNode::FunctionCall(name, args) = node else { panic!("expected FunctionCall variant") };
+        assert_eq!(name, "sin");
+        assert_eq!(args.len(), 1);
     }
 
     #[test]
@@ -382,13 +370,9 @@ mod tests {
     #[test]
     fn ast_node_complex_construct_and_match() {
         let node = AstNode::Complex(3.0, 4.0);
-        match node {
-            AstNode::Complex(re, im) => {
-                assert!((re - 3.0).abs() < f64::EPSILON);
-                assert!((im - 4.0).abs() < f64::EPSILON);
-            }
-            _ => panic!("expected Complex variant"),
-        }
+        let AstNode::Complex(re, im) = node else { panic!("expected Complex variant") };
+        assert!((re - 3.0).abs() < f64::EPSILON);
+        assert!((im - 4.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -411,16 +395,12 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0)],
             vec![AstNode::Number(3.0), AstNode::Number(4.0)],
         ]);
-        match node {
-            AstNode::Matrix(rows) => {
-                assert_eq!(rows.len(), 2);
-                assert_eq!(rows[0].len(), 2);
-                assert_eq!(rows[1].len(), 2);
-                assert_eq!(rows[0][0], AstNode::Number(1.0));
-                assert_eq!(rows[1][1], AstNode::Number(4.0));
-            }
-            _ => panic!("expected Matrix variant"),
-        }
+        let AstNode::Matrix(rows) = node else { panic!("expected Matrix variant") };
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].len(), 2);
+        assert_eq!(rows[1].len(), 2);
+        assert_eq!(rows[0][0], AstNode::Number(1.0));
+        assert_eq!(rows[1][1], AstNode::Number(4.0));
     }
 
     #[test]
@@ -447,13 +427,9 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0), AstNode::Number(3.0)],
             vec![AstNode::Number(4.0), AstNode::Number(5.0), AstNode::Number(6.0)],
         ]);
-        match node {
-            AstNode::Matrix(rows) => {
-                assert_eq!(rows.len(), 2);
-                assert_eq!(rows[0].len(), 3);
-            }
-            _ => panic!("expected Matrix variant"),
-        }
+        let AstNode::Matrix(rows) = node else { panic!("expected Matrix variant") };
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].len(), 3);
     }
 
     #[test]
@@ -465,14 +441,10 @@ mod tests {
             AstNode::Number(4.0),
             AstNode::Number(5.0),
         ]);
-        match node {
-            AstNode::List(elements) => {
-                assert_eq!(elements.len(), 5);
-                assert_eq!(elements[0], AstNode::Number(1.0));
-                assert_eq!(elements[4], AstNode::Number(5.0));
-            }
-            _ => panic!("expected List variant"),
-        }
+        let AstNode::List(elements) = node else { panic!("expected List variant") };
+        assert_eq!(elements.len(), 5);
+        assert_eq!(elements[0], AstNode::Number(1.0));
+        assert_eq!(elements[4], AstNode::Number(5.0));
     }
 
     #[test]
@@ -492,19 +464,15 @@ mod tests {
     #[test]
     fn ast_node_list_single_element() {
         let node = AstNode::List(vec![AstNode::Number(42.0)]);
-        match node {
-            AstNode::List(elements) => assert_eq!(elements.len(), 1),
-            _ => panic!("expected List variant"),
-        }
+        let AstNode::List(elements) = node else { panic!("expected List variant") };
+        assert_eq!(elements.len(), 1);
     }
 
     #[test]
     fn ast_node_list_empty() {
         let node = AstNode::List(vec![]);
-        match node {
-            AstNode::List(elements) => assert!(elements.is_empty()),
-            _ => panic!("expected List variant"),
-        }
+        let AstNode::List(elements) = node else { panic!("expected List variant") };
+        assert!(elements.is_empty());
     }
 
     // ===== EvalResult helper methods 覆盖（v0.5 新增类型） =====

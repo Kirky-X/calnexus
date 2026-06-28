@@ -473,13 +473,9 @@ mod tests {
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
         // 100! = 93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000
-        match result {
-            EvalResult::BigInt(b) => {
-                assert!(b > BigInt::zero());
-                assert!(b.to_string().len() > 100); // 100! 有 158 位
-            }
-            other => panic!("expected BigInt, got {:?}", other),
-        }
+        let EvalResult::BigInt(b) = &result else { panic!("expected BigInt, got {:?}", result) };
+        assert!(b > &BigInt::zero());
+        assert!(b.to_string().len() > 100); // 100! 有 158 位
     }
 
     #[test]
@@ -616,16 +612,12 @@ mod tests {
         let ast = parse("factorial(20)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
-        match result {
-            EvalResult::BigInt(b) => {
-                let s = b.to_string();
-                assert!(!s.contains('e') && !s.contains('E'));
-                assert!(!s.contains('.'));
-                // 20! = 2432902008176640000
-                assert_eq!(s, "2432902008176640000");
-            }
-            other => panic!("expected BigInt, got {:?}", other),
-        }
+        let EvalResult::BigInt(b) = &result else { panic!("expected BigInt, got {:?}", result) };
+        let s = b.to_string();
+        assert!(!s.contains('e') && !s.contains('E'));
+        assert!(!s.contains('.'));
+        // 20! = 2432902008176640000
+        assert_eq!(s, "2432902008176640000");
     }
 
     #[test]
@@ -827,20 +819,16 @@ mod tests {
     fn test_bigint_parse_from_string() {
         // 验证 BigNumber 节点正确解析大整数
         let ast = parse("123456789012345678901234567890").unwrap();
-        match ast {
-            AstNode::BigNumber(s) => assert_eq!(s, "123456789012345678901234567890"),
-            other => panic!("expected BigNumber, got {:?}", other),
-        }
+        let AstNode::BigNumber(s) = &ast else { panic!("expected BigNumber, got {:?}", ast) };
+        assert_eq!(s, "123456789012345678901234567890");
     }
 
     #[test]
     fn test_small_number_not_bignumber() {
         // 小数字不应被解析为 BigNumber
         let ast = parse("12345").unwrap();
-        match ast {
-            AstNode::Number(n) => assert_eq!(n, 12345.0),
-            other => panic!("expected Number, got {:?}", other),
-        }
+        let AstNode::Number(n) = &ast else { panic!("expected Number, got {:?}", ast) };
+        assert_eq!(*n, 12345.0);
     }
 
     #[test]
@@ -848,10 +836,8 @@ mod tests {
         // 小数不应被解析为 BigNumber（即使整数部分有 16+ 位）
         // 注：f64 本身精度有限，此测试验证不误匹配
         let ast = parse("1.5").unwrap();
-        match ast {
-            AstNode::Number(n) => assert_eq!(n, 1.5),
-            other => panic!("expected Number, got {:?}", other),
-        }
+        let AstNode::Number(n) = &ast else { panic!("expected Number, got {:?}", ast) };
+        assert_eq!(*n, 1.5);
     }
 
     // ===== 覆盖未覆盖分支的补充测试 =====

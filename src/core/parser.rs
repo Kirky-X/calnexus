@@ -1089,13 +1089,9 @@ mod tests {
             AstNode::BigNumber("1234567890123456".to_string()),
         );
         replace_placeholders(&mut ast, &placeholders);
-        match ast {
-            AstNode::Matrix(rows) => {
-                assert_eq!(rows[0][0], AstNode::BigNumber("1234567890123456".to_string()));
-                assert_eq!(rows[0][1], AstNode::Number(1.0));
-            }
-            _ => panic!("expected Matrix after placeholder replacement"),
-        }
+        let AstNode::Matrix(rows) = &ast else { panic!("expected Matrix after placeholder replacement") };
+        assert_eq!(rows[0][0], AstNode::BigNumber("1234567890123456".to_string()));
+        assert_eq!(rows[0][1], AstNode::Number(1.0));
     }
 
     #[test]
@@ -1111,13 +1107,9 @@ mod tests {
             AstNode::BigNumber("9876543210987654".to_string()),
         );
         replace_placeholders(&mut ast, &placeholders);
-        match ast {
-            AstNode::List(elements) => {
-                assert_eq!(elements[0], AstNode::BigNumber("9876543210987654".to_string()));
-                assert_eq!(elements[1], AstNode::Number(2.0));
-            }
-            _ => panic!("expected List after placeholder replacement"),
-        }
+        let AstNode::List(elements) = &ast else { panic!("expected List after placeholder replacement") };
+        assert_eq!(elements[0], AstNode::BigNumber("9876543210987654".to_string()));
+        assert_eq!(elements[1], AstNode::Number(2.0));
     }
 
     // ===== 覆盖 parse_matrix_literal / parse_list_literal 无效输入 =====
