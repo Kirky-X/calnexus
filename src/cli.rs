@@ -7,7 +7,7 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::{ArithmeticDomain, ComplexDomain, MatrixDomain, ScientificDomain};
+use crate::{ArithmeticDomain, ComplexDomain, MatrixDomain, ScientificDomain, StatisticsDomain};
 use crate::{
     AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, parse,
 };
@@ -145,6 +145,7 @@ fn evaluate(expr: &str, ctx: &EvalContext) -> Result<(EvalResult, String, bool),
     router.register(Box::new(ComplexDomain));
     router.register(Box::new(MatrixDomain));
     router.register(Box::new(ScientificDomain));
+    router.register(Box::new(StatisticsDomain));
     router.register(Box::new(ArithmeticDomain));
 
     // 4. 缓存查询

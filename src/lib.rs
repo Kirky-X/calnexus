@@ -16,3 +16,4 @@ pub use domains::arithmetic::ArithmeticDomain;
 pub use domains::complex::ComplexDomain;
 pub use domains::matrix::MatrixDomain;
 pub use domains::scientific::ScientificDomain;
+pub use domains::statistics::StatisticsDomain;
