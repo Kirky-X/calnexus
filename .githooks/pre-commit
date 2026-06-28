@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# =============================================================================
+# CalNexus pre-commit hook — industrial-grade code quality gate.
+#
+# Runs 9 checks before allowing a commit. Fails the commit on any blocking
+# failure; the file-size check is warn-only.
+#
+# Install (one-time, per clone):
+#   git config core.hooksPath .githooks
+#
+# Bypass temporarily (use sparingly):
+#   git commit --no-verify
+# =============================================================================
+
+set -u
+
+# Run from the repository root regardless of where the commit was invoked.
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "pre-commit: not inside a git repository" >&2
+    exit 1
+}
+cd "$REPO_ROOT" || {
+    echo "pre-commit: cannot cd to $REPO_ROOT" >&2
+    exit 1
+}
+
+# -----------------------------------------------------------------------------
+# Color helpers (disabled when stdout is not a TTY).
+# -----------------------------------------------------------------------------
+if [ -t 1 ]; then
+    C_RED=$'\033[0;31m'
+    C_GREEN=$'\033[0;32m'
+    C_YELLOW=$'\033[0;33m'
+    C_BLUE=$'\033[0;34m'
+    C_BOLD=$'\033[1m'
+    C_NC=$'\033[0m'
+else
+    C_RED=''
+    C_GREEN=''
+    C_YELLOW=''
+    C_BLUE=''
+    C_BOLD=''
+    C_NC=''
+fi
+
+FAILED=0
+
+pass() { printf '%s[PASS]%s %s\n' "$C_GREEN" "$C_NC" "$1"; }
+fail() { printf '%s[FAIL]%s %s\n' "$C_RED" "$C_NC" "$1"; FAILED=$((FAILED + 1)); }
+warn() { printf '%s[WARN]%s %s\n' "$C_YELLOW" "$C_NC" "$1"; }
+step() { printf '%s[ .. ]%s %s\n' "$C_BLUE" "$C_NC" "$1"; }
+indent() { sed 's/^/      /'; }
+
+echo "${C_BOLD}CalNexus pre-commit quality gate${C_NC}"
+echo "----------------------------------------"
+
+# -----------------------------------------------------------------------------
+# Check 1/9: cargo fmt (formatting must already be correct; no auto-fix here)
+# -----------------------------------------------------------------------------
+step "Check 1/9: cargo fmt --all -- --check"
+fmt_out="$(cargo fmt --all -- --check 2>&1)"
+fmt_rc=$?
+if [ "$fmt_rc" -eq 0 ]; then
+    pass "formatting is clean"
+else
+    fail "formatting issues detected (run 'cargo fmt --all' to fix)"
+    printf '%s\n' "$fmt_out" | indent
+fi
+
+# -----------------------------------------------------------------------------
+# Check 2/9: cargo clippy (all targets, deny warnings)
+# -----------------------------------------------------------------------------
+step "Check 2/9: cargo clippy --features cli --all-targets -- -D warnings"
+clippy_out="$(cargo clippy --features cli --all-targets -- -D warnings 2>&1)"
+clippy_rc=$?
+if [ "$clippy_rc" -eq 0 ]; then
+    pass "clippy: no warnings"
+else
+    fail "clippy: lint issues detected"
+    printf '%s\n' "$clippy_out" | indent
+fi
+
+# -----------------------------------------------------------------------------
+# Check 3/9: cargo test (all tests must pass)
+# -----------------------------------------------------------------------------
+step "Check 3/9: cargo test --features cli"
+test_out="$(cargo test --features cli 2>&1)"
+test_rc=$?
+if [ "$test_rc" -eq 0 ]; then
+    pass "all tests passed"
+else
+    fail "tests failed"
+    printf '%s\n' "$test_out" | indent
+fi
+
+# -----------------------------------------------------------------------------
+# Check 4/9: cargo build --release with zero warnings
+#   Build must succeed AND output must not contain "warning".
+# -----------------------------------------------------------------------------
+step "Check 4/9: cargo build --release --features cli (zero warnings)"
+build_out="$(cargo build --release --features cli 2>&1)"
+build_rc=$?
+if [ "$build_rc" -ne 0 ]; then
+    fail "release build failed"
+    printf '%s\n' "$build_out" | indent
+elif printf '%s\n' "$build_out" | grep -iq 'warning'; then
+    fail "release build produced warnings"
+    printf '%s\n' "$build_out" | grep -i 'warning' | indent
+else
+    pass "release build clean, zero warnings"
+fi
+
+# Gather tracked .rs files once for the file-based checks below.
+ALL_RS_FILES="$(git ls-files '*.rs')"
+
+# -----------------------------------------------------------------------------
+# Check 5/9: copyright header on every .rs file
+#   First line must start with: // Copyright (c) 2026 Kirky.X
+# -----------------------------------------------------------------------------
+step "Check 5/9: copyright header (// Copyright (c) 2026 Kirky.X)"
+COPYRIGHT_PREFIX='// Copyright (c) 2026 Kirky.X'
+copyright_bad=""
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    first_line="$(head -n1 "$f" 2>/dev/null)"
+    case "$first_line" in
+        "$COPYRIGHT_PREFIX"*) ;;
+        *)
+            copyright_bad+="${f}"$'\n'
+            ;;
+    esac
+done <<< "$ALL_RS_FILES"
+if [ -z "$copyright_bad" ]; then
+    pass "all .rs files have the copyright header"
+else
+    fail "missing/incorrect copyright header in:"
+    printf '%s' "$copyright_bad" | indent
+fi
+
+# -----------------------------------------------------------------------------
+# Check 6/9: no debug prints (println!/dbg!) in library code
+#   eprintln! is allowed everywhere; println!/dbg! is forbidden in lib code.
+#   CLI/REPL entry points (cli.rs, repl.rs, main.rs, batch.rs) are exempt.
+# -----------------------------------------------------------------------------
+step "Check 6/9: no println!/dbg! in lib code (eprintln! OK in CLI/REPL)"
+LIB_RS_FILES="$(printf '%s\n' "$ALL_RS_FILES" | grep '^src/' | grep -vE '^src/(cli|repl|main|batch)\.rs$')"
+debug_bad=""
+if [ -n "$LIB_RS_FILES" ]; then
+    debug_bad="$(printf '%s\n' "$LIB_RS_FILES" | xargs grep -nE '\b(println|dbg)!\(' 2>/dev/null || true)"
+fi
+if [ -z "$debug_bad" ]; then
+    pass "no println!/dbg! in lib code"
+else
+    fail "println!/dbg! found in lib code (use eprintln! for diagnostics, or return values):"
+    printf '%s\n' "$debug_bad" | indent
+fi
+
+# -----------------------------------------------------------------------------
+# Check 7/9: no TODO/FIXME/HACK comments in src/
+#   Tests live in tests/ and are not scanned.
+# -----------------------------------------------------------------------------
+step "Check 7/9: no TODO/FIXME/HACK comments in src/"
+SRC_RS_FILES="$(printf '%s\n' "$ALL_RS_FILES" | grep '^src/')"
+todo_bad=""
+if [ -n "$SRC_RS_FILES" ]; then
+    todo_bad="$(printf '%s\n' "$SRC_RS_FILES" | xargs grep -nE '\b(TODO|FIXME|HACK)\b' 2>/dev/null || true)"
+fi
+if [ -z "$todo_bad" ]; then
+    pass "no TODO/FIXME/HACK in src/"
+else
+    fail "TODO/FIXME/HACK comments found in src/:"
+    printf '%s\n' "$todo_bad" | indent
+fi
+
+# -----------------------------------------------------------------------------
+# Check 8/9: Cargo.lock exists and is tracked
+# -----------------------------------------------------------------------------
+step "Check 8/9: Cargo.lock is committed"
+if [ -f 'Cargo.lock' ] && [ -n "$(git ls-files -- Cargo.lock)" ]; then
+    pass "Cargo.lock exists and is tracked"
+else
+    fail "Cargo.lock is missing or not tracked (run 'git add Cargo.lock')"
+fi
+
+# -----------------------------------------------------------------------------
+# Check 9/9: file size check (warn only, non-blocking)
+#   No source file should exceed 3000 lines.
+# -----------------------------------------------------------------------------
+step "Check 9/9: file size <= 3000 lines (warn only)"
+MAX_LINES=3000
+size_warn_count=0
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    lines="$(wc -l < "$f" 2>/dev/null || echo 0)"
+    if [ "$lines" -gt "$MAX_LINES" ]; then
+        warn "$f has $lines lines (exceeds $MAX_LINES)"
+        size_warn_count=$((size_warn_count + 1))
+    fi
+done <<< "$ALL_RS_FILES"
+if [ "$size_warn_count" -eq 0 ]; then
+    pass "all .rs files within $MAX_LINES lines"
+else
+    printf '%s[WARN]%s %d file(s) exceed %d lines — non-blocking\n' "$C_YELLOW" "$C_NC" "$size_warn_count" "$MAX_LINES"
+fi
+
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+echo "----------------------------------------"
+if [ "$FAILED" -gt 0 ]; then
+    printf '%s[BLOCK]%s %d check(s) failed — commit rejected.%s\n' "$C_RED" "$C_BOLD" "$FAILED" "$C_NC"
+    printf '%s         Fix the issues above, or bypass with: git commit --no-verify%s\n' "$C_YELLOW" "$C_NC"
+    exit 1
+fi
+printf '%s[ OK ]%s All pre-commit checks passed.%s\n' "$C_GREEN" "$C_BOLD" "$C_NC"
+exit 0

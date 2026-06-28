@@ -1,44 +1,46 @@
-<h1 align="center">CalNexus</h1>
+# CalNexus
 
-<p align="center">
-  <b>A command-line math expression evaluator with 11 computation domains, symbolic calculus, REPL, and batch processing.</b><br/>
-  <a href="#-quick-start">🚀 Quick Start</a> •
-  <a href="#-features">✨ Features</a> •
-  <a href="#-contributing">🤝 Contributing</a>
-</p>
+[![version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/kirky-x/calnexus)
+[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)
+[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-blue" alt="version" />
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="license" />
-  <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="build" />
-  <img src="https://img.shields.io/badge/coverage-97.27%25-brightgreen" alt="coverage" />
-</p>
+一个具备 11 个计算域、符号微积分、REPL 与批量处理的命令行数学表达式求值器。
 
-***
+| 项目信息 | 内容 |
+| --- | --- |
+| 版本 | 0.1.0 |
+| 许可证 | MIT |
+| 作者 | Kirky.X |
+| 仓库 | https://github.com/kirky-x/calnexus |
 
-## 📑 Table of Contents
+---
 
-- [Overview](#-overview)
-- [Features](#-features)
-- [Architecture](#-architecture)
-- [Quick Start](#-quick-start)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Usage](#usage)
-- [Configuration](#-configuration)
-- [API Documentation](#-api-documentation)
-- [Testing](#-testing)
-- [WebAssembly (wasm32) Support](#-webassembly-wasm32-support)
-- [Contributing](#-contributing)
-- [Roadmap](#-roadmap)
-- [License](#-license)
-- [Acknowledgments](#-acknowledgments)
+## 目录
 
-***
+- [项目简介](#项目简介)
+- [功能特性](#功能特性)
+  - [11 个计算域](#11-个计算域)
+  - [三种模式](#三种模式)
+- [架构](#架构)
+- [快速开始](#快速开始)
+  - [前置条件](#前置条件)
+  - [安装](#安装)
+  - [使用示例](#使用示例)
+- [配置](#配置)
+- [API 文档](#api-文档)
+- [测试](#测试)
+- [WebAssembly (wasm32) 支持](#webassembly-wasm32-支持)
+- [贡献](#贡献)
+- [路线图](#路线图)
+- [许可证](#许可证)
+- [致谢](#致谢)
 
-## 🔭 Overview
+---
 
-**CalNexus** is a Rust-native command-line math expression evaluator that unifies 11 computation domains — from arithmetic and statistics to symbolic calculus and linear algebra — behind a single parser and a priority-routed domain dispatcher. It offers three execution modes (single expression, interactive REPL, and parallel batch) with an LRU cache, arbitrary-precision arithmetic, and JSON output for pipeline integration.
+## 项目简介
+
+**CalNexus** 是一个用 Rust 编写的命令行数学表达式求值器，将 11 个计算域 —— 从算术、统计到符号微积分与线性代数 —— 统一在单一解析器与按优先级路由的计算域调度器之后。它提供三种执行模式（单表达式、交互式 REPL、并行批量），并配备 LRU 缓存、任意精度算术与面向管道集成的 JSON 输出。
 
 ### 适用场景
 
@@ -47,46 +49,46 @@
 - 场景 C：批量脚本化处理（`calnexus --batch exprs.txt`，rayon 并行）
 - 场景 D：嵌入到数据管道中（`--json` 输出结构化结果）
 
-***
+---
 
-## ✨ Features
+## 功能特性
 
-| 特性            | 说明                                                                       |
-| ------------- | ------------------------------------------------------------------------ |
-| 🧮 11 计算域     | 算术、科学函数、统计、精度、数论、组合、多项式、复数、矩阵、向量、符号演算    |
-| 🧠 符号微积分      | `diff`、`integrate`、`simplify`、`limit`、`taylor`                          |
-| 🔢 任意精度       | `precision(N, expr)` 基于 BigRational 的任意精度计算                            |
-| 💻 三种模式       | 单表达式、REPL（Tab 补全 + 变量绑定）、批量并行（rayon）                       |
-| ⚡ 高性能缓存       | Moka L1 缓存（10000 条目，BLAKE3 哈希，线程安全）                             |
-| 🔄 隐式乘法        | `2x`、`3(x+1)` 等数学惯用写法自动识别                                          |
-| 📦 JSON 输出      | `--json` 输出 `result/domain/cache` 结构，便于管道集成                          |
-| 🧪 工业级测试       | 1650 个测试（1369 lib + 108 CLI + 173 集成），覆盖率 97.27%，release 零警告          |
+| 特性 | 说明 |
+| --- | --- |
+| 11 计算域 | 算术、科学函数、统计、精度、数论、组合、多项式、复数、矩阵、向量、符号演算 |
+| 符号微积分 | `diff`、`integrate`、`simplify`、`limit`、`taylor` |
+| 任意精度 | `precision(N, expr)` 基于 BigRational 的任意精度计算 |
+| 三种模式 | 单表达式、REPL（Tab 补全 + 变量绑定）、批量并行（rayon） |
+| 高性能缓存 | Moka L1 缓存（10000 条目，BLAKE3 哈希，线程安全） |
+| 隐式乘法 | `2x`、`3(x+1)` 等数学惯用写法自动识别 |
+| JSON 输出 | `--json` 输出 `result/domain/cache` 结构，便于管道集成 |
+| 工业级测试 | 1650 个测试（1369 lib + 108 CLI + 173 集成），覆盖率 97.27%，release 零警告 |
 
-### 11 Computation Domains
+### 11 个计算域
 
-| Domain          | Priority | Functions                                                                                                                              |
-| --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| **Arithmetic**  | 10       | `+`, `-`, `*`, `/`, `^`, `factorial`, `mod`, `abs`                                                                                    |
-| **Scientific**  | 20       | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log`, `exp`, `sinh`, `cosh`, `tanh`, `gamma`, `erf`                              |
-| **Statistics**  | 20       | `mean`, `median`, `variance`, `stddev`, `sum`, `min`, `max`                                                                           |
-| **Precision**   | 25       | `precision(N, expr)` — BigRational arbitrary precision                                                                               |
-| **NumberTheory**| 25       | `gcd`, `lcm`, `is_prime`, `prime_sieve`, `mod_inverse`, `mod_pow`, `euler_phi`                                                        |
-| **Combinatorics**| 25      | `P`, `C`, `catalan`, `stirling`                                                                                                       |
-| **Polynomial**  | 25       | `poly_add`, `poly_sub`, `poly_mul`, `poly_div`, `poly_eval`, `poly_diff`, `poly_integrate`, `roots`, `factor`                         |
-| **Complex**     | 30       | `complex(a,b)`, `re`, `im`, `conj`, `magnitude`, `phase`                                                                              |
-| **Matrix**      | 30       | `det`, `transpose`, `inverse`, `trace`                                                                                                |
-| **Vector**      | 30       | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple`                                                                         |
-| **Symbolic**    | 30       | `diff`, `integrate`, `simplify`, `limit`, `taylor`                                                                                    |
+| 计算域 | 优先级 | 函数 |
+| --- | --- | --- |
+| **Arithmetic** | 10 | `+`, `-`, `*`, `/`, `^`, `factorial`, `mod`, `abs` |
+| **Scientific** | 20 | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log`, `exp`, `sinh`, `cosh`, `tanh`, `gamma`, `erf` |
+| **Statistics** | 20 | `mean`, `median`, `variance`, `stddev`, `sum`, `min`, `max` |
+| **Precision** | 25 | `precision(N, expr)` — BigRational 任意精度 |
+| **NumberTheory** | 25 | `gcd`, `lcm`, `is_prime`, `prime_sieve`, `mod_inverse`, `mod_pow`, `euler_phi` |
+| **Combinatorics** | 25 | `P`, `C`, `catalan`, `stirling` |
+| **Polynomial** | 25 | `poly_add`, `poly_sub`, `poly_mul`, `poly_div`, `poly_eval`, `poly_diff`, `poly_integrate`, `roots`, `factor` |
+| **Complex** | 30 | `complex(a,b)`, `re`, `im`, `conj`, `magnitude`, `phase` |
+| **Matrix** | 30 | `det`, `transpose`, `inverse`, `trace` |
+| **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple` |
+| **Symbolic** | 30 | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
 
-### Three Modes
+### 三种模式
 
-1. **Single expression** — `calnexus '2+3*4'`
-2. **REPL** — `calnexus --repl` (interactive, with Tab completion and variable binding)
-3. **Batch** — `calnexus --batch exprs.txt` (parallel evaluation with rayon)
+1. **单表达式** — `calnexus '2+3*4'`
+2. **REPL** — `calnexus --repl`（交互式，支持 Tab 补全与变量绑定）
+3. **批量** — `calnexus --batch exprs.txt`（rayon 并行求值）
 
-***
+---
 
-## 🏗 Architecture
+## 架构
 
 ```
 parse() → AstCanonicalizer → CacheManager → DomainRouter → Domain::evaluate()
@@ -105,26 +107,26 @@ parse() → AstCanonicalizer → CacheManager → DomainRouter → Domain::evalu
 
 核心模块说明：
 
-- **Parser**: mathexpr-based, with implicit multiplication and complex number preprocessing
-- **Canonicalizer**: constant folding, commutative sorting, S-expression canonical form
-- **Cache**: Moka L1 cache (10000 entries, BLAKE3 key hash, thread-safe)
-- **Router**: Priority-sorted domain dispatch (first `supports()` wins)
+- **Parser**：基于 mathexpr，支持隐式乘法与复数预处理
+- **Canonicalizer**：常量折叠、可交换排序、S-表达式规范形式
+- **Cache**：Moka L1 缓存（10000 条目，BLAKE3 键哈希，线程安全）
+- **Router**：按优先级排序的计算域调度（首个 `supports()` 命中即路由）
 
-***
+---
 
-## 🚀 Quick Start
+## 快速开始
 
-### Prerequisites
+### 前置条件
 
 运行本项目前，请确保环境满足以下要求：
 
-| 依赖       | 版本       | 说明                          |
-| -------- | -------- | --------------------------- |
-| Rust     | >= 1.70  | 工具链（推荐 `rustup` 安装）          |
-| Cargo    | 随 Rust   | 构建与包管理                      |
-| `cli` feature | 可选     | 启用 CLI / REPL / batch（含 `clap`、`rustyline`、`rayon`） |
+| 依赖 | 版本 | 说明 |
+| --- | --- | --- |
+| Rust | >= 1.70 | 工具链（推荐使用 `rustup` 安装） |
+| Cargo | 随 Rust | 构建与包管理 |
+| `cli` feature | 可选 | 启用 CLI / REPL / batch（含 `clap`、`rustyline`、`rayon`） |
 
-### Installation
+### 安装
 
 ```bash
 # 1. 克隆仓库
@@ -138,9 +140,9 @@ cargo install --path . --features cli
 cargo build --release --features cli
 ```
 
-### Usage
+### 使用示例
 
-#### Single Expression
+#### 单表达式
 
 ```bash
 $ calnexus '2+3*4'
@@ -159,27 +161,21 @@ $ calnexus --var x=3 'x^2 + 2*x + 1'
 16
 ```
 
-**预期输出（首条命令）：**
-
-```text
-14
-```
-
-#### Arbitrary Precision
+#### 任意精度
 
 ```bash
 $ calnexus --precision 50 '1/3'
 0.33333333333333333333333333333333333333333333333333
 ```
 
-#### JSON Output
+#### JSON 输出
 
 ```bash
 $ calnexus --json '2+3'
 {"result":5,"domain":"arithmetic","cache":"miss"}
 ```
 
-#### Symbolic Calculus
+#### 符号微积分
 
 ```bash
 $ calnexus 'diff(x^2, x)'
@@ -195,7 +191,7 @@ $ calnexus 'taylor(exp(x), x, 3)'
 1+x+0.5*x^2+0.16666666666666666*x^3
 ```
 
-#### REPL Mode
+#### REPL 模式
 
 ```bash
 $ calnexus --repl
@@ -211,7 +207,9 @@ calnexus> :quit
 bye
 ```
 
-#### Batch Processing
+REPL 支持的命令：`:let` 绑定变量、`:vars` 查看变量、`:quit` 退出。
+
+#### 批量处理
 
 ```bash
 $ cat exprs.txt
@@ -227,7 +225,7 @@ line 4: diff(x^2, x) = 2*x  [symbolic]
 summary: 3 total, 3 ok, 0 errors, 0 cache hits, 1.2ms
 ```
 
-#### Implicit Multiplication
+#### 隐式乘法
 
 ```bash
 $ calnexus --var x=3 '2x'
@@ -237,73 +235,76 @@ $ calnexus --var x=3 '3(x+1)'
 12
 ```
 
-***
+---
 
-## ⚙️ Configuration
+## 配置
 
 CalNexus 通过命令行参数进行配置，无需配置文件：
 
-| 配置项            | 环境变量 / 参数                | 默认值     | 说明                          |
-| -------------- | ------------------------ | ------- | --------------------------- |
-| 单表达式求值         | 位置参数 `'2+3*4'`           | —       | 直接对表达式求值并打印结果               |
-| REPL 模式        | `--repl`                 | 关闭      | 启动交互式 REPL，支持 `:let`、`:vars` |
-| 批量处理           | `--batch <file>`         | 关闭      | 并行求值文件中每行表达式（rayon）         |
-| 变量绑定           | `--var x=3`              | —       | 为表达式预绑定变量                   |
-| 任意精度           | `--precision <N>`        | 关闭      | 以 N 位小数 BigRational 求值      |
-| JSON 输出        | `--json`                 | 关闭      | 输出 `result/domain/cache` 结构 |
-| CLI/REPL/batch | `--features cli`（编译期）     | 启用      | 启用 `clap`/`rustyline`/`rayon` |
+| 参数 | 说明 |
+| --- | --- |
+| 位置参数 `'2+3*4'` | 单表达式求值，直接对表达式求值并打印结果 |
+| `--repl` | 启动交互式 REPL，支持 `:let`、`:vars`、`:quit` |
+| `--batch <file>` | 并行求值文件中每行表达式（rayon） |
+| `--var x=3` | 为表达式预绑定变量 |
+| `--precision <N>` | 以 N 位小数 BigRational 求值 |
+| `--json` | 输出 `result/domain/cache` 结构 |
+| `--latex` | 以 LaTeX 形式输出（与 `--json`/`--repl`/`--batch`/`--precision` 互斥） |
+| `--canonical` | 输出规范形式（与 `--json`/`--repl`/`--batch`/`--precision` 互斥） |
+| `--steps` | 输出求解步骤（与 `--json`/`--repl`/`--batch`/`--precision` 互斥） |
+| `--help` | 显示帮助信息 |
 
 完整 CLI 子命令与参数可通过 `calnexus --help` 查看。
 
-***
+---
 
-## 📚 API Documentation
+## API 文档
 
 CalNexus 是一个 Rust 库 + CLI 二进制项目，接口文档可通过以下方式查看：
 
-- **本地 rustdoc**: `cargo doc --features cli --open` 后访问 `http://localhost:port`
-- **核心入口**: `calnexus::parse()` → `AstCanonicalizer` → `CacheManager` → `DomainRouter`
-- **Domain trait**: 各计算域实现 `Domain::evaluate()`，通过 `supports()` 路由
-- **CLI 帮助**: `calnexus --help` / `calnexus --repl` 内 `:help`
+- **本地 rustdoc**：执行 `cargo doc --features cli --open` 后访问 `http://localhost:port`
+- **核心入口**：`calnexus::parse()` → `AstCanonicalizer` → `CacheManager` → `DomainRouter`
+- **Domain trait**：各计算域实现 `Domain::evaluate()`，通过 `supports()` 路由
+- **CLI 帮助**：`calnexus --help` / `calnexus --repl` 内 `:help`
 
-***
+---
 
-## 🧪 Testing
+## 测试
 
 ```bash
-# 运行全部测试
+# 运行全部测试（1650 个测试）
 cargo test --features cli
 
 # Release 构建（零警告）
 cargo build --release --features cli
+
+# 代码格式化与静态检查
+cargo fmt --all
+cargo clippy --features cli --all-targets
 ```
 
-1343 tests (1134 lib + 79 CLI + 130 integration), release build with zero warnings.
+测试规模：1650 个测试（1369 lib + 108 CLI + 173 集成），覆盖率 97.27%，release 构建零警告。
 
-***
+---
 
-## 🌐 WebAssembly (wasm32) Support
+## WebAssembly (wasm32) 支持
 
-CalNexus targets `wasm32-unknown-unknown` with `--no-default-features` (excludes CLI/REPL/batch).
+CalNexus 通过 `--no-default-features`（排除 CLI / REPL / batch）面向 `wasm32-unknown-unknown` 目标构建。
 
-**Known limitation:** The `oxcache` dependency uses `tokio`, which depends on `mio` — `mio` does not
-support `wasm32-unknown-unknown`. To enable wasm32, the cache layer needs to be refactored to use a
-wasm-compatible backend (planned for v1.2). Until then, wasm32 builds fail at the `mio` compilation step.
+**已知限制**：`oxcache` 依赖 `tokio`，而 `tokio` 依赖 `mio` —— `mio` 不支持 `wasm32-unknown-unknown`。要启用 wasm32，需将缓存层重构为 wasm 兼容的后端（计划于 v0.2.0 完成）。在此之前，wasm32 构建会在 `mio` 编译步骤失败。
 
 ```bash
-# Attempted build (currently fails due to tokio/mio):
+# 尝试构建（当前因 tokio/mio 失败）：
 cargo build --target wasm32-unknown-unknown --no-default-features
 ```
 
-The `cli` feature gate (`#[cfg(feature = "cli")]`) correctly isolates `clap`/`rustyline`/`rayon` and
-all file I/O (`std::fs`, `std::time::Instant` in `batch.rs`). Only the cache's `tokio` dependency
-prevents wasm32 compilation.
+`cli` feature 门控（`#[cfg(feature = "cli")]`）正确隔离了 `clap`/`rustyline`/`rayon` 以及所有文件 I/O（`std::fs`、`batch.rs` 中的 `std::time::Instant`）。仅缓存的 `tokio` 依赖阻碍了 wasm32 编译。
 
-***
+---
 
-## 🤝 Contributing
+## 贡献
 
-我们欢迎所有形式的贡献！请遵循以下流程。
+我们欢迎所有形式的贡献！详细流程请参阅 [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md)。
 
 ### 提交 Issue
 
@@ -313,9 +314,9 @@ prevents wasm32 compilation.
 ### 提交 PR
 
 1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
-3. **Conventional Commits** 规范：`feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `chore:`
-4. 提交更改 (`git commit -m 'feat: add new domain'`)
+2. 创建特性分支（`git checkout -b feature/amazing-feature`）
+3. 遵循 **Conventional Commits** 规范：`feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `chore:`
+4. 提交更改（`git commit -m 'feat: add new domain'`）
 5. 确保通过测试与格式化：
 
 ```bash
@@ -324,29 +325,32 @@ cargo fmt --all                # 代码格式化
 cargo clippy --features cli    # 无警告
 ```
 
-6. 推送分支 (`git push origin feature/amazing-feature`)
+6. 推送分支（`git push origin feature/amazing-feature`）
 7. 创建 Pull Request
 
-***
+项目相关文档位于 `docs/` 目录：
 
-## 🗺 Roadmap
+- [CHANGELOG.md](./docs/CHANGELOG.md)
+- [CONTRIBUTING.md](./docs/CONTRIBUTING.md)
+- [CODE_OF_CONDUCT.md](./docs/CODE_OF_CONDUCT.md)
+- [SECURITY.md](./docs/SECURITY.md)
 
-- [x] v0.1.0 - 基础算术与科学函数求值
-- [x] v0.5.0 - 多计算域路由与缓存层
-- [x] v0.8.0 - REPL 模式与变量绑定
-- [x] v1.0.0 - 符号微积分（diff/integrate/limit/taylor）与批量处理
-- [x] v1.1.0 - 任意精度（BigRational）、JSON 输出、隐式乘法
-- [ ] v1.2.0 - wasm32 支持（重构缓存层，移除 tokio/mio 依赖）
+---
 
-***
+## 路线图
 
-## 📄 License
+- [x] v0.1.0 - 11 计算域、符号微积分、REPL、批量处理、任意精度、JSON 输出、隐式乘法
+- [ ] v0.2.0 - wasm32 支持（重构缓存层，移除 tokio/mio 依赖）
+
+---
+
+## 许可证
 
 本项目基于 [MIT License](./LICENSE) 开源。
 
-***
+---
 
-## 🙏 Acknowledgments
+## 致谢
 
 感谢以下项目为本项目提供的支撑：
 
@@ -355,9 +359,3 @@ cargo clippy --features cli    # 无警告
 - [clap](https://crates.io/crates/clap) — CLI 参数解析
 - [rustyline](https://crates.io/crates/rustyline) — REPL 行编辑与 Tab 补全
 - [rayon](https://crates.io/crates/rayon) — 数据并行批量求值
-
-***
-
-<p align="center">
-  Built with ❤️ by <a href="https://github.com/kirky-x">kirky-x</a>
-</p>

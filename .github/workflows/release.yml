@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extracted tag: $TAG"
+          echo "Extracted version: $VERSION"
+
+      - name: Create source archives
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          tar czf "calnexus-${VERSION}.tar.gz" \
+            --exclude='.git' \
+            --exclude='target' \
+            --exclude='temp' \
+            .
+          zip -r "calnexus-${VERSION}.zip" . \
+            -x '.git/*' 'target/*' 'temp/*'
+
+      - name: Generate SHA256 checksums
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sha256sum "calnexus-${VERSION}.tar.gz" "calnexus-${VERSION}.zip" > "calnexus-${VERSION}-sha256sums.txt"
+          echo "Checksums:"
+          cat "calnexus-${VERSION}-sha256sums.txt"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            calnexus-${{ steps.version.outputs.version }}.tar.gz
+            calnexus-${{ steps.version.outputs.version }}.zip
+            calnexus-${{ steps.version.outputs.version }}-sha256sums.txt
