@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! 计算域接口与路由器。
 //!
 //! 设计依据：
@@ -60,7 +62,8 @@ impl DomainRouter {
     pub fn register(&mut self, domain: Box<dyn CalculationDomain>) {
         self.domains.push(domain);
         // 稳定排序：同优先级时保持注册顺序（Req 4 Scen 2）
-        self.domains.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        self.domains
+            .sort_by_key(|d| std::cmp::Reverse(d.priority()));
     }
 
     /// 路由 AST 到第一个支持的域。

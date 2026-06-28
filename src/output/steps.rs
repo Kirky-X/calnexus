@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! 求值步骤生成器（v1.1 新增）。
 //!
 //! 遍历 AST 以求值顺序生成步骤列表，每行格式 `lhs op rhs = partial_result`。
@@ -594,5 +596,126 @@ mod tests {
     fn steps_eval_unary_neg_nan() {
         let err = eval_unary(UnaryOp::Neg, f64::NAN).unwrap_err();
         assert_eq!(err, CalcError::NaNOrInf);
+    }
+
+    // ===== 覆盖 walk DepthExceeded 路径 =====
+
+    #[test]
+    fn steps_depth_exceeded_returns_error() {
+        // 构造 258 层嵌套加法，超过 MAX_DEPTH=256（line 43）
+        let mut ast = AstNode::Number(1.0);
+        for _ in 0..258 {
+            ast = AstNode::BinaryOp(BinaryOp::Add, Box::new(ast), Box::new(AstNode::Number(1.0)));
+        }
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert_eq!(err, CalcError::DepthExceeded);
+    }
+
+    // ===== 覆盖 BigNumber 叶节点路径 =====
+
+    #[test]
+    fn steps_bignumber_leaf_valid() {
+        // BigNumber 解析成功（lines 47-48）
+        let ast = AstNode::BigNumber("42".to_string());
+        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
+        assert!(steps.is_empty()); // 叶节点不输出步骤
+    }
+
+    #[test]
+    fn steps_bignumber_leaf_invalid() {
+        // BigNumber 解析失败（line 49）
+        let ast = AstNode::BigNumber("not_a_number".to_string());
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(matches!(err, CalcError::EvalError(_)));
+    }
+
+    // ===== 覆盖 eval_binary 边界路径 =====
+
+    #[test]
+    fn steps_zero_pow_negative_returns_error() {
+        // 0^(-1) → DivisionByZero（line 118）
+        let err = eval_binary(BinaryOp::Pow, 0.0, -1.0).unwrap_err();
+        assert_eq!(err, CalcError::DivisionByZero);
+    }
+
+    #[test]
+    fn steps_mod_by_zero_returns_error() {
+        // 10 % 0 → DivisionByZero（line 124）
+        let err = eval_binary(BinaryOp::Mod, 10.0, 0.0).unwrap_err();
+        assert_eq!(err, CalcError::DivisionByZero);
+    }
+
+    // ===== 覆盖 eval_function asin/acos/sqrt/ln/log10/log2 =====
+
+    #[test]
+    fn steps_asin_domain_error_and_success() {
+        // asin 越界 → DomainError（lines 175-179）
+        let err = eval_function("asin", &[2.0]).unwrap_err();
+        assert!(matches!(err, CalcError::DomainError(_)));
+        // asin 合法 → 返回值（line 181）
+        let result = eval_function("asin", &[0.5]).unwrap();
+        assert!((result - 0.5f64.asin()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn steps_acos_domain_error_and_success() {
+        // acos 越界 → DomainError（lines 184-188）
+        let err = eval_function("acos", &[2.0]).unwrap_err();
+        assert!(matches!(err, CalcError::DomainError(_)));
+        // acos 合法 → 返回值（line 190）
+        let result = eval_function("acos", &[0.5]).unwrap();
+        assert!((result - 0.5f64.acos()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn steps_sqrt_success() {
+        // sqrt(4) = 2（line 201，错误路径已覆盖）
+        let result = eval_function("sqrt", &[4.0]).unwrap();
+        assert!((result - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn steps_ln_success() {
+        // ln(1) = 0（line 211，错误路径已覆盖）
+        let result = eval_function("ln", &[1.0]).unwrap();
+        assert!((result - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn steps_log10_error_and_success() {
+        // log10(0) → DomainError（lines 214-218）
+        let err = eval_function("log10", &[0.0]).unwrap_err();
+        assert!(matches!(err, CalcError::DomainError(_)));
+        // log10(100) = 2（line 220）
+        let result = eval_function("log10", &[100.0]).unwrap();
+        assert!((result - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn steps_log2_error_and_success() {
+        // log2(0) → DomainError（lines 223-227）
+        let err = eval_function("log2", &[0.0]).unwrap_err();
+        assert!(matches!(err, CalcError::DomainError(_)));
+        // log2(8) = 3（line 229）
+        let result = eval_function("log2", &[8.0]).unwrap();
+        assert!((result - 3.0).abs() < 1e-10);
+    }
+
+    // ===== 覆盖 eval_function 返回 NaN/Inf 检查 =====
+
+    #[test]
+    fn steps_function_returns_nan_or_inf_error() {
+        // exp(1000) → Inf → NaNOrInf 错误（line 259）
+        let err = eval_function("exp", &[1000.0]).unwrap_err();
+        assert_eq!(err, CalcError::NaNOrInf);
+    }
+
+    // ===== 覆盖 lcm 零值路径 =====
+
+    #[test]
+    fn steps_lcm_with_zero() {
+        // lcm(0, 5) = 0（line 277）
+        let result = eval_function("lcm", &[0.0, 5.0]).unwrap();
+        assert_eq!(result, 0.0);
     }
 }

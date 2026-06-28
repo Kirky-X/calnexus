@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Performance regression tests (TEST.md §8, PERF-001 ~ PERF-005).
 //!
 //! 使用 `assert_cmd` + `std::time::Instant`（无新 dev-deps）。
@@ -21,11 +23,11 @@ fn perf_001_criterion_baseline_comparison() {
         return;
     }
     // 基线存在时，验证当前 benchmark 输出存在即可（详细比较由 PERF-002 完成）
+    // 注：不强制断言 current 存在——bench 可能尚未运行，仅作为基线存在的提示。
     let current = Path::new("target/criterion/main");
-    assert!(
-        current.exists() || true,
-        "current benchmark output may not exist yet — run `cargo bench` first"
-    );
+    if !current.exists() {
+        eprintln!("skipped: current benchmark output not found at target/criterion/main — run `cargo bench` first");
+    }
 }
 
 /// PERF-002: 若任一 benchmark 相对基线回归 >10%，则失败。

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! CalNexus 计算域集合。
 pub mod arithmetic;
 pub mod combinatorics;

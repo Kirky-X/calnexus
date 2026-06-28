@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! 表达式解析器：将数学表达式字符串解析为 [`AstNode`]。
 //!
 //! 基于 mathexpr crate，添加：
@@ -112,7 +114,7 @@ fn preprocess_complex(input: &str) -> Result<String, CalcError> {
             let re = caps.get(1).unwrap().as_str();
             let sign = caps.get(2).unwrap().as_str();
             let im = caps.get(3).unwrap().as_str();
-            format!("complex({},{})", re, format!("{}{}", sign, im))
+            format!("complex({re},{sign}{im})")
         })
         .to_string();
 
@@ -1504,6 +1506,57 @@ mod tests {
         assert_eq!(ast, call("diff", vec![var("x")]));
         // 确保不是 Mul(Variable("diff"), Variable("x"))
         assert!(!matches!(ast, AstNode::BinaryOp(BinaryOp::Mul, _, _)));
+    }
+
+    // ===== 覆盖 is_scientific_notation 各分支 =====
+
+    #[test]
+    fn test_is_scientific_notation_e_followed_by_digit() {
+        // e 后跟数字 → true（lines 559-561）
+        let chars: Vec<char> = "1e5".chars().collect();
+        assert!(is_scientific_notation(&chars, 1));
+    }
+
+    #[test]
+    fn test_is_scientific_notation_e_followed_by_plus_digit() {
+        // e+ 后跟数字 → true（lines 562-565）
+        let chars: Vec<char> = "1e+5".chars().collect();
+        assert!(is_scientific_notation(&chars, 1));
+    }
+
+    #[test]
+    fn test_is_scientific_notation_e_followed_by_minus_digit() {
+        // e- 后跟数字 → true（lines 562-565）
+        let chars: Vec<char> = "1e-5".chars().collect();
+        assert!(is_scientific_notation(&chars, 1));
+    }
+
+    #[test]
+    fn test_is_scientific_notation_e_followed_by_plus_non_digit() {
+        // e+ 后跟非数字 → false（lines 562-566）
+        let chars: Vec<char> = "1e+x".chars().collect();
+        assert!(!is_scientific_notation(&chars, 1));
+    }
+
+    #[test]
+    fn test_is_scientific_notation_e_at_end() {
+        // e 在字符串末尾 → false（lines 568-569）
+        let chars: Vec<char> = "1e".chars().collect();
+        assert!(!is_scientific_notation(&chars, 1));
+    }
+
+    #[test]
+    fn test_is_scientific_notation_e_plus_at_end() {
+        // e+ 在字符串末尾 → false（lines 566-569）
+        let chars: Vec<char> = "1e+".chars().collect();
+        assert!(!is_scientific_notation(&chars, 1));
+    }
+
+    #[test]
+    fn test_is_scientific_notation_e_followed_by_non_digit_non_sign() {
+        // e 后跟非数字非符号 → false（lines 568-569）
+        let chars: Vec<char> = "1ex".chars().collect();
+        assert!(!is_scientific_notation(&chars, 1));
     }
 
     // ===== proptest 属性测试（任务 2.5） =====

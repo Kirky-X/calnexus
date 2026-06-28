@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! LaTeX 输出格式化器（v1.1 新增）。
 //!
 //! 将 `EvalResult` 渲染为 LaTeX 字符串，覆盖所有变体：
@@ -558,5 +560,239 @@ mod tests {
     fn latex_ast_to_latex_expr_factorial() {
         let node = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         assert_eq!(ast_to_latex_expr(&node), Some("5!".to_string()));
+    }
+
+    // ===== 覆盖 format_latex_polynomial 各分支 =====
+
+    #[test]
+    fn latex_polynomial_leading_coef_one_x() {
+        // i==1, coef==1.0 → "x"（line 89）
+        assert_eq!(format_latex_polynomial(&[5.0, 1.0]), "x + 5");
+    }
+
+    #[test]
+    fn latex_polynomial_high_degree_neg_one_coef() {
+        // i>1, coef==-1.0 → "-x^{i}"（lines 99-100）
+        assert_eq!(format_latex_polynomial(&[0.0, 0.0, -1.0]), "-x^{2}");
+    }
+
+    #[test]
+    fn latex_polynomial_high_degree_general_coef() {
+        // i>1, coef 非 ±1.0 → "cx^{i}"（line 102）
+        assert_eq!(format_latex_polynomial(&[0.0, 0.0, 3.0]), "3x^{2}");
+    }
+
+    #[test]
+    fn latex_polynomial_negative_term_concatenation() {
+        // 非首项以 '-' 开头时直接拼接（line 114）
+        // [1, -2, 1] → "x^{2}-2x + 1"
+        assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2}-2x + 1");
+    }
+
+    // ===== 覆盖 format_latex_bigrational prec==0 分支 =====
+
+    #[test]
+    fn latex_bigrational_zero_precision() {
+        // prec==0 → 仅整数部分（line 152）
+        let r = num_rational::BigRational::new(
+            num_bigint::BigInt::from(7),
+            num_bigint::BigInt::from(2),
+        );
+        assert_eq!(format_latex_bigrational(&r, Some(0)), "3");
+    }
+
+    // ===== 覆盖 format_latex_symbolic 非 FunctionCall 与 series/taylor/unknown =====
+
+    #[test]
+    fn latex_symbolic_non_functioncall_ast() {
+        // ast 非 FunctionCall → 直接返回 result_latex（line 184）
+        let ast = AstNode::Number(0.0);
+        let s = format_latex_symbolic("diff", &ast, "2*x");
+        assert_eq!(s, "2 \\cdot x");
+    }
+
+    #[test]
+    fn latex_symbolic_series_branch() {
+        // series/taylor 分支（lines 240-245）
+        let ast = AstNode::FunctionCall(
+            "series".to_string(),
+            vec![AstNode::Variable("x".to_string())],
+        );
+        let s = format_latex_symbolic("series", &ast, "1+x+x^2");
+        assert!(s.contains("\\text{Taylor series of}"));
+        assert!(s.contains("x"));
+    }
+
+    #[test]
+    fn latex_symbolic_taylor_branch() {
+        // taylor 分支（lines 240-245）
+        let ast = AstNode::FunctionCall(
+            "taylor".to_string(),
+            vec![AstNode::Variable("x".to_string())],
+        );
+        let s = format_latex_symbolic("taylor", &ast, "1+x");
+        assert!(s.contains("\\text{Taylor series of}"));
+    }
+
+    #[test]
+    fn latex_symbolic_unknown_op() {
+        // 未知 op_name → 返回 result_latex（line 251）
+        let ast = AstNode::FunctionCall(
+            "unknown".to_string(),
+            vec![AstNode::Variable("x".to_string())],
+        );
+        let s = format_latex_symbolic("unknown", &ast, "42");
+        assert_eq!(s, "42");
+    }
+
+    // ===== 覆盖 ast_to_latex_expr 各分支 =====
+
+    #[test]
+    fn latex_ast_to_latex_expr_bignumber() {
+        // BigNumber → 原始字符串（line 259）
+        let node = AstNode::BigNumber("1234567890123456".to_string());
+        assert_eq!(
+            ast_to_latex_expr(&node),
+            Some("1234567890123456".to_string())
+        );
+    }
+
+    #[test]
+    fn latex_ast_to_latex_expr_add_sub_mul_mod() {
+        // Add/Sub/Mul/Mod 分支（lines 265-267, 270）
+        let add = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Variable("a".to_string())),
+            Box::new(AstNode::Variable("b".to_string())),
+        );
+        assert_eq!(ast_to_latex_expr(&add), Some("a + b".to_string()));
+
+        let sub = AstNode::BinaryOp(
+            BinaryOp::Sub,
+            Box::new(AstNode::Variable("a".to_string())),
+            Box::new(AstNode::Variable("b".to_string())),
+        );
+        assert_eq!(ast_to_latex_expr(&sub), Some("a - b".to_string()));
+
+        let mul = AstNode::BinaryOp(
+            BinaryOp::Mul,
+            Box::new(AstNode::Variable("a".to_string())),
+            Box::new(AstNode::Variable("b".to_string())),
+        );
+        assert_eq!(ast_to_latex_expr(&mul), Some("a \\cdot b".to_string()));
+
+        let modulo = AstNode::BinaryOp(
+            BinaryOp::Mod,
+            Box::new(AstNode::Variable("a".to_string())),
+            Box::new(AstNode::Variable("b".to_string())),
+        );
+        assert_eq!(ast_to_latex_expr(&modulo), Some("a \\bmod b".to_string()));
+    }
+
+    #[test]
+    fn latex_ast_to_latex_expr_abs() {
+        // UnaryOp::Abs → \left|...\right|（line 279）
+        let node = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Variable("x".to_string())));
+        assert_eq!(
+            ast_to_latex_expr(&node),
+            Some("\\left|x\\right|".to_string())
+        );
+    }
+
+    #[test]
+    fn latex_ast_to_latex_expr_function_call() {
+        // FunctionCall → name(args)（lines 282-284）
+        let node = AstNode::FunctionCall(
+            "sin".to_string(),
+            vec![AstNode::Number(0.0), AstNode::Variable("x".to_string())],
+        );
+        assert_eq!(ast_to_latex_expr(&node), Some("sin(0, x)".to_string()));
+    }
+
+    #[test]
+    fn latex_ast_to_latex_expr_unsupported_returns_none() {
+        // 不支持的节点类型 → None（line 286）
+        let node = AstNode::Complex(1.0, 2.0);
+        assert_eq!(ast_to_latex_expr(&node), None);
+
+        let node = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
+        assert_eq!(ast_to_latex_expr(&node), None);
+
+        let node = AstNode::List(vec![AstNode::Number(1.0)]);
+        assert_eq!(ast_to_latex_expr(&node), None);
+    }
+
+    // ===== 覆盖 format_latex 顶层分发各变体 =====
+
+    #[test]
+    fn latex_top_level_complex() {
+        // Complex 变体（line 310）
+        let r = EvalResult::Complex(3.0, 4.0);
+        let ast = AstNode::Number(0.0);
+        assert_eq!(format_latex(&r, &ast, "", None), "3 + 4i");
+    }
+
+    #[test]
+    fn latex_top_level_bigint() {
+        // BigInt 变体（line 312）
+        let r = EvalResult::BigInt(num_bigint::BigInt::from(42));
+        let ast = AstNode::Number(0.0);
+        assert_eq!(format_latex(&r, &ast, "", None), "42");
+    }
+
+    #[test]
+    fn latex_top_level_bigrational() {
+        // BigRational 变体（line 313）
+        let r = EvalResult::BigRational(num_rational::BigRational::new(
+            num_bigint::BigInt::from(1),
+            num_bigint::BigInt::from(3),
+        ));
+        let ast = AstNode::Number(0.0);
+        assert_eq!(format_latex(&r, &ast, "", None), "\\frac{1}{3}");
+    }
+
+    #[test]
+    fn latex_top_level_vector() {
+        // Vector 变体（line 314）
+        let r = EvalResult::Vector(vec![1.0, 2.0, 3.0]);
+        let ast = AstNode::Number(0.0);
+        assert_eq!(format_latex(&r, &ast, "", None), "\\left[1, 2, 3\\right]");
+    }
+
+    #[test]
+    fn latex_top_level_polynomial() {
+        // Polynomial 变体（line 315）
+        let r = EvalResult::Polynomial(vec![1.0, 2.0, 1.0]);
+        let ast = AstNode::Number(0.0);
+        assert_eq!(format_latex(&r, &ast, "", None), "x^{2} + 2x + 1");
+    }
+
+    #[test]
+    fn latex_top_level_complex_list() {
+        // ComplexList 变体（line 316）
+        let r = EvalResult::ComplexList(vec![(1.0, 2.0), (3.0, -4.0)]);
+        let ast = AstNode::Number(0.0);
+        assert_eq!(
+            format_latex(&r, &ast, "", None),
+            "\\left[1 + 2i, 3 - 4i\\right]"
+        );
+    }
+
+    // ===== 覆盖 Symbolic fallthrough 路径 =====
+
+    #[test]
+    fn latex_top_level_symbolic_non_matching_function() {
+        // Symbolic 变体，ast 为 FunctionCall 但 name 不在白名单（lines 325-327）
+        let r = EvalResult::Symbolic("2*x".to_string());
+        let ast = AstNode::FunctionCall("foo".to_string(), vec![]);
+        assert_eq!(format_latex(&r, &ast, "", None), "2 \\cdot x");
+    }
+
+    #[test]
+    fn latex_top_level_symbolic_non_function() {
+        // Symbolic 变体，ast 非 FunctionCall（line 327）
+        let r = EvalResult::Symbolic("2*x".to_string());
+        let ast = AstNode::Number(0.0);
+        assert_eq!(format_latex(&r, &ast, "", None), "2 \\cdot x");
     }
 }

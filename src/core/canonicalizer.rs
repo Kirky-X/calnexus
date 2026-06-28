@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! AST 规范化器：将解析后的 `AstNode` 转换为规范形式，用于 L1 缓存去重。
 //!
 //! 三大变换（design.md / tasks 3.3）：
@@ -303,7 +305,7 @@ mod tests {
 
     // 辅助函数：解析 + 规范化，返回 CanonicalForm 字符串
     fn canon(input: &str) -> Result<String, CalcError> {
-        let ast = parse(input).map_err(|e| e)?;
+        let ast = parse(input)?;
         let (_, cf) = AstCanonicalizer::canonicalize(&ast)?;
         Ok(cf.as_str().to_string())
     }
@@ -799,6 +801,49 @@ mod tests {
         assert_eq!(AstCanonicalizer::compare_nodes(&a, &b), Ordering::Less);
         assert_eq!(AstCanonicalizer::compare_nodes(&b, &a), Ordering::Greater);
         assert_eq!(AstCanonicalizer::compare_nodes(&a, &a), Ordering::Equal);
+    }
+
+    // ===== 覆盖 canonicalize_no_fold（transform_no_fold 分支） =====
+
+    #[test]
+    fn test_no_fold_double_negation_variable() {
+        // -(-x) → x（transform_no_fold 双重负号消除，lines 154-157）
+        let ast = parse("-(-x)").unwrap();
+        let (canon_ast, _) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(canon_ast, AstNode::Variable("x".to_string()));
+    }
+
+    #[test]
+    fn test_no_fold_matrix_literal() {
+        // 矩阵字面量：覆盖 transform_no_fold Matrix 分支（lines 168-177）
+        let ast = parse("[[1,2],[3,4]]").unwrap();
+        let (canon_ast, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(matrix (1 2) (3 4))");
+        // 验证不折叠：矩阵元素仍为 Number
+        match canon_ast {
+            AstNode::Matrix(rows) => assert_eq!(rows.len(), 2),
+            _ => panic!("expected matrix"),
+        }
+    }
+
+    #[test]
+    fn test_no_fold_list_literal() {
+        // 列表字面量：覆盖 transform_no_fold List 分支（lines 179-184）
+        let ast = parse("[1,2,3]").unwrap();
+        let (canon_ast, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(list 1 2 3)");
+        match canon_ast {
+            AstNode::List(elems) => assert_eq!(elems.len(), 3),
+            _ => panic!("expected list"),
+        }
+    }
+
+    #[test]
+    fn test_no_fold_preserves_constants() {
+        // 2+3 → (+ 2 3)（不折叠为 5，仅排序）
+        let ast = parse("3+2").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(+ 2 3)");
     }
 
     // ===== proptest 属性测试（任务 3.5） =====

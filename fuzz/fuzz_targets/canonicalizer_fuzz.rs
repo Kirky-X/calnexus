@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! FUZZ-004: 规范化器幂等性 — `canonicalize(canonicalize(x)) == canonicalize(x)`，不 panic。
 //!
 //! 运行：`cargo +nightly fuzz run canonicalizer_fuzz`

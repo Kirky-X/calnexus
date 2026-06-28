@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Cache benchmarks (TEST.md §6, BENCH-002 / BENCH-003).
 //!
 //! 运行：`cargo bench --bench cache_bench`
@@ -16,7 +18,7 @@ fn bench_cache_hit(c: &mut Criterion) {
         let ctx = EvalContext::new();
         // 预填充缓存：第一次求值写入
         let ast = parse(expr).expect("parse failed");
-        let (canonical_ast, _) = AstCanonicalizer::canonicalize(&ast).expect("canon failed");
+        let (_canonical_ast, _) = AstCanonicalizer::canonicalize(&ast).expect("canon failed");
         // 调用 evaluate 写入缓存
         let _ = calnexus::cli::evaluate(expr, &ctx, None, &cache);
 
@@ -45,7 +47,7 @@ fn bench_cache_miss(c: &mut Criterion) {
         let ctx = EvalContext::new();
         group.bench_with_input(BenchmarkId::from_parameter(expr), expr, |b, e| {
             b.iter_batched(
-                || CacheManager::new(),
+                CacheManager::new,
                 |cache| {
                     let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
                 },

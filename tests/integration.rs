@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
+#![allow(clippy::approx_constant, non_snake_case)]
+
 //! 跨能力集成测试：解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出全链路。
 //!
 //! 任务 9.1-9.3：使用真实 ArithmeticDomain + ScientificDomain 验证端到端管线。

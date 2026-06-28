@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Security tests (TEST.md §7, SEC-001 ~ SEC-010).
 //!
 //! 使用 `assert_cmd` + `predicates`（已有 dev-deps）。

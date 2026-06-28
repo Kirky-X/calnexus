@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Snapshot tests using `insta` (TEST.md §5, SNAP-001 ~ SNAP-008).
 //!
 //! Run with `cargo insta test --review` to lock snapshots.

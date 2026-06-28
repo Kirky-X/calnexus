@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! FUZZ-001: 任意 UTF-8 输入 → `parse()`，不应 panic。
 //!
 //! 运行：`cargo +nightly fuzz run parser_fuzz`

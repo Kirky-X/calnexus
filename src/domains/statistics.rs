@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Statistics 计算域：均值、方差、标准差、中位数、最值、求和、计数。
 //!
 //! 设计依据：
@@ -671,7 +673,7 @@ mod tests {
     #[test]
     fn test_default_impl() {
         // lines 203-205: Default impl
-        let domain = StatisticsDomain::default();
+        let domain = StatisticsDomain;
         assert_eq!(domain.domain_name(), "statistics");
         assert_eq!(domain.priority(), 20);
     }

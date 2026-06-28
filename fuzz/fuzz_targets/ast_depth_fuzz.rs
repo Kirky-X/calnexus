@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! FUZZ-002: 深度嵌套输入 → 应返回 DepthExceeded 或解析错误，不 panic / 不栈溢出。
 //!
 //! 运行：`cargo +nightly fuzz run ast_depth_fuzz`

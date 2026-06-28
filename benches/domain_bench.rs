@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Domain evaluation benchmarks (TEST.md §6, BENCH-004 ~ BENCH-008, BENCH-010).
 //!
 //! 运行：`cargo bench --bench domain_bench`
@@ -15,7 +17,7 @@ fn bench_arithmetic(c: &mut Criterion) {
         let ctx = EvalContext::new();
         group.bench_with_input(BenchmarkId::from_parameter(expr), expr, |b, e| {
             b.iter_batched(
-                || CacheManager::new(),
+                CacheManager::new,
                 |cache| {
                     let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
                 },
@@ -42,7 +44,7 @@ fn bench_scientific(c: &mut Criterion) {
         let ctx = EvalContext::new();
         group.bench_with_input(BenchmarkId::from_parameter(expr), expr, |b, e| {
             b.iter_batched(
-                || CacheManager::new(),
+                CacheManager::new,
                 |cache| {
                     let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
                 },
@@ -76,7 +78,7 @@ fn bench_matrix_100x100(c: &mut Criterion) {
     let mut group = c.benchmark_group("matrix_domain");
     group.bench_function("10x10_matrix", |b| {
         b.iter_batched(
-            || CacheManager::new(),
+            CacheManager::new,
             |cache| {
                 let _ = black_box(calnexus::cli::evaluate(&expr, &ctx, None, &cache));
             },
@@ -100,7 +102,7 @@ fn bench_symbolic_diff(c: &mut Criterion) {
         let ctx = EvalContext::new();
         group.bench_with_input(BenchmarkId::from_parameter(expr), expr, |b, e| {
             b.iter_batched(
-                || CacheManager::new(),
+                CacheManager::new,
                 |cache| {
                     let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
                 },
@@ -143,7 +145,7 @@ fn bench_is_prime(c: &mut Criterion) {
         let ctx = EvalContext::new();
         group.bench_with_input(BenchmarkId::from_parameter(expr), expr, |b, e| {
             b.iter_batched(
-                || CacheManager::new(),
+                CacheManager::new,
                 |cache| {
                     let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
                 },

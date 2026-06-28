@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! 批量处理：从文件或 stdin 并行求值表达式（TG5）。
 //!
 //! 设计依据：
@@ -264,7 +266,7 @@ mod tests {
     fn test_batch_run_comment_skipped() {
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp, "# this is a comment").unwrap();
-        writeln!(tmp, "").unwrap();
+        writeln!(tmp).unwrap();
         writeln!(tmp, "1+1").unwrap();
         tmp.flush().unwrap();
 
@@ -328,5 +330,46 @@ mod tests {
         let ctx = EvalContext::new();
         let code = BatchProcessor::run("/nonexistent/path/to/file.txt", &ctx, false);
         assert_eq!(code, 2);
+    }
+
+    #[test]
+    fn test_batch_line_exceeds_max_length() {
+        // 单行超过 MAX_EXPR_LEN=4096 → 返回 2（lines 55-61）
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        let long_line = "1+".repeat(2049); // 4098 字符，超过 4096
+        writeln!(tmp, "{}", long_line).unwrap();
+        tmp.flush().unwrap();
+
+        let ctx = EvalContext::new();
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        assert_eq!(code, 2);
+    }
+
+    #[test]
+    fn test_batch_count_exceeds_maximum() {
+        // 超过 MAX_BATCH_COUNT=1000 → 返回 2（lines 74-79）
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        for _ in 0..1001 {
+            writeln!(tmp, "1+1").unwrap();
+        }
+        tmp.flush().unwrap();
+
+        let ctx = EvalContext::new();
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        assert_eq!(code, 2);
+    }
+
+    #[test]
+    fn test_batch_json_output_with_error() {
+        // JSON 输出含错误条目：覆盖 JSON Err 分支（lines 130-136）
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "2+3").unwrap();
+        writeln!(tmp, "2++3").unwrap(); // 语法错误
+        tmp.flush().unwrap();
+
+        let ctx = EvalContext::new();
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, true);
+        // 部分失败 → 1
+        assert_eq!(code, 1);
     }
 }

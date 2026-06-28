@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Parser & canonicalizer benchmarks (TEST.md §6, BENCH-001 / BENCH-009).
 //!
 //! 运行：`cargo bench --bench parser_bench`

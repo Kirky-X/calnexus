@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! L1 缓存管理器：基于 oxcache 的进程内缓存，使用 BLAKE3 哈希规范形式生成缓存键。
 //!
 //! 设计依据：

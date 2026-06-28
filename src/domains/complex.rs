@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Complex 计算域：复数四则运算、模、幅角、共轭、复指数、复对数。
 //!
 //! 设计依据：

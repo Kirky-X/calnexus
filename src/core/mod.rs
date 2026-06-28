@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! CalNexus 核心引擎：表达式解析、AST 规范化、L1 缓存、域路由。
 //!
 //! 共享类型定义在 [`types`] 模块中，所有计算域和 CLI 共用这些类型。

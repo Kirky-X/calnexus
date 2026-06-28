@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
+#![allow(clippy::approx_constant, non_snake_case)]
+
 //! Property-based tests using `proptest` (TEST.md §4, PROP-001 ~ PROP-012).
 //!
 //! 每个 property 测试默认 256 cases；CI 可通过 `PROPTEST_CASES=1024` 提升。

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! CalNexus CLI：命令行数学表达式求值器。
 //!
 //! 全链路：Parser → Canonicalizer → CacheManager → DomainRouter → Domain::evaluate

@@ -1,9 +1,12 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
+#![allow(clippy::approx_constant, non_snake_case)]
+
 //! CLI 集成测试：使用 assert_cmd 执行真实二进制，验证 cli-interface spec。
 //!
 //! 覆盖 12 个 requirements / 23 个 scenarios。
 
 use assert_cmd::Command;
-use predicates;
 
 // ===== Requirement 1: Single Expression Evaluation =====
 
@@ -1182,3 +1185,43 @@ fn it_cli_canonical_batch_conflict_exit_2() {
 //   无法在集成测试中模拟。
 // - line 338：format_polynomial 空系数向量（p.is_empty()）。
 //   多项式域对所有输入至少返回 [0.0]，无法产生空向量。
+
+// ===== 覆盖 cli.rs --canonical / --latex / --steps 错误路径 =====
+
+/// `--canonical "2++3"` → 解析错误，退出码 1（lines 119-121）
+#[test]
+fn it_cli_canonical_parse_error_exit_1() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--canonical", "2++3"]).assert().failure().code(1);
+}
+
+// 注：lines 129-131（--canonical canonicalize 错误）不可覆盖：
+// canonicalize_no_fold 不做常量折叠，对任何合法解析 AST 均返回 Ok。
+
+/// `--latex "2++3"` → 解析错误，退出码 1（lines 138-140）
+#[test]
+fn it_cli_latex_parse_error_exit_1() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--latex", "2++3"]).assert().failure().code(1);
+}
+
+/// `--latex "1/0"` → 规范化错误，退出码 1（lines 145-147）
+#[test]
+fn it_cli_latex_canonicalize_error_exit_1() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--latex", "1/0"]).assert().failure().code(1);
+}
+
+/// `--steps "1/0"` → 步骤生成错误（除零），退出码 1（lines 159-161）
+#[test]
+fn it_cli_steps_div_zero_exit_1() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--steps", "1/0"]).assert().failure().code(1);
+}
+
+/// `--latex "sqrt(-1)"` → 求值错误（域错误），退出码 1（lines 174-176）
+#[test]
+fn it_cli_latex_eval_error_exit_1() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--latex", "sqrt(-1)"]).assert().failure().code(1);
+}

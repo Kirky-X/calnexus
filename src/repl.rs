@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! REPL 模式：基于 rustyline 的交互式读-求值-打印循环（TG4）。
 //!
 //! 设计依据：
@@ -508,5 +510,52 @@ mod tests {
         // 完全匹配时不补全（func == prefix 排除）
         let (_start, candidates) = complete_candidates("sin", 3);
         assert!(!candidates.contains(&"sin".to_string()));
+    }
+
+    #[test]
+    fn test_command_clear() {
+        // :clear 命令：打印 ANSI 清屏序列，返回 Continue
+        // 覆盖 lines 173-176（:clear 分支）
+        let mut session = ReplSession::new(EvalContext::new());
+        let result = session.handle_command(":clear");
+        assert!(matches!(result, CommandResult::Continue));
+    }
+
+    #[test]
+    fn test_handle_let_non_scalar_result() {
+        // :let x = 3+4i → evaluate 返回 Complex（非 Scalar）
+        // 覆盖 lines 222-226（Ok 分支但结果非 Scalar）
+        let mut session = ReplSession::new(EvalContext::new());
+        session.handle_let("x = 3+4i");
+        // 非标量结果不应绑定变量
+        assert!(session.ctx.get_var("x").is_none());
+    }
+
+    #[test]
+    fn test_handle_let_eval_error() {
+        // :let x = 2++3 → parse 失败 → evaluate 返回 Err
+        // 覆盖 lines 228-230（evaluate 错误分支）
+        let mut session = ReplSession::new(EvalContext::new());
+        session.handle_let("x = 2++3");
+        // 求值失败不应绑定变量
+        assert!(session.ctx.get_var("x").is_none());
+    }
+
+    #[test]
+    fn test_complete_candidates_pos_not_at_end() {
+        // 光标不在行尾时直接返回空候选
+        // 覆盖 line 315（pos != line.len()）
+        let (start, candidates) = complete_candidates("sin", 1);
+        assert_eq!(start, 0);
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_complete_candidates_empty_prefix() {
+        // 行尾为非标识符字符时，提取的前缀为空 → 返回空候选
+        // 覆盖 line 339（prefix.is_empty()）
+        let (start, candidates) = complete_candidates("(", 1);
+        assert_eq!(start, 0);
+        assert!(candidates.is_empty());
     }
 }

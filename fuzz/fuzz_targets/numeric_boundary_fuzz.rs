@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! FUZZ-005: 数值边界 — NaN/Inf 输入应返回 CalcError，不 panic。
 //!
 //! 运行：`cargo +nightly fuzz run numeric_boundary_fuzz`

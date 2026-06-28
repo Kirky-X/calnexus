@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Matrix 计算域：矩阵加减乘、行列式、转置、逆、单位矩阵。
 //!
 //! 设计依据：
@@ -412,7 +414,7 @@ mod tests {
                         "col count mismatch at row {}",
                         i
                     );
-                    for (_j, (a, e)) in actual_row.iter().zip(expected_row.iter()).enumerate() {
+                    for (a, e) in actual_row.iter().zip(expected_row.iter()) {
                         assert_approx(*a, *e);
                     }
                 }

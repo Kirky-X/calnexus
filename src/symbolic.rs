@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Symbolic 计算域：符号微分、积分、化简、极限、泰勒级数。
 //!
 //! 设计依据：
@@ -63,12 +65,12 @@ impl SymbolicExpr {
 
     /// 是否为零常数。
     fn is_zero(&self) -> bool {
-        self.as_const().map_or(false, |v| v == 0.0)
+        self.as_const() == Some(0.0)
     }
 
     /// 是否为一常数。
     fn is_one(&self) -> bool {
-        self.as_const().map_or(false, |v| v == 1.0)
+        self.as_const() == Some(1.0)
     }
 }
 
@@ -2461,7 +2463,7 @@ mod tests {
     #[test]
     fn test_symbolic_domain_default() {
         // 覆盖 lines 854-856: Default impl
-        let domain = SymbolicDomain::default();
+        let domain = SymbolicDomain;
         assert_eq!(domain.domain_name(), "symbolic");
         assert_eq!(domain.priority(), 30);
     }

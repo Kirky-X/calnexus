@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! CalNexus 共享类型：所有计算域、解析器、缓存、CLI 共用。
 //!
 //! 设计依据：

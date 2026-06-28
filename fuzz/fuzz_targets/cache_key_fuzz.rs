@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! FUZZ-003: 缓存键生成不应 panic，且等价表达式应产生相同键（无哈希碰撞 panic）。
 //!
 //! 运行：`cargo +nightly fuzz run cache_key_fuzz`

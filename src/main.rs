@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 #[cfg(feature = "cli")]
 fn main() {
     let exit_code = calnexus::cli::run();

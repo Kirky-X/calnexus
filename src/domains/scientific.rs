@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Scientific 计算域：三角函数、反三角函数、对数、指数、双曲函数、特殊函数。
 //!
 //! 设计依据：
@@ -19,14 +21,14 @@ const SCIENTIFIC_FUNCTIONS: &[&str] = &[
 /// Lanczos 逼近系数（g=7, n=9），用于 gamma 函数。
 const LANCZOS_G: f64 = 7.0;
 const LANCZOS_COEF: [f64; 9] = [
-    0.99999999999980993,
+    0.999_999_999_999_809_9,
     676.5203681218851,
     -1259.1392167224028,
-    771.32342877765313,
-    -176.61502916214059,
+    771.323_428_777_653_1,
+    -176.615_029_162_140_6,
     12.507343278686905,
     -0.13857109526572012,
-    9.9843695780195716e-6,
+    9.984_369_578_019_572e-6,
     1.5056327351493116e-7,
 ];
 
@@ -183,7 +185,7 @@ impl ScientificDomain {
             // ===== 反三角函数 =====
             "asin" => {
                 let x = self.eval_one_arg(name, args, ctx)?;
-                if x < -1.0 || x > 1.0 {
+                if !(-1.0..=1.0).contains(&x) {
                     return Err(CalcError::DomainError(format!(
                         "asin requires argument in [-1, 1], got {}",
                         x
@@ -193,7 +195,7 @@ impl ScientificDomain {
             }
             "acos" => {
                 let x = self.eval_one_arg(name, args, ctx)?;
-                if x < -1.0 || x > 1.0 {
+                if !(-1.0..=1.0).contains(&x) {
                     return Err(CalcError::DomainError(format!(
                         "acos requires argument in [-1, 1], got {}",
                         x
@@ -957,7 +959,7 @@ mod tests {
     #[test]
     fn test_default_impl() {
         // lines 322-324: Default impl
-        let domain = ScientificDomain::default();
+        let domain = ScientificDomain;
         assert_eq!(domain.domain_name(), "scientific");
         assert_eq!(domain.priority(), 20);
     }

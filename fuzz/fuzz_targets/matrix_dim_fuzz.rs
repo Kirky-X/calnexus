@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! FUZZ-006: 矩阵维度验证 — 任意维度矩阵不应导致 OOM，应被合理拒绝或处理。
 //!
 //! 运行：`cargo +nightly fuzz run matrix_dim_fuzz`

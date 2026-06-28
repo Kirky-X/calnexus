@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Arithmetic 计算域：四则运算、幂、阶乘、取模、绝对值。
 //!
 //! 设计依据：
@@ -579,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        let domain = ArithmeticDomain::default();
+        let domain = ArithmeticDomain;
         assert_eq!(domain.domain_name(), "arithmetic");
         assert_eq!(domain.priority(), 10);
     }

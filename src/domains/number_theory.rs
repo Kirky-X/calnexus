@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! NumberTheory 计算域：GCD、LCM、素数判定、素数筛、模逆、模幂、欧拉函数。
 //!
 //! 设计依据：
@@ -200,7 +202,7 @@ impl NumberTheoryDomain {
                         "negative exponent not supported for integers".to_string(),
                     ));
                 }
-                let exp: u32 = b.to_u32().ok_or_else(|| CalcError::Overflow)?;
+                let exp: u32 = b.to_u32().ok_or(CalcError::Overflow)?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {
@@ -277,7 +279,7 @@ impl NumberTheoryDomain {
                         "prime_sieve() requires non-negative argument".to_string(),
                     ));
                 }
-                let n_u64 = n.to_u64().ok_or_else(|| CalcError::Overflow)?;
+                let n_u64 = n.to_u64().ok_or(CalcError::Overflow)?;
                 let primes = prime_sieve_u64(n_u64);
                 Ok(EvalResult::Vector(
                     primes.into_iter().map(|p| p as f64).collect(),
@@ -836,7 +838,7 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        let domain = NumberTheoryDomain::default();
+        let domain = NumberTheoryDomain;
         assert_eq!(domain.domain_name(), "number_theory");
     }
 
@@ -1470,7 +1472,7 @@ mod tests {
             );
             let domain = NumberTheoryDomain;
             let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
-            prop_assert_eq!(result.as_scalar().unwrap(), (a.abs() as f64));
+            prop_assert_eq!(result.as_scalar().unwrap(), a.abs() as f64);
         }
 
         /// 属性：lcm(a,b) * gcd(a,b) == |a*b|

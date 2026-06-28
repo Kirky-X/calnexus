@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Precision 计算域：大整数运算、精确分数、高精度小数。
 //!
 //! 设计依据：

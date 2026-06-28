@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Combinatorics 计算域：排列 P、组合 C、Catalan 数、Stirling 数。
 //!
 //! 设计依据：
@@ -166,7 +168,7 @@ impl CombinatoricsDomain {
                         "negative exponent not supported for integers".to_string(),
                     ));
                 }
-                let exp: u32 = b.to_u32().ok_or_else(|| CalcError::Overflow)?;
+                let exp: u32 = b.to_u32().ok_or(CalcError::Overflow)?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {
@@ -624,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        let domain = CombinatoricsDomain::default();
+        let domain = CombinatoricsDomain;
         assert_eq!(domain.domain_name(), "combinatorics");
     }
 

@@ -12,33 +12,42 @@ repository = "https://github.com/kirky-x/calnexus"
 readme = "README.md"
 
 [features]
+default = []
 cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
 
 [dependencies]
+# 解析器
 mathexpr = "0.1"
+# 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
 oxcache = { version = "0.2", features = ["core"], default-features = false }
-blake3 = "1"
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["rt"] }
-regex = "1"
-num-complex = "0.4"
-nalgebra = "0.33"
-num-bigint = { version = "0.4", features = ["serde"] }
-num-rational = { version = "0.4", features = ["serde"] }
-num-integer = "0.1"
-num-traits = "0.2"
-clap = { version = "4", features = ["derive"], optional = true }
-rustyline = { version = "14", features = ["derive"], optional = true }
+# 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
+blake3 = { version = "1", default-features = false, features = ["std"] }
+# 序列化（仅 std + derive，禁用默认的 unstable 特性）
+serde = { version = "1", default-features = false, features = ["std", "derive"] }
+# tokio 运行时（仅 rt，禁用默认的 full）
+tokio = { version = "1", default-features = false, features = ["rt"] }
+# 正则表达式（仅 std + unicode-perl，禁用默认的 perf-cache/perf-inline 等）
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+# 数值计算（均禁用默认特性，仅启用 std + serde）
+num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
+nalgebra = { version = "0.33", default-features = false, features = ["std"] }
+num-bigint = { version = "0.4", default-features = false, features = ["std", "serde"] }
+num-rational = { version = "0.4", default-features = false, features = ["std", "serde", "num-bigint"] }
+num-integer = { version = "0.1", default-features = false, features = ["std"] }
+num-traits = { version = "0.2", default-features = false, features = ["std"] }
+# CLI 依赖（仅启用必要特性，禁用默认的 color/env 等）
+clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
+rustyline = { version = "14", default-features = false, features = ["derive"], optional = true }
 rayon = { version = "1", optional = true }
 
 [dev-dependencies]
-proptest = "1"
+proptest = { version = "1", default-features = false, features = ["std"] }
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
-serde_json = "1"
-insta = "1"
-criterion = "0.5"
+serde_json = { version = "1", default-features = false, features = ["std"] }
+insta = { version = "1", default-features = false }
+criterion = { version = "0.5", default-features = false, features = ["plotters"] }
 expectrl = "0.8"
 
 [lints.rust]

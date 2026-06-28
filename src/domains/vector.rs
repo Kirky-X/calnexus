@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Vector 计算域：向量算术、点积、叉积、模长、夹角、混合积、归一化。
 //!
 //! 设计依据：
@@ -361,7 +363,7 @@ impl VectorDomain {
                         "scalar_triple() requires 3-dimensional vectors".to_string(),
                     ));
                 }
-                let cross = vec![
+                let cross = [
                     a[1] * b[2] - a[2] * b[1],
                     a[2] * b[0] - a[0] * b[2],
                     a[0] * b[1] - a[1] * b[0],
@@ -651,7 +653,7 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        let domain = VectorDomain::default();
+        let domain = VectorDomain;
         assert_eq!(domain.domain_name(), "vector");
     }
 
@@ -1184,6 +1186,43 @@ mod tests {
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(CalcError::EvalError(_))));
+    }
+
+    // ===== 覆盖 eval_node 裸 Number / UnaryOp::Neg 非列表 / Div 成功 =====
+
+    #[test]
+    fn test_eval_node_bare_number() {
+        // eval_node 直接处理 Number → Scalar（line 64）
+        let ast = AstNode::Number(42.0);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 42.0);
+    }
+
+    #[test]
+    fn test_eval_node_unary_neg_non_list() {
+        // UnaryOp::Neg 非列表操作数 → 标量取反（lines 100-101）
+        let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), -5.0);
+    }
+
+    #[test]
+    fn test_eval_scalar_binary_div_success() {
+        // eval_scalar_binary Div 成功路径 b != 0（lines 171-172）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Number(10.0)),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_contains_vector_arithmetic_in_matrix() {
+        // contains_vector_arithmetic Matrix 分支（line 431）
+        let ast = AstNode::Matrix(vec![vec![parse("[1,2]+[3,4]").unwrap()]]);
+        assert!(VectorDomain.supports(&ast));
     }
 
     // ===== proptest 属性测试 =====

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+
 //! Polynomial 计算域：多项式算术、求值、求根、微分、积分、因式分解。
 //!
 //! 设计依据：
@@ -497,8 +499,8 @@ fn poly_diff_coeffs(coeffs: &[f64]) -> Vec<f64> {
         return vec![0.0];
     }
     let mut result = Vec::with_capacity(coeffs.len() - 1);
-    for i in 1..coeffs.len() {
-        result.push(coeffs[i] * i as f64);
+    for (i, &c) in coeffs.iter().enumerate().skip(1) {
+        result.push(c * i as f64);
     }
     result
 }
@@ -1213,7 +1215,7 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        let domain = PolynomialDomain::default();
+        let domain = PolynomialDomain;
         assert_eq!(domain.domain_name(), "polynomial");
     }
 
