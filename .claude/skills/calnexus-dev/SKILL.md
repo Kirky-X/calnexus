@@ -14,6 +14,10 @@ CalNexus 是一个 Rust 原生的命令行数学表达式求值引擎，统一 1
 ## 构建与安装
 
 ```bash
+# 从代码仓库克隆
+git clone https://github.com/kirky-x/calnexus.git
+cd calnexus
+
 # 安装到 ~/.cargo/bin
 cargo install --path . --features cli
 

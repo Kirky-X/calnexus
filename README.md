@@ -1,9 +1,6 @@
 # CalNexus
 
-[![version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/kirky-x/calnexus)
-[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
-[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)
-[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+[![version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/kirky-x/calnexus)[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
 
 一个具备 11 个计算域、符号微积分、REPL 与批量处理的命令行数学表达式求值器。
 
@@ -90,19 +87,22 @@
 
 ## 架构
 
-```
-parse() → AstCanonicalizer → CacheManager → DomainRouter → Domain::evaluate()
-  │            │                    │              │                │
-  │            │                    │              │                ├─ ArithmeticDomain
-  │            │                    │              │                ├─ ScientificDomain
-  │            │                    │              │                ├─ PrecisionDomain
-  │            │                    │              │                ├─ NumberTheoryDomain
-  │            │                    │              │                ├─ CombinatoricsDomain
-  │            │                    │              │                ├─ PolynomialDomain
-  │            │                    │              │                ├─ ComplexDomain
-  │            │                    │              │                ├─ MatrixDomain
-  │            │                    │              │                ├─ VectorDomain
-  │            │                    │              │                └─ SymbolicDomain
+```mermaid
+graph TD
+    A[parse] --> B[AstCanonicalizer]
+    B --> C[CacheManager]
+    C --> D[DomainRouter]
+    D --> E[Domain::evaluate]
+    E --> F[ArithmeticDomain]
+    E --> G[ScientificDomain]
+    E --> H[PrecisionDomain]
+    E --> I[NumberTheoryDomain]
+    E --> J[CombinatoricsDomain]
+    E --> K[PolynomialDomain]
+    E --> L[ComplexDomain]
+    E --> M[MatrixDomain]
+    E --> N[VectorDomain]
+    E --> O[SymbolicDomain]
 ```
 
 核心模块说明：
