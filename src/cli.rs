@@ -254,25 +254,7 @@ pub fn run() -> i32 {
                         }
                     }
                 } else {
-                    match &result {
-                        EvalResult::Scalar(v) => println!("{}", v),
-                        EvalResult::Complex(re, im) => println!("{}", format_complex(*re, *im)),
-                        EvalResult::Matrix(m) => println!("{}", format_matrix(m)),
-                        EvalResult::BigInt(b) => println!("{}", b),
-                        EvalResult::BigRational(r) => {
-                            println!("{}", format_bigrational(r, fmt_prec))
-                        }
-                        EvalResult::Vector(v) => println!("{}", format_vector(v)),
-                        EvalResult::Polynomial(p) => println!("{}", format_polynomial(p)),
-                        EvalResult::ComplexList(c) => println!("{}", format_complex_list(c)),
-                        EvalResult::Symbolic(s) => println!("{}", s),
-                        EvalResult::LaTeX(s) => println!("{}", s),
-                        EvalResult::Steps(v) => {
-                            for line in v {
-                                println!("{}", line);
-                            }
-                        }
-                    }
+                    println!("{}", format_result(&result, fmt_prec));
                 }
                 0
             }

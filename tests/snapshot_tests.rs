@@ -5,11 +5,14 @@
 //! Run with `cargo insta test --review` to lock snapshots.
 //! Snapshots live in `tests/snapshots/`.
 
-use assert_cmd::Command;
+mod common;
+
+use common::calnexus_cli;
 use std::path::Path;
 
-fn calnexus() -> Command {
-    let mut cmd = Command::cargo_bin("calnexus").expect("calnexus binary not found");
+/// 构建 calnexus CLI Command，并设置 INSTA_UPDATE=no（snapshot 测试专用）。
+fn calnexus() -> assert_cmd::Command {
+    let mut cmd = calnexus_cli();
     cmd.env("INSTA_UPDATE", "no");
     cmd
 }

@@ -5,13 +5,11 @@
 //! 使用 `assert_cmd` + `predicates`（已有 dev-deps）。
 //! 通过 CLI 二进制 + 库 API 双重验证安全边界。
 
-use assert_cmd::Command;
+mod common;
+use common::calnexus_cli;
+
 use calnexus::{parse, CacheManager, EvalContext};
 use std::time::Instant;
-
-fn calnexus_cli() -> Command {
-    Command::cargo_bin("calnexus").expect("calnexus binary not found")
-}
 
 /// SEC-001: 表达式注入 — shell 元字符被词法白名单拒绝。
 /// `"; rm -rf /"` 应在词法阶段被拒绝（退出码 1），不进入 shell。

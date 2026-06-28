@@ -9,14 +9,13 @@
 //! 约束：单条 ≤ 4096 字符、总条数 ≤ 1000；超限返回错误并标明行号。
 //! 流程：读取 → 解析验证 → 预规范化（串行）→ 并行求值（rayon）→ 按序输出 + 缓存统计。
 
-use crate::cli::{build_default_router, evaluate, format_result};
+use crate::cli::{evaluate, format_result};
+use crate::core::parser::MAX_EXPR_LEN;
 use crate::core::types::{EvalContext, EvalResult};
 use rayon::prelude::*;
 use std::io::{self, BufRead, Read};
 use std::time::Instant;
 
-/// 单条表达式最大长度（与 parser 一致）。
-const MAX_EXPR_LEN: usize = 4096;
 /// 批量最大条数。
 const MAX_BATCH_COUNT: usize = 1000;
 
@@ -81,8 +80,6 @@ impl BatchProcessor {
 
         // 3. 并行求值（TG5.3）：每个表达式独立走全链路
         let cache = crate::CacheManager::new();
-        let router = build_default_router();
-        let _ = &router; // 确认路由器可用
 
         let results: Vec<BatchResult> = entries
             .par_iter()

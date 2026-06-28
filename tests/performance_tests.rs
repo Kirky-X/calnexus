@@ -5,13 +5,11 @@
 //! 使用 `assert_cmd` + `std::time::Instant`（无新 dev-deps）。
 //! PRD §5.1 性能目标 + 2x CI headroom。
 
-use assert_cmd::Command;
+mod common;
+use common::calnexus_cli;
+
 use std::path::Path;
 use std::time::{Duration, Instant};
-
-fn calnexus_cli() -> Command {
-    Command::cargo_bin("calnexus").expect("calnexus binary not found")
-}
 
 /// PERF-001: criterion 基线比较。
 /// 若 `target/criterion/main.baseline` 不存在，跳过测试。

@@ -10,30 +10,12 @@
 //! - 9.2 L1 缓存去重（交换律等价 / 常量折叠等价 共享缓存）
 //! - 9.3 错误传播链（7 种 CalcError 各自正确传播）
 
-use calnexus::{
-    parse, ArithmeticDomain, AstCanonicalizer, CacheManager, CalcError, CombinatoricsDomain,
-    ComplexDomain, DomainRouter, EvalContext, EvalResult, MatrixDomain, NumberTheoryDomain,
-    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
-    VectorDomain,
-};
+mod common;
+use common::default_router;
 
-/// 构建默认路由器：注册 v1.0 全部 11 个域（含 SymbolicDomain）。
-/// 优先级降序：Complex/Matrix/Vector (30+) > Symbolic (30) > Precision/NumberTheory/Combinatorics/Polynomial (25) > Statistics/Scientific (20) > Arithmetic (10)。
-fn default_router() -> DomainRouter {
-    let mut router = DomainRouter::new();
-    router.register(Box::new(PrecisionDomain));
-    router.register(Box::new(ComplexDomain));
-    router.register(Box::new(MatrixDomain));
-    router.register(Box::new(VectorDomain));
-    router.register(Box::new(SymbolicDomain));
-    router.register(Box::new(NumberTheoryDomain));
-    router.register(Box::new(CombinatoricsDomain));
-    router.register(Box::new(PolynomialDomain));
-    router.register(Box::new(ScientificDomain));
-    router.register(Box::new(StatisticsDomain));
-    router.register(Box::new(ArithmeticDomain));
-    router
-}
+use calnexus::{
+    parse, AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult, PrecisionDomain,
+};
 
 /// 全链路求值（无变量绑定）：parse → canonicalize → cache → route → evaluate。
 /// 仅用于标量结果；非标量结果返回 EvalError。

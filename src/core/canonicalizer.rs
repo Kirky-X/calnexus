@@ -48,21 +48,34 @@ impl AstCanonicalizer {
     /// 递归变换 AST（排序 + 折叠 + 一元归一化）。
     ///
     /// 变换顺序（bottom-up）：先递归变换子节点，再对当前节点应用：
-    /// 1. 常量折叠（全常量子树 → 单个 Number）
+    /// 1. 常量折叠（全常量子树 → 单个 Number，仅当 `fold_constants = true`）
     /// 2. 交换律排序（Add/Mul 操作数按规范顺序）
-    /// 3. 一元归一化（双重负号消除、一元常量折叠）
-    fn transform(ast: &AstNode) -> Result<AstNode, CalcError> {
+    /// 3. 一元归一化（双重负号消除始终执行；一元常量折叠仅当 `fold_unary = true`）
+    ///
+    /// `transform` 与 `transform_no_fold` 的全部差异通过两个布尔参数控制：
+    /// - `transform`           = `transform_inner(ast, true,  true)`
+    /// - `transform_no_fold`   = `transform_inner(ast, false, false)`
+    ///
+    /// 双重负号消除（`--x → x`）属于结构性归一化，两个公开入口均执行，
+    /// 因此**不**由 `fold_unary` 控制。
+    fn transform_inner(
+        ast: &AstNode,
+        fold_constants: bool,
+        fold_unary: bool,
+    ) -> Result<AstNode, CalcError> {
         match ast {
             AstNode::Number(_)
             | AstNode::Variable(_)
             | AstNode::Complex(_, _)
             | AstNode::BigNumber(_) => Ok(ast.clone()),
             AstNode::BinaryOp(op, l, r) => {
-                let l = Self::transform(l)?;
-                let r = Self::transform(r)?;
-                // 常量折叠：两操作数均为 Number
-                if let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
-                    return Self::eval_binary(*op, *a, *b).map(AstNode::Number);
+                let l = Self::transform_inner(l, fold_constants, fold_unary)?;
+                let r = Self::transform_inner(r, fold_constants, fold_unary)?;
+                // 常量折叠：两操作数均为 Number（仅当 fold_constants = true）
+                if fold_constants {
+                    if let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
+                        return Self::eval_binary(*op, *a, *b).map(AstNode::Number);
+                    }
                 }
                 // 交换律排序：仅 Add 和 Mul
                 let (l, r) = match op {
@@ -78,17 +91,19 @@ impl AstCanonicalizer {
                 Ok(AstNode::BinaryOp(*op, Box::new(l), Box::new(r)))
             }
             AstNode::UnaryOp(op, e) => {
-                let e = Self::transform(e)?;
-                // 双重负号消除：--x → x
+                let e = Self::transform_inner(e, fold_constants, fold_unary)?;
+                // 双重负号消除：--x → x（结构性归一化，始终执行）
                 if *op == UnaryOp::Neg {
                     if let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e {
                         return Ok((**inner).clone());
                     }
                 }
-                // 一元常量折叠：Neg(Number(n)) → Number(-n)
-                if let AstNode::Number(n) = &e {
-                    if *op == UnaryOp::Neg {
-                        return Ok(AstNode::Number(-*n));
+                // 一元常量折叠：Neg(Number(n)) → Number(-n)（仅当 fold_unary = true）
+                if fold_unary {
+                    if let AstNode::Number(n) = &e {
+                        if *op == UnaryOp::Neg {
+                            return Ok(AstNode::Number(-*n));
+                        }
                     }
                 }
                 Ok(AstNode::UnaryOp(*op, Box::new(e)))
@@ -96,7 +111,7 @@ impl AstCanonicalizer {
             AstNode::FunctionCall(name, args) => {
                 let mut transformed_args = Vec::with_capacity(args.len());
                 for arg in args {
-                    transformed_args.push(Self::transform(arg)?);
+                    transformed_args.push(Self::transform_inner(arg, fold_constants, fold_unary)?);
                 }
                 Ok(AstNode::FunctionCall(name.clone(), transformed_args))
             }
@@ -105,7 +120,11 @@ impl AstCanonicalizer {
                 for row in rows {
                     let mut transformed_row = Vec::with_capacity(row.len());
                     for elem in row {
-                        transformed_row.push(Self::transform(elem)?);
+                        transformed_row.push(Self::transform_inner(
+                            elem,
+                            fold_constants,
+                            fold_unary,
+                        )?);
                     }
                     transformed_rows.push(transformed_row);
                 }
@@ -114,11 +133,16 @@ impl AstCanonicalizer {
             AstNode::List(elements) => {
                 let mut transformed = Vec::with_capacity(elements.len());
                 for elem in elements {
-                    transformed.push(Self::transform(elem)?);
+                    transformed.push(Self::transform_inner(elem, fold_constants, fold_unary)?);
                 }
                 Ok(AstNode::List(transformed))
             }
         }
+    }
+
+    /// 递归变换 AST（排序 + 折叠 + 一元归一化）。
+    fn transform(ast: &AstNode) -> Result<AstNode, CalcError> {
+        Self::transform_inner(ast, true, true)
     }
 
     /// 递归变换 AST（**仅排序 + 一元归一化，不折叠常量**）。
@@ -126,64 +150,7 @@ impl AstCanonicalizer {
     /// 与 `transform` 的区别：跳过常量折叠步骤，保留 `2+3`、`3+2` 为
     /// `(+ 2 3)`、`(+ 2 3)`（排序后相同），用于 `--canonical` 展示。
     fn transform_no_fold(ast: &AstNode) -> Result<AstNode, CalcError> {
-        match ast {
-            AstNode::Number(_)
-            | AstNode::Variable(_)
-            | AstNode::Complex(_, _)
-            | AstNode::BigNumber(_) => Ok(ast.clone()),
-            AstNode::BinaryOp(op, l, r) => {
-                let l = Self::transform_no_fold(l)?;
-                let r = Self::transform_no_fold(r)?;
-                // 交换律排序：仅 Add 和 Mul（不折叠）
-                let (l, r) = match op {
-                    BinaryOp::Add | BinaryOp::Mul => {
-                        if Self::compare_nodes(&l, &r) == Ordering::Greater {
-                            (r, l)
-                        } else {
-                            (l, r)
-                        }
-                    }
-                    _ => (l, r),
-                };
-                Ok(AstNode::BinaryOp(*op, Box::new(l), Box::new(r)))
-            }
-            AstNode::UnaryOp(op, e) => {
-                let e = Self::transform_no_fold(e)?;
-                // 双重负号消除：--x → x（保留此归一化）
-                if *op == UnaryOp::Neg {
-                    if let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e {
-                        return Ok((**inner).clone());
-                    }
-                }
-                // 不做一元常量折叠：保留 Neg(Number(n)) 形式
-                Ok(AstNode::UnaryOp(*op, Box::new(e)))
-            }
-            AstNode::FunctionCall(name, args) => {
-                let mut transformed_args = Vec::with_capacity(args.len());
-                for arg in args {
-                    transformed_args.push(Self::transform_no_fold(arg)?);
-                }
-                Ok(AstNode::FunctionCall(name.clone(), transformed_args))
-            }
-            AstNode::Matrix(rows) => {
-                let mut transformed_rows = Vec::with_capacity(rows.len());
-                for row in rows {
-                    let mut transformed_row = Vec::with_capacity(row.len());
-                    for elem in row {
-                        transformed_row.push(Self::transform_no_fold(elem)?);
-                    }
-                    transformed_rows.push(transformed_row);
-                }
-                Ok(AstNode::Matrix(transformed_rows))
-            }
-            AstNode::List(elements) => {
-                let mut transformed = Vec::with_capacity(elements.len());
-                for elem in elements {
-                    transformed.push(Self::transform_no_fold(elem)?);
-                }
-                Ok(AstNode::List(transformed))
-            }
-        }
+        Self::transform_inner(ast, false, false)
     }
 
     /// 求值二元运算（常量折叠用），检测除零与 NaN/Inf。

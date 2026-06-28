@@ -13,7 +13,7 @@
 //! - `:help` — 显示帮助
 //! - `:clear` — 清屏
 
-use crate::cli::{build_default_router, evaluate, format_result};
+use crate::cli::{evaluate, format_result};
 use crate::core::types::{EvalContext, EvalResult};
 use rustyline::completion::Completer;
 use rustyline::{Editor, Helper, Highlighter, Hinter, Result as RlResult, Validator};
@@ -111,9 +111,6 @@ impl ReplSession {
     /// 读取输入 → 若 `:` 开头解析为 REPL 命令 → 否则 parse → evaluate → 打印结果。
     /// 错误打印到 stderr 但不退出。返回退出码 0。
     pub fn run(mut self) -> i32 {
-        // 确认路由器可构建（提前发现注册错误）
-        let _router = build_default_router();
-
         let mut rl: Editor<ReplHelper, _> = Editor::new().expect("failed to init rustyline Editor");
         rl.set_helper(Some(ReplHelper));
 

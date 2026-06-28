@@ -144,7 +144,16 @@ impl EvalResult {
     pub fn as_bigint(&self) -> Option<&num_bigint::BigInt> {
         match self {
             EvalResult::BigInt(b) => Some(b),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -152,7 +161,16 @@ impl EvalResult {
     pub fn as_bigrational(&self) -> Option<&num_rational::BigRational> {
         match self {
             EvalResult::BigRational(r) => Some(r),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -160,7 +178,16 @@ impl EvalResult {
     pub fn as_vector(&self) -> Option<&Vec<f64>> {
         match self {
             EvalResult::Vector(v) => Some(v),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -168,7 +195,16 @@ impl EvalResult {
     pub fn as_polynomial(&self) -> Option<&Vec<f64>> {
         match self {
             EvalResult::Polynomial(p) => Some(p),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -176,7 +212,16 @@ impl EvalResult {
     pub fn as_complex_list(&self) -> Option<&Vec<(f64, f64)>> {
         match self {
             EvalResult::ComplexList(c) => Some(c),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -184,7 +229,16 @@ impl EvalResult {
     pub fn as_symbolic(&self) -> Option<&String> {
         match self {
             EvalResult::Symbolic(s) => Some(s),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -192,7 +246,16 @@ impl EvalResult {
     pub fn as_latex(&self) -> Option<&String> {
         match self {
             EvalResult::LaTeX(s) => Some(s),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -200,7 +263,16 @@ impl EvalResult {
     pub fn as_steps(&self) -> Option<&Vec<String>> {
         match self {
             EvalResult::Steps(v) => Some(v),
-            _ => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_) => None,
         }
     }
 }

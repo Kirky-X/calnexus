@@ -461,8 +461,8 @@ mod tests {
     fn test_entry_count_zero_on_empty_cache() {
         // 空缓存 entry_count 应为 0（覆盖 entry_count 方法体）
         let cache = CacheManager::new();
-        // Moka 的 len() 为最终一致值，空缓存可能返回 0
-        assert!(cache.entry_count() == 0 || cache.entry_count() > 0);
+        // 新建的空缓存无任何插入，entry_count 必须为 0
+        assert_eq!(cache.entry_count(), 0, "fresh cache should have 0 entries");
     }
 
     #[test]

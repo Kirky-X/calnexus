@@ -16,7 +16,7 @@ use regex::Regex;
 const MAX_AST_DEPTH: usize = 256;
 
 /// 最大表达式长度（spec: 表达式长度限制 ≤ 4096 字符）。
-const MAX_EXPR_LEN: usize = 4096;
+pub(crate) const MAX_EXPR_LEN: usize = 4096;
 
 /// 解析数学表达式字符串为 [`AstNode`]。
 ///

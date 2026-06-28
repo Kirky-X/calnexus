@@ -35,7 +35,7 @@ pub fn format_latex_scalar(v: f64) -> String {
             "-\\infty".to_string()
         };
     }
-    if v.fract() == 0.0 {
+    if v.fract() == 0.0 && v.abs() < 9e15 {
         format!("{}", v as i64)
     } else {
         format!("{}", v)
