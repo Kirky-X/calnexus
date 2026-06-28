@@ -1,0 +1,7 @@
+/target
+/.venv
+/.trae
+/openspec
+docs/ADD.md
+docs/PRD.md
+docs/TEST.md
