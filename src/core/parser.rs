@@ -56,11 +56,14 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
         }
     }
 
+    // 预处理大整数字面量：将 16+ 位整数替换为占位符 `__bn_N`（避免 f64 精度丢失）
+    let without_bigint = preprocess_bigint(&without_brackets, &mut placeholders)?;
+
     // 非法连续运算符检查（mathexpr 将 `+3` 当作数字字面量，需在此显式拒绝 `++`）
-    validate_no_consecutive_plus(&without_brackets)?;
+    validate_no_consecutive_plus(&without_bigint)?;
 
     // 复数预处理：`3+4i` → `complex(3, 4)`、`2i` → `complex(0, 2)`
-    let after_complex = preprocess_complex(&without_brackets)?;
+    let after_complex = preprocess_complex(&without_bigint)?;
 
     // 阶乘预处理
     let after_factorial = preprocess_factorial(&after_complex)?;
@@ -185,7 +188,58 @@ fn preprocess_brackets(
     Ok((result, placeholders))
 }
 
-/// 递归替换 AST 中的占位符变量为实际的 Matrix/List 节点。
+/// 预处理大整数字面量：将 16+ 位整数替换为占位符 `__bn_N`，
+/// 并将原始字符串存入 placeholders 映射为 `AstNode::BigNumber`。
+///
+/// f64 精确整数范围 ≤ 2^53 ≈ 9e15（15-16 位），超过此范围的整数
+/// 会被 mathexpr 解析为 f64 导致精度丢失。此函数在 mathexpr 解析前
+/// 提取大整数字面量，保留原始十进制字符串。
+///
+/// 小数（含 `.` 的数字）不视为大整数，避免误匹配。
+fn preprocess_bigint(
+    input: &str,
+    placeholders: &mut std::collections::HashMap<String, AstNode>,
+) -> Result<String, CalcError> {
+    let mut result = String::with_capacity(input.len());
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+    let mut count = 0;
+
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() {
+            // 找到连续数字的结束位置
+            let start = i;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+            let digit_count = i - start;
+            // 检查是否为小数的一部分（前一个或后一个字符为 `.`）
+            let prev_char = if start > 0 { Some(chars[start - 1]) } else { None };
+            let next_char = if i < chars.len() { Some(chars[i]) } else { None };
+            let is_decimal = prev_char == Some('.') || next_char == Some('.');
+
+            if digit_count >= 16 && !is_decimal {
+                let digits: String = chars[start..i].iter().collect();
+                let placeholder = format!("__bn_{}", count);
+                count += 1;
+                placeholders.insert(placeholder.clone(), AstNode::BigNumber(digits));
+                result.push_str(&placeholder);
+            } else {
+                // 小数字或小数：保持原样
+                for c in &chars[start..i] {
+                    result.push(*c);
+                }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    Ok(result)
+}
+
+/// 递归替换 AST 中的占位符变量为实际的 Matrix/List/BigNumber 节点。
 fn replace_placeholders(
     ast: &mut AstNode,
     placeholders: &std::collections::HashMap<String, AstNode>,
@@ -220,7 +274,7 @@ fn replace_placeholders(
                 replace_placeholders(elem, placeholders);
             }
         }
-        AstNode::Number(_) | AstNode::Complex(_, _) => {}
+        AstNode::Number(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => {}
     }
 }
 

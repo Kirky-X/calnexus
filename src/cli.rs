@@ -7,10 +7,12 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::{ArithmeticDomain, ComplexDomain, MatrixDomain, ScientificDomain, StatisticsDomain};
+use crate::{ArithmeticDomain, AstNode, ComplexDomain, MatrixDomain, PrecisionDomain, ScientificDomain, StatisticsDomain};
+use crate::core::domain::CalculationDomain;
 use crate::{
     AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, parse,
 };
+use crate::domains::precision::format_bigrational;
 use clap::Parser;
 use std::io::{self, IsTerminal, Read};
 
@@ -28,6 +30,10 @@ struct Cli {
     /// Output result as JSON with domain and cache metadata
     #[arg(long)]
     json: bool,
+
+    /// Arbitrary precision mode: format result to N decimal places using BigRational arithmetic
+    #[arg(long)]
+    precision: Option<usize>,
 }
 
 /// CLI 入口：解析参数、求值、输出结果，返回退出码。
@@ -41,17 +47,18 @@ pub fn run() -> i32 {
     };
 
     // 解析变量绑定
-    let ctx = match parse_vars(&cli.vars) {
+    let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
         Err(msg) => {
             eprintln!("error: {}", msg);
             return 2;
         }
     };
+    ctx.precision = cli.precision;
 
     // 求值
-    match evaluate(&expr, &ctx) {
-        Ok((result, domain, cache_hit)) => {
+    match evaluate(&expr, &ctx, cli.precision) {
+        Ok((result, domain, cache_hit, fmt_prec)) => {
             if cli.json {
                 let cache_str = if cache_hit { "hit" } else { "miss" };
                 match &result {
@@ -71,12 +78,24 @@ pub fn run() -> i32 {
                         domain,
                         cache_str
                     ),
+                    EvalResult::BigInt(b) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        b, domain, cache_str
+                    ),
+                    EvalResult::BigRational(r) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        format_bigrational(r, fmt_prec),
+                        domain,
+                        cache_str
+                    ),
                 }
             } else {
                 match &result {
                     EvalResult::Scalar(v) => println!("{}", v),
                     EvalResult::Complex(re, im) => println!("{}", format_complex(*re, *im)),
                     EvalResult::Matrix(m) => println!("{}", format_matrix(m)),
+                    EvalResult::BigInt(b) => println!("{}", b),
+                    EvalResult::BigRational(r) => println!("{}", format_bigrational(r, fmt_prec)),
                 }
             }
             0
@@ -131,37 +150,71 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, String> {
 
 /// 全链路求值：parse → canonicalize → cache → route → evaluate。
 ///
-/// 返回 (result, domain_name, cache_hit)。
-fn evaluate(expr: &str, ctx: &EvalContext) -> Result<(EvalResult, String, bool), CalcError> {
+/// 当 `precision` 为 `Some(N)` 时，绕过路由器直接使用 PrecisionDomain
+/// 进行 BigRational 求值，输出格式化为 N 位小数。
+/// 返回 (result, domain_name, cache_hit, format_precision)。
+/// format_precision 用于 BigRational 输出格式化（--precision N 或 precision(N, expr)）。
+fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     // 1. 解析
     let ast = parse(expr)?;
 
     // 2. 规范化
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
 
-    // 3. 初始化缓存与路由器
+    // 3. 初始化缓存
     let cache = CacheManager::new();
+
+    // 4. precision 模式：直接使用 PrecisionDomain（绕过路由器）
+    if precision.is_some() {
+        if let Some(cached) = cache.get(&cf) {
+            return Ok((cached, "precision".to_string(), true, precision));
+        }
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&canonical_ast, ctx)?;
+        cache.insert(&cf, &Ok(result.clone()));
+        return Ok((result, "precision".to_string(), false, precision));
+    }
+
+    // 5. 常规模式：路由器分发
     let mut router = DomainRouter::new();
+    router.register(Box::new(PrecisionDomain));
     router.register(Box::new(ComplexDomain));
     router.register(Box::new(MatrixDomain));
     router.register(Box::new(ScientificDomain));
     router.register(Box::new(StatisticsDomain));
     router.register(Box::new(ArithmeticDomain));
 
-    // 4. 缓存查询
+    // 6. 缓存查询
     if let Some(cached) = cache.get(&cf) {
         let domain = router.route(&canonical_ast)?;
-        return Ok((cached, domain.domain_name().to_string(), true));
+        let fmt_prec = extract_format_precision(&canonical_ast);
+        return Ok((cached, domain.domain_name().to_string(), true, fmt_prec));
     }
 
-    // 5. 路由 + 求值
+    // 7. 路由 + 求值
     let domain = router.route(&canonical_ast)?;
     let result = domain.evaluate(&canonical_ast, ctx)?;
 
-    // 6. 写入缓存（仅 Ok 结果）
+    // 8. 写入缓存（仅 Ok 结果）
     cache.insert(&cf, &Ok(result.clone()));
 
-    Ok((result, domain.domain_name().to_string(), false))
+    // 9. 提取格式化精度（precision(N, expr) 的 N）
+    let fmt_prec = extract_format_precision(&canonical_ast);
+    Ok((result, domain.domain_name().to_string(), false, fmt_prec))
+}
+
+/// 从 AST 顶层提取 precision(N, expr) 调用中的 N，用于输出格式化。
+fn extract_format_precision(ast: &AstNode) -> Option<usize> {
+    if let AstNode::FunctionCall(name, args) = ast {
+        if name == "precision" && args.len() == 2 {
+            if let AstNode::Number(n) = &args[0] {
+                if n.fract() == 0.0 && *n > 0.0 {
+                    return Some(*n as usize);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// 格式化复数为 `re+imi` 形式（如 `3+4i`、`-2-3i`、`5+0i`）。

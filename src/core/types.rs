@@ -16,6 +16,8 @@ use std::time::Duration;
 pub enum AstNode {
     /// 数字字面量（浮点）。
     Number(f64),
+    /// 大整数字面量：存储原始十进制字符串以保留精度（≥16 位整数）。
+    BigNumber(String),
     /// 复数字面量：`(实部, 虚部)`，如 `3+4i` → `Complex(3.0, 4.0)`。
     Complex(f64, f64),
     /// 变量引用，如 `x`、`y`。
@@ -66,6 +68,10 @@ pub enum EvalResult {
     Complex(f64, f64),
     /// 矩阵结果（行优先存储的二维向量）。
     Matrix(Vec<Vec<f64>>),
+    /// 大整数结果（任意精度）。
+    BigInt(num_bigint::BigInt),
+    /// 精确分数结果。
+    BigRational(num_rational::BigRational),
 }
 
 impl EvalResult {
@@ -73,7 +79,10 @@ impl EvalResult {
     pub fn as_scalar(&self) -> Option<f64> {
         match self {
             EvalResult::Scalar(v) => Some(*v),
-            EvalResult::Complex(_, _) | EvalResult::Matrix(_) => None,
+            EvalResult::Complex(_, _)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_) => None,
         }
     }
 
@@ -81,7 +90,10 @@ impl EvalResult {
     pub fn as_complex(&self) -> Option<(f64, f64)> {
         match self {
             EvalResult::Complex(re, im) => Some((*re, *im)),
-            EvalResult::Scalar(_) | EvalResult::Matrix(_) => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Matrix(_)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_) => None,
         }
     }
 
@@ -89,7 +101,26 @@ impl EvalResult {
     pub fn as_matrix(&self) -> Option<&Vec<Vec<f64>>> {
         match self {
             EvalResult::Matrix(m) => Some(m),
-            EvalResult::Scalar(_) | EvalResult::Complex(_, _) => None,
+            EvalResult::Scalar(_)
+            | EvalResult::Complex(_, _)
+            | EvalResult::BigInt(_)
+            | EvalResult::BigRational(_) => None,
+        }
+    }
+
+    /// 获取大整数引用，若非 BigInt 返回 None。
+    pub fn as_bigint(&self) -> Option<&num_bigint::BigInt> {
+        match self {
+            EvalResult::BigInt(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    /// 获取分数引用，若非 BigRational 返回 None。
+    pub fn as_bigrational(&self) -> Option<&num_rational::BigRational> {
+        match self {
+            EvalResult::BigRational(r) => Some(r),
+            _ => None,
         }
     }
 }

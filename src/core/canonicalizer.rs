@@ -40,7 +40,7 @@ impl AstCanonicalizer {
     /// 3. 一元归一化（双重负号消除、一元常量折叠）
     fn transform(ast: &AstNode) -> Result<AstNode, CalcError> {
         match ast {
-            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => Ok(ast.clone()),
+            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => Ok(ast.clone()),
             AstNode::BinaryOp(op, l, r) => {
                 let l = Self::transform(l)?;
                 let r = Self::transform(r)?;
@@ -156,6 +156,7 @@ impl AstCanonicalizer {
     fn serialize(ast: &AstNode) -> String {
         match ast {
             AstNode::Number(n) => Self::format_number(*n),
+            AstNode::BigNumber(s) => s.clone(),
             AstNode::Complex(re, im) => {
                 format!("(complex {} {})", Self::format_number(*re), Self::format_number(*im))
             }
@@ -461,7 +462,7 @@ mod tests {
     // 辅助函数：计算 AST 深度
     fn ast_depth(ast: &AstNode) -> usize {
         match ast {
-            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => 1,
+            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => 1,
             AstNode::BinaryOp(_, l, r) => {
                 1 + ast_depth(l).max(ast_depth(r))
             }

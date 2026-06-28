@@ -75,7 +75,7 @@ impl StatisticsDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
                 Err(CalcError::DomainError(format!(
                     "statistics domain does not support this node type: {:?}",
                     ast
@@ -216,7 +216,7 @@ fn contains_statistics_function(ast: &AstNode) -> bool {
         AstNode::UnaryOp(_, e) => contains_statistics_function(e),
         AstNode::Matrix(rows) => rows.iter().flatten().any(contains_statistics_function),
         AstNode::List(elements) => elements.iter().any(contains_statistics_function),
-        AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => false,
+        AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => false,
     }
 }
 

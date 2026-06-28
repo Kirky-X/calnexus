@@ -18,6 +18,9 @@ tokio = { version = "1", features = ["rt"] }
 regex = "1"
 num-complex = "0.4"
 nalgebra = "0.33"
+num-bigint = { version = "0.4", features = ["serde"] }
+num-rational = { version = "0.4", features = ["serde"] }
+num-traits = "0.2"
 clap = { version = "4", features = ["derive"], optional = true }
 
 [dev-dependencies]

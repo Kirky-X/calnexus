@@ -2,10 +2,12 @@
 pub mod arithmetic;
 pub mod complex;
 pub mod matrix;
+pub mod precision;
 pub mod scientific;
 pub mod statistics;
 pub use arithmetic::ArithmeticDomain;
 pub use complex::ComplexDomain;
 pub use matrix::MatrixDomain;
+pub use precision::PrecisionDomain;
 pub use scientific::ScientificDomain;
 pub use statistics::StatisticsDomain;

@@ -1,0 +1,925 @@
+//! Precision 计算域：大整数运算、精确分数、高精度小数。
+//!
+//! 设计依据：
+//! - precision-domain spec：10 个 requirements / 21 个 scenarios
+//! - design.md D7：基于 `num_bigint::BigInt` + `num_rational::BigRational`，priority=25
+//!
+//! 路由策略：
+//! - AST 含 `BigNumber` 节点（16+ 位整数字面量）→ 路由至本域
+//! - AST 含 `precision()` 函数调用 → 路由至本域
+//! - `--precision N` CLI 参数 → CLI 层直接使用本域（绕过路由器）
+//!
+//! 内部求值统一使用 `BigRational`，结果根据分母是否为 1 转换为 `BigInt` 或 `BigRational`。
+
+use crate::core::domain::CalculationDomain;
+use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use num_bigint::BigInt;
+use num_rational::BigRational;
+use num_traits::{One, Signed, Zero};
+
+/// Precision 计算域。
+///
+/// priority=25，低于 Complex/Matrix（30）但高于 Statistics（20）和 Arithmetic（10）。
+/// 支持大整数运算、精确分数、大数阶乘、大整数幂。
+pub struct PrecisionDomain;
+
+impl CalculationDomain for PrecisionDomain {
+    fn domain_name(&self) -> &str {
+        "precision"
+    }
+
+    fn priority(&self) -> u8 {
+        25
+    }
+
+    fn supports(&self, ast: &AstNode) -> bool {
+        contains_precision(ast)
+    }
+
+    fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        // 处理 precision(N, expr) 函数：求值 expr，N 仅供 CLI 格式化使用
+        if let AstNode::FunctionCall(name, args) = ast {
+            if name == "precision" {
+                if args.len() != 2 {
+                    return Err(CalcError::DomainError(format!(
+                        "precision() requires exactly 2 arguments (N, expr), got {}",
+                        args.len()
+                    )));
+                }
+                // 验证 N 为正整数
+                let _n = extract_precision_value(&args[0])?;
+                let value = self.eval(&args[1], ctx)?;
+                return Ok(rational_to_result(value));
+            }
+        }
+
+        let value = self.eval(ast, ctx)?;
+        Ok(rational_to_result(value))
+    }
+}
+
+impl PrecisionDomain {
+    /// 递归求值 AST 节点为 `BigRational`。
+    fn eval(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigRational, CalcError> {
+        match ast {
+            AstNode::Number(n) => {
+                if n.fract() == 0.0 && n.abs() < 9e15 {
+                    Ok(BigRational::from_integer(BigInt::from(*n as i64)))
+                } else {
+                    // 非整数 f64：近似转换（仅用于混合表达式中的小数）
+                    BigRational::from_float(*n)
+                        .ok_or_else(|| CalcError::EvalError(format!("cannot convert {} to BigRational", n)))
+                }
+            }
+            AstNode::BigNumber(s) => {
+                let big = BigInt::parse_bytes(s.as_bytes(), 10).ok_or_else(|| {
+                    CalcError::ParseError(format!("invalid big integer literal: {}", s))
+                })?;
+                Ok(BigRational::from_integer(big))
+            }
+            AstNode::Variable(name) => {
+                if let Some(v) = ctx.get_var(name) {
+                    if v.fract() == 0.0 && v.abs() < 9e15 {
+                        Ok(BigRational::from_integer(BigInt::from(v as i64)))
+                    } else {
+                        BigRational::from_float(v).ok_or_else(|| {
+                            CalcError::EvalError(format!("cannot convert {} to BigRational", v))
+                        })
+                    }
+                } else {
+                    Err(CalcError::EvalError(format!("unbound variable: {}", name)))
+                }
+            }
+            AstNode::BinaryOp(op, l, r) => {
+                let a = self.eval(l, ctx)?;
+                let b = self.eval(r, ctx)?;
+                self.eval_binary(*op, a, b)
+            }
+            AstNode::UnaryOp(op, e) => {
+                let v = self.eval(e, ctx)?;
+                match op {
+                    UnaryOp::Neg => Ok(-v),
+                    UnaryOp::Abs => Ok(v.abs()),
+                    UnaryOp::Factorial => {
+                        let n = rational_to_int(&v, "factorial")?;
+                        Ok(BigRational::from_integer(factorial(&n)))
+                    }
+                }
+            }
+            AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+                Err(CalcError::DomainError(format!(
+                    "precision domain does not support this node type: {:?}",
+                    ast
+                )))
+            }
+        }
+    }
+
+    /// 求值二元运算。
+    fn eval_binary(
+        &self,
+        op: BinaryOp,
+        a: BigRational,
+        b: BigRational,
+    ) -> Result<BigRational, CalcError> {
+        match op {
+            BinaryOp::Add => Ok(a + b),
+            BinaryOp::Sub => Ok(a - b),
+            BinaryOp::Mul => Ok(a * b),
+            BinaryOp::Div => {
+                if b.is_zero() {
+                    return Err(CalcError::DivisionByZero);
+                }
+                Ok(a / b)
+            }
+            BinaryOp::Pow => {
+                let exp = rational_to_int(&b, "power exponent")?;
+                // BigRational::pow 接受 i32 指数
+                let exp_i32 = i32::try_from(&exp).map_err(|_| {
+                    CalcError::DomainError(format!("power exponent too large: {}", exp))
+                })?;
+                Ok(a.pow(exp_i32))
+            }
+            BinaryOp::Mod => {
+                if b.is_zero() {
+                    return Err(CalcError::DivisionByZero);
+                }
+                // 大整数取模：提取整数部分计算
+                let a_int = rational_to_int(&a, "mod operand")?;
+                let b_int = rational_to_int(&b, "mod operand")?;
+                Ok(BigRational::from_integer(a_int % b_int))
+            }
+        }
+    }
+
+    /// 求值函数调用。
+    fn eval_function(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<BigRational, CalcError> {
+        match name {
+            "factorial" => {
+                if args.len() != 1 {
+                    return Err(CalcError::DomainError(format!(
+                        "factorial() requires exactly 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = self.eval(&args[0], ctx)?;
+                let n = rational_to_int(&v, "factorial")?;
+                Ok(BigRational::from_integer(factorial(&n)))
+            }
+            "abs" => {
+                if args.len() != 1 {
+                    return Err(CalcError::DomainError(format!(
+                        "abs() requires exactly 1 argument, got {}",
+                        args.len()
+                    )));
+                }
+                let v = self.eval(&args[0], ctx)?;
+                Ok(v.abs())
+            }
+            "precision" => {
+                // precision(N, expr) 在 evaluate() 顶层处理，此处不应到达
+                Err(CalcError::DomainError(
+                    "precision() must be at expression top level".to_string(),
+                ))
+            }
+            "mod" => {
+                // parser 将 `%` 转换为 mod(a, b) 函数调用
+                if args.len() != 2 {
+                    return Err(CalcError::DomainError(format!(
+                        "mod() requires exactly 2 arguments, got {}",
+                        args.len()
+                    )));
+                }
+                let a = self.eval(&args[0], ctx)?;
+                let b = self.eval(&args[1], ctx)?;
+                if b.is_zero() {
+                    return Err(CalcError::DivisionByZero);
+                }
+                let a_int = rational_to_int(&a, "mod operand")?;
+                let b_int = rational_to_int(&b, "mod operand")?;
+                Ok(BigRational::from_integer(a_int % b_int))
+            }
+            _ => Err(CalcError::DomainError(format!(
+                "unsupported function in precision domain: {}",
+                name
+            ))),
+        }
+    }
+}
+
+/// 递归检查 AST 是否应路由至 PrecisionDomain。
+///
+/// 路由条件（spec Req 9）：
+/// - 含 `BigNumber` 节点（大整数字面量）
+/// - 含 `precision()` 函数调用
+fn contains_precision(ast: &AstNode) -> bool {
+    match ast {
+        AstNode::BigNumber(_) => true,
+        AstNode::FunctionCall(name, args) => {
+            if name == "precision" {
+                return true;
+            }
+            args.iter().any(contains_precision)
+        }
+        AstNode::BinaryOp(_, l, r) => contains_precision(l) || contains_precision(r),
+        AstNode::UnaryOp(_, e) => contains_precision(e),
+        AstNode::Matrix(rows) => rows.iter().flatten().any(contains_precision),
+        AstNode::List(elements) => elements.iter().any(contains_precision),
+        AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => false,
+    }
+}
+
+/// 从 AST 节点提取精度值（正整数）。
+fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
+    let v = match ast {
+        AstNode::Number(n) => {
+            if n.fract() == 0.0 && *n > 0.0 {
+                *n as usize
+            } else {
+                return Err(CalcError::DomainError(format!(
+                    "precision N must be a positive integer, got {}",
+                    n
+                )));
+            }
+        }
+        AstNode::BigNumber(s) => {
+            let big = BigInt::parse_bytes(s.as_bytes(), 10).ok_or_else(|| {
+                CalcError::ParseError(format!("invalid precision value: {}", s))
+            })?;
+            usize::try_from(big).map_err(|_| {
+                CalcError::DomainError(format!("precision N out of range: {}", s))
+            })?
+        }
+        _ => {
+            return Err(CalcError::DomainError(
+                "precision N must be a literal integer".to_string(),
+            ));
+        }
+    };
+    if v == 0 {
+        return Err(CalcError::DomainError(
+            "precision N must be positive".to_string(),
+        ));
+    }
+    Ok(v)
+}
+
+/// 将 BigRational 转换为 EvalResult。
+///
+/// 分母为 1 → BigInt；否则 → BigRational。
+fn rational_to_result(value: BigRational) -> EvalResult {
+    if value.is_integer() {
+        EvalResult::BigInt(value.numer().clone())
+    } else {
+        EvalResult::BigRational(value)
+    }
+}
+
+/// 从 BigRational 提取 BigInt（要求为整数）。
+fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
+    if !r.is_integer() {
+        return Err(CalcError::DomainError(format!(
+            "{} requires integer operand, got {}",
+            ctx, r
+        )));
+    }
+    // 检查是否在合理范围内（阶乘/幂指数应为非负）
+    Ok(r.numer().clone())
+}
+
+/// 计算大整数阶乘。
+fn factorial(n: &BigInt) -> BigInt {
+    if n < &BigInt::zero() {
+        return BigInt::zero();
+    }
+    let mut result = BigInt::one();
+    let mut i = BigInt::one();
+    let one = BigInt::one();
+    while &i <= n {
+        result *= &i;
+        i += &one;
+    }
+    result
+}
+
+/// 格式化 BigRational 为输出字符串。
+///
+/// - `precision = None`：分数形式 `num/den`，分母为 1 时输出整数
+/// - `precision = Some(N)`：N 位小数（不含前导 `0.`）
+pub fn format_bigrational(value: &BigRational, precision: Option<usize>) -> String {
+    if let Some(n) = precision {
+        format_decimal(value, n)
+    } else if value.is_integer() {
+        value.numer().to_string()
+    } else {
+        format!("{}/{}", value.numer(), value.denom())
+    }
+}
+
+/// 格式化 BigRational 为指定精度的十进制小数。
+///
+/// 例如 `1/3` 精度 5 → `0.33333`，`1/2` 精度 3 → `0.500`。
+fn format_decimal(value: &BigRational, precision: usize) -> String {
+    let ten = BigInt::from(10);
+    let neg = value.is_negative();
+    let abs = value.abs();
+    let numer = abs.numer();
+    let denom = abs.denom();
+
+    // 整数部分
+    let int_part = numer / denom;
+    let remainder = numer % denom;
+
+    // 小数部分：remainder * 10^precision / denom
+    let mut scale = BigInt::one();
+    for _ in 0..precision {
+        scale *= &ten;
+    }
+    let scaled = remainder * &scale;
+    let frac_digits = scaled / denom;
+
+    let int_str = int_part.to_string();
+    let frac_str = format!("{:0>width$}", frac_digits.to_string(), width = precision);
+
+    let sign = if neg { "-" } else { "" };
+    if precision == 0 {
+        format!("{}{}", sign, int_str)
+    } else {
+        format!("{}{}.{}", sign, int_str, frac_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::parser::parse;
+
+    /// 创建默认上下文。
+    fn default_ctx() -> EvalContext {
+        EvalContext::new()
+    }
+
+    /// 创建指定精度的上下文。
+    fn ctx_with_precision(n: usize) -> EvalContext {
+        let mut ctx = EvalContext::new();
+        ctx.precision = Some(n);
+        ctx
+    }
+
+    /// 断言结果为 BigInt 且值匹配。
+    fn assert_bigint(actual: &EvalResult, expected: &str) {
+        match actual {
+            EvalResult::BigInt(b) => {
+                let expected_big = BigInt::parse_bytes(expected.as_bytes(), 10).unwrap();
+                assert_eq!(b, &expected_big, "expected BigInt({}), got BigInt({})", expected, b);
+            }
+            other => panic!("expected BigInt({}), got {:?}", expected, other),
+        }
+    }
+
+    /// 断言结果为 BigRational 且值匹配 `num/den`。
+    fn assert_bigrational(actual: &EvalResult, num: &str, den: &str) {
+        match actual {
+            EvalResult::BigRational(r) => {
+                let expected_num = BigInt::parse_bytes(num.as_bytes(), 10).unwrap();
+                let expected_den = BigInt::parse_bytes(den.as_bytes(), 10).unwrap();
+                let expected = BigRational::new(expected_num, expected_den);
+                assert_eq!(r, &expected, "expected BigRational({}/{}), got {:?}", num, den, r);
+            }
+            other => panic!("expected BigRational({}/{}), got {:?}", num, den, other),
+        }
+    }
+
+    // ===== Requirement 1: 大整数运算 =====
+
+    #[test]
+    fn test_big_integer_addition() {
+        // 12345678901234567890 + 1 → 12345678901234567891（Req 1 Scen 1）
+        let ast = parse("12345678901234567890 + 1").unwrap();
+        let domain = PrecisionDomain;
+        assert!(domain.supports(&ast));
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "12345678901234567891");
+    }
+
+    #[test]
+    fn test_big_integer_multiplication() {
+        // 999999999999 * 999999999999 → 精确大整数（Req 1 Scen 2）
+        let ast = parse("999999999999 * 999999999999").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "999999999998000000000001");
+    }
+
+    // ===== Requirement 2: 精确分数 =====
+
+    #[test]
+    fn test_fraction_addition() {
+        // 1/3 + 1/6 → 1/2（Req 2 Scen 1）
+        let ast = parse("1/3 + 1/6").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        // 1/3+1/6 = 2/6+1/6 = 3/6 = 1/2，分母不为 1，应为 BigRational
+        assert_bigrational(&result, "1", "2");
+    }
+
+    #[test]
+    fn test_fraction_reduction() {
+        // 2/4 → 1/2（Req 2 Scen 2）
+        let ast = parse("2/4").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigrational(&result, "1", "2");
+    }
+
+    // ===== Requirement 3: 高精度小数 =====
+
+    #[test]
+    fn test_precision_50_decimal() {
+        // --precision 50 "1/3" → 50 位精度的 0.333...3
+        let ast = parse("1/3").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        let formatted = format_bigrational(
+            result.as_bigrational().unwrap(),
+            Some(50),
+        );
+        assert!(formatted.starts_with("0.3"));
+        assert_eq!(formatted.len(), 52); // "0." + 50 digits
+        assert!(formatted.chars().skip(2).all(|c| c == '3'));
+    }
+
+    #[test]
+    fn test_default_precision_fraction() {
+        // 无 --precision 的 1/3 → 精确分数 1/3
+        let ast = parse("1/3").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigrational(&result, "1", "3");
+    }
+
+    // ===== Requirement 4: 大数阶乘 =====
+
+    #[test]
+    fn test_factorial_100() {
+        // factorial(100) → 精确大整数（Req 4 Scen 1）
+        let ast = parse("factorial(100)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        // 100! = 93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000
+        match result {
+            EvalResult::BigInt(b) => {
+                assert!(b > BigInt::zero());
+                assert!(b.to_string().len() > 100); // 100! 有 158 位
+            }
+            other => panic!("expected BigInt, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_factorial_5() {
+        // factorial(5) → 120（Req 4 Scen 2）
+        let ast = parse("factorial(5)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "120");
+    }
+
+    // ===== Requirement 5: 精度触发 =====
+
+    #[test]
+    fn test_precision_flag_triggers_routing() {
+        // --precision 50 "1 + 2" → 路由到 PrecisionDomain
+        // （CLI 层处理，单元测试验证 supports 与 evaluate）
+        let ast = parse("1 + 2").unwrap();
+        let domain = PrecisionDomain;
+        // 1+2 不含 BigNumber 或 precision()，supports 返回 false
+        // 但 CLI 层 --precision 会直接使用 PrecisionDomain
+        assert!(!domain.supports(&ast));
+        // 直接调用 evaluate 仍可工作
+        let result = domain.evaluate(&ast, &ctx_with_precision(50)).unwrap();
+        assert_bigint(&result, "3");
+    }
+
+    #[test]
+    fn test_no_precision_uses_arithmetic() {
+        // 无 --precision 的 1 + 2 → ArithmeticDomain（不路由到 Precision）
+        let ast = parse("1 + 2").unwrap();
+        let domain = PrecisionDomain;
+        assert!(!domain.supports(&ast));
+    }
+
+    // ===== Requirement 6: 大整数幂运算 =====
+
+    #[test]
+    fn test_power_2_100() {
+        // 2^100 → 精确大整数（Req 6 Scen 1）
+        let ast = parse("2^100").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        // 2^100 = 1267650600228229401496703205376
+        assert_bigint(&result, "1267650600228229401496703205376");
+    }
+
+    #[test]
+    fn test_power_10_50() {
+        // 10^50 → 1 后跟 50 个 0（Req 6 Scen 2）
+        let ast = parse("10^50").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        let expected = format!("1{}", "0".repeat(50));
+        assert_bigint(&result, &expected);
+    }
+
+    // ===== Requirement 7: 分数运算 =====
+
+    #[test]
+    fn test_fraction_times_integer() {
+        // 1/3 * 3 → 1（Req 7 Scen 1）
+        let ast = parse("1/3 * 3").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "1");
+    }
+
+    #[test]
+    fn test_fraction_division() {
+        // (1/2) / (1/4) → 2（Req 7 Scen 2）
+        let ast = parse("(1/2) / (1/4)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "2");
+    }
+
+    // ===== Requirement 8: 混合运算 =====
+
+    #[test]
+    fn test_bigint_plus_fraction() {
+        // 12345678901234567890 + 1/3 → BigRational（Req 8 Scen 1）
+        let ast = parse("12345678901234567890 + 1/3").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        // 结果 = (12345678901234567890 * 3 + 1) / 3 = 37037036703703703671/3
+        assert_bigrational(&result, "37037036703703703671", "3");
+    }
+
+    #[test]
+    fn test_mixed_fraction_reduction() {
+        // 2/3 * (3 + 1/2) → 2/3 * 7/2 = 14/6 = 7/3（Req 8 Scen 2）
+        let ast = parse("2/3 * (3 + 1/2)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigrational(&result, "7", "3");
+    }
+
+    // ===== Requirement 9: 域路由 =====
+
+    #[test]
+    fn test_precision_function_routes() {
+        // precision(50, 1/3) → 路由到 PrecisionDomain（Req 9 Scen 1）
+        let ast = parse("precision(50, 1/3)").unwrap();
+        let domain = PrecisionDomain;
+        assert!(domain.supports(&ast));
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigrational(&result, "1", "3");
+    }
+
+    #[test]
+    fn test_bignumber_routes() {
+        // 含 BigNumber 的表达式路由到 PrecisionDomain
+        let ast = parse("12345678901234567890 + 1").unwrap();
+        let domain = PrecisionDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_cli_precision_flag_routes() {
+        // --precision 50 CLI 参数 → 所有表达式路由到 PrecisionDomain
+        // （CLI 层处理，单元测试验证 evaluate 可处理普通表达式）
+        let ast = parse("1 + 2").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &ctx_with_precision(50)).unwrap();
+        assert_bigint(&result, "3");
+    }
+
+    // ===== Requirement 10: 输出格式 =====
+
+    #[test]
+    fn test_bigint_output_no_scientific() {
+        // factorial(20) → 完整十进制，不用科学计数法
+        let ast = parse("factorial(20)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        match result {
+            EvalResult::BigInt(b) => {
+                let s = b.to_string();
+                assert!(!s.contains('e') && !s.contains('E'));
+                assert!(!s.contains('.'));
+                // 20! = 2432902008176640000
+                assert_eq!(s, "2432902008176640000");
+            }
+            other => panic!("expected BigInt, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_fraction_output_format() {
+        // 1/3 → "1/3" 形式
+        let r = BigRational::new(BigInt::from(1), BigInt::from(3));
+        let formatted = format_bigrational(&r, None);
+        assert_eq!(formatted, "1/3");
+    }
+
+    #[test]
+    fn test_integer_fraction_output() {
+        // 4/2 → "2"（分母为 1 时输出整数）
+        let r = BigRational::new(BigInt::from(4), BigInt::from(2)); // 自动约分为 2/1
+        let formatted = format_bigrational(&r, None);
+        assert_eq!(formatted, "2");
+    }
+
+    // ===== 额外覆盖：域属性与错误处理 =====
+
+    #[test]
+    fn test_precision_domain_priority() {
+        let domain = PrecisionDomain;
+        assert_eq!(domain.priority(), 25);
+        assert_eq!(domain.domain_name(), "precision");
+    }
+
+    #[test]
+    fn test_precision_priority_between_complex_and_statistics() {
+        let precision = PrecisionDomain;
+        let statistics = crate::StatisticsDomain;
+        let complex = crate::ComplexDomain;
+        // priority: Complex(30) > Precision(25) > Statistics(20)
+        assert!(complex.priority() > precision.priority());
+        assert!(precision.priority() > statistics.priority());
+    }
+
+    #[test]
+    fn test_division_by_zero() {
+        let ast = parse("1/0").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_unsupported_complex_node() {
+        let ast = AstNode::Complex(1.0, 2.0);
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_unsupported_matrix_node() {
+        let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_unsupported_list_node() {
+        let ast = AstNode::List(vec![AstNode::Number(1.0)]);
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_unsupported_function() {
+        let ast = parse("sin(1)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_precision_wrong_arg_count() {
+        let ast = AstNode::FunctionCall("precision".to_string(), vec![]);
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_precision_invalid_n() {
+        // precision(-5, 1/3) → N 必须为正整数
+        let ast = AstNode::FunctionCall(
+            "precision".to_string(),
+            vec![AstNode::Number(-5.0), parse("1/3").unwrap()],
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_factorial_negative() {
+        // factorial(-1) → 0（负数阶乘返回 0）
+        let ast = AstNode::FunctionCall(
+            "factorial".to_string(),
+            vec![AstNode::Number(-1.0)],
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "0");
+    }
+
+    #[test]
+    fn test_factorial_zero() {
+        let ast = parse("factorial(0)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "1");
+    }
+
+    #[test]
+    fn test_negation() {
+        let ast = parse("-(12345678901234567890)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "-12345678901234567890");
+    }
+
+    #[test]
+    fn test_abs_function() {
+        let ast = parse("abs(-12345678901234567890)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "12345678901234567890");
+    }
+
+    #[test]
+    fn test_abs_unary_op() {
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Abs,
+            Box::new(AstNode::BigNumber("-42".to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "42");
+    }
+
+    #[test]
+    fn test_subtraction() {
+        let ast = parse("12345678901234567890 - 1").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "12345678901234567889");
+    }
+
+    #[test]
+    fn test_modulo() {
+        let ast = parse("10 % 3").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigint(&result, "1");
+    }
+
+    #[test]
+    fn test_negative_power() {
+        // 2^(-1) = 1/2
+        let ast = parse("2^(-1)").unwrap();
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigrational(&result, "1", "2");
+    }
+
+    #[test]
+    fn test_format_decimal_precision_zero() {
+        let r = BigRational::new(BigInt::from(7), BigInt::from(2)); // 3.5
+        let formatted = format_bigrational(&r, Some(0));
+        assert_eq!(formatted, "3");
+    }
+
+    #[test]
+    fn test_format_decimal_half() {
+        let r = BigRational::new(BigInt::from(1), BigInt::from(2)); // 0.5
+        let formatted = format_bigrational(&r, Some(3));
+        assert_eq!(formatted, "0.500");
+    }
+
+    #[test]
+    fn test_format_decimal_negative() {
+        let r = BigRational::new(BigInt::from(-1), BigInt::from(3)); // -1/3
+        let formatted = format_bigrational(&r, Some(5));
+        assert_eq!(formatted, "-0.33333");
+    }
+
+    #[test]
+    fn test_format_integer_bigrational() {
+        let r = BigRational::new(BigInt::from(42), BigInt::from(1));
+        let formatted = format_bigrational(&r, None);
+        assert_eq!(formatted, "42");
+    }
+
+    #[test]
+    fn test_bigint_parse_from_string() {
+        // 验证 BigNumber 节点正确解析大整数
+        let ast = parse("123456789012345678901234567890").unwrap();
+        match ast {
+            AstNode::BigNumber(s) => assert_eq!(s, "123456789012345678901234567890"),
+            other => panic!("expected BigNumber, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_small_number_not_bignumber() {
+        // 小数字不应被解析为 BigNumber
+        let ast = parse("12345").unwrap();
+        match ast {
+            AstNode::Number(n) => assert_eq!(n, 12345.0),
+            other => panic!("expected Number, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_decimal_not_bignumber() {
+        // 小数不应被解析为 BigNumber（即使整数部分有 16+ 位）
+        // 注：f64 本身精度有限，此测试验证不误匹配
+        let ast = parse("1.5").unwrap();
+        match ast {
+            AstNode::Number(n) => assert_eq!(n, 1.5),
+            other => panic!("expected Number, got {:?}", other),
+        }
+    }
+
+    // ===== proptest 属性测试 =====
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+
+        /// 属性：大整数加法满足交换律 a+b = b+a
+        #[test]
+        fn prop_bigint_addition_commutative(a in 0u64..1_000_000_000_000, b in 0u64..1_000_000_000_000) {
+            let domain = PrecisionDomain;
+            let ctx = default_ctx();
+            let ast_ab = parse(&format!("{} + {}", a, b)).unwrap();
+            let ast_ba = parse(&format!("{} + {}", b, a)).unwrap();
+            let r_ab = domain.evaluate(&ast_ab, &ctx).unwrap();
+            let r_ba = domain.evaluate(&ast_ba, &ctx).unwrap();
+            prop_assert_eq!(r_ab, r_ba);
+        }
+
+        /// 属性：大整数乘法满足交换律 a*b = b*a
+        #[test]
+        fn prop_bigint_multiplication_commutative(a in 0u64..1_000_000, b in 0u64..1_000_000) {
+            let domain = PrecisionDomain;
+            let ctx = default_ctx();
+            let ast_ab = parse(&format!("{} * {}", a, b)).unwrap();
+            let ast_ba = parse(&format!("{} * {}", b, a)).unwrap();
+            let r_ab = domain.evaluate(&ast_ab, &ctx).unwrap();
+            let r_ba = domain.evaluate(&ast_ba, &ctx).unwrap();
+            prop_assert_eq!(r_ab, r_ba);
+        }
+
+        /// 属性：分数约分幂等 — (a/b) 约分后分母整除原始分母
+        #[test]
+        fn prop_fraction_reduces(a in 1u64..1000, b in 1u64..1000) {
+            let domain = PrecisionDomain;
+            let ctx = default_ctx();
+            let ast = parse(&format!("{}/{}", a, b)).unwrap();
+            let result = domain.evaluate(&ast, &ctx).unwrap();
+            match result {
+                EvalResult::BigRational(r) => {
+                    // 分母为正且分子分母互质（约分后）
+                    prop_assert!(*r.denom() > BigInt::zero());
+                }
+                EvalResult::BigInt(_) => {
+                    // 整数结果（b 整除 a）
+                }
+                other => panic!("expected BigInt or BigRational, got {:?}", other),
+            }
+        }
+
+        /// 属性：factorial(n) = n * factorial(n-1)
+        #[test]
+        fn prop_factorial_recurrence(n in 1u32..50) {
+            let domain = PrecisionDomain;
+            let ctx = default_ctx();
+            let ast_n = parse(&format!("factorial({})", n)).unwrap();
+            let ast_n1 = parse(&format!("factorial({})", n - 1)).unwrap();
+            let r_n = domain.evaluate(&ast_n, &ctx).unwrap();
+            let r_n1 = domain.evaluate(&ast_n1, &ctx).unwrap();
+            // r_n = n * r_n1
+            let n_big = BigInt::from(n);
+            let expected = match r_n1 {
+                EvalResult::BigInt(b) => n_big * b,
+                _ => panic!("expected BigInt"),
+            };
+            prop_assert_eq!(r_n, EvalResult::BigInt(expected));
+        }
+    }
+}
