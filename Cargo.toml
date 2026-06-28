@@ -1,0 +1,26 @@
+[package]
+name = "calnexus"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kirky.X"]
+license = "MIT"
+rust-version = "1.76"
+
+[features]
+cli = ["dep:clap"]
+
+[dependencies]
+mathexpr = "0.1"
+oxcache = { version = "0.2", features = ["core"], default-features = false }
+blake3 = "1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt"] }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[dev-dependencies]
+proptest = "1"
+assert_cmd = "2"
+
+[package.metadata.tarpaulin]
+fail-under = 100
+exclude-files = ["src/main.rs"]

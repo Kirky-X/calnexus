@@ -1,0 +1,21 @@
+//! CalNexus 核心引擎：表达式解析、AST 规范化、L1 缓存、域路由。
+//!
+//! 共享类型定义在 [`types`] 模块中，所有计算域和 CLI 共用这些类型。
+//! 表达式解析器在 [`parser`] 模块中，将字符串解析为 [`types::AstNode`]。
+//! AST 规范化器在 [`canonicalizer`] 模块中，生成 [`types::CanonicalForm`]。
+//! L1 缓存管理器在 [`cache`] 模块中，基于 Moka + BLAKE3。
+//! 计算域接口与路由器在 [`domain`] 模块中。
+
+pub mod cache;
+pub mod canonicalizer;
+pub mod domain;
+pub mod parser;
+pub mod types;
+
+pub use cache::{CacheKeyGen, CacheManager};
+pub use canonicalizer::AstCanonicalizer;
+pub use domain::{CalculationDomain, DomainRouter};
+pub use parser::parse;
+pub use types::{
+    AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp,
+};
