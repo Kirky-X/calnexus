@@ -3,6 +3,51 @@
 本项目所有重要变更均记录于此文件。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.8.0] - 2026-06-29
+
+CalNexus v0.8.0：四个新计算域（NumberTheory / Combinatorics / Vector / Polynomial），扩展大学数学计算覆盖。
+
+### 新增
+
+- **数论域**（number-theory-domain）：priority=25，基于 num-bigint::BigInt，支持 `gcd`/`lcm`/`is_prime`/`prime_sieve`/
+  `mod_inverse`/`mod_pow`/`euler_phi`；确定性 Miller-Rabin（n < 2^64 用 12 基，n ≥ 2^64 用 25 轮），
+  扩展欧几里得模逆，快速模幂，埃拉托斯特尼筛法
+- **组合域**（combinatorics-domain）：priority=25，支持排列 `P(n,k)`、组合 `C(n,k)`、Catalan 数 `catalan(n)`、
+  第二类 Stirling 数 `stirling(n,k)`；u128 累积溢出自动升级 BigInt
+- **向量域**（vector-domain）：priority=30，基于 nalgebra::DVector，支持向量算术（`[a,b]+[c,d]`）、
+  点积 `dot`、叉积 `cross`（3D）、模长 `norm`、夹角 `angle`、混合积 `scalar_triple`、归一化 `normalize`
+- **多项式域**（polynomial-domain）：priority=25，系数升幂存储，支持 `poly_add`/`poly_sub`/`poly_mul`/`poly_div`/
+  `poly_eval`（Horner）/`poly_diff`/`poly_integrate`/`roots`（1-2 次，实根 Vector / 复根 ComplexList）/`factor`
+  （有理根定理，返回 Symbolic）
+- **EvalResult 4 新变体**：`Vector(Vec<f64>)`、`Polynomial(Vec<f64>)`、`ComplexList(Vec<(f64,f64)>)`、`Symbolic(String)`，
+  含 `as_vector()`/`as_polynomial()`/`as_complex_list()`/`as_symbolic()` helper
+- **num-integer 依赖**：`Cargo.toml` 新增 `num-integer = "0.1"`，用于 BigInt gcd/lcm
+- **CLI 扩展**：默认路由器注册 4 新域（共 10 域），`format_result()` 支持 4 新变体输出格式，
+  `--help` 函数列表新增 17 个函数
+
+### 性能
+
+- 冷启动（`calnexus '2+3'`）：~3ms（release 构建，目标 < 100ms）
+- 缓存命中（`CacheManager::get`）：~699ns/hit（release 构建，目标 < 100μs，缓存代码未变沿用 v0.5 数据）
+- `is_prime(999999999999989)`（15 位素数）：~4ms（release 构建，目标 < 100ms）
+
+### 测试
+
+- **1203 个测试全部通过**（lib + CLI + integration）：
+  - lib 单元测试：1028 个（core 模块 + 10 个域模块，含 proptest 属性测试）
+  - CLI 集成测试：65 个（assert_cmd 端到端，覆盖 10 域 + --precision + --json + 错误退出码）
+  - 跨域集成测试：110 个（全链路 parse→canonicalize→cache→route→evaluate + 缓存去重 + 错误传播）
+- **行覆盖率 99.18%**（cargo-llvm-cov）；NumberTheory 98.91%、Combinatorics 98.46%、Vector 99.00%、Polynomial 99.01%
+- release 构建零警告
+
+### 已知限制
+
+- `is_prime()`/`gcd()` 等数论函数与大数字面量（≥16 位 → BigNumber）组合时，路由至 PrecisionDomain 而非
+  NumberTheoryDomain（同 priority=25，PrecisionDomain 先注册胜出）；`is_prime(10^18+9)` 需用 `eval_int` 间接调用
+- 多项式 `roots()` 与 `factor()` 仅支持 1-2 次多项式（v0.8 范围限制）
+- 多项式表达式不支持隐式乘法（`2x` 需写 `2*x`）与除法（`(x+1)/(x+2)` 返回 DomainError）
+- `format_factor_linear(a=-1)` 输出 `-*(x-r)`（格式化逻辑的已知行为，非 bug）
+
 ## [0.1.0] - 2026-06-28
 
 CalNexus v0.1.0 首个可用版本：命令行数学表达式求值器，覆盖大学本科以下全部计算需求。

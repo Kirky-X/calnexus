@@ -595,4 +595,124 @@ mod tests {
             prop_assert_eq!(domain.domain_name(), "high");
         }
     }
+
+    // ===== v0.8 新增域路由测试（TG6）=====
+
+    use crate::domains::arithmetic::ArithmeticDomain;
+    use crate::domains::combinatorics::CombinatoricsDomain;
+    use crate::domains::number_theory::NumberTheoryDomain;
+    use crate::domains::polynomial::PolynomialDomain;
+    use crate::domains::statistics::StatisticsDomain;
+    use crate::domains::vector::VectorDomain;
+
+    /// v0.8 全域路由器：注册全部 10 个域。
+    fn v08_full_router() -> DomainRouter {
+        let mut router = DomainRouter::new();
+        router.register(Box::new(crate::domains::complex::ComplexDomain));
+        router.register(Box::new(crate::domains::matrix::MatrixDomain));
+        router.register(Box::new(crate::domains::precision::PrecisionDomain));
+        router.register(Box::new(VectorDomain));
+        router.register(Box::new(NumberTheoryDomain));
+        router.register(Box::new(CombinatoricsDomain));
+        router.register(Box::new(PolynomialDomain));
+        router.register(Box::new(crate::domains::scientific::ScientificDomain));
+        router.register(Box::new(StatisticsDomain));
+        router.register(Box::new(ArithmeticDomain));
+        router
+    }
+
+    // ----- 6.1 验证 collect_function_names_recursive 已支持 FunctionCall 递归 -----
+    // 已在 test_collect_function_names_unary_op_branch 和既有测试中覆盖，此处不再重复。
+
+    // ----- 6.2 路由测试：4 新域 -----
+
+    #[test]
+    fn test_v08_route_number_theory() {
+        let router = v08_full_router();
+        let ast = parse("gcd(12,18)").unwrap();
+        let domain = router.route(&ast).unwrap();
+        assert_eq!(domain.domain_name(), "number_theory");
+    }
+
+    #[test]
+    fn test_v08_route_combinatorics() {
+        let router = v08_full_router();
+        let ast = parse("P(5,2)").unwrap();
+        let domain = router.route(&ast).unwrap();
+        assert_eq!(domain.domain_name(), "combinatorics");
+    }
+
+    #[test]
+    fn test_v08_route_vector() {
+        let router = v08_full_router();
+        let ast = parse("dot([1,2],[3,4])").unwrap();
+        let domain = router.route(&ast).unwrap();
+        assert_eq!(domain.domain_name(), "vector");
+    }
+
+    #[test]
+    fn test_v08_route_polynomial() {
+        let router = v08_full_router();
+        let ast = parse("poly_add(x+1,x-1)").unwrap();
+        let domain = router.route(&ast).unwrap();
+        assert_eq!(domain.domain_name(), "polynomial");
+    }
+
+    // ----- 6.3 优先级测试 -----
+
+    #[test]
+    fn test_v08_priority_number_theory_equals_combinatorics() {
+        // NumberTheory(25) 与 Combinatorics(25) 同级
+        let nt = NumberTheoryDomain;
+        let cb = CombinatoricsDomain;
+        assert_eq!(nt.priority(), 25);
+        assert_eq!(cb.priority(), 25);
+    }
+
+    #[test]
+    fn test_v08_priority_vector_higher_than_polynomial() {
+        // Vector(30) > Polynomial(25)
+        let vec = VectorDomain;
+        let pol = PolynomialDomain;
+        assert!(vec.priority() > pol.priority());
+        assert_eq!(vec.priority(), 30);
+        assert_eq!(pol.priority(), 25);
+    }
+
+    // ----- 6.4 消歧测试 -----
+
+    #[test]
+    fn test_v08_disambiguate_mod_pow_to_number_theory() {
+        // mod_pow 路由至 NumberTheory 而非 Arithmetic
+        let router = v08_full_router();
+        let ast = parse("mod_pow(2,10,1000)").unwrap();
+        let domain = router.route(&ast).unwrap();
+        assert_eq!(domain.domain_name(), "number_theory");
+    }
+
+    #[test]
+    fn test_v08_disambiguate_mean_to_statistics() {
+        // mean([1,2,3]) 路由至 Statistics 而非 Vector
+        let router = v08_full_router();
+        let ast = parse("mean([1,2,3])").unwrap();
+        let domain = router.route(&ast).unwrap();
+        assert_eq!(domain.domain_name(), "statistics");
+    }
+
+    // ----- 6.5 无匹配域错误测试 -----
+
+    #[test]
+    fn test_v08_unknown_function_error() {
+        // unknown_func(1) → DomainError 且消息含函数名
+        let router = v08_full_router();
+        let ast = parse("unknown_func(1)").unwrap();
+        let result = router.route(&ast);
+        let e = result.err().expect("expected error");
+        assert!(matches!(e, CalcError::DomainError(_)));
+        assert!(
+            e.to_string().contains("unknown_func"),
+            "错误信息应包含 'unknown_func': {}",
+            e
+        );
+    }
 }

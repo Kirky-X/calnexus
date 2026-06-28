@@ -563,3 +563,159 @@ fn test_statistics_empty_list_error_cli() {
         .failure()
         .code(1);
 }
+
+// ===== v0.8 新增域 CLI 端到端测试（TG9）=====
+
+// ----- 9.1 NumberTheory CLI 测试 -----
+
+#[test]
+fn test_cli_number_theory_gcd() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("gcd(12,18)")
+        .assert()
+        .success()
+        .stdout("6\n");
+}
+
+#[test]
+fn test_cli_number_theory_is_prime() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("is_prime(7)")
+        .assert()
+        .success()
+        .stdout("1\n");
+}
+
+#[test]
+fn test_cli_number_theory_prime_sieve() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("prime_sieve(10)")
+        .assert()
+        .success()
+        .stdout("[2,3,5,7]\n");
+}
+
+#[test]
+fn test_cli_number_theory_json_domain() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("gcd(12,18)")
+        .assert()
+        .success()
+        .stdout(r#"{"result":6,"domain":"number_theory","cache":"miss"}
+"#);
+}
+
+// ----- 9.2 Combinatorics CLI 测试 -----
+
+#[test]
+fn test_cli_combinatorics_C() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("C(10,3)")
+        .assert()
+        .success()
+        .stdout("120\n");
+}
+
+#[test]
+fn test_cli_combinatorics_catalan() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("catalan(5)")
+        .assert()
+        .success()
+        .stdout("42\n");
+}
+
+#[test]
+fn test_cli_combinatorics_P() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("P(5,2)")
+        .assert()
+        .success()
+        .stdout("20\n");
+}
+
+#[test]
+fn test_cli_combinatorics_stdin() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.write_stdin("catalan(5)")
+        .assert()
+        .success()
+        .stdout("42\n");
+}
+
+// ----- 9.3 Vector CLI 测试 -----
+
+#[test]
+fn test_cli_vector_dot() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("dot([1,2,3],[4,5,6])")
+        .assert()
+        .success()
+        .stdout("32\n");
+}
+
+#[test]
+fn test_cli_vector_norm() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("norm([3,4])")
+        .assert()
+        .success()
+        .stdout("5\n");
+}
+
+#[test]
+fn test_cli_vector_add() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("[1,2]+[3,4]")
+        .assert()
+        .success()
+        .stdout("[4,6]\n");
+}
+
+#[test]
+fn test_cli_vector_dimension_mismatch_error() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("[1,2]+[3,4,5]")
+        .assert()
+        .failure()
+        .code(1);
+}
+
+// ----- 9.4 Polynomial CLI 测试 -----
+
+#[test]
+fn test_cli_polynomial_add() {
+    // poly_add(x+1, x+2) = 2x+3（系数升幂 [3,2]，输出降幂 → "2x+3"）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("poly_add(x+1,x+2)")
+        .assert()
+        .success()
+        .stdout("2x+3\n");
+}
+
+#[test]
+fn test_cli_polynomial_roots_real() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("roots(x^2-4)")
+        .assert()
+        .success()
+        .stdout("[2,-2]\n");
+}
+
+#[test]
+fn test_cli_polynomial_roots_complex() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("roots(x^2+1)")
+        .assert()
+        .success();
+    // 复根输出格式：[0+1i,0-1i]
+}
+
+#[test]
+fn test_cli_polynomial_factor() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("factor(x^2-4)")
+        .assert()
+        .success()
+        .stdout("(x-2)*(x+2)\n");
+}

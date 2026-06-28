@@ -72,6 +72,14 @@ pub enum EvalResult {
     BigInt(num_bigint::BigInt),
     /// 精确分数结果。
     BigRational(num_rational::BigRational),
+    /// 向量结果（v0.8 新增）：向量域 cross/normalize 输出、素数筛、实根列表。
+    Vector(Vec<f64>),
+    /// 多项式结果（v0.8 新增）：系数向量，升幂存储（coef[i] 为 x^i 的系数）。
+    Polynomial(Vec<f64>),
+    /// 复数列表结果（v0.8 新增）：复根列表，元素为 (实部, 虚部)。
+    ComplexList(Vec<(f64, f64)>),
+    /// 符号字符串结果（v0.8 新增）：因式分解等符号输出。
+    Symbolic(String),
 }
 
 impl EvalResult {
@@ -82,7 +90,11 @@ impl EvalResult {
             EvalResult::Complex(_, _)
             | EvalResult::Matrix(_)
             | EvalResult::BigInt(_)
-            | EvalResult::BigRational(_) => None,
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_) => None,
         }
     }
 
@@ -93,7 +105,11 @@ impl EvalResult {
             EvalResult::Scalar(_)
             | EvalResult::Matrix(_)
             | EvalResult::BigInt(_)
-            | EvalResult::BigRational(_) => None,
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_) => None,
         }
     }
 
@@ -104,7 +120,11 @@ impl EvalResult {
             EvalResult::Scalar(_)
             | EvalResult::Complex(_, _)
             | EvalResult::BigInt(_)
-            | EvalResult::BigRational(_) => None,
+            | EvalResult::BigRational(_)
+            | EvalResult::Vector(_)
+            | EvalResult::Polynomial(_)
+            | EvalResult::ComplexList(_)
+            | EvalResult::Symbolic(_) => None,
         }
     }
 
@@ -120,6 +140,38 @@ impl EvalResult {
     pub fn as_bigrational(&self) -> Option<&num_rational::BigRational> {
         match self {
             EvalResult::BigRational(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    /// 获取向量引用，若非 Vector 返回 None。
+    pub fn as_vector(&self) -> Option<&Vec<f64>> {
+        match self {
+            EvalResult::Vector(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// 获取多项式系数向量引用，若非 Polynomial 返回 None。
+    pub fn as_polynomial(&self) -> Option<&Vec<f64>> {
+        match self {
+            EvalResult::Polynomial(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// 获取复数列表引用，若非 ComplexList 返回 None。
+    pub fn as_complex_list(&self) -> Option<&Vec<(f64, f64)>> {
+        match self {
+            EvalResult::ComplexList(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// 获取符号字符串引用，若非 Symbolic 返回 None。
+    pub fn as_symbolic(&self) -> Option<&String> {
+        match self {
+            EvalResult::Symbolic(s) => Some(s),
             _ => None,
         }
     }
@@ -494,6 +546,11 @@ mod tests {
             .as_scalar(),
             None
         );
+        // v0.8 新变体
+        assert_eq!(EvalResult::Vector(vec![1.0, 2.0]).as_scalar(), None);
+        assert_eq!(EvalResult::Polynomial(vec![1.0, 2.0]).as_scalar(), None);
+        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_scalar(), None);
+        assert_eq!(EvalResult::Symbolic("x-2".to_string()).as_scalar(), None);
     }
 
     #[test]
@@ -520,6 +577,11 @@ mod tests {
             .as_complex(),
             None
         );
+        // v0.8 新变体
+        assert_eq!(EvalResult::Vector(vec![1.0]).as_complex(), None);
+        assert_eq!(EvalResult::Polynomial(vec![1.0]).as_complex(), None);
+        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_complex(), None);
+        assert_eq!(EvalResult::Symbolic("s".to_string()).as_complex(), None);
     }
 
     #[test]
@@ -549,6 +611,11 @@ mod tests {
             .as_matrix(),
             None
         );
+        // v0.8 新变体
+        assert_eq!(EvalResult::Vector(vec![1.0]).as_matrix(), None);
+        assert_eq!(EvalResult::Polynomial(vec![1.0]).as_matrix(), None);
+        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_matrix(), None);
+        assert_eq!(EvalResult::Symbolic("s".to_string()).as_matrix(), None);
     }
 
     #[test]
@@ -623,5 +690,120 @@ mod tests {
                 42
             )))
         );
+    }
+
+    // ===== v0.8 新增变体测试：Vector / Polynomial / ComplexList / Symbolic =====
+
+    #[test]
+    fn eval_result_vector_construct_and_as_vector() {
+        let r = EvalResult::Vector(vec![1.0, 2.0, 3.0]);
+        let v = r.as_vector().expect("expected Some for Vector");
+        assert_eq!(v, &vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn eval_result_vector_clone_and_eq() {
+        let r = EvalResult::Vector(vec![1.0, 2.0]);
+        assert_eq!(r, r.clone());
+    }
+
+    #[test]
+    fn eval_result_vector_empty() {
+        let r = EvalResult::Vector(vec![]);
+        assert_eq!(r.as_vector(), Some(&Vec::<f64>::new()));
+    }
+
+    #[test]
+    fn eval_result_as_vector_non_vector_variants() {
+        assert_eq!(EvalResult::Scalar(1.0).as_vector(), None);
+        assert_eq!(EvalResult::Complex(1.0, 2.0).as_vector(), None);
+        assert_eq!(EvalResult::Matrix(vec![vec![1.0]]).as_vector(), None);
+        assert_eq!(
+            EvalResult::BigInt(num_bigint::BigInt::from(42)).as_vector(),
+            None
+        );
+        assert_eq!(
+            EvalResult::BigRational(num_rational::BigRational::new(
+                num_bigint::BigInt::from(1),
+                num_bigint::BigInt::from(3)
+            ))
+            .as_vector(),
+            None
+        );
+        assert_eq!(EvalResult::Polynomial(vec![1.0]).as_vector(), None);
+        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_vector(), None);
+        assert_eq!(EvalResult::Symbolic("s".to_string()).as_vector(), None);
+    }
+
+    #[test]
+    fn eval_result_polynomial_construct_and_as_polynomial() {
+        // x^2 + 2x + 1 → [1, 2, 1]（升幂）
+        let r = EvalResult::Polynomial(vec![1.0, 2.0, 1.0]);
+        let p = r.as_polynomial().expect("expected Some for Polynomial");
+        assert_eq!(p, &vec![1.0, 2.0, 1.0]);
+    }
+
+    #[test]
+    fn eval_result_polynomial_clone_and_eq() {
+        let r = EvalResult::Polynomial(vec![0.0, 1.0]);
+        assert_eq!(r, r.clone());
+    }
+
+    #[test]
+    fn eval_result_as_polynomial_non_polynomial_variants() {
+        assert_eq!(EvalResult::Scalar(1.0).as_polynomial(), None);
+        assert_eq!(EvalResult::Vector(vec![1.0]).as_polynomial(), None);
+        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_polynomial(), None);
+        assert_eq!(EvalResult::Symbolic("s".to_string()).as_polynomial(), None);
+    }
+
+    #[test]
+    fn eval_result_complex_list_construct_and_as_complex_list() {
+        let r = EvalResult::ComplexList(vec![(0.0, 1.0), (0.0, -1.0)]);
+        let c = r.as_complex_list().expect("expected Some for ComplexList");
+        assert_eq!(c, &vec![(0.0, 1.0), (0.0, -1.0)]);
+    }
+
+    #[test]
+    fn eval_result_complex_list_clone_and_eq() {
+        let r = EvalResult::ComplexList(vec![(1.0, 2.0)]);
+        assert_eq!(r, r.clone());
+    }
+
+    #[test]
+    fn eval_result_as_complex_list_non_complex_list_variants() {
+        assert_eq!(EvalResult::Scalar(1.0).as_complex_list(), None);
+        assert_eq!(EvalResult::Vector(vec![1.0]).as_complex_list(), None);
+        assert_eq!(EvalResult::Polynomial(vec![1.0]).as_complex_list(), None);
+        assert_eq!(EvalResult::Symbolic("s".to_string()).as_complex_list(), None);
+    }
+
+    #[test]
+    fn eval_result_symbolic_construct_and_as_symbolic() {
+        let r = EvalResult::Symbolic("(x-2)*(x+2)".to_string());
+        let s = r.as_symbolic().expect("expected Some for Symbolic");
+        assert_eq!(s, &"(x-2)*(x+2)".to_string());
+    }
+
+    #[test]
+    fn eval_result_symbolic_clone_and_eq() {
+        let r = EvalResult::Symbolic("x+1".to_string());
+        assert_eq!(r, r.clone());
+    }
+
+    #[test]
+    fn eval_result_as_symbolic_non_symbolic_variants() {
+        assert_eq!(EvalResult::Scalar(1.0).as_symbolic(), None);
+        assert_eq!(EvalResult::Vector(vec![1.0]).as_symbolic(), None);
+        assert_eq!(EvalResult::Polynomial(vec![1.0]).as_symbolic(), None);
+        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_symbolic(), None);
+    }
+
+    #[test]
+    fn eval_result_new_variants_debug_format() {
+        assert!(format!("{:?}", EvalResult::Vector(vec![1.0])).contains("Vector"));
+        assert!(format!("{:?}", EvalResult::Polynomial(vec![1.0])).contains("Polynomial"));
+        assert!(format!("{:?}", EvalResult::ComplexList(vec![(1.0, 2.0)])).contains("ComplexList"));
+        assert!(format!("{:?}", EvalResult::Symbolic("s".to_string())).contains("Symbolic"));
     }
 }

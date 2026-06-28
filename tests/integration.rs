@@ -7,18 +7,22 @@
 //! - 9.3 错误传播链（7 种 CalcError 各自正确传播）
 
 use calnexus::{
-    ArithmeticDomain, AstCanonicalizer, CacheManager, CalcError, ComplexDomain, DomainRouter,
-    EvalContext, EvalResult, MatrixDomain, PrecisionDomain, ScientificDomain, StatisticsDomain,
-    parse,
+    ArithmeticDomain, AstCanonicalizer, CacheManager, CalcError, CombinatoricsDomain,
+    ComplexDomain, DomainRouter, EvalContext, EvalResult, MatrixDomain, NumberTheoryDomain,
+    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain, parse,
 };
 
-/// 构建默认路由器：注册 v0.5 全部 6 个域。
-/// 优先级降序：Complex/Matrix (30) > Precision (25) > Statistics (20) > Scientific (20) > Arithmetic (10)。
+/// 构建默认路由器：注册 v0.8 全部 10 个域。
+/// 优先级降序：Complex/Matrix/Vector (30+) > Precision/NumberTheory/Combinatorics/Polynomial (25) > Statistics/Scientific (20) > Arithmetic (10)。
 fn default_router() -> DomainRouter {
     let mut router = DomainRouter::new();
     router.register(Box::new(PrecisionDomain));
     router.register(Box::new(ComplexDomain));
     router.register(Box::new(MatrixDomain));
+    router.register(Box::new(VectorDomain));
+    router.register(Box::new(NumberTheoryDomain));
+    router.register(Box::new(CombinatoricsDomain));
+    router.register(Box::new(PolynomialDomain));
     router.register(Box::new(ScientificDomain));
     router.register(Box::new(StatisticsDomain));
     router.register(Box::new(ArithmeticDomain));
@@ -914,11 +918,11 @@ fn test_error_precision_division_by_zero() {
     );
 }
 
-// ----- 元测试：v0.5 全域路由覆盖 -----
+// ----- 元测试：v0.8 全域路由覆盖 -----
 
 #[test]
-fn test_all_six_domains_routed() {
-    // 元测试：验证 v0.5 全部 6 个域均能被路由器正确分发
+fn test_all_ten_domains_routed() {
+    // 元测试：验证 v0.8 全部 10 个域均能被路由器正确分发
     let cases: &[(&str, &str)] = &[
         ("2+3", "arithmetic"),
         ("sin(pi/2)", "scientific"),
@@ -926,6 +930,10 @@ fn test_all_six_domains_routed() {
         ("[[1,2],[3,4]]", "matrix"),
         ("mean([1,2,3])", "statistics"),
         ("123456789012345678901234567890", "precision"),
+        ("gcd(12,18)", "number_theory"),
+        ("C(10,3)", "combinatorics"),
+        ("dot([1,2],[3,4])", "vector"),
+        ("poly_add(x+1,x-1)", "polynomial"),
     ];
     for (expr, expected_domain) in cases {
         let ast = parse(expr).unwrap();
@@ -941,4 +949,278 @@ fn test_all_six_domains_routed() {
             domain.domain_name()
         );
     }
+}
+
+// ===== v0.8 新增域端到端集成测试（TG8）=====
+
+// ----- 8.2 NumberTheory 跨域集成测试 -----
+
+#[test]
+fn test_number_theory_gcd_pipeline() {
+    let result = evaluate("gcd(12,18)");
+    assert_eq!(result.unwrap(), 6.0);
+}
+
+#[test]
+fn test_number_theory_lcm_pipeline() {
+    let result = evaluate("lcm(4,6)");
+    assert_eq!(result.unwrap(), 12.0);
+}
+
+#[test]
+fn test_number_theory_is_prime_pipeline() {
+    assert_eq!(evaluate("is_prime(7)").unwrap(), 1.0);
+    assert_eq!(evaluate("is_prime(9)").unwrap(), 0.0);
+}
+
+#[test]
+fn test_number_theory_prime_sieve_pipeline() {
+    let result = evaluate_full("prime_sieve(20)", &EvalContext::new()).unwrap();
+    let v = result.as_vector().expect("expected Vector");
+    assert_eq!(v, &[2.0, 3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0]);
+}
+
+#[test]
+fn test_number_theory_mod_pow_pipeline() {
+    assert_eq!(evaluate("mod_pow(2,10,1000)").unwrap(), 24.0);
+}
+
+#[test]
+fn test_number_theory_euler_phi_pipeline() {
+    assert_eq!(evaluate("euler_phi(10)").unwrap(), 4.0);
+}
+
+#[test]
+fn test_number_theory_mod_inverse_pipeline() {
+    assert_eq!(evaluate("mod_inverse(3,11)").unwrap(), 4.0);
+}
+
+// ----- 8.3 Combinatorics 跨域集成测试 -----
+
+#[test]
+fn test_combinatorics_P_pipeline() {
+    assert_eq!(evaluate("P(5,2)").unwrap(), 20.0);
+}
+
+#[test]
+fn test_combinatorics_C_pipeline() {
+    assert_eq!(evaluate("C(10,3)").unwrap(), 120.0);
+}
+
+#[test]
+fn test_combinatorics_catalan_pipeline() {
+    assert_eq!(evaluate("catalan(5)").unwrap(), 42.0);
+}
+
+#[test]
+fn test_combinatorics_stirling_pipeline() {
+    assert_eq!(evaluate("stirling(4,2)").unwrap(), 7.0);
+}
+
+#[test]
+fn test_combinatorics_C_large_bigint() {
+    // C(100,50) ≈ 10^29 → BigInt
+    let result = evaluate_full("C(100,50)", &EvalContext::new()).unwrap();
+    assert!(matches!(result, EvalResult::BigInt(_)));
+}
+
+#[test]
+fn test_combinatorics_C_zero_k() {
+    assert_eq!(evaluate("C(5,0)").unwrap(), 1.0);
+}
+
+// ----- 8.4 Vector 跨域集成测试 -----
+
+#[test]
+fn test_vector_dot_pipeline() {
+    assert_eq!(evaluate("dot([1,2,3],[4,5,6])").unwrap(), 32.0);
+}
+
+#[test]
+fn test_vector_norm_pipeline() {
+    assert_eq!(evaluate("norm([3,4])").unwrap(), 5.0);
+}
+
+#[test]
+fn test_vector_cross_pipeline() {
+    let result = evaluate_full("cross([1,0,0],[0,1,0])", &EvalContext::new()).unwrap();
+    let v = result.as_vector().expect("expected Vector");
+    assert_eq!(v, &[0.0, 0.0, 1.0]);
+}
+
+#[test]
+fn test_vector_arithmetic_add_pipeline() {
+    let result = evaluate_full("[1,2]+[3,4]", &EvalContext::new()).unwrap();
+    let v = result.as_vector().expect("expected Vector");
+    assert_eq!(v, &[4.0, 6.0]);
+}
+
+#[test]
+fn test_vector_angle_pipeline() {
+    let result = evaluate("angle([1,0],[1,1])").unwrap();
+    assert!((result - std::f64::consts::FRAC_PI_4).abs() < 1e-9);
+}
+
+#[test]
+fn test_vector_scalar_triple_pipeline() {
+    assert_eq!(evaluate("scalar_triple([1,0,0],[0,1,0],[0,0,1])").unwrap(), 1.0);
+}
+
+#[test]
+fn test_vector_dimension_mismatch_error() {
+    let result = evaluate_full("[1,2]+[3,4,5]", &EvalContext::new());
+    assert!(result.is_err());
+    assert!(matches!(result, Err(CalcError::DomainError(_))));
+}
+
+#[test]
+fn test_vector_normalize_pipeline() {
+    let result = evaluate_full("normalize([3,4])", &EvalContext::new()).unwrap();
+    let v = result.as_vector().expect("expected Vector");
+    assert!((v[0] - 0.6).abs() < 1e-9);
+    assert!((v[1] - 0.8).abs() < 1e-9);
+}
+
+// ----- 8.5 Polynomial 跨域集成测试 -----
+
+#[test]
+fn test_polynomial_add_pipeline() {
+    let result = evaluate_full("poly_add(x+1,x+2)", &EvalContext::new()).unwrap();
+    let p = result.as_polynomial().expect("expected Polynomial");
+    assert_eq!(p, &[3.0, 2.0]); // 3+2x（升幂存储）
+}
+
+#[test]
+fn test_polynomial_sub_pipeline() {
+    let result = evaluate_full("poly_sub(x^2+2*x,x+1)", &EvalContext::new()).unwrap();
+    let p = result.as_polynomial().expect("expected Polynomial");
+    assert_eq!(p, &[-1.0, 1.0, 1.0]); // -1+x+x^2
+}
+
+#[test]
+fn test_polynomial_mul_pipeline() {
+    let result = evaluate_full("poly_mul(x+1,x+1)", &EvalContext::new()).unwrap();
+    let p = result.as_polynomial().expect("expected Polynomial");
+    assert_eq!(p, &[1.0, 2.0, 1.0]); // 1+2x+x^2
+}
+
+#[test]
+fn test_polynomial_div_pipeline() {
+    let result = evaluate_full("poly_div(x^2-1,x-1)", &EvalContext::new()).unwrap();
+    let p = result.as_polynomial().expect("expected Polynomial");
+    assert_eq!(p, &[1.0, 1.0]); // 1+x
+}
+
+#[test]
+fn test_polynomial_eval_pipeline() {
+    assert_eq!(evaluate("poly_eval(x^2+1,2)").unwrap(), 5.0);
+}
+
+#[test]
+fn test_polynomial_roots_real_pipeline() {
+    let result = evaluate_full("roots(x^2-4)", &EvalContext::new()).unwrap();
+    let v = result.as_vector().expect("expected Vector");
+    assert_eq!(v.len(), 2);
+    assert!((v[0] - 2.0).abs() < 1e-9 || (v[0] + 2.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_polynomial_roots_complex_pipeline() {
+    let result = evaluate_full("roots(x^2+1)", &EvalContext::new()).unwrap();
+    let c = result.as_complex_list().expect("expected ComplexList");
+    assert_eq!(c.len(), 2);
+}
+
+#[test]
+fn test_polynomial_diff_pipeline() {
+    let result = evaluate_full("poly_diff(x^3+2*x)", &EvalContext::new()).unwrap();
+    let p = result.as_polynomial().expect("expected Polynomial");
+    assert_eq!(p, &[2.0, 0.0, 3.0]); // 2+3x^2
+}
+
+#[test]
+fn test_polynomial_integrate_pipeline() {
+    let result = evaluate_full("poly_integrate(2*x)", &EvalContext::new()).unwrap();
+    let p = result.as_polynomial().expect("expected Polynomial");
+    assert_eq!(p, &[0.0, 0.0, 1.0]); // x^2
+}
+
+#[test]
+fn test_polynomial_factor_pipeline() {
+    let result = evaluate_full("factor(x^2-4)", &EvalContext::new()).unwrap();
+    let s = result.as_symbolic().expect("expected Symbolic");
+    assert!(s.contains("(x-2)"));
+    assert!(s.contains("(x+2)"));
+}
+
+// ----- 8.6 跨域缓存去重测试 -----
+
+#[test]
+fn test_v08_cache_dedup_same_expression() {
+    // 相同表达式缓存命中
+    let cache = CacheManager::new();
+    let ast = parse("gcd(12,18)").unwrap();
+    let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+    let router = default_router();
+
+    // 首次求值
+    let domain = router.route(&canonical_ast).unwrap();
+    let result1 = domain.evaluate(&canonical_ast, &EvalContext::new()).unwrap();
+    cache.insert(&cf, &Ok(result1.clone()));
+
+    // 缓存命中
+    assert!(cache.get(&cf).is_some());
+    assert_eq!(cache.get(&cf).unwrap(), result1);
+}
+
+#[test]
+fn test_v08_cache_dedup_different_expression() {
+    // 不同表达式缓存未命中
+    let cache = CacheManager::new();
+    let ast1 = parse("gcd(12,18)").unwrap();
+    let (_, cf1) = AstCanonicalizer::canonicalize(&ast1).unwrap();
+    let ast2 = parse("gcd(8,12)").unwrap();
+    let (_, cf2) = AstCanonicalizer::canonicalize(&ast2).unwrap();
+
+    cache.insert(&cf1, &Ok(EvalResult::Scalar(6.0)));
+    assert!(cache.get(&cf1).is_some());
+    assert!(cache.get(&cf2).is_none());
+}
+
+// ----- 8.7 错误传播测试 -----
+
+#[test]
+fn test_v08_error_unknown_function() {
+    let result = evaluate("unknown_func(1)");
+    assert!(result.is_err());
+    assert!(matches!(result, Err(CalcError::DomainError(_))));
+}
+
+#[test]
+fn test_v08_error_negative_combinatorics() {
+    let result = evaluate("C(-1,2)");
+    assert!(result.is_err());
+    assert!(matches!(result, Err(CalcError::DomainError(_))));
+}
+
+#[test]
+fn test_v08_error_vector_dimension_mismatch() {
+    let result = evaluate_full("[1,2]+[3,4,5]", &EvalContext::new());
+    assert!(result.is_err());
+    assert!(matches!(result, Err(CalcError::DomainError(_))));
+}
+
+#[test]
+fn test_v08_error_divide_by_zero_polynomial() {
+    let result = evaluate_full("poly_div(x+1,0)", &EvalContext::new());
+    assert!(result.is_err());
+    assert!(matches!(result, Err(CalcError::DivisionByZero)));
+}
+
+#[test]
+fn test_v08_error_non_polynomial_expression() {
+    // sin(x) 不是多项式
+    let result = evaluate_full("poly_add(sin(x),x)", &EvalContext::new());
+    assert!(result.is_err());
+    assert!(matches!(result, Err(CalcError::DomainError(_))));
 }

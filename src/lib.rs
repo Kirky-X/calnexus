@@ -13,8 +13,12 @@ pub use core::types::{
     AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp,
 };
 pub use domains::arithmetic::ArithmeticDomain;
+pub use domains::combinatorics::CombinatoricsDomain;
 pub use domains::complex::ComplexDomain;
 pub use domains::matrix::MatrixDomain;
+pub use domains::number_theory::NumberTheoryDomain;
+pub use domains::polynomial::PolynomialDomain;
 pub use domains::precision::PrecisionDomain;
 pub use domains::scientific::ScientificDomain;
 pub use domains::statistics::StatisticsDomain;
+pub use domains::vector::VectorDomain;

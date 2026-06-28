@@ -7,7 +7,7 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::{ArithmeticDomain, AstNode, ComplexDomain, MatrixDomain, PrecisionDomain, ScientificDomain, StatisticsDomain};
+use crate::{ArithmeticDomain, AstNode, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain};
 use crate::core::domain::CalculationDomain;
 use crate::{
     AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, parse,
@@ -89,6 +89,28 @@ pub fn run() -> i32 {
                         domain,
                         cache_str
                     ),
+                    EvalResult::Vector(v) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        format_vector(v),
+                        domain,
+                        cache_str
+                    ),
+                    EvalResult::Polynomial(p) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        format_polynomial(p),
+                        domain,
+                        cache_str
+                    ),
+                    EvalResult::ComplexList(c) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        format_complex_list(c),
+                        domain,
+                        cache_str
+                    ),
+                    EvalResult::Symbolic(s) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        s, domain, cache_str
+                    ),
                 }
             } else {
                 match &result {
@@ -97,6 +119,10 @@ pub fn run() -> i32 {
                     EvalResult::Matrix(m) => println!("{}", format_matrix(m)),
                     EvalResult::BigInt(b) => println!("{}", b),
                     EvalResult::BigRational(r) => println!("{}", format_bigrational(r, fmt_prec)),
+                    EvalResult::Vector(v) => println!("{}", format_vector(v)),
+                    EvalResult::Polynomial(p) => println!("{}", format_polynomial(p)),
+                    EvalResult::ComplexList(c) => println!("{}", format_complex_list(c)),
+                    EvalResult::Symbolic(s) => println!("{}", s),
                 }
             }
             0
@@ -180,6 +206,10 @@ fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>, cache: &Cac
     router.register(Box::new(PrecisionDomain));
     router.register(Box::new(ComplexDomain));
     router.register(Box::new(MatrixDomain));
+    router.register(Box::new(VectorDomain));
+    router.register(Box::new(PolynomialDomain));
+    router.register(Box::new(NumberTheoryDomain));
+    router.register(Box::new(CombinatoricsDomain));
     router.register(Box::new(ScientificDomain));
     router.register(Box::new(StatisticsDomain));
     router.register(Box::new(ArithmeticDomain));
@@ -236,6 +266,68 @@ fn format_matrix(m: &[Vec<f64>]) -> String {
         })
         .collect();
     format!("[{}]", rows.join(","))
+}
+
+/// 格式化向量为 `[a,b,c]` 形式。
+fn format_vector(v: &[f64]) -> String {
+    let elems: Vec<String> = v.iter().map(|x| x.to_string()).collect();
+    format!("[{}]", elems.join(","))
+}
+
+/// 格式化多项式系数向量（升幂存储）为降幂字符串形式 `a+bx+cx^2`。
+/// 例如 `[1,2,1]` → `x^2+2x+1`，`[2,3,1]` → `x^2+3x+2`，`[5]` → `5`。
+fn format_polynomial(p: &[f64]) -> String {
+    if p.is_empty() {
+        return "0".to_string();
+    }
+    let mut terms: Vec<String> = Vec::new();
+    for (i, &coef) in p.iter().enumerate().rev() {
+        if coef == 0.0 {
+            continue;
+        }
+        let term = match i {
+            0 => format!("{}", coef),
+            1 => {
+                if coef == 1.0 {
+                    "x".to_string()
+                } else if coef == -1.0 {
+                    "-x".to_string()
+                } else {
+                    format!("{}x", coef)
+                }
+            }
+            _ => {
+                if coef == 1.0 {
+                    format!("x^{}", i)
+                } else if coef == -1.0 {
+                    format!("-x^{}", i)
+                } else {
+                    format!("{}x^{}", coef, i)
+                }
+            }
+        };
+        terms.push(term);
+    }
+    if terms.is_empty() {
+        return "0".to_string();
+    }
+    // 合并：第一项不加正号前缀，后续正项加 +
+    let mut result = terms[0].clone();
+    for term in &terms[1..] {
+        if term.starts_with('-') {
+            result.push_str(term);
+        } else {
+            result.push('+');
+            result.push_str(term);
+        }
+    }
+    result
+}
+
+/// 格式化复数列表为 `[a+bi,c+di]` 形式。
+fn format_complex_list(c: &[(f64, f64)]) -> String {
+    let elems: Vec<String> = c.iter().map(|(re, im)| format_complex(*re, *im)).collect();
+    format!("[{}]", elems.join(","))
 }
 
 #[cfg(test)]
@@ -361,5 +453,80 @@ mod tests {
         assert_eq!(domain, "arithmetic");
         assert!(cache_hit);
         assert_eq!(fmt_prec, None);
+    }
+
+    // ===== v0.8 新增域 CLI 单元测试（TG7.5）=====
+
+    #[test]
+    fn test_v08_cli_number_theory_gcd() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let (result, domain, cache_hit, _) =
+            evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
+        assert_eq!(result, EvalResult::Scalar(6.0));
+        assert_eq!(domain, "number_theory");
+        assert!(!cache_hit);
+    }
+
+    #[test]
+    fn test_v08_cli_combinatorics_C() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let (result, domain, cache_hit, _) =
+            evaluate("C(10,3)", &ctx, None, &cache).unwrap();
+        assert_eq!(result, EvalResult::Scalar(120.0));
+        assert_eq!(domain, "combinatorics");
+        assert!(!cache_hit);
+    }
+
+    #[test]
+    fn test_v08_cli_vector_dot() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let (result, domain, _, _) =
+            evaluate("dot([1,2,3],[4,5,6])", &ctx, None, &cache).unwrap();
+        assert_eq!(result, EvalResult::Scalar(32.0));
+        let _ = domain; // vector domain
+    }
+
+    #[test]
+    fn test_v08_cli_polynomial_add() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let (result, domain, _, _) =
+            evaluate("poly_add(x+1,x+2)", &ctx, None, &cache).unwrap();
+        assert!(matches!(result, EvalResult::Polynomial(_)));
+        assert_eq!(domain, "polynomial");
+    }
+
+    #[test]
+    fn test_v08_cli_cache_hit_number_theory() {
+        // 缓存命中路径覆盖：预填充缓存后再次求值
+        let cache = CacheManager::new();
+        let ast = parse("gcd(12,18)").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        cache.insert(&cf, &Ok(EvalResult::Scalar(6.0)));
+
+        let ctx = EvalContext::new();
+        let (result, domain, cache_hit, _) =
+            evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
+        assert_eq!(result, EvalResult::Scalar(6.0));
+        assert_eq!(domain, "number_theory");
+        assert!(cache_hit);
+    }
+
+    #[test]
+    fn test_v08_cli_cache_hit_combinatorics() {
+        let cache = CacheManager::new();
+        let ast = parse("C(10,3)").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        cache.insert(&cf, &Ok(EvalResult::Scalar(120.0)));
+
+        let ctx = EvalContext::new();
+        let (result, domain, cache_hit, _) =
+            evaluate("C(10,3)", &ctx, None, &cache).unwrap();
+        assert_eq!(result, EvalResult::Scalar(120.0));
+        assert_eq!(domain, "combinatorics");
+        assert!(cache_hit);
     }
 }

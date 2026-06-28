@@ -20,6 +20,7 @@ num-complex = "0.4"
 nalgebra = "0.33"
 num-bigint = { version = "0.4", features = ["serde"] }
 num-rational = { version = "0.4", features = ["serde"] }
+num-integer = "0.1"
 num-traits = "0.2"
 clap = { version = "4", features = ["derive"], optional = true }
 
