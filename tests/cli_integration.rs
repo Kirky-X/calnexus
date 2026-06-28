@@ -500,3 +500,66 @@ fn test_bigint_subtraction_output() {
         .success()
         .stdout("123456789012345678901234567889\n");
 }
+
+// ===== Statistics 域 CLI 端到端测试（任务 17.2） =====
+
+#[test]
+fn test_statistics_mean_cli() {
+    // mean([1,2,3,4,5]) → 3
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("mean([1,2,3,4,5])")
+        .assert()
+        .success()
+        .stdout("3\n");
+}
+
+#[test]
+fn test_statistics_sum_cli() {
+    // sum([1,2,3,4,5]) → 15
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("sum([1,2,3,4,5])")
+        .assert()
+        .success()
+        .stdout("15\n");
+}
+
+#[test]
+fn test_statistics_median_cli() {
+    // median([1,2,3,4,5]) → 3
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("median([1,2,3,4,5])")
+        .assert()
+        .success()
+        .stdout("3\n");
+}
+
+#[test]
+fn test_statistics_json_output() {
+    // --json mean([1,2,3,4,5]) → domain="statistics"
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("mean([1,2,3,4,5])")
+        .assert()
+        .success()
+        .stdout(r#"{"result":3,"domain":"statistics","cache":"miss"}
+"#);
+}
+
+#[test]
+fn test_statistics_stdin_pipeline() {
+    // echo "sum([10,20,30])" | calnexus → 60
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.write_stdin("sum([10,20,30])")
+        .assert()
+        .success()
+        .stdout("60\n");
+}
+
+#[test]
+fn test_statistics_empty_list_error_cli() {
+    // mean([]) → exit 1（空列表 DomainError）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("mean([])")
+        .assert()
+        .failure()
+        .code(1);
+}
