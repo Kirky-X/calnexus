@@ -108,10 +108,9 @@ impl CombinatoricsDomain {
                 }
                 Ok(BigInt::from(*n as i64))
             }
-            AstNode::BigNumber(s) => {
-                s.parse::<BigInt>()
-                    .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))
-            }
+            AstNode::BigNumber(s) => s
+                .parse::<BigInt>()
+                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
             AstNode::Variable(name) => {
                 let v = ctx
                     .get_var(name)
@@ -139,12 +138,13 @@ impl CombinatoricsDomain {
                     )),
                 }
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::FunctionCall(_, _) => {
-                Err(CalcError::DomainError(format!(
-                    "expected integer expression, got: {:?}",
-                    ast
-                )))
-            }
+            AstNode::Complex(_, _)
+            | AstNode::Matrix(_)
+            | AstNode::List(_)
+            | AstNode::FunctionCall(_, _) => Err(CalcError::DomainError(format!(
+                "expected integer expression, got: {:?}",
+                ast
+            ))),
         }
     }
 
@@ -306,11 +306,7 @@ fn combination(n: &BigInt, k: &BigInt) -> BigInt {
         return BigInt::zero();
     }
     // C(n,k) = C(n, n-k)，取较小的 k 提高效率
-    let k_opt = if k < &(n - k) {
-        k.clone()
-    } else {
-        n - k
-    };
+    let k_opt = if k < &(n - k) { k.clone() } else { n - k };
     let k_u64 = k_opt.to_u64().unwrap_or(0);
     let mut result = BigInt::one();
     let mut current = n.clone();
@@ -348,7 +344,8 @@ fn stirling_second(n: &BigInt, k: &BigInt) -> BigInt {
     let n_u64 = n.to_u64().unwrap_or(0);
     let k_u64 = k.to_u64().unwrap_or(0);
     // DP 表
-    let mut dp: Vec<Vec<BigInt>> = vec![vec![BigInt::zero(); k_u64 as usize + 1]; n_u64 as usize + 1];
+    let mut dp: Vec<Vec<BigInt>> =
+        vec![vec![BigInt::zero(); k_u64 as usize + 1]; n_u64 as usize + 1];
     dp[0][0] = BigInt::one();
     for i in 1..=n_u64 as usize {
         for j in 1..=k_u64 as usize {
@@ -559,7 +556,10 @@ mod tests {
     #[test]
     fn test_combination_symmetry() {
         // C(10,3) == C(10,7)
-        assert_eq!(eval_scalar("C(10,3)").unwrap(), eval_scalar("C(10,7)").unwrap());
+        assert_eq!(
+            eval_scalar("C(10,3)").unwrap(),
+            eval_scalar("C(10,7)").unwrap()
+        );
     }
 
     #[test]
@@ -574,7 +574,10 @@ mod tests {
 
     #[test]
     fn test_catalan_negative() {
-        assert!(matches!(eval("catalan(-1)"), Err(CalcError::DomainError(_))));
+        assert!(matches!(
+            eval("catalan(-1)"),
+            Err(CalcError::DomainError(_))
+        ));
     }
 
     #[test]
@@ -604,7 +607,10 @@ mod tests {
 
     #[test]
     fn test_stirling_negative() {
-        assert!(matches!(eval("stirling(-1,2)"), Err(CalcError::DomainError(_))));
+        assert!(matches!(
+            eval("stirling(-1,2)"),
+            Err(CalcError::DomainError(_))
+        ));
     }
 
     // ===== 域元信息测试 =====
@@ -636,10 +642,7 @@ mod tests {
 
     #[test]
     fn test_supports_unary() {
-        let ast = AstNode::UnaryOp(
-            UnaryOp::Neg,
-            Box::new(parse("catalan(5)").unwrap()),
-        );
+        let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(parse("catalan(5)").unwrap()));
         assert!(CombinatoricsDomain.supports(&ast));
     }
 
@@ -740,7 +743,9 @@ mod tests {
     #[test]
     fn test_unary_abs() {
         let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-5.0)));
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 5.0);
     }
 
@@ -755,17 +760,38 @@ mod tests {
 
     #[test]
     fn test_permutation_known() {
-        assert_eq!(permutation(&BigInt::from(5), &BigInt::from(2)), BigInt::from(20));
-        assert_eq!(permutation(&BigInt::from(5), &BigInt::from(0)), BigInt::from(1));
-        assert_eq!(permutation(&BigInt::from(3), &BigInt::from(5)), BigInt::from(0));
+        assert_eq!(
+            permutation(&BigInt::from(5), &BigInt::from(2)),
+            BigInt::from(20)
+        );
+        assert_eq!(
+            permutation(&BigInt::from(5), &BigInt::from(0)),
+            BigInt::from(1)
+        );
+        assert_eq!(
+            permutation(&BigInt::from(3), &BigInt::from(5)),
+            BigInt::from(0)
+        );
     }
 
     #[test]
     fn test_combination_known() {
-        assert_eq!(combination(&BigInt::from(10), &BigInt::from(3)), BigInt::from(120));
-        assert_eq!(combination(&BigInt::from(5), &BigInt::from(0)), BigInt::from(1));
-        assert_eq!(combination(&BigInt::from(5), &BigInt::from(5)), BigInt::from(1));
-        assert_eq!(combination(&BigInt::from(3), &BigInt::from(5)), BigInt::from(0));
+        assert_eq!(
+            combination(&BigInt::from(10), &BigInt::from(3)),
+            BigInt::from(120)
+        );
+        assert_eq!(
+            combination(&BigInt::from(5), &BigInt::from(0)),
+            BigInt::from(1)
+        );
+        assert_eq!(
+            combination(&BigInt::from(5), &BigInt::from(5)),
+            BigInt::from(1)
+        );
+        assert_eq!(
+            combination(&BigInt::from(3), &BigInt::from(5)),
+            BigInt::from(0)
+        );
     }
 
     #[test]
@@ -777,9 +803,18 @@ mod tests {
 
     #[test]
     fn test_stirling_known() {
-        assert_eq!(stirling_second(&BigInt::from(0), &BigInt::from(0)), BigInt::from(1));
-        assert_eq!(stirling_second(&BigInt::from(5), &BigInt::from(2)), BigInt::from(15));
-        assert_eq!(stirling_second(&BigInt::from(3), &BigInt::from(2)), BigInt::from(3));
+        assert_eq!(
+            stirling_second(&BigInt::from(0), &BigInt::from(0)),
+            BigInt::from(1)
+        );
+        assert_eq!(
+            stirling_second(&BigInt::from(5), &BigInt::from(2)),
+            BigInt::from(15)
+        );
+        assert_eq!(
+            stirling_second(&BigInt::from(3), &BigInt::from(2)),
+            BigInt::from(3)
+        );
     }
 
     #[test]
@@ -795,7 +830,9 @@ mod tests {
     fn test_eval_node_integer_number() {
         // eval_node Number success (integer)
         let ast = AstNode::Number(42.0);
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 42.0);
     }
 
@@ -803,7 +840,9 @@ mod tests {
     fn test_eval_node_bignumber() {
         // eval_node BigNumber success
         let ast = AstNode::BigNumber("12345678901234567890".to_string());
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert!(matches!(result, EvalResult::BigInt(_)));
     }
 
@@ -815,7 +854,9 @@ mod tests {
             Box::new(AstNode::Number(2.0)),
             Box::new(AstNode::Number(3.0)),
         );
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 5.0);
     }
 
@@ -823,7 +864,9 @@ mod tests {
     fn test_eval_node_unary_neg() {
         // eval_node UnaryOp::Neg
         let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), -5.0);
     }
 
@@ -862,12 +905,11 @@ mod tests {
         // eval_int BigNumber success via function arg
         let ast = AstNode::FunctionCall(
             "C".to_string(),
-            vec![
-                AstNode::BigNumber("100".to_string()),
-                AstNode::Number(50.0),
-            ],
+            vec![AstNode::BigNumber("100".to_string()), AstNode::Number(50.0)],
         );
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert!(matches!(result, EvalResult::BigInt(_)));
     }
 
@@ -911,7 +953,9 @@ mod tests {
                 AstNode::Number(2.0),
             ],
         );
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 20.0);
     }
 
@@ -966,7 +1010,9 @@ mod tests {
                 AstNode::Number(2.0),
             ],
         );
-        let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = CombinatoricsDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 0.0);
     }
 

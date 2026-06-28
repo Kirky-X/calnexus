@@ -14,24 +14,78 @@
 use crate::cli::{build_default_router, evaluate, format_result};
 use crate::core::types::{EvalContext, EvalResult};
 use rustyline::completion::Completer;
-use rustyline::{Editor, Helper, Hinter, Highlighter, Result as RlResult, Validator};
+use rustyline::{Editor, Helper, Highlighter, Hinter, Result as RlResult, Validator};
 
 /// REPL 命令补全候选：函数名 + REPL 命令。
 const REPL_COMMANDS: &[&str] = &[":let", ":vars", ":quit", ":q", ":help", ":clear"];
 
 /// 已知函数名（用于 Tab 补全）。
 const KNOWN_FUNCTIONS: &[&str] = &[
-    "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log", "exp",
-    "sinh", "cosh", "tanh", "gamma", "erf", "abs", "factorial", "mod",
-    "gcd", "lcm", "is_prime", "prime_sieve", "mod_inverse", "mod_pow",
-    "euler_phi", "P", "C", "catalan", "stirling",
-    "dot", "cross", "norm", "angle", "normalize", "scalar_triple",
-    "poly_add", "poly_sub", "poly_mul", "poly_div", "poly_eval",
-    "poly_diff", "poly_integrate", "roots", "factor",
-    "diff", "integrate", "simplify", "limit", "taylor",
-    "mean", "median", "variance", "stddev", "sum", "min", "max",
-    "det", "transpose", "inverse", "trace",
-    "complex", "re", "im", "conj", "magnitude", "phase",
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "ln",
+    "log",
+    "exp",
+    "sinh",
+    "cosh",
+    "tanh",
+    "gamma",
+    "erf",
+    "abs",
+    "factorial",
+    "mod",
+    "gcd",
+    "lcm",
+    "is_prime",
+    "prime_sieve",
+    "mod_inverse",
+    "mod_pow",
+    "euler_phi",
+    "P",
+    "C",
+    "catalan",
+    "stirling",
+    "dot",
+    "cross",
+    "norm",
+    "angle",
+    "normalize",
+    "scalar_triple",
+    "poly_add",
+    "poly_sub",
+    "poly_mul",
+    "poly_div",
+    "poly_eval",
+    "poly_diff",
+    "poly_integrate",
+    "roots",
+    "factor",
+    "diff",
+    "integrate",
+    "simplify",
+    "limit",
+    "taylor",
+    "mean",
+    "median",
+    "variance",
+    "stddev",
+    "sum",
+    "min",
+    "max",
+    "det",
+    "transpose",
+    "inverse",
+    "trace",
+    "complex",
+    "re",
+    "im",
+    "conj",
+    "magnitude",
+    "phase",
     "precision",
 ];
 
@@ -128,7 +182,10 @@ impl ReplSession {
                 CommandResult::Continue
             }
             _ => {
-                eprintln!("unknown command: {} (type :help for available commands)", cmd);
+                eprintln!(
+                    "unknown command: {} (type :help for available commands)",
+                    cmd
+                );
                 CommandResult::Continue
             }
         }
@@ -161,7 +218,10 @@ impl ReplSession {
                         println!("{} = {}", name, v);
                     }
                     Ok((result, _, _, _)) => {
-                        eprintln!("error: :let value must be a scalar, got {}", format_result(&result, None));
+                        eprintln!(
+                            "error: :let value must be a scalar, got {}",
+                            format_result(&result, None)
+                        );
                     }
                     Err(e2) => {
                         eprintln!("error: invalid value '{}': {} / {}", value_str, e, e2);
@@ -204,7 +264,12 @@ impl ReplSession {
         match evaluate(expr, &self.ctx, self.ctx.precision, &self.cache) {
             Ok((result, domain, cache_hit, fmt_prec)) => {
                 let output = format_result(&result, fmt_prec);
-                println!("= {}  [{}{}]", output, domain, if cache_hit { " (cached)" } else { "" });
+                println!(
+                    "= {}  [{}{}]",
+                    output,
+                    domain,
+                    if cache_hit { " (cached)" } else { "" }
+                );
             }
             Err(e) => {
                 eprintln!("error: {}", e);
@@ -229,7 +294,12 @@ struct ReplHelper;
 impl Completer for ReplHelper {
     type Candidate = String;
 
-    fn complete(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> RlResult<(usize, Vec<String>)> {
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &rustyline::Context<'_>,
+    ) -> RlResult<(usize, Vec<String>)> {
         Ok(complete_candidates(line, pos))
     }
 }

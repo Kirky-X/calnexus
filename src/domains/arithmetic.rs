@@ -64,15 +64,14 @@ impl ArithmeticDomain {
                     UnaryOp::Abs => Ok(v.abs()),
                 }
             }
-            AstNode::FunctionCall(name, args) => {
-                self.eval_function(name, args, ctx)
-            }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
-                Err(CalcError::DomainError(format!(
-                    "arithmetic domain does not support this node type: {:?}",
-                    ast
-                )))
-            }
+            AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
+            AstNode::Complex(_, _)
+            | AstNode::Matrix(_)
+            | AstNode::List(_)
+            | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
+                "arithmetic domain does not support this node type: {:?}",
+                ast
+            ))),
         }
     }
 
@@ -196,10 +195,11 @@ fn is_arithmetic_only(ast: &AstNode) -> bool {
         AstNode::BinaryOp(_, l, r) => is_arithmetic_only(l) && is_arithmetic_only(r),
         AstNode::UnaryOp(_, e) => is_arithmetic_only(e),
         AstNode::FunctionCall(name, args) => {
-            ARITHMETIC_FUNCTIONS.contains(&name.as_str())
-                && args.iter().all(is_arithmetic_only)
+            ARITHMETIC_FUNCTIONS.contains(&name.as_str()) && args.iter().all(is_arithmetic_only)
         }
-        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => false,
+        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
+            false
+        }
     }
 }
 
@@ -213,18 +213,18 @@ mod tests {
         let ast = parse(input).unwrap();
         let domain = ArithmeticDomain;
         let ctx = EvalContext::new();
-        domain.evaluate(&ast, &ctx).map(|r| {
-            r.as_scalar().expect("expected scalar result")
-        })
+        domain
+            .evaluate(&ast, &ctx)
+            .map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
     /// 辅助函数：解析 + 求值（带变量上下文）
     fn eval_with_ctx(input: &str, ctx: &EvalContext) -> Result<f64, CalcError> {
         let ast = parse(input).unwrap();
         let domain = ArithmeticDomain;
-        domain.evaluate(&ast, ctx).map(|r| {
-            r.as_scalar().expect("expected scalar result")
-        })
+        domain
+            .evaluate(&ast, ctx)
+            .map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
     // ===== Requirement 1: Basic Arithmetic Operations =====
@@ -399,7 +399,10 @@ mod tests {
         assert!(result.is_err());
         // 接受 DivisionByZero 或 NaNOrInf（取决于实现策略）
         assert!(
-            matches!(result, Err(CalcError::DivisionByZero) | Err(CalcError::NaNOrInf)),
+            matches!(
+                result,
+                Err(CalcError::DivisionByZero) | Err(CalcError::NaNOrInf)
+            ),
             "expected DivisionByZero or NaNOrInf, got {:?}",
             result
         );

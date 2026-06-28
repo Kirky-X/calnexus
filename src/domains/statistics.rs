@@ -75,12 +75,13 @@ impl StatisticsDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
-                Err(CalcError::DomainError(format!(
-                    "statistics domain does not support this node type: {:?}",
-                    ast
-                )))
-            }
+            AstNode::Complex(_, _)
+            | AstNode::Matrix(_)
+            | AstNode::List(_)
+            | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
+                "statistics domain does not support this node type: {:?}",
+                ast
+            ))),
         }
     }
 
@@ -151,14 +152,14 @@ impl StatisticsDomain {
             "mean" => Ok(values.iter().sum::<f64>() / values.len() as f64),
             "variance" => {
                 let mean = values.iter().sum::<f64>() / values.len() as f64;
-                let var = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
-                    / values.len() as f64;
+                let var =
+                    values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
                 Ok(var)
             }
             "std" => {
                 let mean = values.iter().sum::<f64>() / values.len() as f64;
-                let var = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
-                    / values.len() as f64;
+                let var =
+                    values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
                 Ok(var.sqrt())
             }
             "median" => {
@@ -216,7 +217,10 @@ fn contains_statistics_function(ast: &AstNode) -> bool {
         AstNode::UnaryOp(_, e) => contains_statistics_function(e),
         AstNode::Matrix(rows) => rows.iter().flatten().any(contains_statistics_function),
         AstNode::List(elements) => elements.iter().any(contains_statistics_function),
-        AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => false,
+        AstNode::Number(_)
+        | AstNode::Variable(_)
+        | AstNode::Complex(_, _)
+        | AstNode::BigNumber(_) => false,
     }
 }
 
@@ -240,9 +244,9 @@ mod tests {
         let ctx = EvalContext::new()
             .with_var("pi", std::f64::consts::PI)
             .with_var("e", std::f64::consts::E);
-        domain.evaluate(&ast, &ctx).map(|r| {
-            r.as_scalar().expect("expected scalar result")
-        })
+        domain
+            .evaluate(&ast, &ctx)
+            .map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
     // ===== Requirement 1: 列表字面量解析（通过 count 间接验证）=====
@@ -466,10 +470,7 @@ mod tests {
     #[test]
     fn test_non_list_argument() {
         // mean(5) → DomainError（参数非 List）
-        let ast = AstNode::FunctionCall(
-            "mean".to_string(),
-            vec![AstNode::Number(5.0)],
-        );
+        let ast = AstNode::FunctionCall("mean".to_string(), vec![AstNode::Number(5.0)]);
         let domain = StatisticsDomain;
         let ctx = EvalContext::new();
         let result = domain.evaluate(&ast, &ctx);
@@ -481,7 +482,10 @@ mod tests {
         // sin([1,2,3]) → DomainError（sin 不是统计函数）
         let ast = AstNode::FunctionCall(
             "sin".to_string(),
-            vec![AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)])],
+            vec![AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+            ])],
         );
         let domain = StatisticsDomain;
         let ctx = EvalContext::new();
@@ -520,7 +524,10 @@ mod tests {
         // sum([1e308, 1e308]) = inf
         let ast = AstNode::FunctionCall(
             "sum".to_string(),
-            vec![AstNode::List(vec![AstNode::Number(1e308), AstNode::Number(1e308)])],
+            vec![AstNode::List(vec![
+                AstNode::Number(1e308),
+                AstNode::Number(1e308),
+            ])],
         );
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());

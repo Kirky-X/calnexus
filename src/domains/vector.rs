@@ -17,7 +17,12 @@ use nalgebra::DVector;
 
 /// 向量函数白名单。
 const VECTOR_FUNCTIONS: &[&str] = &[
-    "dot", "cross", "norm", "angle", "normalize", "scalar_triple",
+    "dot",
+    "cross",
+    "norm",
+    "angle",
+    "normalize",
+    "scalar_triple",
 ];
 
 /// Vector 计算域。
@@ -121,10 +126,9 @@ impl VectorDomain {
     fn eval_scalar(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(*n),
-            AstNode::BigNumber(s) => {
-                s.parse::<f64>()
-                    .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))
-            }
+            AstNode::BigNumber(s) => s
+                .parse::<f64>()
+                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
@@ -401,9 +405,7 @@ fn contains_vector_function(ast: &AstNode) -> bool {
     match ast {
         AstNode::FunctionCall(name, _) if VECTOR_FUNCTIONS.contains(&name.as_str()) => true,
         AstNode::FunctionCall(_, args) => args.iter().any(contains_vector_function),
-        AstNode::BinaryOp(_, l, r) => {
-            contains_vector_function(l) || contains_vector_function(r)
-        }
+        AstNode::BinaryOp(_, l, r) => contains_vector_function(l) || contains_vector_function(r),
         AstNode::UnaryOp(_, e) => contains_vector_function(e),
         AstNode::Matrix(rows) => rows.iter().flatten().any(contains_vector_function),
         AstNode::List(elements) => elements.iter().any(contains_vector_function),
@@ -528,7 +530,10 @@ mod tests {
 
     #[test]
     fn test_scalar_triple() {
-        assert_eq!(eval_scalar("scalar_triple([1,0,0],[0,1,0],[0,0,1])").unwrap(), 1.0);
+        assert_eq!(
+            eval_scalar("scalar_triple([1,0,0],[0,1,0],[0,0,1])").unwrap(),
+            1.0
+        );
     }
 
     // ===== UT-VEC-009: 维度不匹配 =====
@@ -617,7 +622,10 @@ mod tests {
     #[test]
     fn test_scalar_triple_known() {
         // scalar_triple([1,2,3],[4,5,6],[7,8,9]) = 0 (共面)
-        assert_eq!(eval_scalar("scalar_triple([1,2,3],[4,5,6],[7,8,9])").unwrap(), 0.0);
+        assert_eq!(
+            eval_scalar("scalar_triple([1,2,3],[4,5,6],[7,8,9])").unwrap(),
+            0.0
+        );
     }
 
     #[test]
@@ -786,7 +794,10 @@ mod tests {
     fn test_unary_abs_vector() {
         let ast = AstNode::UnaryOp(
             UnaryOp::Abs,
-            Box::new(AstNode::List(vec![AstNode::Number(3.0), AstNode::Number(4.0)])),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(3.0),
+                AstNode::Number(4.0),
+            ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_approx(result.as_scalar().unwrap(), 5.0);
@@ -843,8 +854,14 @@ mod tests {
         // eval_scalar UnaryOp::Neg via vector binary: -3 * [1,2]
         let ast = AstNode::BinaryOp(
             BinaryOp::Mul,
-            Box::new(AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(3.0)))),
-            Box::new(AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)])),
+            Box::new(AstNode::UnaryOp(
+                UnaryOp::Neg,
+                Box::new(AstNode::Number(3.0)),
+            )),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+            ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_vector().unwrap(), &vec![-3.0, -6.0]);
@@ -855,8 +872,14 @@ mod tests {
         // eval_scalar UnaryOp::Abs: abs(-3) * [1,2]
         let ast = AstNode::BinaryOp(
             BinaryOp::Mul,
-            Box::new(AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-3.0)))),
-            Box::new(AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)])),
+            Box::new(AstNode::UnaryOp(
+                UnaryOp::Abs,
+                Box::new(AstNode::Number(-3.0)),
+            )),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+            ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_vector().unwrap(), &vec![3.0, 6.0]);
@@ -868,7 +891,10 @@ mod tests {
         let ast = AstNode::BinaryOp(
             BinaryOp::Mul,
             Box::new(AstNode::BigNumber("3".to_string())),
-            Box::new(AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)])),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+            ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_vector().unwrap(), &vec![3.0, 6.0]);
@@ -893,7 +919,10 @@ mod tests {
         let ast = AstNode::BinaryOp(
             BinaryOp::Mul,
             Box::new(parse("2^3").unwrap()),
-            Box::new(AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)])),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+            ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_vector().unwrap(), &vec![8.0, 16.0]);
@@ -909,7 +938,10 @@ mod tests {
                 Box::new(AstNode::Number(10.0)),
                 Box::new(AstNode::Number(3.0)),
             )),
-            Box::new(AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)])),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+            ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_vector().unwrap(), &vec![1.0, 2.0]);
@@ -969,7 +1001,10 @@ mod tests {
         // eval_scalar UnaryOp::Factorial error
         let ast = AstNode::BinaryOp(
             BinaryOp::Mul,
-            Box::new(AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)))),
+            Box::new(AstNode::UnaryOp(
+                UnaryOp::Factorial,
+                Box::new(AstNode::Number(5.0)),
+            )),
             Box::new(AstNode::List(vec![AstNode::Number(1.0)])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
@@ -997,8 +1032,14 @@ mod tests {
         // List / List unsupported
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
-            Box::new(AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)])),
-            Box::new(AstNode::List(vec![AstNode::Number(3.0), AstNode::Number(4.0)])),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+            ])),
+            Box::new(AstNode::List(vec![
+                AstNode::Number(3.0),
+                AstNode::Number(4.0),
+            ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(CalcError::DomainError(_))));
@@ -1009,7 +1050,10 @@ mod tests {
         // list_to_vector with non-list argument via dot()
         let ast = AstNode::FunctionCall(
             "dot".to_string(),
-            vec![AstNode::Number(1.0), AstNode::List(vec![AstNode::Number(1.0)])],
+            vec![
+                AstNode::Number(1.0),
+                AstNode::List(vec![AstNode::Number(1.0)]),
+            ],
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(CalcError::DomainError(_))));

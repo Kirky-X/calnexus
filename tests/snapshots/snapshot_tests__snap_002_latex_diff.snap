@@ -1,0 +1,5 @@
+---
+source: tests/snapshot_tests.rs
+expression: stdout
+---
+\frac{d}{dx}\left(x^{2}\right) = 2 \cdot x

@@ -91,10 +91,7 @@ impl CacheManager {
     /// 未命中返回 `None`（Req 2）。
     pub fn get(&self, cf: &CanonicalForm) -> Option<EvalResult> {
         let key = CacheKeyGen::make_key(cf);
-        runtime()
-            .block_on(self.inner.get(&key))
-            .ok()
-            .flatten()
+        runtime().block_on(self.inner.get(&key)).ok().flatten()
     }
 
     /// 写入缓存（仅成功结果，Req 7）。
@@ -494,15 +491,11 @@ mod tests {
         let cf1 = CanonicalForm::new("(+ 100 1)");
         let cf2 = CanonicalForm::new("(+ 200 2)");
 
-        let r1 = cache.get_or_compute(&cf1, || {
-            Ok(EvalResult::Scalar(101.0))
-        });
+        let r1 = cache.get_or_compute(&cf1, || Ok(EvalResult::Scalar(101.0)));
         assert_eq!(r1.unwrap(), EvalResult::Scalar(101.0));
 
         // 不同 CF：缓存未命中，闭包体实际执行
-        let r2 = cache.get_or_compute(&cf2, || {
-            Ok(EvalResult::Scalar(202.0))
-        });
+        let r2 = cache.get_or_compute(&cf2, || Ok(EvalResult::Scalar(202.0)));
         assert_eq!(r2.unwrap(), EvalResult::Scalar(202.0));
     }
 

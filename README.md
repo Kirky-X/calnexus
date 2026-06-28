@@ -165,6 +165,23 @@ cargo build --release --features cli
 
 1343 tests (1134 lib + 79 CLI + 130 integration), release build with zero warnings.
 
+## WebAssembly (wasm32) Support
+
+CalNexus targets `wasm32-unknown-unknown` with `--no-default-features` (excludes CLI/REPL/batch).
+
+**Known limitation:** The `oxcache` dependency uses `tokio`, which depends on `mio` — `mio` does not
+support `wasm32-unknown-unknown`. To enable wasm32, the cache layer needs to be refactored to use a
+wasm-compatible backend (planned for v1.2). Until then, wasm32 builds fail at the `mio` compilation step.
+
+```bash
+# Attempted build (currently fails due to tokio/mio):
+cargo build --target wasm32-unknown-unknown --no-default-features
+```
+
+The `cli` feature gate (`#[cfg(feature = "cli")]`) correctly isolates `clap`/`rustyline`/`rayon` and
+all file I/O (`std::fs`, `std::time::Instant` in `batch.rs`). Only the cache's `tokio` dependency
+prevents wasm32 compilation.
+
 ## License
 
 MIT

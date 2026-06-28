@@ -80,6 +80,10 @@ pub enum EvalResult {
     ComplexList(Vec<(f64, f64)>),
     /// 符号字符串结果（v0.8 新增）：因式分解等符号输出。
     Symbolic(String),
+    /// LaTeX 渲染结果（v1.1 新增，ADD §3.4）：已格式化的 LaTeX 字符串。
+    LaTeX(String),
+    /// 求值步骤列表（v1.1 新增，ADD §3.4）：每行一步 `lhs op rhs = result`。
+    Steps(Vec<String>),
 }
 
 impl EvalResult {
@@ -94,7 +98,9 @@ impl EvalResult {
             | EvalResult::Vector(_)
             | EvalResult::Polynomial(_)
             | EvalResult::ComplexList(_)
-            | EvalResult::Symbolic(_) => None,
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -109,7 +115,9 @@ impl EvalResult {
             | EvalResult::Vector(_)
             | EvalResult::Polynomial(_)
             | EvalResult::ComplexList(_)
-            | EvalResult::Symbolic(_) => None,
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -124,7 +132,9 @@ impl EvalResult {
             | EvalResult::Vector(_)
             | EvalResult::Polynomial(_)
             | EvalResult::ComplexList(_)
-            | EvalResult::Symbolic(_) => None,
+            | EvalResult::Symbolic(_)
+            | EvalResult::LaTeX(_)
+            | EvalResult::Steps(_) => None,
         }
     }
 
@@ -172,6 +182,22 @@ impl EvalResult {
     pub fn as_symbolic(&self) -> Option<&String> {
         match self {
             EvalResult::Symbolic(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// 获取 LaTeX 字符串引用，若非 LaTeX 返回 None。
+    pub fn as_latex(&self) -> Option<&String> {
+        match self {
+            EvalResult::LaTeX(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// 获取步骤列表引用，若非 Steps 返回 None。
+    pub fn as_steps(&self) -> Option<&Vec<String>> {
+        match self {
+            EvalResult::Steps(v) => Some(v),
             _ => None,
         }
     }
@@ -288,7 +314,9 @@ mod tests {
     #[test]
     fn ast_node_number_construct_and_match() {
         let node = AstNode::Number(3.14);
-        let AstNode::Number(v) = node else { panic!("expected Number variant") };
+        let AstNode::Number(v) = node else {
+            panic!("expected Number variant")
+        };
         assert!((v - 3.14).abs() < f64::EPSILON);
     }
 
@@ -303,7 +331,9 @@ mod tests {
         let lhs = Box::new(AstNode::Number(2.0));
         let rhs = Box::new(AstNode::Number(3.0));
         let node = AstNode::BinaryOp(BinaryOp::Add, lhs, rhs);
-        let AstNode::BinaryOp(BinaryOp::Add, l, r) = node else { panic!("expected BinaryOp variant") };
+        let AstNode::BinaryOp(BinaryOp::Add, l, r) = node else {
+            panic!("expected BinaryOp variant")
+        };
         assert_eq!(*l, AstNode::Number(2.0));
         assert_eq!(*r, AstNode::Number(3.0));
     }
@@ -312,14 +342,19 @@ mod tests {
     fn ast_node_unary_op_construct() {
         let expr = Box::new(AstNode::Number(5.0));
         let node = AstNode::UnaryOp(UnaryOp::Neg, expr);
-        let AstNode::UnaryOp(UnaryOp::Neg, inner) = node else { panic!("expected UnaryOp variant") };
+        let AstNode::UnaryOp(UnaryOp::Neg, inner) = node else {
+            panic!("expected UnaryOp variant")
+        };
         assert_eq!(*inner, AstNode::Number(5.0));
     }
 
     #[test]
     fn ast_node_function_call_construct() {
-        let node = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Variable("x".to_string())]);
-        let AstNode::FunctionCall(name, args) = node else { panic!("expected FunctionCall variant") };
+        let node =
+            AstNode::FunctionCall("sin".to_string(), vec![AstNode::Variable("x".to_string())]);
+        let AstNode::FunctionCall(name, args) = node else {
+            panic!("expected FunctionCall variant")
+        };
         assert_eq!(name, "sin");
         assert_eq!(args.len(), 1);
     }
@@ -363,7 +398,10 @@ mod tests {
             CalcError::DomainError("asin(2)".into()).to_string(),
             "domain error: asin(2)"
         );
-        assert_eq!(CalcError::DepthExceeded.to_string(), "AST depth exceeded limit");
+        assert_eq!(
+            CalcError::DepthExceeded.to_string(),
+            "AST depth exceeded limit"
+        );
         assert_eq!(CalcError::DivisionByZero.to_string(), "division by zero");
         assert_eq!(
             CalcError::EvalError("unknown".into()).to_string(),
@@ -422,7 +460,9 @@ mod tests {
     #[test]
     fn ast_node_complex_construct_and_match() {
         let node = AstNode::Complex(3.0, 4.0);
-        let AstNode::Complex(re, im) = node else { panic!("expected Complex variant") };
+        let AstNode::Complex(re, im) = node else {
+            panic!("expected Complex variant")
+        };
         assert!((re - 3.0).abs() < f64::EPSILON);
         assert!((im - 4.0).abs() < f64::EPSILON);
     }
@@ -447,7 +487,9 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0)],
             vec![AstNode::Number(3.0), AstNode::Number(4.0)],
         ]);
-        let AstNode::Matrix(rows) = node else { panic!("expected Matrix variant") };
+        let AstNode::Matrix(rows) = node else {
+            panic!("expected Matrix variant")
+        };
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].len(), 2);
         assert_eq!(rows[1].len(), 2);
@@ -476,10 +518,20 @@ mod tests {
     fn ast_node_matrix_non_square() {
         // 2x3 非方阵
         let node = AstNode::Matrix(vec![
-            vec![AstNode::Number(1.0), AstNode::Number(2.0), AstNode::Number(3.0)],
-            vec![AstNode::Number(4.0), AstNode::Number(5.0), AstNode::Number(6.0)],
+            vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+                AstNode::Number(3.0),
+            ],
+            vec![
+                AstNode::Number(4.0),
+                AstNode::Number(5.0),
+                AstNode::Number(6.0),
+            ],
         ]);
-        let AstNode::Matrix(rows) = node else { panic!("expected Matrix variant") };
+        let AstNode::Matrix(rows) = node else {
+            panic!("expected Matrix variant")
+        };
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].len(), 3);
     }
@@ -493,7 +545,9 @@ mod tests {
             AstNode::Number(4.0),
             AstNode::Number(5.0),
         ]);
-        let AstNode::List(elements) = node else { panic!("expected List variant") };
+        let AstNode::List(elements) = node else {
+            panic!("expected List variant")
+        };
         assert_eq!(elements.len(), 5);
         assert_eq!(elements[0], AstNode::Number(1.0));
         assert_eq!(elements[4], AstNode::Number(5.0));
@@ -516,14 +570,18 @@ mod tests {
     #[test]
     fn ast_node_list_single_element() {
         let node = AstNode::List(vec![AstNode::Number(42.0)]);
-        let AstNode::List(elements) = node else { panic!("expected List variant") };
+        let AstNode::List(elements) = node else {
+            panic!("expected List variant")
+        };
         assert_eq!(elements.len(), 1);
     }
 
     #[test]
     fn ast_node_list_empty() {
         let node = AstNode::List(vec![]);
-        let AstNode::List(elements) = node else { panic!("expected List variant") };
+        let AstNode::List(elements) = node else {
+            panic!("expected List variant")
+        };
         assert!(elements.is_empty());
     }
 
@@ -686,9 +744,9 @@ mod tests {
         ));
         assert_eq!(
             r.as_bigrational(),
-            Some(&num_rational::BigRational::from_integer(num_bigint::BigInt::from(
-                42
-            )))
+            Some(&num_rational::BigRational::from_integer(
+                num_bigint::BigInt::from(42)
+            ))
         );
     }
 
@@ -753,7 +811,10 @@ mod tests {
     fn eval_result_as_polynomial_non_polynomial_variants() {
         assert_eq!(EvalResult::Scalar(1.0).as_polynomial(), None);
         assert_eq!(EvalResult::Vector(vec![1.0]).as_polynomial(), None);
-        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_polynomial(), None);
+        assert_eq!(
+            EvalResult::ComplexList(vec![(1.0, 2.0)]).as_polynomial(),
+            None
+        );
         assert_eq!(EvalResult::Symbolic("s".to_string()).as_polynomial(), None);
     }
 
@@ -775,7 +836,10 @@ mod tests {
         assert_eq!(EvalResult::Scalar(1.0).as_complex_list(), None);
         assert_eq!(EvalResult::Vector(vec![1.0]).as_complex_list(), None);
         assert_eq!(EvalResult::Polynomial(vec![1.0]).as_complex_list(), None);
-        assert_eq!(EvalResult::Symbolic("s".to_string()).as_complex_list(), None);
+        assert_eq!(
+            EvalResult::Symbolic("s".to_string()).as_complex_list(),
+            None
+        );
     }
 
     #[test]
@@ -796,7 +860,10 @@ mod tests {
         assert_eq!(EvalResult::Scalar(1.0).as_symbolic(), None);
         assert_eq!(EvalResult::Vector(vec![1.0]).as_symbolic(), None);
         assert_eq!(EvalResult::Polynomial(vec![1.0]).as_symbolic(), None);
-        assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_symbolic(), None);
+        assert_eq!(
+            EvalResult::ComplexList(vec![(1.0, 2.0)]).as_symbolic(),
+            None
+        );
     }
 
     #[test]
@@ -805,5 +872,122 @@ mod tests {
         assert!(format!("{:?}", EvalResult::Polynomial(vec![1.0])).contains("Polynomial"));
         assert!(format!("{:?}", EvalResult::ComplexList(vec![(1.0, 2.0)])).contains("ComplexList"));
         assert!(format!("{:?}", EvalResult::Symbolic("s".to_string())).contains("Symbolic"));
+    }
+
+    // ===== v1.1 新增 LaTeX / Steps 变体测试（ADD §3.4） =====
+
+    #[test]
+    fn eval_result_latex_construct_and_match() {
+        let r = EvalResult::LaTeX("\\frac{d}{dx}\\left(x^{2}\\right) = 2x".to_string());
+        let EvalResult::LaTeX(s) = r else {
+            panic!("expected LaTeX variant")
+        };
+        assert!(s.contains("\\frac{d}{dx}"));
+    }
+
+    #[test]
+    fn eval_result_steps_construct_and_match() {
+        let r = EvalResult::Steps(vec!["2+9=11".to_string(), "11*7=77".to_string()]);
+        let EvalResult::Steps(v) = r else {
+            panic!("expected Steps variant")
+        };
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0], "2+9=11");
+    }
+
+    #[test]
+    fn eval_result_latex_clone_and_eq() {
+        let r = EvalResult::LaTeX("x^2".to_string());
+        assert_eq!(r, r.clone());
+    }
+
+    #[test]
+    fn eval_result_steps_clone_and_eq() {
+        let r = EvalResult::Steps(vec!["1+1=2".to_string()]);
+        assert_eq!(r, r.clone());
+    }
+
+    #[test]
+    fn eval_result_latex_debug_format() {
+        let r = EvalResult::LaTeX("x".to_string());
+        assert!(format!("{:?}", r).contains("LaTeX"));
+    }
+
+    #[test]
+    fn eval_result_steps_debug_format() {
+        let r = EvalResult::Steps(vec!["1+1=2".to_string()]);
+        assert!(format!("{:?}", r).contains("Steps"));
+    }
+
+    #[test]
+    fn eval_result_as_latex_returns_some_for_latex() {
+        let r = EvalResult::LaTeX("x^2".to_string());
+        assert_eq!(r.as_latex(), Some(&"x^2".to_string()));
+    }
+
+    #[test]
+    fn eval_result_as_latex_returns_none_for_others() {
+        assert_eq!(EvalResult::Scalar(1.0).as_latex(), None);
+        assert_eq!(EvalResult::Symbolic("x".to_string()).as_latex(), None);
+        assert_eq!(
+            EvalResult::Steps(vec!["1+1=2".to_string()]).as_latex(),
+            None
+        );
+    }
+
+    #[test]
+    fn eval_result_as_steps_returns_some_for_steps() {
+        let r = EvalResult::Steps(vec!["2+2=4".to_string(), "4*3=12".to_string()]);
+        let s = r.as_steps().unwrap();
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[1], "4*3=12");
+    }
+
+    #[test]
+    fn eval_result_as_steps_returns_none_for_others() {
+        assert_eq!(EvalResult::Scalar(1.0).as_steps(), None);
+        assert_eq!(EvalResult::LaTeX("x".to_string()).as_steps(), None);
+        assert_eq!(EvalResult::Symbolic("x".to_string()).as_steps(), None);
+    }
+
+    #[test]
+    fn eval_result_latex_serde_roundtrip() {
+        let r = EvalResult::LaTeX("\\frac{1}{2}".to_string());
+        let json = serde_json::to_string(&r).expect("serialize");
+        let r2: EvalResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(r, r2);
+    }
+
+    #[test]
+    fn eval_result_steps_serde_roundtrip() {
+        let r = EvalResult::Steps(vec!["1+1=2".to_string(), "2+2=4".to_string()]);
+        let json = serde_json::to_string(&r).expect("serialize");
+        let r2: EvalResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(r, r2);
+    }
+
+    #[test]
+    fn eval_result_new_variants_return_none_from_old_accessors() {
+        // 确保新变体在旧访问器中均返回 None
+        let latex = EvalResult::LaTeX("x".to_string());
+        let steps = EvalResult::Steps(vec!["1+1=2".to_string()]);
+        assert_eq!(latex.as_scalar(), None);
+        assert_eq!(latex.as_complex(), None);
+        assert_eq!(latex.as_matrix(), None);
+        assert_eq!(latex.as_bigint(), None);
+        assert_eq!(latex.as_bigrational(), None);
+        assert_eq!(latex.as_vector(), None);
+        assert_eq!(latex.as_polynomial(), None);
+        assert_eq!(latex.as_complex_list(), None);
+        assert_eq!(latex.as_symbolic(), None);
+        assert_eq!(steps.as_scalar(), None);
+        assert_eq!(steps.as_complex(), None);
+        assert_eq!(steps.as_matrix(), None);
+        assert_eq!(steps.as_bigint(), None);
+        assert_eq!(steps.as_bigrational(), None);
+        assert_eq!(steps.as_vector(), None);
+        assert_eq!(steps.as_polynomial(), None);
+        assert_eq!(steps.as_complex_list(), None);
+        assert_eq!(steps.as_symbolic(), None);
     }
 }

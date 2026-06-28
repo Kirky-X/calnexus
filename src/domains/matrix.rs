@@ -90,10 +90,12 @@ impl MatrixDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Complex(_, _) | AstNode::List(_) | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
-                "matrix domain does not support this node type: {:?}",
-                ast
-            ))),
+            AstNode::Complex(_, _) | AstNode::List(_) | AstNode::BigNumber(_) => {
+                Err(CalcError::DomainError(format!(
+                    "matrix domain does not support this node type: {:?}",
+                    ast
+                )))
+            }
         }
     }
 
@@ -205,12 +207,8 @@ impl MatrixDomain {
                 )),
             },
             BinaryOp::Mul => match (a, b) {
-                (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => {
-                    Ok(MatrixValue::Matrix(&m * s))
-                }
-                (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => {
-                    Ok(MatrixValue::Matrix(&m * s))
-                }
+                (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => Ok(MatrixValue::Matrix(&m * s)),
+                (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => Ok(MatrixValue::Matrix(&m * s)),
                 (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
                     if am.ncols() != bm.nrows() {
                         return Err(CalcError::DomainError(format!(
@@ -408,7 +406,12 @@ mod tests {
                 assert_eq!(rows.len(), expected.len(), "row count mismatch");
                 for (i, (actual_row, expected_row)) in rows.iter().zip(expected.iter()).enumerate()
                 {
-                    assert_eq!(actual_row.len(), expected_row.len(), "col count mismatch at row {}", i);
+                    assert_eq!(
+                        actual_row.len(),
+                        expected_row.len(),
+                        "col count mismatch at row {}",
+                        i
+                    );
                     for (_j, (a, e)) in actual_row.iter().zip(expected_row.iter()).enumerate() {
                         assert_approx(*a, *e);
                     }
@@ -581,7 +584,10 @@ mod tests {
         let ast = parse("identity(3)").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
-        assert_matrix(&result, &[&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0], &[0.0, 0.0, 1.0]]);
+        assert_matrix(
+            &result,
+            &[&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0], &[0.0, 0.0, 1.0]],
+        );
     }
 
     #[test]
@@ -766,7 +772,10 @@ mod tests {
     #[test]
     fn test_matrix_ragged_rows() {
         // [[1,2],[3]] → DomainError（行不等长）
-        let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0), AstNode::Number(2.0)], vec![AstNode::Number(3.0)]]);
+        let ast = AstNode::Matrix(vec![
+            vec![AstNode::Number(1.0), AstNode::Number(2.0)],
+            vec![AstNode::Number(3.0)],
+        ]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
         assert!(matches!(result, Err(CalcError::DomainError(_))));
@@ -844,7 +853,9 @@ mod tests {
         // det([[x]]) → x 未绑定 → EvalError（lines 64-67）
         let ast = AstNode::FunctionCall(
             "det".to_string(),
-            vec![AstNode::Matrix(vec![vec![AstNode::Variable("x".to_string())]])],
+            vec![AstNode::Matrix(vec![vec![AstNode::Variable(
+                "x".to_string(),
+            )]])],
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -856,7 +867,9 @@ mod tests {
         // det([[x]]) → x=5 → det = 5（lines 64-67 正常路径）
         let ast = AstNode::FunctionCall(
             "det".to_string(),
-            vec![AstNode::Matrix(vec![vec![AstNode::Variable("x".to_string())]])],
+            vec![AstNode::Matrix(vec![vec![AstNode::Variable(
+                "x".to_string(),
+            )]])],
         );
         let domain = MatrixDomain;
         let ctx = default_ctx().with_var("x", 5.0);
@@ -919,7 +932,9 @@ mod tests {
     #[test]
     fn test_matrix_element_must_be_scalar() {
         // Matrix 内嵌 Matrix → DomainError（lines 131-133）
-        let ast = AstNode::Matrix(vec![vec![AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])]]);
+        let ast = AstNode::Matrix(vec![vec![AstNode::Matrix(vec![vec![AstNode::Number(
+            1.0,
+        )]])]]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
         assert!(matches!(result, Err(CalcError::DomainError(_))));

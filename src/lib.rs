@@ -1,14 +1,15 @@
 //! CalNexus 计算引擎：表达式解析、AST 规范化、L1 缓存、域路由。
 
-pub mod core;
-pub mod domains;
-pub mod symbolic;
-#[cfg(feature = "cli")]
-pub mod repl;
 #[cfg(feature = "cli")]
 pub mod batch;
 #[cfg(feature = "cli")]
 pub mod cli;
+pub mod core;
+pub mod domains;
+pub mod output;
+#[cfg(feature = "cli")]
+pub mod repl;
+pub mod symbolic;
 
 pub use core::cache::{CacheKeyGen, CacheManager};
 pub use core::canonicalizer::AstCanonicalizer;

@@ -1,0 +1,5 @@
+---
+source: tests/snapshot_tests.rs
+expression: stderr
+---
+error: parse error: Invalid syntax: Error(Error { input: "(2+3", code: Tag })

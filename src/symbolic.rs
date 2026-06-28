@@ -111,9 +111,7 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 }
             })
         }
-        AstNode::UnaryOp(UnaryOp::Neg, e) => {
-            Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?)))
-        }
+        AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?))),
         AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
             Err(CalcError::DomainError(format!(
                 "unary op not supported in symbolic expressions: {:?}",
@@ -161,7 +159,10 @@ pub fn symbolic_to_string(expr: &SymbolicExpr) -> String {
         SymbolicExpr::Sub(l, r) => {
             // 减号右侧若为加法需加括号：a-(b+c)
             let rs = symbolic_to_string(r);
-            if matches!(r.as_ref(), SymbolicExpr::Add(_, _) | SymbolicExpr::Sub(_, _)) {
+            if matches!(
+                r.as_ref(),
+                SymbolicExpr::Add(_, _) | SymbolicExpr::Sub(_, _)
+            ) {
                 format!("{}-({})", symbolic_to_string(l), rs)
             } else {
                 format!("{}-{}", symbolic_to_string(l), rs)
@@ -191,7 +192,10 @@ pub fn symbolic_to_string(expr: &SymbolicExpr) -> String {
             format!("{}^{}", ls, rs)
         }
         SymbolicExpr::Neg(e) => {
-            if matches!(e.as_ref(), SymbolicExpr::Add(_, _) | SymbolicExpr::Sub(_, _)) {
+            if matches!(
+                e.as_ref(),
+                SymbolicExpr::Add(_, _) | SymbolicExpr::Sub(_, _)
+            ) {
                 format!("-({})", symbolic_to_string(e))
             } else {
                 format!("-{}", symbolic_to_string(e))
@@ -208,9 +212,12 @@ pub fn symbolic_to_string(expr: &SymbolicExpr) -> String {
 /// 乘法/除法中需要加括号的子表达式。
 fn parenthesize_for_mul(expr: &SymbolicExpr) -> String {
     match expr {
-        SymbolicExpr::Const(_) | SymbolicExpr::Var(_)
-        | SymbolicExpr::Sin(_) | SymbolicExpr::Cos(_)
-        | SymbolicExpr::Tan(_) | SymbolicExpr::Ln(_)
+        SymbolicExpr::Const(_)
+        | SymbolicExpr::Var(_)
+        | SymbolicExpr::Sin(_)
+        | SymbolicExpr::Cos(_)
+        | SymbolicExpr::Tan(_)
+        | SymbolicExpr::Ln(_)
         | SymbolicExpr::Exp(_) => symbolic_to_string(expr),
         SymbolicExpr::Pow(base, exp) => {
             // x^2 形式无需括号
@@ -249,38 +256,27 @@ pub fn diff(expr: &SymbolicExpr, var: &str) -> SymbolicExpr {
                 SymbolicExpr::Const(0.0)
             }
         }
-        SymbolicExpr::Add(l, r) => SymbolicExpr::Add(
-            Box::new(diff(l, var)),
-            Box::new(diff(r, var)),
-        ),
-        SymbolicExpr::Sub(l, r) => SymbolicExpr::Sub(
-            Box::new(diff(l, var)),
-            Box::new(diff(r, var)),
-        ),
+        SymbolicExpr::Add(l, r) => {
+            SymbolicExpr::Add(Box::new(diff(l, var)), Box::new(diff(r, var)))
+        }
+        SymbolicExpr::Sub(l, r) => {
+            SymbolicExpr::Sub(Box::new(diff(l, var)), Box::new(diff(r, var)))
+        }
         // 乘积法则：(f*g)' = f'*g + f*g'
         SymbolicExpr::Mul(f, g) => SymbolicExpr::Add(
-            Box::new(SymbolicExpr::Mul(
-                Box::new(diff(f, var)),
-                g.clone(),
-            )),
-            Box::new(SymbolicExpr::Mul(
-                f.clone(),
-                Box::new(diff(g, var)),
-            )),
+            Box::new(SymbolicExpr::Mul(Box::new(diff(f, var)), g.clone())),
+            Box::new(SymbolicExpr::Mul(f.clone(), Box::new(diff(g, var)))),
         ),
         // 商法则：(f/g)' = (f'*g - f*g') / g²
         SymbolicExpr::Div(f, g) => SymbolicExpr::Div(
             Box::new(SymbolicExpr::Sub(
-                Box::new(SymbolicExpr::Mul(
-                    Box::new(diff(f, var)),
-                    g.clone(),
-                )),
-                Box::new(SymbolicExpr::Mul(
-                    f.clone(),
-                    Box::new(diff(g, var)),
-                )),
+                Box::new(SymbolicExpr::Mul(Box::new(diff(f, var)), g.clone())),
+                Box::new(SymbolicExpr::Mul(f.clone(), Box::new(diff(g, var)))),
             )),
-            Box::new(SymbolicExpr::Pow(g.clone(), Box::new(SymbolicExpr::Const(2.0)))),
+            Box::new(SymbolicExpr::Pow(
+                g.clone(),
+                Box::new(SymbolicExpr::Const(2.0)),
+            )),
         ),
         // 幂法则：f^n → n*f^(n-1)*f'（当指数为常数）
         // 一般幂法则（指数非常数）：f^g → f^g * (g'*ln(f) + g*f'/f)
@@ -306,10 +302,7 @@ pub fn diff(expr: &SymbolicExpr, var: &str) -> SymbolicExpr {
                             Box::new(SymbolicExpr::Ln(f.clone())),
                         )),
                         Box::new(SymbolicExpr::Div(
-                            Box::new(SymbolicExpr::Mul(
-                                g.clone(),
-                                Box::new(diff(f, var)),
-                            )),
+                            Box::new(SymbolicExpr::Mul(g.clone(), Box::new(diff(f, var)))),
                             f.clone(),
                         )),
                     )),
@@ -418,13 +411,13 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
         }
         // ∫x^n dx = x^(n+1)/(n+1)（n ≠ -1）
         SymbolicExpr::Pow(f, g) => {
-            if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) =
-                (f.as_ref(), g.as_ref())
-            {
+            if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f.as_ref(), g.as_ref()) {
                 if name == var {
                     if *n == -1.0 {
                         // ∫1/x dx = ln|x|
-                        return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(var.to_string()))));
+                        return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+                            var.to_string(),
+                        ))));
                     }
                     return Ok(SymbolicExpr::Div(
                         Box::new(SymbolicExpr::Pow(
@@ -454,7 +447,9 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
         // ∫cos(x) dx = sin(x)
         SymbolicExpr::Cos(f) => {
             if is_var(f, var) {
-                Ok(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(var.to_string()))))
+                Ok(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(
+                    var.to_string(),
+                ))))
             } else {
                 Err(CalcError::DomainError(
                     "integrate() only supports cos(var) form".to_string(),
@@ -464,7 +459,9 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
         // ∫exp(x) dx = exp(x)
         SymbolicExpr::Exp(f) => {
             if is_var(f, var) {
-                Ok(SymbolicExpr::Exp(Box::new(SymbolicExpr::Var(var.to_string()))))
+                Ok(SymbolicExpr::Exp(Box::new(SymbolicExpr::Var(
+                    var.to_string(),
+                ))))
             } else {
                 Err(CalcError::DomainError(
                     "integrate() only supports exp(var) form".to_string(),
@@ -473,11 +470,11 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
         }
         // ∫1/x dx = ln|x|
         SymbolicExpr::Div(f, g) => {
-            if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) =
-                (f.as_ref(), g.as_ref())
-            {
+            if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f.as_ref(), g.as_ref()) {
                 if *c == 1.0 && name == var {
-                    return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(var.to_string()))));
+                    return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+                        var.to_string(),
+                    ))));
                 }
             }
             Err(CalcError::DomainError(
@@ -971,10 +968,9 @@ fn extract_var_name(ast: &AstNode) -> Result<String, CalcError> {
 fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
     match ast {
         AstNode::Number(n) => Ok(*n),
-        AstNode::BigNumber(s) => {
-            s.parse::<f64>()
-                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))
-        }
+        AstNode::BigNumber(s) => s
+            .parse::<f64>()
+            .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
         AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(-extract_number(e)?),
         _ => Err(CalcError::DomainError(format!(
             "expected number, got: {:?}",
@@ -1110,7 +1106,9 @@ mod tests {
         // diff(x*sin(x), x) = sin(x) + x*cos(x)
         let expr = SymbolicExpr::Mul(
             Box::new(SymbolicExpr::Var("x".to_string())),
-            Box::new(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var("x".to_string())))),
+            Box::new(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(
+                "x".to_string(),
+            )))),
         );
         let result = simplify(&diff(&expr, "x"));
         let s = symbolic_to_string(&result);
@@ -1170,8 +1168,12 @@ mod tests {
     fn test_integrate_unsupported_returns_error() {
         // ∫sin(x)*cos(x) dx 不支持
         let expr = SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var("x".to_string())))),
-            Box::new(SymbolicExpr::Cos(Box::new(SymbolicExpr::Var("x".to_string())))),
+            Box::new(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(
+                "x".to_string(),
+            )))),
+            Box::new(SymbolicExpr::Cos(Box::new(SymbolicExpr::Var(
+                "x".to_string(),
+            )))),
         );
         let result = integrate(&expr, "x");
         assert!(result.is_err());
@@ -1276,7 +1278,9 @@ mod tests {
     fn test_limit_lhopital_zero_over_zero() {
         // limit(sin(x)/x, x, 0) = 1
         let expr = SymbolicExpr::Div(
-            Box::new(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var("x".to_string())))),
+            Box::new(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(
+                "x".to_string(),
+            )))),
             Box::new(SymbolicExpr::Var("x".to_string())),
         );
         let result = limit(&expr, "x", 0.0).unwrap();
@@ -1585,8 +1589,7 @@ mod tests {
 
     #[test]
     fn test_ast_to_symbolic_unknown_function() {
-        let ast =
-            AstNode::FunctionCall("unknown".to_string(), vec![AstNode::Number(1.0)]);
+        let ast = AstNode::FunctionCall("unknown".to_string(), vec![AstNode::Number(1.0)]);
         assert!(ast_to_symbolic(&ast).is_err());
     }
 
@@ -1845,15 +1848,21 @@ mod tests {
     #[test]
     fn test_symbolic_to_string_tan_ln_exp() {
         assert_eq!(
-            symbolic_to_string(&SymbolicExpr::Tan(Box::new(SymbolicExpr::Var("x".to_string())))),
+            symbolic_to_string(&SymbolicExpr::Tan(Box::new(SymbolicExpr::Var(
+                "x".to_string()
+            )))),
             "tan(x)"
         );
         assert_eq!(
-            symbolic_to_string(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Var("x".to_string())))),
+            symbolic_to_string(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+                "x".to_string()
+            )))),
             "ln(x)"
         );
         assert_eq!(
-            symbolic_to_string(&SymbolicExpr::Exp(Box::new(SymbolicExpr::Var("x".to_string())))),
+            symbolic_to_string(&SymbolicExpr::Exp(Box::new(SymbolicExpr::Var(
+                "x".to_string()
+            )))),
             "exp(x)"
         );
     }
@@ -2065,9 +2074,9 @@ mod tests {
     #[test]
     fn test_integrate_neg() {
         // ∫-sin(x) dx = -(-cos(x)) = cos(x)
-        let expr = SymbolicExpr::Neg(Box::new(SymbolicExpr::Sin(Box::new(
-            SymbolicExpr::Var("x".to_string()),
-        ))));
+        let expr = SymbolicExpr::Neg(Box::new(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(
+            "x".to_string(),
+        )))));
         let result = simplify(&integrate(&expr, "x").unwrap());
         assert_eq!(symbolic_to_string(&result), "cos(x)");
     }
@@ -2081,10 +2090,7 @@ mod tests {
             Box::new(SymbolicExpr::Var("x".to_string())),
             Box::new(SymbolicExpr::Const(0.0)),
         );
-        assert_eq!(
-            simplify(&expr),
-            SymbolicExpr::Var("x".to_string())
-        );
+        assert_eq!(simplify(&expr), SymbolicExpr::Var("x".to_string()));
     }
 
     #[test]
@@ -2139,10 +2145,7 @@ mod tests {
             Box::new(SymbolicExpr::Var("x".to_string())),
             Box::new(SymbolicExpr::Const(1.0)),
         );
-        assert_eq!(
-            simplify(&expr),
-            SymbolicExpr::Var("x".to_string())
-        );
+        assert_eq!(simplify(&expr), SymbolicExpr::Var("x".to_string()));
     }
 
     #[test]
@@ -2184,13 +2187,10 @@ mod tests {
     #[test]
     fn test_simplify_neg_double_negation() {
         // -(-x) → x
-        let expr = SymbolicExpr::Neg(Box::new(SymbolicExpr::Neg(Box::new(
-            SymbolicExpr::Var("x".to_string()),
-        ))));
-        assert_eq!(
-            simplify(&expr),
-            SymbolicExpr::Var("x".to_string())
-        );
+        let expr = SymbolicExpr::Neg(Box::new(SymbolicExpr::Neg(Box::new(SymbolicExpr::Var(
+            "x".to_string(),
+        )))));
+        assert_eq!(simplify(&expr), SymbolicExpr::Var("x".to_string()));
     }
 
     #[test]
@@ -2310,7 +2310,10 @@ mod tests {
             Box::new(SymbolicExpr::Const(-1.0)),
         );
         let result = integrate(&expr, "x").unwrap();
-        assert_eq!(result, SymbolicExpr::Ln(Box::new(SymbolicExpr::Var("x".to_string()))));
+        assert_eq!(
+            result,
+            SymbolicExpr::Ln(Box::new(SymbolicExpr::Var("x".to_string())))
+        );
     }
 
     #[test]
@@ -2321,7 +2324,10 @@ mod tests {
             Box::new(SymbolicExpr::Var("x".to_string())),
         );
         let result = integrate(&expr, "x").unwrap();
-        assert_eq!(result, SymbolicExpr::Ln(Box::new(SymbolicExpr::Var("x".to_string()))));
+        assert_eq!(
+            result,
+            SymbolicExpr::Ln(Box::new(SymbolicExpr::Var("x".to_string())))
+        );
     }
 
     #[test]
@@ -2473,10 +2479,7 @@ mod tests {
     fn test_eval_integrate_wrong_arg_count() {
         // 覆盖 lines 894-897: integrate() with wrong arg count
         let domain = SymbolicDomain;
-        let ast = AstNode::FunctionCall(
-            "integrate".to_string(),
-            vec![AstNode::Number(1.0)],
-        );
+        let ast = AstNode::FunctionCall("integrate".to_string(), vec![AstNode::Number(1.0)]);
         let result = domain.evaluate(&ast, &EvalContext::default());
         assert!(result.is_err());
     }
@@ -2524,15 +2527,15 @@ mod tests {
             UnaryOp::Neg,
             Box::new(AstNode::FunctionCall(
                 "diff".to_string(),
-                vec![AstNode::Variable("x".to_string()), AstNode::Variable("x".to_string())],
+                vec![
+                    AstNode::Variable("x".to_string()),
+                    AstNode::Variable("x".to_string()),
+                ],
             )),
         );
         assert!(contains_symbolic_function(&ast));
         // UnaryOp without symbolic function
-        let ast2 = AstNode::UnaryOp(
-            UnaryOp::Neg,
-            Box::new(AstNode::Number(5.0)),
-        );
+        let ast2 = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
         assert!(!contains_symbolic_function(&ast2));
     }
 
@@ -2548,12 +2551,19 @@ mod tests {
         // Number (line 973)
         assert_eq!(extract_number(&AstNode::Number(3.14)).unwrap(), 3.14);
         // BigNumber valid (lines 972, 974-975)
-        assert_eq!(extract_number(&AstNode::BigNumber("42".to_string())).unwrap(), 42.0);
+        assert_eq!(
+            extract_number(&AstNode::BigNumber("42".to_string())).unwrap(),
+            42.0
+        );
         // BigNumber invalid (line 976 error)
         assert!(extract_number(&AstNode::BigNumber("abc".to_string())).is_err());
         // UnaryOp::Neg (line 978)
         assert_eq!(
-            extract_number(&AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)))).unwrap(),
+            extract_number(&AstNode::UnaryOp(
+                UnaryOp::Neg,
+                Box::new(AstNode::Number(5.0))
+            ))
+            .unwrap(),
             -5.0
         );
         // Generic error (lines 979-982)

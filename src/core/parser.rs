@@ -72,8 +72,8 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     let after_implicit = insert_implicit_multiplication(&after_factorial);
 
     // mathexpr 解析
-    let expr = mathexpr::parse(&after_implicit)
-        .map_err(|e| CalcError::ParseError(format!("{}", e)))?;
+    let expr =
+        mathexpr::parse(&after_implicit).map_err(|e| CalcError::ParseError(format!("{}", e)))?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
     let mut ast = convert_with_depth(&expr, 1)?;
@@ -100,28 +100,29 @@ fn preprocess_complex(input: &str) -> Result<String, CalcError> {
     static RE_COMPLEX_FULL: OnceLock<Regex> = OnceLock::new();
     static RE_PURE_IMAGINARY: OnceLock<Regex> = OnceLock::new();
 
-    let re_full = RE_COMPLEX_FULL.get_or_init(|| {
-        Regex::new(r"(\d+(?:\.\d+)?)\s*([+-])\s*(\d+(?:\.\d+)?)\s*i").unwrap()
-    });
-    let re_pure = RE_PURE_IMAGINARY.get_or_init(|| {
-        Regex::new(r"(\d+(?:\.\d+)?)\s*i").unwrap()
-    });
+    let re_full = RE_COMPLEX_FULL
+        .get_or_init(|| Regex::new(r"(\d+(?:\.\d+)?)\s*([+-])\s*(\d+(?:\.\d+)?)\s*i").unwrap());
+    let re_pure = RE_PURE_IMAGINARY.get_or_init(|| Regex::new(r"(\d+(?:\.\d+)?)\s*i").unwrap());
 
     let mut result = input.to_string();
 
     // 先替换 `a+bi` / `a-bi`（整体匹配，避免 `4i` 被先替换）
-    result = re_full.replace_all(&result, |caps: &regex::Captures| {
-        let re = caps.get(1).unwrap().as_str();
-        let sign = caps.get(2).unwrap().as_str();
-        let im = caps.get(3).unwrap().as_str();
-        format!("complex({},{})", re, format!("{}{}", sign, im))
-    }).to_string();
+    result = re_full
+        .replace_all(&result, |caps: &regex::Captures| {
+            let re = caps.get(1).unwrap().as_str();
+            let sign = caps.get(2).unwrap().as_str();
+            let im = caps.get(3).unwrap().as_str();
+            format!("complex({},{})", re, format!("{}{}", sign, im))
+        })
+        .to_string();
 
     // 再替换纯虚数 `bi` → `complex(0, b)`
-    result = re_pure.replace_all(&result, |caps: &regex::Captures| {
-        let im = caps.get(1).unwrap().as_str();
-        format!("complex(0,{})", im)
-    }).to_string();
+    result = re_pure
+        .replace_all(&result, |caps: &regex::Captures| {
+            let im = caps.get(1).unwrap().as_str();
+            format!("complex(0,{})", im)
+        })
+        .to_string();
 
     Ok(result)
 }
@@ -150,7 +151,8 @@ fn preprocess_brackets(
     input: &str,
 ) -> Result<(String, std::collections::HashMap<String, AstNode>), CalcError> {
     let mut result = String::with_capacity(input.len());
-    let mut placeholders: std::collections::HashMap<String, AstNode> = std::collections::HashMap::new();
+    let mut placeholders: std::collections::HashMap<String, AstNode> =
+        std::collections::HashMap::new();
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
     let mut count = 0;
@@ -217,8 +219,16 @@ fn preprocess_bigint(
             }
             let digit_count = i - start;
             // 检查是否为小数的一部分（前一个或后一个字符为 `.`）
-            let prev_char = if start > 0 { Some(chars[start - 1]) } else { None };
-            let next_char = if i < chars.len() { Some(chars[i]) } else { None };
+            let prev_char = if start > 0 {
+                Some(chars[start - 1])
+            } else {
+                None
+            };
+            let next_char = if i < chars.len() {
+                Some(chars[i])
+            } else {
+                None
+            };
             let is_decimal = prev_char == Some('.') || next_char == Some('.');
 
             if digit_count >= 16 && !is_decimal {
@@ -602,10 +612,7 @@ fn convert_with_depth(expr: &mathexpr::Expr, depth: usize) -> Result<AstNode, Ca
             let l = convert_with_depth(left, depth + 1)?;
             let r = convert_with_depth(right, depth + 1)?;
             match op {
-                MBinOp::Mod => Ok(AstNode::FunctionCall(
-                    "mod".to_string(),
-                    vec![l, r],
-                )),
+                MBinOp::Mod => Ok(AstNode::FunctionCall("mod".to_string(), vec![l, r])),
                 MBinOp::Add => Ok(AstNode::BinaryOp(BinaryOp::Add, Box::new(l), Box::new(r))),
                 MBinOp::Sub => Ok(AstNode::BinaryOp(BinaryOp::Sub, Box::new(l), Box::new(r))),
                 MBinOp::Mul => Ok(AstNode::BinaryOp(BinaryOp::Mul, Box::new(l), Box::new(r))),
@@ -1021,7 +1028,10 @@ mod tests {
     fn test_double_factorial() {
         // 5!! → factorial(factorial(5))
         let ast = parse("5!!").unwrap();
-        assert_eq!(ast, call("factorial", vec![call("factorial", vec![num(5.0)])]));
+        assert_eq!(
+            ast,
+            call("factorial", vec![call("factorial", vec![num(5.0)])])
+        );
     }
 
     #[test]
@@ -1084,10 +1094,7 @@ mod tests {
         let ast = parse("[[1,2],[3,4]]").unwrap();
         assert_eq!(
             ast,
-            AstNode::Matrix(vec![
-                vec![num(1.0), num(2.0)],
-                vec![num(3.0), num(4.0)],
-            ])
+            AstNode::Matrix(vec![vec![num(1.0), num(2.0)], vec![num(3.0), num(4.0)],])
         );
     }
 
@@ -1122,13 +1129,7 @@ mod tests {
         let ast = parse("[1,2,3,4,5]").unwrap();
         assert_eq!(
             ast,
-            AstNode::List(vec![
-                num(1.0),
-                num(2.0),
-                num(3.0),
-                num(4.0),
-                num(5.0),
-            ])
+            AstNode::List(vec![num(1.0), num(2.0), num(3.0), num(4.0), num(5.0),])
         );
     }
 
@@ -1148,7 +1149,9 @@ mod tests {
         let result = parse_bracket_literal("abc");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("expected bracket literal")));
+        assert!(
+            matches!(err, CalcError::ParseError(msg) if msg.contains("expected bracket literal"))
+        );
     }
 
     // ===== 覆盖 preprocess_brackets 未匹配 '[' 错误 =====
@@ -1168,20 +1171,23 @@ mod tests {
     #[test]
     fn test_replace_placeholders_in_matrix() {
         // 直接调用 replace_placeholders，覆盖 Matrix 分支（lines 265-269）
-        let mut ast = AstNode::Matrix(vec![
-            vec![
-                AstNode::Variable("__bn_0".to_string()),
-                AstNode::Number(1.0),
-            ],
-        ]);
+        let mut ast = AstNode::Matrix(vec![vec![
+            AstNode::Variable("__bn_0".to_string()),
+            AstNode::Number(1.0),
+        ]]);
         let mut placeholders = std::collections::HashMap::new();
         placeholders.insert(
             "__bn_0".to_string(),
             AstNode::BigNumber("1234567890123456".to_string()),
         );
         replace_placeholders(&mut ast, &placeholders);
-        let AstNode::Matrix(rows) = &ast else { panic!("expected Matrix after placeholder replacement") };
-        assert_eq!(rows[0][0], AstNode::BigNumber("1234567890123456".to_string()));
+        let AstNode::Matrix(rows) = &ast else {
+            panic!("expected Matrix after placeholder replacement")
+        };
+        assert_eq!(
+            rows[0][0],
+            AstNode::BigNumber("1234567890123456".to_string())
+        );
         assert_eq!(rows[0][1], AstNode::Number(1.0));
     }
 
@@ -1198,8 +1204,13 @@ mod tests {
             AstNode::BigNumber("9876543210987654".to_string()),
         );
         replace_placeholders(&mut ast, &placeholders);
-        let AstNode::List(elements) = &ast else { panic!("expected List after placeholder replacement") };
-        assert_eq!(elements[0], AstNode::BigNumber("9876543210987654".to_string()));
+        let AstNode::List(elements) = &ast else {
+            panic!("expected List after placeholder replacement")
+        };
+        assert_eq!(
+            elements[0],
+            AstNode::BigNumber("9876543210987654".to_string())
+        );
         assert_eq!(elements[1], AstNode::Number(2.0));
     }
 
@@ -1212,7 +1223,9 @@ mod tests {
         let result = parse_matrix_literal("[1,2]");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("invalid matrix literal")));
+        assert!(
+            matches!(err, CalcError::ParseError(msg) if msg.contains("invalid matrix literal"))
+        );
     }
 
     #[test]
@@ -1339,7 +1352,11 @@ mod tests {
         let ast = parse("3(x+1)").unwrap();
         assert_eq!(
             ast,
-            binop(BinaryOp::Mul, num(3.0), binop(BinaryOp::Add, var("x"), num(1.0)))
+            binop(
+                BinaryOp::Mul,
+                num(3.0),
+                binop(BinaryOp::Add, var("x"), num(1.0))
+            )
         );
     }
 
@@ -1377,7 +1394,11 @@ mod tests {
         let ast = parse("(x+1)x").unwrap();
         assert_eq!(
             ast,
-            binop(BinaryOp::Mul, binop(BinaryOp::Add, var("x"), num(1.0)), var("x"))
+            binop(
+                BinaryOp::Mul,
+                binop(BinaryOp::Add, var("x"), num(1.0)),
+                var("x")
+            )
         );
     }
 
@@ -1387,7 +1408,11 @@ mod tests {
         let ast = parse("(x+1)2").unwrap();
         assert_eq!(
             ast,
-            binop(BinaryOp::Mul, binop(BinaryOp::Add, var("x"), num(1.0)), num(2.0))
+            binop(
+                BinaryOp::Mul,
+                binop(BinaryOp::Add, var("x"), num(1.0)),
+                num(2.0)
+            )
         );
     }
 
@@ -1413,10 +1438,10 @@ mod tests {
         let ast = parse("diff(x^2, x)").unwrap();
         assert_eq!(
             ast,
-            call("diff", vec![
-                binop(BinaryOp::Pow, var("x"), num(2.0)),
-                var("x"),
-            ])
+            call(
+                "diff",
+                vec![binop(BinaryOp::Pow, var("x"), num(2.0)), var("x"),]
+            )
         );
     }
 
@@ -1426,10 +1451,7 @@ mod tests {
         let ast = parse("integrate(sin(x), x)").unwrap();
         assert_eq!(
             ast,
-            call("integrate", vec![
-                call("sin", vec![var("x")]),
-                var("x"),
-            ])
+            call("integrate", vec![call("sin", vec![var("x")]), var("x"),])
         );
     }
 
@@ -1455,11 +1477,10 @@ mod tests {
         let ast = parse("limit(x^2, x, 0)").unwrap();
         assert_eq!(
             ast,
-            call("limit", vec![
-                binop(BinaryOp::Pow, var("x"), num(2.0)),
-                var("x"),
-                num(0.0),
-            ])
+            call(
+                "limit",
+                vec![binop(BinaryOp::Pow, var("x"), num(2.0)), var("x"), num(0.0),]
+            )
         );
     }
 
@@ -1469,11 +1490,10 @@ mod tests {
         let ast = parse("taylor(sin(x), x, 5)").unwrap();
         assert_eq!(
             ast,
-            call("taylor", vec![
-                call("sin", vec![var("x")]),
-                var("x"),
-                num(5.0),
-            ])
+            call(
+                "taylor",
+                vec![call("sin", vec![var("x")]), var("x"), num(5.0),]
+            )
         );
     }
 

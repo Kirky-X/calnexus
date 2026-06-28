@@ -49,7 +49,9 @@ pub struct DomainRouter {
 impl DomainRouter {
     /// 创建空路由器。
     pub fn new() -> Self {
-        Self { domains: Vec::new() }
+        Self {
+            domains: Vec::new(),
+        }
     }
 
     /// 注册计算域。
@@ -142,8 +144,7 @@ mod tests {
 
     /// 科学函数集合（Req 2）。
     const SCIENTIFIC_FUNCTIONS: &[&str] = &[
-        "sin", "cos", "tan", "asin", "acos", "atan",
-        "ln", "log", "exp", "sinh", "cosh", "tanh",
+        "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log", "exp", "sinh", "cosh", "tanh",
         "gamma", "erf",
     ];
 
@@ -172,10 +173,12 @@ mod tests {
             AstNode::BinaryOp(_, l, r) => is_arithmetic_only(l) && is_arithmetic_only(r),
             AstNode::UnaryOp(_, e) => is_arithmetic_only(e),
             AstNode::FunctionCall(name, args) => {
-                ARITHMETIC_FUNCTIONS.contains(&name.as_str())
-                    && args.iter().all(is_arithmetic_only)
+                ARITHMETIC_FUNCTIONS.contains(&name.as_str()) && args.iter().all(is_arithmetic_only)
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => false,
+            AstNode::Complex(_, _)
+            | AstNode::Matrix(_)
+            | AstNode::List(_)
+            | AstNode::BigNumber(_) => false,
         }
     }
 
@@ -183,8 +186,12 @@ mod tests {
     struct MockArithmeticDomain;
 
     impl CalculationDomain for MockArithmeticDomain {
-        fn domain_name(&self) -> &str { "arithmetic" }
-        fn priority(&self) -> u8 { 10 }
+        fn domain_name(&self) -> &str {
+            "arithmetic"
+        }
+        fn priority(&self) -> u8 {
+            10
+        }
         fn supports(&self, ast: &AstNode) -> bool {
             is_arithmetic_only(ast)
         }
@@ -197,8 +204,12 @@ mod tests {
     struct MockScientificDomain;
 
     impl CalculationDomain for MockScientificDomain {
-        fn domain_name(&self) -> &str { "scientific" }
-        fn priority(&self) -> u8 { 20 }
+        fn domain_name(&self) -> &str {
+            "scientific"
+        }
+        fn priority(&self) -> u8 {
+            20
+        }
         fn supports(&self, ast: &AstNode) -> bool {
             contains_scientific_function(ast)
         }
@@ -215,9 +226,15 @@ mod tests {
     }
 
     impl CalculationDomain for ConfigurableMockDomain {
-        fn domain_name(&self) -> &str { &self.name }
-        fn priority(&self) -> u8 { self.priority }
-        fn supports(&self, _ast: &AstNode) -> bool { self.supports_result }
+        fn domain_name(&self) -> &str {
+            &self.name
+        }
+        fn priority(&self) -> u8 {
+            self.priority
+        }
+        fn supports(&self, _ast: &AstNode) -> bool {
+            self.supports_result
+        }
         fn evaluate(&self, _ast: &AstNode, _ctx: &EvalContext) -> Result<EvalResult, CalcError> {
             Ok(EvalResult::Scalar(0.0))
         }
@@ -409,7 +426,11 @@ mod tests {
         let ast = parse("foo(1)").unwrap();
         let result = router.route(&ast);
         let e = result.err().expect("expected error");
-        assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e);
+        assert!(
+            matches!(e, CalcError::DomainError(_)),
+            "expected DomainError, got {:?}",
+            e
+        );
     }
 
     #[test]
@@ -419,7 +440,11 @@ mod tests {
         let ast = parse("1+2").unwrap();
         let result = router.route(&ast);
         let e = result.err().expect("expected error");
-        assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e);
+        assert!(
+            matches!(e, CalcError::DomainError(_)),
+            "expected DomainError, got {:?}",
+            e
+        );
     }
 
     #[test]
@@ -428,8 +453,14 @@ mod tests {
         let router = default_router();
         let ast = parse("bar(2)").unwrap();
         let err = router.route(&ast).err().expect("expected error");
-        let CalcError::DomainError(msg) = err else { panic!("expected DomainError, got {:?}", err) };
-        assert!(msg.contains("bar"), "error message should contain 'bar': {}", msg);
+        let CalcError::DomainError(msg) = err else {
+            panic!("expected DomainError, got {:?}", err)
+        };
+        assert!(
+            msg.contains("bar"),
+            "error message should contain 'bar': {}",
+            msg
+        );
     }
 
     // ===== Requirement 6: 计算域注册机制 =====
@@ -538,8 +569,12 @@ mod tests {
     fn test_is_arithmetic_only_non_arithmetic_nodes() {
         // 覆盖 is_arithmetic_only 中 Complex/Matrix/List/BigNumber → false 分支（line 177）
         assert!(!is_arithmetic_only(&AstNode::Complex(1.0, 2.0)));
-        assert!(!is_arithmetic_only(&AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])));
-        assert!(!is_arithmetic_only(&AstNode::List(vec![AstNode::Number(1.0)])));
+        assert!(!is_arithmetic_only(&AstNode::Matrix(vec![vec![
+            AstNode::Number(1.0)
+        ]])));
+        assert!(!is_arithmetic_only(&AstNode::List(vec![AstNode::Number(
+            1.0
+        )])));
         assert!(!is_arithmetic_only(&AstNode::BigNumber("123".to_string())));
     }
 
@@ -550,10 +585,17 @@ mod tests {
         let router = default_router();
         let ast = AstNode::UnaryOp(
             crate::core::types::UnaryOp::Neg,
-            Box::new(AstNode::FunctionCall("foo".to_string(), vec![AstNode::Number(1.0)])),
+            Box::new(AstNode::FunctionCall(
+                "foo".to_string(),
+                vec![AstNode::Number(1.0)],
+            )),
         );
         let err = router.route(&ast).err().expect("expected error");
-        assert!(err.to_string().contains("foo"), "错误信息应包含 'foo': {}", err);
+        assert!(
+            err.to_string().contains("foo"),
+            "错误信息应包含 'foo': {}",
+            err
+        );
     }
 
     // ===== proptest 属性测试 =====

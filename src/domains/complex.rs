@@ -97,10 +97,12 @@ impl ComplexDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
-                "complex domain does not support this node type: {:?}",
-                ast
-            ))),
+            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
+                Err(CalcError::DomainError(format!(
+                    "complex domain does not support this node type: {:?}",
+                    ast
+                )))
+            }
         }
     }
 
@@ -525,7 +527,11 @@ mod tests {
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
         let e = result.unwrap_err();
-        assert!(matches!(e, CalcError::DomainError(_)), "expected DomainError, got {:?}", e);
+        assert!(
+            matches!(e, CalcError::DomainError(_)),
+            "expected DomainError, got {:?}",
+            e
+        );
     }
 
     #[test]
@@ -533,7 +539,11 @@ mod tests {
         // 3+*4i → 语法错误（Req 10 Scen 2，非法复数字面量）
         let result = parse("3+*4i");
         let e = result.unwrap_err();
-        assert!(matches!(e, CalcError::ParseError(_)), "expected ParseError, got {:?}", e);
+        assert!(
+            matches!(e, CalcError::ParseError(_)),
+            "expected ParseError, got {:?}",
+            e
+        );
     }
 
     // ===== 额外覆盖：域优先级与名称 =====
@@ -688,10 +698,7 @@ mod tests {
     #[test]
     fn test_complex_nan_or_inf() {
         // exp(1000+0i) → 复数结果 re 为 infinity → NaNOrInf（line 53）
-        let ast = AstNode::FunctionCall(
-            "exp".to_string(),
-            vec![AstNode::Complex(1000.0, 0.0)],
-        );
+        let ast = AstNode::FunctionCall("exp".to_string(), vec![AstNode::Complex(1000.0, 0.0)]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
         assert!(matches!(result, Err(CalcError::NaNOrInf)));
@@ -705,7 +712,10 @@ mod tests {
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Complex(1.0, 2.0)),
-            Box::new(AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(3.0)))),
+            Box::new(AstNode::UnaryOp(
+                UnaryOp::Neg,
+                Box::new(AstNode::Number(3.0)),
+            )),
         );
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -842,10 +852,7 @@ mod tests {
     #[test]
     fn test_complex_function_wrong_arg_count() {
         // complex(1) → DomainError（lines 171-175 参数数量错误）
-        let ast = AstNode::FunctionCall(
-            "complex".to_string(),
-            vec![AstNode::Number(1.0)],
-        );
+        let ast = AstNode::FunctionCall("complex".to_string(), vec![AstNode::Number(1.0)]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
         assert!(matches!(result, Err(CalcError::DomainError(_))));

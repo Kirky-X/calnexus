@@ -7,10 +7,10 @@
 //! - 9.3 错误传播链（7 种 CalcError 各自正确传播）
 
 use calnexus::{
-    ArithmeticDomain, AstCanonicalizer, CacheManager, CalcError, CombinatoricsDomain,
+    parse, ArithmeticDomain, AstCanonicalizer, CacheManager, CalcError, CombinatoricsDomain,
     ComplexDomain, DomainRouter, EvalContext, EvalResult, MatrixDomain, NumberTheoryDomain,
     PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
-    VectorDomain, parse,
+    VectorDomain,
 };
 
 /// 构建默认路由器：注册 v1.0 全部 11 个域（含 SymbolicDomain）。
@@ -41,9 +41,9 @@ fn evaluate(expr: &str) -> Result<f64, CalcError> {
 /// 仅用于标量结果；非标量结果返回 EvalError。
 fn evaluate_with_ctx(expr: &str, ctx: &EvalContext) -> Result<f64, CalcError> {
     let result = evaluate_full(expr, ctx)?;
-    result.as_scalar().ok_or_else(|| {
-        CalcError::EvalError("unexpected non-scalar result".to_string())
-    })
+    result
+        .as_scalar()
+        .ok_or_else(|| CalcError::EvalError("unexpected non-scalar result".to_string()))
 }
 
 /// 全链路求值（返回完整 EvalResult，支持 Complex/Matrix/BigInt/BigRational）。
@@ -143,9 +143,7 @@ fn test_full_pipeline_mixed_arithmetic_scientific() {
 #[test]
 fn test_full_pipeline_variable_binding() {
     // x=10, y=20 → x*y = 200
-    let ctx = EvalContext::new()
-        .with_var("x", 10.0)
-        .with_var("y", 20.0);
+    let ctx = EvalContext::new().with_var("x", 10.0).with_var("y", 20.0);
     assert_eq!(evaluate_with_ctx("x*y", &ctx).unwrap(), 200.0);
 }
 
@@ -245,18 +243,22 @@ fn test_cache_get_or_compute_dedup() {
     let cc = Arc::clone(&call_count);
 
     // 第一次：miss → compute
-    let r1 = cache.get_or_compute(&cf1, || {
-        cc.fetch_add(1, Ordering::SeqCst);
-        Ok(EvalResult::Scalar(5.0))
-    }).unwrap();
+    let r1 = cache
+        .get_or_compute(&cf1, || {
+            cc.fetch_add(1, Ordering::SeqCst);
+            Ok(EvalResult::Scalar(5.0))
+        })
+        .unwrap();
     assert_eq!(r1, EvalResult::Scalar(5.0));
     assert_eq!(call_count.load(Ordering::SeqCst), 1);
 
     // 第二次：等价表达式 → 命中缓存 → 不调用 compute
-    let r2 = cache.get_or_compute(&cf2, || {
-        cc.fetch_add(1, Ordering::SeqCst);
-        Ok(EvalResult::Scalar(5.0))
-    }).unwrap();
+    let r2 = cache
+        .get_or_compute(&cf2, || {
+            cc.fetch_add(1, Ordering::SeqCst);
+            Ok(EvalResult::Scalar(5.0))
+        })
+        .unwrap();
     assert_eq!(r2, EvalResult::Scalar(5.0));
     assert_eq!(call_count.load(Ordering::SeqCst), 1, "等价表达式应命中缓存");
 }
@@ -417,11 +419,11 @@ fn test_all_seven_error_variants_covered() {
     // 元测试：确认 7 种 CalcError 变体均已在集成测试中覆盖传播路径
     // ParseError, EvalError, Overflow, NaNOrInf, DomainError, DepthExceeded, DivisionByZero
     let covered = [
-        matches!(evaluate("2++"), Err(CalcError::ParseError(_))),           // ParseError
+        matches!(evaluate("2++"), Err(CalcError::ParseError(_))), // ParseError
         matches!(evaluate("factorial(1,2)"), Err(CalcError::EvalError(_))), // EvalError
-        matches!(evaluate("factorial(10001)"), Err(CalcError::Overflow)),   // Overflow
-        matches!(evaluate("1e308+1e308"), Err(CalcError::NaNOrInf)),        // NaNOrInf
-        matches!(evaluate("asin(2)"), Err(CalcError::DomainError(_))),      // DomainError
+        matches!(evaluate("factorial(10001)"), Err(CalcError::Overflow)), // Overflow
+        matches!(evaluate("1e308+1e308"), Err(CalcError::NaNOrInf)), // NaNOrInf
+        matches!(evaluate("asin(2)"), Err(CalcError::DomainError(_))), // DomainError
         matches!(
             evaluate(&format!("1{}", "+1".repeat(300))),
             Err(CalcError::DepthExceeded)
@@ -711,11 +713,7 @@ fn test_precision_pipeline_bigint_literal() {
 #[test]
 fn test_precision_pipeline_bigint_addition() {
     // 大整数 + 1 → BigInt
-    let result = evaluate_full(
-        "123456789012345678901234567890 + 1",
-        &EvalContext::new(),
-    )
-    .unwrap();
+    let result = evaluate_full("123456789012345678901234567890 + 1", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigInt(b) => {
             assert_eq!(b.to_string(), "123456789012345678901234567891");
@@ -727,11 +725,7 @@ fn test_precision_pipeline_bigint_addition() {
 #[test]
 fn test_precision_pipeline_bigint_multiplication() {
     // 大整数乘法不丢精度
-    let result = evaluate_full(
-        "123456789012345678901234567890 * 2",
-        &EvalContext::new(),
-    )
-    .unwrap();
+    let result = evaluate_full("123456789012345678901234567890 * 2", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigInt(b) => {
             assert_eq!(b.to_string(), "246913578024691357802469135780");
@@ -788,14 +782,13 @@ fn test_precision_pipeline_big_power() {
     // 大整数幂：123456789012345678901234567890^2 → BigInt
     // 注：2^100 两个操作数均为 Number，规范化阶段被常量折叠为 f64；
     //     此处使用 BigNumber 基数避免折叠，保留 BigInt 精确求值路径。
-    let result = evaluate_full(
-        "123456789012345678901234567890^2",
-        &EvalContext::new(),
-    )
-    .unwrap();
+    let result = evaluate_full("123456789012345678901234567890^2", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigInt(b) => {
-            assert_eq!(b.to_string(), "15241578753238836750495351562536198787501905199875019052100");
+            assert_eq!(
+                b.to_string(),
+                "15241578753238836750495351562536198787501905199875019052100"
+            );
         }
         other => panic!("expected BigInt, got {:?}", other),
     }
@@ -1065,7 +1058,10 @@ fn test_vector_angle_pipeline() {
 
 #[test]
 fn test_vector_scalar_triple_pipeline() {
-    assert_eq!(evaluate("scalar_triple([1,0,0],[0,1,0],[0,0,1])").unwrap(), 1.0);
+    assert_eq!(
+        evaluate("scalar_triple([1,0,0],[0,1,0],[0,0,1])").unwrap(),
+        1.0
+    );
 }
 
 #[test]
@@ -1167,7 +1163,9 @@ fn test_v08_cache_dedup_same_expression() {
 
     // 首次求值
     let domain = router.route(&canonical_ast).unwrap();
-    let result1 = domain.evaluate(&canonical_ast, &EvalContext::new()).unwrap();
+    let result1 = domain
+        .evaluate(&canonical_ast, &EvalContext::new())
+        .unwrap();
     cache.insert(&cf, &Ok(result1.clone()));
 
     // 缓存命中
@@ -1391,7 +1389,9 @@ fn test_v10_roots_cubic_one_real() {
     let v = result.unwrap().as_complex_list().unwrap().clone();
     assert_eq!(v.len(), 3);
     // 至少有一个实根 -1
-    assert!(v.iter().any(|(re, im)| (re - (-1.0)).abs() < 1e-6 && im.abs() < 1e-6));
+    assert!(v
+        .iter()
+        .any(|(re, im)| (re - (-1.0)).abs() < 1e-6 && im.abs() < 1e-6));
 }
 
 #[test]

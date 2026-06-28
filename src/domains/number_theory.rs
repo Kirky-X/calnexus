@@ -13,11 +13,17 @@ use crate::core::domain::CalculationDomain;
 use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use num_bigint::BigInt;
 use num_integer::Integer as _;
-use num_traits::{One, Signed, Zero, ToPrimitive};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 
 /// 数论函数白名单。
 const NUMBER_THEORY_FUNCTIONS: &[&str] = &[
-    "gcd", "lcm", "is_prime", "prime_sieve", "mod_inverse", "mod_pow", "euler_phi",
+    "gcd",
+    "lcm",
+    "is_prime",
+    "prime_sieve",
+    "mod_inverse",
+    "mod_pow",
+    "euler_phi",
 ];
 
 /// Miller-Rabin 确定性基（n < 3.3×10^24 时确定性判定）。
@@ -117,10 +123,9 @@ impl NumberTheoryDomain {
                 }
                 Ok(BigInt::from(*n as i64))
             }
-            AstNode::BigNumber(s) => {
-                s.parse::<BigInt>()
-                    .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))
-            }
+            AstNode::BigNumber(s) => s
+                .parse::<BigInt>()
+                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
             AstNode::Variable(name) => {
                 let v = ctx
                     .get_var(name)
@@ -171,12 +176,9 @@ impl NumberTheoryDomain {
                     ))),
                 }
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-                Err(CalcError::DomainError(format!(
-                    "expected integer expression, got: {:?}",
-                    ast
-                )))
-            }
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(
+                CalcError::DomainError(format!("expected integer expression, got: {:?}", ast)),
+            ),
         }
     }
 
@@ -198,9 +200,7 @@ impl NumberTheoryDomain {
                         "negative exponent not supported for integers".to_string(),
                     ));
                 }
-                let exp: u32 = b
-                    .to_u32()
-                    .ok_or_else(|| CalcError::Overflow)?;
+                let exp: u32 = b.to_u32().ok_or_else(|| CalcError::Overflow)?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {
@@ -277,11 +277,11 @@ impl NumberTheoryDomain {
                         "prime_sieve() requires non-negative argument".to_string(),
                     ));
                 }
-                let n_u64 = n
-                    .to_u64()
-                    .ok_or_else(|| CalcError::Overflow)?;
+                let n_u64 = n.to_u64().ok_or_else(|| CalcError::Overflow)?;
                 let primes = prime_sieve_u64(n_u64);
-                Ok(EvalResult::Vector(primes.into_iter().map(|p| p as f64).collect()))
+                Ok(EvalResult::Vector(
+                    primes.into_iter().map(|p| p as f64).collect(),
+                ))
             }
             "mod_inverse" => {
                 if args.len() != 2 {
@@ -572,10 +572,7 @@ fn prime_sieve_u64(n: u64) -> Vec<u64> {
         }
         i += 1;
     }
-    (2..=n)
-        .filter(|&i| is_prime[i])
-        .map(|i| i as u64)
-        .collect()
+    (2..=n).filter(|&i| is_prime[i]).map(|i| i as u64).collect()
 }
 
 /// 递归检查 AST 是否含数论函数调用。
@@ -857,10 +854,7 @@ mod tests {
 
     #[test]
     fn test_supports_unary() {
-        let ast = AstNode::UnaryOp(
-            UnaryOp::Neg,
-            Box::new(parse("is_prime(7)").unwrap()),
-        );
+        let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(parse("is_prime(7)").unwrap()));
         assert!(NumberTheoryDomain.supports(&ast));
     }
 
@@ -986,14 +980,18 @@ mod tests {
     #[test]
     fn test_unary_abs() {
         let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-5.0)));
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 5.0);
     }
 
     #[test]
     fn test_unary_neg() {
         let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), -5.0);
     }
 
@@ -1010,7 +1008,9 @@ mod tests {
             "is_prime".to_string(),
             vec![AstNode::BigNumber("1000000007".to_string())],
         );
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 1.0);
     }
 
@@ -1038,7 +1038,9 @@ mod tests {
                 AstNode::BigNumber("33333333333333333333".to_string()),
             ],
         );
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert!(matches!(result, EvalResult::BigInt(_)));
     }
 
@@ -1117,11 +1119,7 @@ mod tests {
 
     #[test]
     fn test_mod_pow_bigint_known() {
-        let result = mod_pow_bigint(
-            &BigInt::from(2),
-            &BigInt::from(10),
-            &BigInt::from(1000),
-        );
+        let result = mod_pow_bigint(&BigInt::from(2), &BigInt::from(10), &BigInt::from(1000));
         assert_eq!(result, BigInt::from(24));
     }
 
@@ -1142,7 +1140,9 @@ mod tests {
     fn test_eval_node_integer_number() {
         // eval_node Number success (integer)
         let ast = AstNode::Number(42.0);
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 42.0);
     }
 
@@ -1150,7 +1150,9 @@ mod tests {
     fn test_eval_node_bignumber() {
         // eval_node BigNumber success
         let ast = AstNode::BigNumber("12345678901234567890".to_string());
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert!(matches!(result, EvalResult::BigInt(_)));
     }
 
@@ -1170,10 +1172,7 @@ mod tests {
         // eval_int overflow: number > i64::MAX
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
-            vec![
-                AstNode::Number(1.0e20),
-                AstNode::Number(6.0),
-            ],
+            vec![AstNode::Number(1.0e20), AstNode::Number(6.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(CalcError::Overflow)));
@@ -1213,7 +1212,9 @@ mod tests {
                 AstNode::Number(18.0),
             ],
         );
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 6.0);
     }
 
@@ -1252,7 +1253,9 @@ mod tests {
             ],
         );
         // gcd(33333333333333333333, 18) = 3
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 3.0);
     }
 
@@ -1289,7 +1292,9 @@ mod tests {
                 AstNode::Number(3.0),
             ],
         );
-        let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        let result = NumberTheoryDomain
+            .evaluate(&ast, &EvalContext::new())
+            .unwrap();
         assert_eq!(result.as_scalar().unwrap(), 1.0);
     }
 
@@ -1318,10 +1323,7 @@ mod tests {
 
     #[test]
     fn test_mod_inverse_wrong_args() {
-        let ast = AstNode::FunctionCall(
-            "mod_inverse".to_string(),
-            vec![AstNode::Number(3.0)],
-        );
+        let ast = AstNode::FunctionCall("mod_inverse".to_string(), vec![AstNode::Number(3.0)]);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(CalcError::DomainError(_))));
     }

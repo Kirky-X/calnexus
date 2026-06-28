@@ -142,7 +142,14 @@ impl BatchProcessor {
                 match &r.result {
                     Ok((result, domain, hit, fmt_prec)) => {
                         let value = format_result(result, *fmt_prec);
-                        println!("line {}: {} = {}  [{}{}]", r.line_no, r.expr, value, domain, if *hit { " (cached)" } else { "" });
+                        println!(
+                            "line {}: {} = {}  [{}{}]",
+                            r.line_no,
+                            r.expr,
+                            value,
+                            domain,
+                            if *hit { " (cached)" } else { "" }
+                        );
                     }
                     Err(e) => {
                         eprintln!("line {}: {} → error: {}", r.line_no, r.expr, e);
@@ -157,7 +164,11 @@ impl BatchProcessor {
             total, ok_count, err_count, cache_hits, elapsed
         );
 
-        if err_count > 0 { 1 } else { 0 }
+        if err_count > 0 {
+            1
+        } else {
+            0
+        }
     }
 }
 

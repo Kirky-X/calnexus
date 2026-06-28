@@ -7,18 +7,27 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::{ArithmeticDomain, AstNode, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain, VectorDomain};
 use crate::core::domain::CalculationDomain;
-use crate::{
-    AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, parse,
-};
 use crate::domains::precision::format_bigrational;
+use crate::output::{canonical::format_canonical, latex::format_latex, steps::generate_steps};
+use crate::{
+    parse, AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult,
+};
+use crate::{
+    ArithmeticDomain, AstNode, CombinatoricsDomain, ComplexDomain, MatrixDomain,
+    NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain,
+    SymbolicDomain, VectorDomain,
+};
 use clap::Parser;
 use std::io::{self, IsTerminal, Read};
 
 /// CLI 参数定义（clap v4 derive）。
 #[derive(Parser)]
-#[command(name = "calnexus", version, about = "CalNexus: math expression evaluator")]
+#[command(
+    name = "calnexus",
+    version,
+    about = "CalNexus: math expression evaluator"
+)]
 struct Cli {
     /// Expression to evaluate (reads from stdin if omitted and piped)
     expression: Option<String>,
@@ -28,20 +37,32 @@ struct Cli {
     vars: Vec<String>,
 
     /// Output result as JSON with domain and cache metadata
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["latex", "canonical", "steps"])]
     json: bool,
 
     /// Arbitrary precision mode: format result to N decimal places using BigRational arithmetic
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["canonical"])]
     precision: Option<usize>,
 
     /// Start interactive REPL mode (read-eval-print loop)
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps"])]
     repl: bool,
 
     /// Batch evaluate expressions from file ('-' for stdin), one expression per line
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps"])]
     batch: Option<String>,
+
+    /// Render result as LaTeX (e.g., matrices as `\begin{pmatrix}...`)
+    #[arg(long, conflicts_with_all = ["json", "canonical"])]
+    latex: bool,
+
+    /// Display step-by-step evaluation (e.g., `2+9=11` for `(2+9)*7-6`)
+    #[arg(long, conflicts_with_all = ["json", "canonical"])]
+    steps: bool,
+
+    /// Print canonical S-expression form (e.g., `(+ 2 3)` for `3+2`), skip evaluation
+    #[arg(long, conflicts_with_all = ["json", "latex", "steps", "precision", "repl", "batch"])]
+    canonical: bool,
 }
 
 /// CLI 入口：解析参数、求值、输出结果，返回退出码。
@@ -89,80 +110,174 @@ pub fn run() -> i32 {
     };
     ctx.precision = cli.precision;
 
-    // 求值
-    let cache = CacheManager::new();
-    match evaluate(&expr, &ctx, cli.precision, &cache) {
-        Ok((result, domain, cache_hit, fmt_prec)) => {
-            if cli.json {
-                let cache_str = if cache_hit { "hit" } else { "miss" };
-                match &result {
-                    EvalResult::Scalar(v) => println!(
-                        r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
-                        v, domain, cache_str
-                    ),
-                    EvalResult::Complex(re, im) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        format_complex(*re, *im),
-                        domain,
-                        cache_str
-                    ),
-                    EvalResult::Matrix(m) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        format_matrix(m),
-                        domain,
-                        cache_str
-                    ),
-                    EvalResult::BigInt(b) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        b, domain, cache_str
-                    ),
-                    EvalResult::BigRational(r) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        format_bigrational(r, fmt_prec),
-                        domain,
-                        cache_str
-                    ),
-                    EvalResult::Vector(v) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        format_vector(v),
-                        domain,
-                        cache_str
-                    ),
-                    EvalResult::Polynomial(p) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        format_polynomial(p),
-                        domain,
-                        cache_str
-                    ),
-                    EvalResult::ComplexList(c) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        format_complex_list(c),
-                        domain,
-                        cache_str
-                    ),
-                    EvalResult::Symbolic(s) => println!(
-                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                        s, domain, cache_str
-                    ),
+    // --canonical 模式：parse → canonicalize_no_fold → print S-expr，跳过求值
+    if cli.canonical {
+        let ast = match parse(&expr) {
+            Ok(ast) => ast,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                return 1;
+            }
+        };
+        match AstCanonicalizer::canonicalize_no_fold(&ast) {
+            Ok((_canonical_ast, cf)) => {
+                println!("{}", format_canonical(&cf));
+                0
+            }
+            Err(e) => {
+                eprintln!("error: {}", e);
+                1
+            }
+        }
+    } else if cli.latex || cli.steps {
+        // --latex 和/或 --steps：解析 + 规范化 + 求值 + 格式化输出
+        let ast = match parse(&expr) {
+            Ok(ast) => ast,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                return 1;
+            }
+        };
+        let (canonical_ast, _cf) = match AstCanonicalizer::canonicalize(&ast) {
+            Ok(pair) => pair,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                return 1;
+            }
+        };
+
+        // --steps 先输出步骤（基于原始 AST，避免常量折叠后无步骤可显示）
+        if cli.steps {
+            match generate_steps(&ast, &ctx) {
+                Ok(step_lines) => {
+                    for line in &step_lines {
+                        println!("{}", line);
+                    }
                 }
-            } else {
-                match &result {
-                    EvalResult::Scalar(v) => println!("{}", v),
-                    EvalResult::Complex(re, im) => println!("{}", format_complex(*re, *im)),
-                    EvalResult::Matrix(m) => println!("{}", format_matrix(m)),
-                    EvalResult::BigInt(b) => println!("{}", b),
-                    EvalResult::BigRational(r) => println!("{}", format_bigrational(r, fmt_prec)),
-                    EvalResult::Vector(v) => println!("{}", format_vector(v)),
-                    EvalResult::Polynomial(p) => println!("{}", format_polynomial(p)),
-                    EvalResult::ComplexList(c) => println!("{}", format_complex_list(c)),
-                    EvalResult::Symbolic(s) => println!("{}", s),
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    return 1;
                 }
             }
-            0
         }
-        Err(e) => {
-            eprintln!("error: {}", e);
-            1
+
+        // --latex：求值并输出 LaTeX 结果
+        if cli.latex {
+            let cache = CacheManager::new();
+            match evaluate(&expr, &ctx, cli.precision, &cache) {
+                Ok((result, _domain, _cache_hit, fmt_prec)) => {
+                    let latex_str = format_latex(&result, &canonical_ast, &expr, fmt_prec);
+                    println!("{}", latex_str);
+                }
+                Err(e) => {
+                    eprintln!("error: {}", e);
+                    return 1;
+                }
+            }
+        }
+        0
+    } else {
+        // 默认模式：求值 + 输出（JSON 或文本）
+        let cache = CacheManager::new();
+        match evaluate(&expr, &ctx, cli.precision, &cache) {
+            Ok((result, domain, cache_hit, fmt_prec)) => {
+                if cli.json {
+                    let cache_str = if cache_hit { "hit" } else { "miss" };
+                    match &result {
+                        EvalResult::Scalar(v) => println!(
+                            r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
+                            v, domain, cache_str
+                        ),
+                        EvalResult::Complex(re, im) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            format_complex(*re, *im),
+                            domain,
+                            cache_str
+                        ),
+                        EvalResult::Matrix(m) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            format_matrix(m),
+                            domain,
+                            cache_str
+                        ),
+                        EvalResult::BigInt(b) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            b, domain, cache_str
+                        ),
+                        EvalResult::BigRational(r) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            format_bigrational(r, fmt_prec),
+                            domain,
+                            cache_str
+                        ),
+                        EvalResult::Vector(v) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            format_vector(v),
+                            domain,
+                            cache_str
+                        ),
+                        EvalResult::Polynomial(p) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            format_polynomial(p),
+                            domain,
+                            cache_str
+                        ),
+                        EvalResult::ComplexList(c) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            format_complex_list(c),
+                            domain,
+                            cache_str
+                        ),
+                        EvalResult::Symbolic(s) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            s, domain, cache_str
+                        ),
+                        EvalResult::LaTeX(s) => println!(
+                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                            s, domain, cache_str
+                        ),
+                        EvalResult::Steps(v) => {
+                            let arr: Vec<String> = v
+                                .iter()
+                                .map(|s| {
+                                    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+                                })
+                                .collect();
+                            println!(
+                                r#"{{"result":[{}],"domain":"{}","cache":"{}"}}"#,
+                                arr.join(","),
+                                domain,
+                                cache_str
+                            )
+                        }
+                    }
+                } else {
+                    match &result {
+                        EvalResult::Scalar(v) => println!("{}", v),
+                        EvalResult::Complex(re, im) => println!("{}", format_complex(*re, *im)),
+                        EvalResult::Matrix(m) => println!("{}", format_matrix(m)),
+                        EvalResult::BigInt(b) => println!("{}", b),
+                        EvalResult::BigRational(r) => {
+                            println!("{}", format_bigrational(r, fmt_prec))
+                        }
+                        EvalResult::Vector(v) => println!("{}", format_vector(v)),
+                        EvalResult::Polynomial(p) => println!("{}", format_polynomial(p)),
+                        EvalResult::ComplexList(c) => println!("{}", format_complex_list(c)),
+                        EvalResult::Symbolic(s) => println!("{}", s),
+                        EvalResult::LaTeX(s) => println!("{}", s),
+                        EvalResult::Steps(v) => {
+                            for line in v {
+                                println!("{}", line);
+                            }
+                        }
+                    }
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("error: {}", e);
+                1
+            }
         }
     }
 }
@@ -216,7 +331,12 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, String> {
 /// format_precision 用于 BigRational 输出格式化（--precision N 或 precision(N, expr)）。
 ///
 /// `cache` 参数允许调用方注入预填充的缓存（测试用），生产代码传入空缓存。
-pub(crate) fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>, cache: &CacheManager) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
+pub fn evaluate(
+    expr: &str,
+    ctx: &EvalContext,
+    precision: Option<usize>,
+    cache: &CacheManager,
+) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     // 1. 解析
     let ast = parse(expr)?;
 
@@ -301,6 +421,8 @@ pub(crate) fn format_result(result: &EvalResult, fmt_prec: Option<usize>) -> Str
         EvalResult::Polynomial(p) => format_polynomial(p),
         EvalResult::ComplexList(c) => format_complex_list(c),
         EvalResult::Symbolic(s) => s.clone(),
+        EvalResult::LaTeX(s) => s.clone(),
+        EvalResult::Steps(v) => v.join("\n"),
     }
 }
 
@@ -418,10 +540,7 @@ mod tests {
     fn test_extract_format_precision_non_number_n() {
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
-            vec![
-                AstNode::Variable("x".to_string()),
-                AstNode::Number(1.0),
-            ],
+            vec![AstNode::Variable("x".to_string()), AstNode::Number(1.0)],
         );
         assert_eq!(extract_format_precision(&ast), None);
     }
@@ -432,10 +551,7 @@ mod tests {
     fn test_extract_format_precision_bignumber_n() {
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
-            vec![
-                AstNode::BigNumber("5".to_string()),
-                AstNode::Number(1.0),
-            ],
+            vec![AstNode::BigNumber("5".to_string()), AstNode::Number(1.0)],
         );
         assert_eq!(extract_format_precision(&ast), None);
     }
@@ -445,10 +561,7 @@ mod tests {
     fn test_extract_format_precision_valid() {
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
-            vec![
-                AstNode::Number(5.0),
-                AstNode::Number(1.0),
-            ],
+            vec![AstNode::Number(5.0), AstNode::Number(1.0)],
         );
         assert_eq!(extract_format_precision(&ast), Some(5));
     }
@@ -456,10 +569,7 @@ mod tests {
     // 非 precision 函数调用 → None
     #[test]
     fn test_extract_format_precision_non_precision_call() {
-        let ast = AstNode::FunctionCall(
-            "sin".to_string(),
-            vec![AstNode::Number(1.0)],
-        );
+        let ast = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Number(1.0)]);
         assert_eq!(extract_format_precision(&ast), None);
     }
 
@@ -482,8 +592,7 @@ mod tests {
         cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
 
         let ctx = EvalContext::new();
-        let (result, domain, cache_hit, fmt_prec) =
-            evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+        let (result, domain, cache_hit, fmt_prec) = evaluate("2+3", &ctx, Some(5), &cache).unwrap();
 
         assert_eq!(result, EvalResult::Scalar(5.0));
         assert_eq!(domain, "precision");
@@ -503,8 +612,7 @@ mod tests {
         cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
 
         let ctx = EvalContext::new();
-        let (result, domain, cache_hit, fmt_prec) =
-            evaluate("2+3", &ctx, None, &cache).unwrap();
+        let (result, domain, cache_hit, fmt_prec) = evaluate("2+3", &ctx, None, &cache).unwrap();
 
         assert_eq!(result, EvalResult::Scalar(5.0));
         assert_eq!(domain, "arithmetic");
@@ -518,8 +626,7 @@ mod tests {
     fn test_v08_cli_number_theory_gcd() {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
-        let (result, domain, cache_hit, _) =
-            evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
+        let (result, domain, cache_hit, _) = evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
         assert_eq!(result, EvalResult::Scalar(6.0));
         assert_eq!(domain, "number_theory");
         assert!(!cache_hit);
@@ -529,8 +636,7 @@ mod tests {
     fn test_v08_cli_combinatorics_C() {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
-        let (result, domain, cache_hit, _) =
-            evaluate("C(10,3)", &ctx, None, &cache).unwrap();
+        let (result, domain, cache_hit, _) = evaluate("C(10,3)", &ctx, None, &cache).unwrap();
         assert_eq!(result, EvalResult::Scalar(120.0));
         assert_eq!(domain, "combinatorics");
         assert!(!cache_hit);
@@ -540,8 +646,7 @@ mod tests {
     fn test_v08_cli_vector_dot() {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
-        let (result, domain, _, _) =
-            evaluate("dot([1,2,3],[4,5,6])", &ctx, None, &cache).unwrap();
+        let (result, domain, _, _) = evaluate("dot([1,2,3],[4,5,6])", &ctx, None, &cache).unwrap();
         assert_eq!(result, EvalResult::Scalar(32.0));
         let _ = domain; // vector domain
     }
@@ -550,8 +655,7 @@ mod tests {
     fn test_v08_cli_polynomial_add() {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
-        let (result, domain, _, _) =
-            evaluate("poly_add(x+1,x+2)", &ctx, None, &cache).unwrap();
+        let (result, domain, _, _) = evaluate("poly_add(x+1,x+2)", &ctx, None, &cache).unwrap();
         assert!(matches!(result, EvalResult::Polynomial(_)));
         assert_eq!(domain, "polynomial");
     }
@@ -565,8 +669,7 @@ mod tests {
         cache.insert(&cf, &Ok(EvalResult::Scalar(6.0)));
 
         let ctx = EvalContext::new();
-        let (result, domain, cache_hit, _) =
-            evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
+        let (result, domain, cache_hit, _) = evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
         assert_eq!(result, EvalResult::Scalar(6.0));
         assert_eq!(domain, "number_theory");
         assert!(cache_hit);
@@ -580,10 +683,141 @@ mod tests {
         cache.insert(&cf, &Ok(EvalResult::Scalar(120.0)));
 
         let ctx = EvalContext::new();
-        let (result, domain, cache_hit, _) =
-            evaluate("C(10,3)", &ctx, None, &cache).unwrap();
+        let (result, domain, cache_hit, _) = evaluate("C(10,3)", &ctx, None, &cache).unwrap();
         assert_eq!(result, EvalResult::Scalar(120.0));
         assert_eq!(domain, "combinatorics");
         assert!(cache_hit);
+    }
+
+    // ===== v1.1 新增 CLI 标志测试 =====
+
+    #[test]
+    fn test_canonicalize_no_fold_basic_addition() {
+        // PRD §3.2.4: --canonical "3+2" → "(+ 2 3)"
+        let ast = parse("3+2").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(+ 2 3)");
+    }
+
+    #[test]
+    fn test_canonicalize_no_fold_equivalent_expressions() {
+        // 3+2 和 2+3 应产生相同的规范形式
+        let ast1 = parse("3+2").unwrap();
+        let ast2 = parse("2+3").unwrap();
+        let (_, cf1) = AstCanonicalizer::canonicalize_no_fold(&ast1).unwrap();
+        let (_, cf2) = AstCanonicalizer::canonicalize_no_fold(&ast2).unwrap();
+        assert_eq!(cf1.as_str(), cf2.as_str());
+        assert_eq!(cf1.as_str(), "(+ 2 3)");
+    }
+
+    #[test]
+    fn test_canonicalize_no_fold_multiplication() {
+        let ast = parse("4*5").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(* 4 5)");
+    }
+
+    #[test]
+    fn test_canonicalize_no_fold_does_not_constant_fold() {
+        // 与 canonicalize（折叠版本）对比：canonicalize_no_fold 保留 (+ 2 3)
+        let ast = parse("2+3").unwrap();
+        let (_, cf_fold) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        let (_, cf_no_fold) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf_fold.as_str(), "5", "folded version");
+        assert_eq!(cf_no_fold.as_str(), "(+ 2 3)", "no-fold version");
+    }
+
+    #[test]
+    fn test_canonicalize_no_fold_preserves_double_neg_elimination() {
+        // 2-(-x) → 2+x after double-neg elimination. Use 2--3 syntax (parser-dependent).
+        // 使用 -(2+3) 形式：保留外层 neg，内部 (+ 2 3) 排序
+        let ast = parse("-(2+3)").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(- (+ 2 3))");
+    }
+
+    #[test]
+    fn test_canonicalize_no_fold_does_not_fold_neg_number() {
+        // -5 保留为 (- 5)，不折叠为 -5
+        // 由于 parser 可能将 -5 直接解析为 Number(-5)，需构造 -(5) 形式
+        let ast = parse("0-5").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(- 0 5)");
+    }
+
+    #[test]
+    fn test_canonicalize_no_fold_function_call() {
+        let ast = parse("sin(x)+cos(y)").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+        assert_eq!(cf.as_str(), "(+ (sin x) (cos y))");
+    }
+
+    #[test]
+    fn test_format_canonical_wrapper() {
+        use crate::output::canonical::format_canonical;
+        use crate::CanonicalForm;
+        let cf = CanonicalForm::new("(+ 2 3)");
+        assert_eq!(format_canonical(&cf), "(+ 2 3)");
+    }
+
+    #[test]
+    fn test_format_latex_dispatch_scalar() {
+        use crate::output::latex::format_latex;
+        let r = EvalResult::Scalar(42.0);
+        let ast = AstNode::Number(42.0);
+        assert_eq!(format_latex(&r, &ast, "42", None), "42");
+    }
+
+    #[test]
+    fn test_format_latex_dispatch_matrix() {
+        use crate::output::latex::format_latex;
+        let r = EvalResult::Matrix(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
+        let ast = AstNode::Number(0.0);
+        assert_eq!(
+            format_latex(&r, &ast, "[[1,2],[3,4]]", None),
+            "\\begin{pmatrix}1 & 2 \\\\ 3 & 4\\end{pmatrix}"
+        );
+    }
+
+    #[test]
+    fn test_format_latex_dispatch_symbolic_diff() {
+        use crate::output::latex::format_latex;
+        let r = EvalResult::Symbolic("2*x".to_string());
+        let ast = AstNode::FunctionCall(
+            "diff".to_string(),
+            vec![
+                AstNode::BinaryOp(
+                    BinaryOp::Pow,
+                    Box::new(AstNode::Variable("x".to_string())),
+                    Box::new(AstNode::Number(2.0)),
+                ),
+                AstNode::Variable("x".to_string()),
+            ],
+        );
+        let s = format_latex(&r, &ast, "diff(x^2,x)", None);
+        assert_eq!(s, "\\frac{d}{dx}\\left(x^{2}\\right) = 2 \\cdot x");
+    }
+
+    #[test]
+    fn test_generate_steps_basic() {
+        use crate::output::steps::generate_steps;
+        // 步骤必须基于原始 AST（未折叠），否则常量折叠后无步骤可显示
+        let ast = parse("(2+9)*7-6").unwrap();
+        let ctx = EvalContext::new();
+        let steps = generate_steps(&ast, &ctx).unwrap();
+        // PRD §4.1.1: 2+9=11 → 11*7=77 → 77-6=71
+        assert_eq!(steps, vec!["2+9=11", "11*7=77", "77-6=71"]);
+    }
+
+    #[test]
+    fn test_format_result_handles_latex_variant() {
+        let r = EvalResult::LaTeX("\\alpha".to_string());
+        assert_eq!(format_result(&r, None), "\\alpha");
+    }
+
+    #[test]
+    fn test_format_result_handles_steps_variant() {
+        let r = EvalResult::Steps(vec!["1+1=2".to_string(), "2+2=4".to_string()]);
+        assert_eq!(format_result(&r, None), "1+1=2\n2+2=4");
     }
 }

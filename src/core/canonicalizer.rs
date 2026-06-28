@@ -32,6 +32,17 @@ impl AstCanonicalizer {
         Ok((canonical_ast, CanonicalForm::new(s_expr)))
     }
 
+    /// 规范化 AST（**不折叠常量**）并生成 `CanonicalForm`。
+    ///
+    /// 与 `canonicalize` 的区别：仅做交换律排序与一元归一化，不做常量折叠。
+    /// 用于 `--canonical` 标志输出，满足 PRD §3.2.4 示例 `3+2` → `(+ 2 3)`。
+    /// 缓存键仍使用 `canonicalize`（折叠版本），此方法仅供展示。
+    pub fn canonicalize_no_fold(ast: &AstNode) -> Result<(AstNode, CanonicalForm), CalcError> {
+        let canonical_ast = Self::transform_no_fold(ast)?;
+        let s_expr = Self::serialize(&canonical_ast);
+        Ok((canonical_ast, CanonicalForm::new(s_expr)))
+    }
+
     /// 递归变换 AST（排序 + 折叠 + 一元归一化）。
     ///
     /// 变换顺序（bottom-up）：先递归变换子节点，再对当前节点应用：
@@ -40,7 +51,10 @@ impl AstCanonicalizer {
     /// 3. 一元归一化（双重负号消除、一元常量折叠）
     fn transform(ast: &AstNode) -> Result<AstNode, CalcError> {
         match ast {
-            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => Ok(ast.clone()),
+            AstNode::Number(_)
+            | AstNode::Variable(_)
+            | AstNode::Complex(_, _)
+            | AstNode::BigNumber(_) => Ok(ast.clone()),
             AstNode::BinaryOp(op, l, r) => {
                 let l = Self::transform(l)?;
                 let r = Self::transform(r)?;
@@ -105,6 +119,71 @@ impl AstCanonicalizer {
         }
     }
 
+    /// 递归变换 AST（**仅排序 + 一元归一化，不折叠常量**）。
+    ///
+    /// 与 `transform` 的区别：跳过常量折叠步骤，保留 `2+3`、`3+2` 为
+    /// `(+ 2 3)`、`(+ 2 3)`（排序后相同），用于 `--canonical` 展示。
+    fn transform_no_fold(ast: &AstNode) -> Result<AstNode, CalcError> {
+        match ast {
+            AstNode::Number(_)
+            | AstNode::Variable(_)
+            | AstNode::Complex(_, _)
+            | AstNode::BigNumber(_) => Ok(ast.clone()),
+            AstNode::BinaryOp(op, l, r) => {
+                let l = Self::transform_no_fold(l)?;
+                let r = Self::transform_no_fold(r)?;
+                // 交换律排序：仅 Add 和 Mul（不折叠）
+                let (l, r) = match op {
+                    BinaryOp::Add | BinaryOp::Mul => {
+                        if Self::compare_nodes(&l, &r) == Ordering::Greater {
+                            (r, l)
+                        } else {
+                            (l, r)
+                        }
+                    }
+                    _ => (l, r),
+                };
+                Ok(AstNode::BinaryOp(*op, Box::new(l), Box::new(r)))
+            }
+            AstNode::UnaryOp(op, e) => {
+                let e = Self::transform_no_fold(e)?;
+                // 双重负号消除：--x → x（保留此归一化）
+                if *op == UnaryOp::Neg {
+                    if let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e {
+                        return Ok((**inner).clone());
+                    }
+                }
+                // 不做一元常量折叠：保留 Neg(Number(n)) 形式
+                Ok(AstNode::UnaryOp(*op, Box::new(e)))
+            }
+            AstNode::FunctionCall(name, args) => {
+                let mut transformed_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    transformed_args.push(Self::transform_no_fold(arg)?);
+                }
+                Ok(AstNode::FunctionCall(name.clone(), transformed_args))
+            }
+            AstNode::Matrix(rows) => {
+                let mut transformed_rows = Vec::with_capacity(rows.len());
+                for row in rows {
+                    let mut transformed_row = Vec::with_capacity(row.len());
+                    for elem in row {
+                        transformed_row.push(Self::transform_no_fold(elem)?);
+                    }
+                    transformed_rows.push(transformed_row);
+                }
+                Ok(AstNode::Matrix(transformed_rows))
+            }
+            AstNode::List(elements) => {
+                let mut transformed = Vec::with_capacity(elements.len());
+                for elem in elements {
+                    transformed.push(Self::transform_no_fold(elem)?);
+                }
+                Ok(AstNode::List(transformed))
+            }
+        }
+    }
+
     /// 求值二元运算（常量折叠用），检测除零与 NaN/Inf。
     fn eval_binary(op: BinaryOp, a: f64, b: f64) -> Result<f64, CalcError> {
         let result = match op {
@@ -140,9 +219,7 @@ impl AstCanonicalizer {
     /// - 其他组合（如 Variable 与复合表达式）：保持原始顺序（Equal，不交换）
     fn compare_nodes(a: &AstNode, b: &AstNode) -> Ordering {
         match (a, b) {
-            (AstNode::Number(x), AstNode::Number(y)) => {
-                x.partial_cmp(y).unwrap_or(Ordering::Equal)
-            }
+            (AstNode::Number(x), AstNode::Number(y)) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
             (AstNode::Number(_), _) => Ordering::Less,
             (_, AstNode::Number(_)) => Ordering::Greater,
             (AstNode::Variable(x), AstNode::Variable(y)) => x.cmp(y),
@@ -158,7 +235,11 @@ impl AstCanonicalizer {
             AstNode::Number(n) => Self::format_number(*n),
             AstNode::BigNumber(s) => s.clone(),
             AstNode::Complex(re, im) => {
-                format!("(complex {} {})", Self::format_number(*re), Self::format_number(*im))
+                format!(
+                    "(complex {} {})",
+                    Self::format_number(*re),
+                    Self::format_number(*im)
+                )
             }
             AstNode::Variable(v) => v.clone(),
             AstNode::BinaryOp(op, l, r) => {
@@ -448,8 +529,12 @@ mod tests {
         let (canon_ast, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
         let original_depth = ast_depth(&ast);
         let canon_depth = ast_depth(&canon_ast);
-        assert!(canon_depth <= original_depth,
-            "canonical depth {} > original depth {}", canon_depth, original_depth);
+        assert!(
+            canon_depth <= original_depth,
+            "canonical depth {} > original depth {}",
+            canon_depth,
+            original_depth
+        );
     }
 
     #[test]
@@ -458,20 +543,23 @@ mod tests {
         let expr = format!("1{}", "+x".repeat(255));
         let ast = parse(&expr).unwrap();
         let result = AstCanonicalizer::canonicalize(&ast);
-        assert!(result.is_ok(), "expected ok for depth 256, got {:?}", result);
+        assert!(
+            result.is_ok(),
+            "expected ok for depth 256, got {:?}",
+            result
+        );
     }
 
     // 辅助函数：计算 AST 深度
     fn ast_depth(ast: &AstNode) -> usize {
         match ast {
-            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => 1,
-            AstNode::BinaryOp(_, l, r) => {
-                1 + ast_depth(l).max(ast_depth(r))
-            }
+            AstNode::Number(_)
+            | AstNode::Variable(_)
+            | AstNode::Complex(_, _)
+            | AstNode::BigNumber(_) => 1,
+            AstNode::BinaryOp(_, l, r) => 1 + ast_depth(l).max(ast_depth(r)),
             AstNode::UnaryOp(_, e) => 1 + ast_depth(e),
-            AstNode::FunctionCall(_, args) => {
-                1 + args.iter().map(ast_depth).max().unwrap_or(0)
-            }
+            AstNode::FunctionCall(_, args) => 1 + args.iter().map(ast_depth).max().unwrap_or(0),
             AstNode::Matrix(rows) => {
                 1 + rows
                     .iter()
@@ -480,9 +568,7 @@ mod tests {
                     .max()
                     .unwrap_or(0)
             }
-            AstNode::List(elements) => {
-                1 + elements.iter().map(ast_depth).max().unwrap_or(0)
-            }
+            AstNode::List(elements) => 1 + elements.iter().map(ast_depth).max().unwrap_or(0),
         }
     }
 
@@ -609,10 +695,7 @@ mod tests {
     #[test]
     fn test_serialize_unary_abs_op() {
         // 手动构造 UnaryOp::Abs(x) → "(abs x)"
-        let ast = AstNode::UnaryOp(
-            UnaryOp::Abs,
-            Box::new(AstNode::Variable("x".to_string())),
-        );
+        let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Variable("x".to_string())));
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
         assert_eq!(cf.as_str(), "(abs x)");
     }
@@ -621,10 +704,7 @@ mod tests {
     fn test_serialize_unary_factorial_on_number_no_fold() {
         // UnaryOp::Factorial(Number(5)) — 不折叠（Factorial 不在折叠规则中）
         // 覆盖 UnaryOp 分支中 op != Neg 的路径
-        let ast = AstNode::UnaryOp(
-            UnaryOp::Factorial,
-            Box::new(AstNode::Number(5.0)),
-        );
+        let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
         assert_eq!(cf.as_str(), "(factorial 5)");
     }
@@ -632,10 +712,7 @@ mod tests {
     #[test]
     fn test_serialize_unary_abs_on_number_no_fold() {
         // UnaryOp::Abs(Number(5)) — 不折叠
-        let ast = AstNode::UnaryOp(
-            UnaryOp::Abs,
-            Box::new(AstNode::Number(5.0)),
-        );
+        let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(5.0)));
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
         assert_eq!(cf.as_str(), "(abs 5)");
     }
@@ -676,19 +753,15 @@ mod tests {
     #[test]
     fn test_ast_depth_function_call_branch() {
         // 覆盖 ast_depth 的 FunctionCall 分支
-        let ast = AstNode::FunctionCall(
-            "sin".to_string(),
-            vec![AstNode::Variable("x".to_string())],
-        );
+        let ast =
+            AstNode::FunctionCall("sin".to_string(), vec![AstNode::Variable("x".to_string())]);
         assert_eq!(ast_depth(&ast), 2);
     }
 
     #[test]
     fn test_ast_depth_matrix_branch() {
         // 覆盖 ast_depth 的 Matrix 分支
-        let ast = AstNode::Matrix(vec![
-            vec![AstNode::Number(1.0), AstNode::Number(2.0)],
-        ]);
+        let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0), AstNode::Number(2.0)]]);
         assert_eq!(ast_depth(&ast), 2);
     }
 

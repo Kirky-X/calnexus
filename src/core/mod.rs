@@ -16,6 +16,4 @@ pub use cache::{CacheKeyGen, CacheManager};
 pub use canonicalizer::AstCanonicalizer;
 pub use domain::{CalculationDomain, DomainRouter};
 pub use parser::parse;
-pub use types::{
-    AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp,
-};
+pub use types::{AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp};

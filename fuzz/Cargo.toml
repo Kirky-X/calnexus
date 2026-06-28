@@ -1,0 +1,36 @@
+[package]
+name = "calnexus-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[[bin]]
+name = "parser_fuzz"
+path = "fuzz_targets/parser_fuzz.rs"
+
+[[bin]]
+name = "ast_depth_fuzz"
+path = "fuzz_targets/ast_depth_fuzz.rs"
+
+[[bin]]
+name = "cache_key_fuzz"
+path = "fuzz_targets/cache_key_fuzz.rs"
+
+[[bin]]
+name = "canonicalizer_fuzz"
+path = "fuzz_targets/canonicalizer_fuzz.rs"
+
+[[bin]]
+name = "numeric_boundary_fuzz"
+path = "fuzz_targets/numeric_boundary_fuzz.rs"
+
+[[bin]]
+name = "matrix_dim_fuzz"
+path = "fuzz_targets/matrix_dim_fuzz.rs"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+calnexus = { path = ".." }

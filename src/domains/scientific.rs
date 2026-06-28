@@ -93,12 +93,13 @@ impl ScientificDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
-                Err(CalcError::DomainError(format!(
-                    "scientific domain does not support this node type: {:?}",
-                    ast
-                )))
-            }
+            AstNode::Complex(_, _)
+            | AstNode::Matrix(_)
+            | AstNode::List(_)
+            | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
+                "scientific domain does not support this node type: {:?}",
+                ast
+            ))),
         }
     }
 
@@ -369,8 +370,7 @@ fn erf(x: f64) -> f64 {
     let x = x.abs();
     let t = 1.0 / (1.0 + ERF_P * x);
     let y = 1.0
-        - (((((ERF_A5 * t + ERF_A4) * t) + ERF_A3) * t + ERF_A2) * t + ERF_A1) * t
-            * (-x * x).exp();
+        - (((((ERF_A5 * t + ERF_A4) * t) + ERF_A3) * t + ERF_A2) * t + ERF_A1) * t * (-x * x).exp();
     sign * y
 }
 
@@ -425,19 +425,28 @@ mod tests {
     #[test]
     fn test_asin_one() {
         // asin(1) → ≈pi/2 (Req 2 Scen 1)
-        assert!(approx(eval("asin(1)").unwrap(), std::f64::consts::FRAC_PI_2));
+        assert!(approx(
+            eval("asin(1)").unwrap(),
+            std::f64::consts::FRAC_PI_2
+        ));
     }
 
     #[test]
     fn test_acos_zero() {
         // acos(0) → ≈pi/2 (Req 2 Scen 2)
-        assert!(approx(eval("acos(0)").unwrap(), std::f64::consts::FRAC_PI_2));
+        assert!(approx(
+            eval("acos(0)").unwrap(),
+            std::f64::consts::FRAC_PI_2
+        ));
     }
 
     #[test]
     fn test_atan_one() {
         // atan(1) → ≈pi/4 (Req 2 Scen 3)
-        assert!(approx(eval("atan(1)").unwrap(), std::f64::consts::FRAC_PI_4));
+        assert!(approx(
+            eval("atan(1)").unwrap(),
+            std::f64::consts::FRAC_PI_4
+        ));
     }
 
     // ===== Requirement 3: Inverse Trigonometric Domain Validation =====
@@ -627,7 +636,10 @@ mod tests {
     #[test]
     fn test_exp_one_plus_ln_e() {
         // exp(1) + ln(e) → ≈e + 1 (Req 10 Scen 2)
-        assert!(approx(eval("exp(1) + ln(e)").unwrap(), std::f64::consts::E + 1.0));
+        assert!(approx(
+            eval("exp(1) + ln(e)").unwrap(),
+            std::f64::consts::E + 1.0
+        ));
     }
 
     // ===== supports() 方法测试 =====
