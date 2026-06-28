@@ -44,26 +44,36 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
         return Err(CalcError::ParseError("expression is empty".to_string()));
     }
 
-    // 矩阵或列表字面量：以 `[` 开头，走自定义解析器（design.md D3）
-    if trimmed.starts_with('[') {
-        return parse_bracket_literal(trimmed);
+    // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
+    // 使矩阵/列表字面量可出现在表达式任意位置（如 `det([[1,2]])`、`2*[[1,2]]`）
+    let (without_brackets, mut placeholders) = preprocess_brackets(trimmed)?;
+
+    // 若整个表达式就是单个括号字面量，直接返回（避免 mathexpr 处理）
+    if placeholders.len() == 1 {
+        let name = placeholders.keys().next().unwrap().clone();
+        if without_brackets == name {
+            return Ok(placeholders.remove(&name).unwrap());
+        }
     }
 
     // 非法连续运算符检查（mathexpr 将 `+3` 当作数字字面量，需在此显式拒绝 `++`）
-    validate_no_consecutive_plus(trimmed)?;
+    validate_no_consecutive_plus(&without_brackets)?;
 
-    // 复数预处理：`3+4i` → `complex(3,4)`、`2i` → `complex(0,2)`
-    let after_complex = preprocess_complex(trimmed)?;
+    // 复数预处理：`3+4i` → `complex(3, 4)`、`2i` → `complex(0, 2)`
+    let after_complex = preprocess_complex(&without_brackets)?;
 
     // 阶乘预处理
-    let preprocessed = preprocess_factorial(&after_complex)?;
+    let after_factorial = preprocess_factorial(&after_complex)?;
 
     // mathexpr 解析
-    let expr = mathexpr::parse(&preprocessed)
+    let expr = mathexpr::parse(&after_factorial)
         .map_err(|e| CalcError::ParseError(format!("{}", e)))?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
-    let ast = convert_with_depth(&expr, 1)?;
+    let mut ast = convert_with_depth(&expr, 1)?;
+
+    // 替换占位符为实际的 Matrix/List 节点
+    replace_placeholders(&mut ast, &placeholders);
 
     Ok(ast)
 }
@@ -122,6 +132,95 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
             "expected bracket literal, got: {}",
             trimmed
         )))
+    }
+}
+
+/// 预处理括号字面量：将所有 `[...]` 子串替换为占位符 `__cb_N`，
+/// 并返回 (替换后的字符串, 占位符到 AstNode 的映射)。
+///
+/// 使矩阵/列表字面量可出现在表达式任意位置（如 `det([[1,2]])`、`2*[[1,2]]`）。
+/// 正确匹配嵌套 `[]`，如 `[[1,2],[3,4]]`。
+fn preprocess_brackets(
+    input: &str,
+) -> Result<(String, std::collections::HashMap<String, AstNode>), CalcError> {
+    let mut result = String::with_capacity(input.len());
+    let mut placeholders: std::collections::HashMap<String, AstNode> = std::collections::HashMap::new();
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+    let mut count = 0;
+
+    while i < chars.len() {
+        if chars[i] == '[' {
+            // 找到匹配的 ]
+            let start = i;
+            let mut depth = 1;
+            i += 1;
+            while i < chars.len() && depth > 0 {
+                if chars[i] == '[' {
+                    depth += 1;
+                } else if chars[i] == ']' {
+                    depth -= 1;
+                }
+                i += 1;
+            }
+            if depth != 0 {
+                return Err(CalcError::ParseError(
+                    "unmatched '[' in expression".to_string(),
+                ));
+            }
+            // 提取子串并解析为 AST
+            let literal: String = chars[start..i].iter().collect();
+            let node = parse_bracket_literal(&literal)?;
+            // 生成占位符
+            let placeholder = format!("__cb_{}", count);
+            count += 1;
+            placeholders.insert(placeholder.clone(), node);
+            result.push_str(&placeholder);
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    Ok((result, placeholders))
+}
+
+/// 递归替换 AST 中的占位符变量为实际的 Matrix/List 节点。
+fn replace_placeholders(
+    ast: &mut AstNode,
+    placeholders: &std::collections::HashMap<String, AstNode>,
+) {
+    match ast {
+        AstNode::Variable(name) => {
+            if let Some(node) = placeholders.get(name) {
+                *ast = node.clone();
+            }
+        }
+        AstNode::BinaryOp(_, l, r) => {
+            replace_placeholders(l, placeholders);
+            replace_placeholders(r, placeholders);
+        }
+        AstNode::UnaryOp(_, e) => {
+            replace_placeholders(e, placeholders);
+        }
+        AstNode::FunctionCall(_, args) => {
+            for arg in args {
+                replace_placeholders(arg, placeholders);
+            }
+        }
+        AstNode::Matrix(rows) => {
+            for row in rows {
+                for elem in row {
+                    replace_placeholders(elem, placeholders);
+                }
+            }
+        }
+        AstNode::List(elements) => {
+            for elem in elements {
+                replace_placeholders(elem, placeholders);
+            }
+        }
+        AstNode::Number(_) | AstNode::Complex(_, _) => {}
     }
 }
 

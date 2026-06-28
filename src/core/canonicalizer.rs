@@ -226,13 +226,6 @@ mod tests {
         Ok(cf.as_str().to_string())
     }
 
-    // 辅助函数：解析 + 规范化，返回 canonical AstNode
-    fn canon_ast(input: &str) -> Result<AstNode, CalcError> {
-        let ast = parse(input)?;
-        let (canon, _) = AstCanonicalizer::canonicalize(&ast)?;
-        Ok(canon)
-    }
-
     // ===== Requirement 1: 交换律排序 =====
 
     #[test]

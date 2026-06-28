@@ -56,7 +56,7 @@ pub enum UnaryOp {
 
 /// 求值结果。
 ///
-/// v0.1 仅支持标量；v0.5 扩展 Complex（design.md D4）。
+/// v0.1 仅支持标量；v0.5 扩展 Complex（design.md D4）与 Matrix（design.md D5）。
 /// 派生 Serialize/Deserialize 以支持 oxcache 缓存序列化（ADD ADR-001）。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EvalResult {
@@ -64,6 +64,8 @@ pub enum EvalResult {
     Scalar(f64),
     /// 复数结果（实部, 虚部）。
     Complex(f64, f64),
+    /// 矩阵结果（行优先存储的二维向量）。
+    Matrix(Vec<Vec<f64>>),
 }
 
 impl EvalResult {
@@ -71,7 +73,7 @@ impl EvalResult {
     pub fn as_scalar(&self) -> Option<f64> {
         match self {
             EvalResult::Scalar(v) => Some(*v),
-            EvalResult::Complex(_, _) => None,
+            EvalResult::Complex(_, _) | EvalResult::Matrix(_) => None,
         }
     }
 
@@ -79,7 +81,15 @@ impl EvalResult {
     pub fn as_complex(&self) -> Option<(f64, f64)> {
         match self {
             EvalResult::Complex(re, im) => Some((*re, *im)),
-            EvalResult::Scalar(_) => None,
+            EvalResult::Scalar(_) | EvalResult::Matrix(_) => None,
+        }
+    }
+
+    /// 获取矩阵引用，若非 Matrix 返回 None。
+    pub fn as_matrix(&self) -> Option<&Vec<Vec<f64>>> {
+        match self {
+            EvalResult::Matrix(m) => Some(m),
+            EvalResult::Scalar(_) | EvalResult::Complex(_, _) => None,
         }
     }
 }

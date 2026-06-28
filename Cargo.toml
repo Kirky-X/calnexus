@@ -17,6 +17,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt"] }
 regex = "1"
 num-complex = "0.4"
+nalgebra = "0.33"
 clap = { version = "4", features = ["derive"], optional = true }
 
 [dev-dependencies]

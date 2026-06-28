@@ -7,7 +7,7 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::{ArithmeticDomain, ComplexDomain, ScientificDomain};
+use crate::{ArithmeticDomain, ComplexDomain, MatrixDomain, ScientificDomain};
 use crate::{
     AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, parse,
 };
@@ -65,11 +65,18 @@ pub fn run() -> i32 {
                         domain,
                         cache_str
                     ),
+                    EvalResult::Matrix(m) => println!(
+                        r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                        format_matrix(m),
+                        domain,
+                        cache_str
+                    ),
                 }
             } else {
                 match &result {
                     EvalResult::Scalar(v) => println!("{}", v),
                     EvalResult::Complex(re, im) => println!("{}", format_complex(*re, *im)),
+                    EvalResult::Matrix(m) => println!("{}", format_matrix(m)),
                 }
             }
             0
@@ -136,6 +143,7 @@ fn evaluate(expr: &str, ctx: &EvalContext) -> Result<(EvalResult, String, bool),
     let cache = CacheManager::new();
     let mut router = DomainRouter::new();
     router.register(Box::new(ComplexDomain));
+    router.register(Box::new(MatrixDomain));
     router.register(Box::new(ScientificDomain));
     router.register(Box::new(ArithmeticDomain));
 
@@ -162,4 +170,16 @@ fn format_complex(re: f64, im: f64) -> String {
     } else {
         format!("{}{}i", re, im)
     }
+}
+
+/// 格式化矩阵为 `[[a,b],[c,d]]` 形式。
+fn format_matrix(m: &[Vec<f64>]) -> String {
+    let rows: Vec<String> = m
+        .iter()
+        .map(|row| {
+            let elems: Vec<String> = row.iter().map(|v| v.to_string()).collect();
+            format!("[{}]", elems.join(","))
+        })
+        .collect();
+    format!("[{}]", rows.join(","))
 }

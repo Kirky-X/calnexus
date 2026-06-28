@@ -1,7 +1,9 @@
 //! CalNexus 计算域集合。
 pub mod arithmetic;
 pub mod complex;
+pub mod matrix;
 pub mod scientific;
 pub use arithmetic::ArithmeticDomain;
 pub use complex::ComplexDomain;
+pub use matrix::MatrixDomain;
 pub use scientific::ScientificDomain;
