@@ -1,0 +1,495 @@
+//! AST 规范化器：将解析后的 `AstNode` 转换为规范形式，用于 L1 缓存去重。
+//!
+//! 三大变换（design.md / tasks 3.3）：
+//! 1. **SortCommutative**：对 `+`/`*` 操作数按规范顺序排列（数值升序，变量字典序）
+//! 2. **ConstantFolder**：全常量子表达式预计算，检测溢出/NaN/Inf/除零
+//! 3. **UnaryNormalizer**：双重负号 `--x` 消除为 `x`
+//!
+//! 规范形式序列化为 S-表达式字符串（`CanonicalForm`）。
+//!
+//! **Spec 冲突说明**：Req 1 Scen 1-2 期望 `3+2` → `(+ 2 3)`（仅排序），
+//! 但 Req 3 Scen 1 和 Req 7 Scen 1 期望 `2+3` → `5`（折叠）。
+//! 由于 Req 5 Scen 2 要求 `2*3+1` 与 `1+6` 同形式（必须折叠），
+//! 本实现以**常量折叠优先**解决冲突：全常量表达式折叠为单个 Number。
+
+use crate::core::types::{AstNode, BinaryOp, CalcError, CanonicalForm, UnaryOp};
+use std::cmp::Ordering;
+
+/// AST 规范化器。
+///
+/// 无状态，所有方法均为关联函数。
+pub struct AstCanonicalizer;
+
+impl AstCanonicalizer {
+    /// 规范化 AST 并生成 `CanonicalForm`。
+    ///
+    /// 返回 `(canonical_ast, canonical_form)`：
+    /// - `canonical_ast`：规范化后的 AST（常量折叠、操作数排序、一元归一化）
+    /// - `canonical_form`：S-表达式字符串（用于缓存键生成）
+    pub fn canonicalize(ast: &AstNode) -> Result<(AstNode, CanonicalForm), CalcError> {
+        let canonical_ast = Self::transform(ast)?;
+        let s_expr = Self::serialize(&canonical_ast);
+        Ok((canonical_ast, CanonicalForm::new(s_expr)))
+    }
+
+    /// 递归变换 AST（排序 + 折叠 + 一元归一化）。
+    ///
+    /// 变换顺序（bottom-up）：先递归变换子节点，再对当前节点应用：
+    /// 1. 常量折叠（全常量子树 → 单个 Number）
+    /// 2. 交换律排序（Add/Mul 操作数按规范顺序）
+    /// 3. 一元归一化（双重负号消除、一元常量折叠）
+    fn transform(ast: &AstNode) -> Result<AstNode, CalcError> {
+        match ast {
+            AstNode::Number(_) | AstNode::Variable(_) => Ok(ast.clone()),
+            AstNode::BinaryOp(op, l, r) => {
+                let l = Self::transform(l)?;
+                let r = Self::transform(r)?;
+                // 常量折叠：两操作数均为 Number
+                if let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
+                    return Self::eval_binary(*op, *a, *b).map(AstNode::Number);
+                }
+                // 交换律排序：仅 Add 和 Mul
+                let (l, r) = match op {
+                    BinaryOp::Add | BinaryOp::Mul => {
+                        if Self::compare_nodes(&l, &r) == Ordering::Greater {
+                            (r, l)
+                        } else {
+                            (l, r)
+                        }
+                    }
+                    _ => (l, r),
+                };
+                Ok(AstNode::BinaryOp(*op, Box::new(l), Box::new(r)))
+            }
+            AstNode::UnaryOp(op, e) => {
+                let e = Self::transform(e)?;
+                // 双重负号消除：--x → x
+                if *op == UnaryOp::Neg {
+                    if let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e {
+                        return Ok((**inner).clone());
+                    }
+                }
+                // 一元常量折叠：Neg(Number(n)) → Number(-n)
+                if let AstNode::Number(n) = &e {
+                    if *op == UnaryOp::Neg {
+                        return Ok(AstNode::Number(-*n));
+                    }
+                }
+                Ok(AstNode::UnaryOp(*op, Box::new(e)))
+            }
+            AstNode::FunctionCall(name, args) => {
+                let mut transformed_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    transformed_args.push(Self::transform(arg)?);
+                }
+                Ok(AstNode::FunctionCall(name.clone(), transformed_args))
+            }
+        }
+    }
+
+    /// 求值二元运算（常量折叠用），检测除零与 NaN/Inf。
+    fn eval_binary(op: BinaryOp, a: f64, b: f64) -> Result<f64, CalcError> {
+        let result = match op {
+            BinaryOp::Add => a + b,
+            BinaryOp::Sub => a - b,
+            BinaryOp::Mul => a * b,
+            BinaryOp::Div => {
+                if b == 0.0 {
+                    return Err(CalcError::DivisionByZero);
+                }
+                a / b
+            }
+            BinaryOp::Pow => a.powf(b),
+            BinaryOp::Mod => {
+                if b == 0.0 {
+                    return Err(CalcError::DivisionByZero);
+                }
+                a % b
+            }
+        };
+        if result.is_nan() || result.is_infinite() {
+            return Err(CalcError::NaNOrInf);
+        }
+        Ok(result)
+    }
+
+    /// 比较两个 AST 节点的规范顺序。
+    ///
+    /// 排序规则：
+    /// - 两 Number：按数值升序
+    /// - 两 Variable：按字典序
+    /// - Number 与非 Number：Number 优先（Less）
+    /// - 其他组合（如 Variable 与复合表达式）：保持原始顺序（Equal，不交换）
+    fn compare_nodes(a: &AstNode, b: &AstNode) -> Ordering {
+        match (a, b) {
+            (AstNode::Number(x), AstNode::Number(y)) => {
+                x.partial_cmp(y).unwrap_or(Ordering::Equal)
+            }
+            (AstNode::Number(_), _) => Ordering::Less,
+            (_, AstNode::Number(_)) => Ordering::Greater,
+            (AstNode::Variable(x), AstNode::Variable(y)) => x.cmp(y),
+            _ => Ordering::Equal,
+        }
+    }
+
+    /// 将 AST 序列化为 S-表达式字符串。
+    ///
+    /// 格式：`(op arg1 arg2 ...)`，常量直接输出数值，变量输出变量名。
+    fn serialize(ast: &AstNode) -> String {
+        match ast {
+            AstNode::Number(n) => Self::format_number(*n),
+            AstNode::Variable(v) => v.clone(),
+            AstNode::BinaryOp(op, l, r) => {
+                let op_str = match op {
+                    BinaryOp::Add => "+",
+                    BinaryOp::Sub => "-",
+                    BinaryOp::Mul => "*",
+                    BinaryOp::Div => "/",
+                    BinaryOp::Pow => "^",
+                    BinaryOp::Mod => "mod",
+                };
+                format!("({} {} {})", op_str, Self::serialize(l), Self::serialize(r))
+            }
+            AstNode::UnaryOp(op, e) => {
+                let op_str = match op {
+                    UnaryOp::Neg => "-",
+                    UnaryOp::Factorial => "factorial",
+                    UnaryOp::Abs => "abs",
+                };
+                format!("({} {})", op_str, Self::serialize(e))
+            }
+            AstNode::FunctionCall(name, args) => {
+                if args.is_empty() {
+                    format!("({})", name)
+                } else {
+                    let args_str: Vec<String> = args.iter().map(Self::serialize).collect();
+                    format!("({} {})", name, args_str.join(" "))
+                }
+            }
+        }
+    }
+
+    /// 格式化数字：整数输出无小数点，浮点数保留原样。
+    fn format_number(n: f64) -> String {
+        if n.fract() == 0.0 && n.abs() < 9e15 {
+            format!("{}", n as i64)
+        } else {
+            format!("{}", n)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::parser::parse;
+
+    // 辅助函数：解析 + 规范化，返回 CanonicalForm 字符串
+    fn canon(input: &str) -> Result<String, CalcError> {
+        let ast = parse(input).map_err(|e| e)?;
+        let (_, cf) = AstCanonicalizer::canonicalize(&ast)?;
+        Ok(cf.as_str().to_string())
+    }
+
+    // 辅助函数：解析 + 规范化，返回 canonical AstNode
+    fn canon_ast(input: &str) -> Result<AstNode, CalcError> {
+        let ast = parse(input)?;
+        let (canon, _) = AstCanonicalizer::canonicalize(&ast)?;
+        Ok(canon)
+    }
+
+    // ===== Requirement 1: 交换律排序 =====
+
+    #[test]
+    fn test_variable_sort_addition() {
+        // y+x → (+ x y)（变量字典序）
+        assert_eq!(canon("y+x").unwrap(), "(+ x y)");
+    }
+
+    #[test]
+    fn test_variable_sort_order_independent() {
+        // x+y 和 y+x 同规范形式
+        assert_eq!(canon("x+y").unwrap(), canon("y+x").unwrap());
+    }
+
+    #[test]
+    fn test_number_before_variable_in_mul() {
+        // 5*x 和 x*5 → (* 5 x)（数值优先于变量）
+        assert_eq!(canon("5*x").unwrap(), "(* 5 x)");
+        assert_eq!(canon("x*5").unwrap(), "(* 5 x)");
+    }
+
+    #[test]
+    fn test_mixed_sort_number_before_variable() {
+        // x+2 → (+ 2 x)（数值优先于变量）
+        assert_eq!(canon("x+2").unwrap(), "(+ 2 x)");
+        assert_eq!(canon("2+x").unwrap(), "(+ 2 x)");
+    }
+
+    // ===== Requirement 2: 交换律适用运算符范围 =====
+
+    #[test]
+    fn test_subtraction_not_commutative() {
+        // x-2 → (- x 2)（顺序不变）
+        assert_eq!(canon("x-2").unwrap(), "(- x 2)");
+    }
+
+    #[test]
+    fn test_division_not_commutative() {
+        // x/2 → (/ x 2)
+        assert_eq!(canon("x/2").unwrap(), "(/ x 2)");
+    }
+
+    #[test]
+    fn test_power_not_commutative() {
+        // x^2 → (^ x 2)
+        assert_eq!(canon("x^2").unwrap(), "(^ x 2)");
+    }
+
+    #[test]
+    fn test_non_commutative_not_equivalent() {
+        // x-2 与 2-x 不同
+        assert_ne!(canon("x-2").unwrap(), canon("2-x").unwrap());
+    }
+
+    // ===== Requirement 3: 常量折叠 =====
+
+    #[test]
+    fn test_simple_constant_folding() {
+        // 2+3 → 5
+        assert_eq!(canon("2+3").unwrap(), "5");
+    }
+
+    #[test]
+    fn test_nested_constant_folding() {
+        // 2*3+1 → 7
+        assert_eq!(canon("2*3+1").unwrap(), "7");
+    }
+
+    #[test]
+    fn test_partial_folding_preserves_variable() {
+        // 2*3+x → (+ 6 x)
+        assert_eq!(canon("2*3+x").unwrap(), "(+ 6 x)");
+    }
+
+    #[test]
+    fn test_division_by_zero_folding_error() {
+        // 1/0 → 错误
+        let result = canon("1/0");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, CalcError::DivisionByZero)
+                || matches!(err, CalcError::EvalError(_))
+                || matches!(err, CalcError::NaNOrInf),
+            "expected division by zero error, got {:?}",
+            err
+        );
+    }
+
+    // ===== Requirement 4: 一元运算归一化 =====
+
+    #[test]
+    fn test_double_negation_constant() {
+        // --5 → 5（双重负号消除 + 常量折叠）
+        assert_eq!(canon("--5").unwrap(), "5");
+    }
+
+    #[test]
+    fn test_double_negation_variable() {
+        // -(-x) → x
+        assert_eq!(canon("-(-x)").unwrap(), "x");
+    }
+
+    #[test]
+    fn test_single_negation_variable() {
+        // -x → (- x)
+        assert_eq!(canon("-x").unwrap(), "(- x)");
+    }
+
+    #[test]
+    fn test_negation_with_constant_folding() {
+        // -(2+3) → -5
+        assert_eq!(canon("-(2+3)").unwrap(), "-5");
+    }
+
+    // ===== Requirement 5: 等价表达式生成相同规范形式 =====
+
+    #[test]
+    fn test_commutative_equivalent() {
+        // 3+2 与 2+3 同形式（均折叠为 5）
+        assert_eq!(canon("3+2").unwrap(), "5");
+        assert_eq!(canon("2+3").unwrap(), "5");
+    }
+
+    #[test]
+    fn test_folding_equivalent() {
+        // 2*3+1 与 1+6 同形式（均折叠为 7）
+        assert_eq!(canon("2*3+1").unwrap(), "7");
+        assert_eq!(canon("1+6").unwrap(), "7");
+    }
+
+    #[test]
+    fn test_composite_equivalent() {
+        // x+2*3 与 6+x 同形式 → (+ 6 x)
+        assert_eq!(canon("x+2*3").unwrap(), "(+ 6 x)");
+        assert_eq!(canon("6+x").unwrap(), "(+ 6 x)");
+    }
+
+    #[test]
+    fn test_non_commutative_not_equivalent_constants() {
+        // 2-3 与 3-2 不同（折叠后 -1 与 1）
+        assert_ne!(canon("2-3").unwrap(), canon("3-2").unwrap());
+    }
+
+    // ===== Requirement 6: 规范形式幂等性 =====
+
+    #[test]
+    fn test_idempotent_simple() {
+        // 2+3*x 规范化后再规范化，结果不变
+        let ast = parse("2+3*x").unwrap();
+        let (canon_ast1, cf1) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        let (_, cf2) = AstCanonicalizer::canonicalize(&canon_ast1).unwrap();
+        assert_eq!(cf1, cf2);
+    }
+
+    #[test]
+    fn test_idempotent_after_folding() {
+        // 2*3+1 → 7，再规范化 7 → 7
+        let ast = parse("2*3+1").unwrap();
+        let (canon_ast1, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        let (_, cf2) = AstCanonicalizer::canonicalize(&canon_ast1).unwrap();
+        assert_eq!(cf2.as_str(), "7");
+    }
+
+    #[test]
+    fn test_idempotent_nested() {
+        // (x+y)*2 规范化两次
+        let ast = parse("(x+y)*2").unwrap();
+        let (canon_ast1, cf1) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        let (_, cf2) = AstCanonicalizer::canonicalize(&canon_ast1).unwrap();
+        assert_eq!(cf1, cf2);
+    }
+
+    // ===== Requirement 7: 规范形式序列化 =====
+
+    #[test]
+    fn test_serialize_folded_constant() {
+        // 2+3 → "5"
+        assert_eq!(canon("2+3").unwrap(), "5");
+    }
+
+    #[test]
+    fn test_serialize_variable_with_folded() {
+        // x*(1+2) → (* 3 x)（常量 1+2 折叠为 3，数值优先于变量）
+        // 注：spec Req 7 Scen 2 原写 `(* x 3)`，与 Req 1 Scen 4 的"数值优先"规则矛盾，
+        // 本实现遵循 Req 1 的排序规则（数值优先于变量）。
+        assert_eq!(canon("x*(1+2)").unwrap(), "(* 3 x)");
+    }
+
+    #[test]
+    fn test_serialize_function_call() {
+        // sin(pi/2) → (sin (/ pi 2))
+        assert_eq!(canon("sin(pi/2)").unwrap(), "(sin (/ pi 2))");
+    }
+
+    #[test]
+    fn test_serialize_nested_structure() {
+        // (x+y)*z → (* (+ x y) z)
+        assert_eq!(canon("(x+y)*z").unwrap(), "(* (+ x y) z)");
+    }
+
+    // ===== Requirement 8: 规范化深度限制 =====
+
+    #[test]
+    fn test_folding_reduces_depth() {
+        // ((((1+2)+3)+4)+5) → 15（深度 1）
+        let ast = parse("((((1+2)+3)+4)+5)").unwrap();
+        let (canon_ast, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        assert_eq!(canon_ast, AstNode::Number(15.0));
+    }
+
+    #[test]
+    fn test_variable_depth_not_increased() {
+        // 深度 100 的变量嵌套表达式，规范化后深度 ≤ 100
+        let expr = format!("1{}", "+x".repeat(99));
+        let ast = parse(&expr).unwrap();
+        let (canon_ast, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        let original_depth = ast_depth(&ast);
+        let canon_depth = ast_depth(&canon_ast);
+        assert!(canon_depth <= original_depth,
+            "canonical depth {} > original depth {}", canon_depth, original_depth);
+    }
+
+    #[test]
+    fn test_canonicalize_depth_256_succeeds() {
+        // 深度 256 的合法 AST 规范化成功
+        let expr = format!("1{}", "+x".repeat(255));
+        let ast = parse(&expr).unwrap();
+        let result = AstCanonicalizer::canonicalize(&ast);
+        assert!(result.is_ok(), "expected ok for depth 256, got {:?}", result);
+    }
+
+    // 辅助函数：计算 AST 深度
+    fn ast_depth(ast: &AstNode) -> usize {
+        match ast {
+            AstNode::Number(_) | AstNode::Variable(_) => 1,
+            AstNode::BinaryOp(_, l, r) => {
+                1 + ast_depth(l).max(ast_depth(r))
+            }
+            AstNode::UnaryOp(_, e) => 1 + ast_depth(e),
+            AstNode::FunctionCall(_, args) => {
+                1 + args.iter().map(ast_depth).max().unwrap_or(0)
+            }
+        }
+    }
+
+    // ===== proptest 属性测试（任务 3.5） =====
+
+    use proptest::prelude::*;
+
+    /// 生成单字母变量名
+    fn var_strategy() -> impl Strategy<Value = String> {
+        (0u8..26u8).prop_map(|i| ((b'a' + i) as char).to_string())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+
+        // 交换律：a+b 与 b+a 同规范形式（使用变量避免常量折叠）
+        #[test]
+        fn prop_commutativity_add(a in var_strategy(), b in var_strategy()) {
+            let cf1 = canon(&format!("{}+{}", a, b)).unwrap();
+            let cf2 = canon(&format!("{}+{}", b, a)).unwrap();
+            prop_assert_eq!(cf1, cf2);
+        }
+
+        // 交换律：a*b 与 b*a 同规范形式
+        #[test]
+        fn prop_commutativity_mul(a in var_strategy(), b in var_strategy()) {
+            let cf1 = canon(&format!("{}*{}", a, b)).unwrap();
+            let cf2 = canon(&format!("{}*{}", b, a)).unwrap();
+            prop_assert_eq!(cf1, cf2);
+        }
+
+        // 结合律（常量）：(a+b)+c 与 a+(b+c) 同规范形式（通过常量折叠实现）
+        #[test]
+        fn prop_associativity_constants(
+            a in 1u32..1000, b in 1u32..1000, c in 1u32..1000
+        ) {
+            let cf1 = canon(&format!("({}+{})+{}", a, b, c)).unwrap();
+            let cf2 = canon(&format!("{}+({}+{})", a, b, c)).unwrap();
+            prop_assert_eq!(cf1, cf2);
+        }
+
+        // 幂等性：规范化已规范化的 AST 结果不变
+        #[test]
+        fn prop_idempotent(a in 1u32..1000, b in 1u32..1000, c in var_strategy()) {
+            let expr = format!("{}*{}+{}", a, b, c);
+            let ast = parse(&expr).unwrap();
+            let (canon_ast, cf1) = AstCanonicalizer::canonicalize(&ast).unwrap();
+            let (_, cf2) = AstCanonicalizer::canonicalize(&canon_ast).unwrap();
+            prop_assert_eq!(cf1, cf2);
+        }
+    }
+}
