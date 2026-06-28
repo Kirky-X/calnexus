@@ -19,3 +19,4 @@ pub use precision::PrecisionDomain;
 pub use scientific::ScientificDomain;
 pub use statistics::StatisticsDomain;
 pub use vector::VectorDomain;
+pub use crate::symbolic::SymbolicDomain;

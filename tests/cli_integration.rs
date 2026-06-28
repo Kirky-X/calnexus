@@ -3,6 +3,7 @@
 //! 覆盖 12 个 requirements / 23 个 scenarios。
 
 use assert_cmd::Command;
+use predicates;
 
 // ===== Requirement 1: Single Expression Evaluation =====
 
@@ -205,20 +206,20 @@ fn test_no_args_piped_stdin_scientific() {
 
 #[test]
 fn test_long_version_flag() {
-    // --version → stdout contains "calnexus 0.1.0", exit 0 (Req 11 Scen 1)
+    // --version → stdout contains "calnexus", exit 0 (Req 11 Scen 1)
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd.arg("--version").assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8(output).unwrap();
-    assert!(stdout.contains("calnexus 0.1.0"), "expected version string, got: {}", stdout);
+    assert!(stdout.contains("calnexus"), "expected version string, got: {}", stdout);
 }
 
 #[test]
 fn test_short_version_flag() {
-    // -V → stdout contains "calnexus 0.1.0", exit 0 (Req 11 Scen 2)
+    // -V → stdout contains "calnexus", exit 0 (Req 11 Scen 2)
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd.arg("-V").assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8(output).unwrap();
-    assert!(stdout.contains("calnexus 0.1.0"), "expected version string, got: {}", stdout);
+    assert!(stdout.contains("calnexus"), "expected version string, got: {}", stdout);
 }
 
 // ===== Requirement 12: Help Flag =====
@@ -719,3 +720,401 @@ fn test_cli_polynomial_factor() {
         .success()
         .stdout("(x-2)*(x+2)\n");
 }
+
+// ===== TG7.5 REPL CLI 测试 =====
+
+#[test]
+fn test_cli_repl_start_and_quit() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin(":quit\n")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_cli_repl_evaluate_arithmetic() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("2+3*4\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("14"));
+}
+
+#[test]
+fn test_cli_repl_evaluate_sin() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("sin(0)\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("0"));
+}
+
+#[test]
+fn test_cli_repl_let_and_use() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin(":let x = 10\nx*2\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("20"));
+}
+
+#[test]
+fn test_cli_repl_vars_command() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin(":let x = 42\n:vars\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("42"));
+}
+
+// ===== TG7.6 批量 CLI 测试 =====
+
+#[test]
+fn test_cli_batch_basic() {
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    writeln!(tmp, "2+3").unwrap();
+    writeln!(tmp, "4*5").unwrap();
+    tmp.flush().unwrap();
+
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--batch")
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("5"))
+        .stdout(predicates::str::contains("20"));
+}
+
+#[test]
+fn test_cli_batch_comment_skipped() {
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    writeln!(tmp, "# comment").unwrap();
+    writeln!(tmp, "1+1").unwrap();
+    tmp.flush().unwrap();
+
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--batch")
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("2"));
+}
+
+#[test]
+fn test_cli_batch_stdin() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--batch")
+        .arg("-")
+        .write_stdin("2+3\n4*5\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("5"))
+        .stdout(predicates::str::contains("20"));
+}
+
+#[test]
+fn test_cli_batch_json_output() {
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    writeln!(tmp, "2+3").unwrap();
+    tmp.flush().unwrap();
+
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--batch")
+        .arg(tmp.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"result\""))
+        .stdout(predicates::str::contains("\"5\""));
+}
+
+#[test]
+fn test_cli_batch_nonexistent_file() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--batch")
+        .arg("/nonexistent/path/file.txt")
+        .assert()
+        .failure()
+        .code(2);
+}
+
+// ===== TG7.7 Symbolic CLI 测试 =====
+
+#[test]
+fn test_cli_symbolic_diff_power() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("diff(x^2, x)")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("2"));
+}
+
+#[test]
+fn test_cli_symbolic_diff_sin() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("diff(sin(x), x)")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("cos"));
+}
+
+#[test]
+fn test_cli_symbolic_simplify() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("simplify(x+0)")
+        .assert()
+        .success()
+        .stdout("x\n");
+}
+
+#[test]
+fn test_cli_symbolic_limit() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("limit(sin(x)/x, x, 0)")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("1"));
+}
+
+// ===== JSON 输出路径覆盖（lines 125,127,131,133,137,139,143）=====
+
+#[test]
+fn test_json_vector_output() {
+    // --json [1,2]+[3,4] → JSON with Vector result
+    // 覆盖 cli.rs lines 125, 127（Vector JSON 输出分支）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("[1,2]+[3,4]")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"[4,6]","domain":"vector","cache":"miss"}
+"#);
+}
+
+#[test]
+fn test_json_polynomial_output() {
+    // --json poly_add(x+1,x+2) → JSON with Polynomial result
+    // 覆盖 cli.rs lines 131, 133（Polynomial JSON 输出分支）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("poly_add(x+1,x+2)")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"2x+3","domain":"polynomial","cache":"miss"}
+"#);
+}
+
+#[test]
+fn test_json_complex_list_output() {
+    // --json roots(x^2+1) → JSON with ComplexList result
+    // 覆盖 cli.rs lines 137, 139（ComplexList JSON 输出分支）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("roots(x^2+1)")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"[-0+1i,-0-1i]","domain":"polynomial","cache":"miss"}
+"#);
+}
+
+#[test]
+fn test_json_symbolic_output() {
+    // --json diff(x^2, x) → JSON with Symbolic result
+    // 覆盖 cli.rs line 143（Symbolic JSON 输出分支）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json").arg("diff(x^2, x)")
+        .assert()
+        .success()
+        .stdout(r#"{"result":"2*x","domain":"symbolic","cache":"miss"}
+"#);
+}
+
+// ===== parse_vars 错误路径覆盖（lines 55-57, 68-70）=====
+
+#[test]
+fn test_repl_invalid_var_exit_code() {
+    // --repl --var invalid（无 `=`）→ exit 2
+    // 覆盖 cli.rs lines 55, 56, 57（REPL 模式 parse_vars 错误 + return 2）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl").arg("--var").arg("invalid")
+        .write_stdin(":quit\n")
+        .assert()
+        .failure()
+        .code(2);
+}
+
+#[test]
+fn test_batch_invalid_var_exit_code() {
+    // --batch <file> --var invalid（无 `=`）→ exit 2
+    // 覆盖 cli.rs lines 68, 69, 70（batch 模式 parse_vars 错误 + return 2）
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    writeln!(tmp, "2+3").unwrap();
+    tmp.flush().unwrap();
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--batch").arg(tmp.path())
+        .arg("--var").arg("invalid")
+        .assert()
+        .failure()
+        .code(2);
+}
+
+// ===== REPL format_result 分支覆盖（lines 296-302）=====
+// format_result 在 REPL evaluate_line 中调用，需通过 REPL 触发各 EvalResult 变体
+
+#[test]
+fn test_repl_complex_format_result() {
+    // REPL 中求值 3+4i → format_result Complex 分支
+    // 覆盖 cli.rs line 296（format_result::Complex）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("3+4i\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("3+4i"));
+}
+
+#[test]
+fn test_repl_matrix_format_result() {
+    // REPL 中求值 [[1,2],[3,4]] → format_result Matrix 分支
+    // 覆盖 cli.rs line 297（format_result::Matrix）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("[[1,2],[3,4]]\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("[[1,2],[3,4]]"));
+}
+
+#[test]
+fn test_repl_bigint_format_result() {
+    // REPL 中求值大整数 → format_result BigInt 分支
+    // 覆盖 cli.rs line 298（format_result::BigInt）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("123456789012345678901234567890\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("123456789012345678901234567890"));
+}
+
+#[test]
+fn test_repl_bigrational_format_result() {
+    // REPL --precision 5 中求值 1/3 → format_result BigRational 分支
+    // 覆盖 cli.rs line 299（format_result::BigRational）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl").arg("--precision").arg("5")
+        .write_stdin("1/3\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("0.33333"));
+}
+
+#[test]
+fn test_repl_vector_format_result() {
+    // REPL 中求值 [1,2]+[3,4] → format_result Vector 分支
+    // 覆盖 cli.rs line 300（format_result::Vector）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("[1,2]+[3,4]\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("[4,6]"));
+}
+
+#[test]
+fn test_repl_polynomial_format_result() {
+    // REPL 中求值 poly_add(x+1,x+2) → format_result Polynomial 分支
+    // 覆盖 cli.rs line 301（format_result::Polynomial）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("poly_add(x+1,x+2)\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("2x+3"));
+}
+
+#[test]
+fn test_repl_complex_list_format_result() {
+    // REPL 中求值 roots(x^2+1) → format_result ComplexList 分支
+    // 覆盖 cli.rs line 302（format_result::ComplexList）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--repl")
+        .write_stdin("roots(x^2+1)\n:quit\n")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("1i"));
+}
+
+// ===== format_polynomial 分支覆盖（lines 343,349,351,357-360,362,369,375）=====
+
+#[test]
+fn test_polynomial_sub_x2_minus_x() {
+    // poly_sub(x^2, x) → "x^2-x"
+    // 覆盖 cli.rs lines 343（coef=0 跳过）, 351（i=1,coef=-1 → "-x"）,
+    //   357-358（i=2,coef=1 → "x^2"）, 375（负项拼接）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("poly_sub(x^2, x)")
+        .assert()
+        .success()
+        .stdout("x^2-x\n");
+}
+
+#[test]
+fn test_polynomial_neg_x2() {
+    // poly_sub(0, x^2) → "-x^2"
+    // 覆盖 cli.rs lines 359-360（i>=2,coef=-1 → "-x^N"）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("poly_sub(0, x^2)")
+        .assert()
+        .success()
+        .stdout("-x^2\n");
+}
+
+#[test]
+fn test_polynomial_x_leading_one() {
+    // poly_add(x, 0) → "x"
+    // 覆盖 cli.rs line 349（i=1,coef=1 → "x"）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("poly_add(x, 0)")
+        .assert()
+        .success()
+        .stdout("x\n");
+}
+
+#[test]
+fn test_polynomial_all_zero_coeffs() {
+    // poly_sub(x, x) → "0"
+    // 覆盖 cli.rs line 369（所有系数为零 → "0"）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("poly_sub(x, x)")
+        .assert()
+        .success()
+        .stdout("0\n");
+}
+
+#[test]
+fn test_polynomial_general_coef_high_degree() {
+    // poly_mul(2, x^2) → "2x^2"
+    // 覆盖 cli.rs line 362（i>=2,一般系数 → "cx^N"）
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("poly_mul(2, x^2)")
+        .assert()
+        .success()
+        .stdout("2x^2\n");
+}
+
+// ===== 不可覆盖行说明 =====
+// 以下 cli.rs 行因技术限制无法通过集成测试覆盖：
+// - lines 178, 179：TTY stdin 路径（io::stdin().is_terminal() 为 true 时显示 help）。
+//   集成测试中 stdin 始终为管道（非 TTY），此分支不可达。
+//   line 179 的 `return Err(0)` 标注为 unreachable，clap --help 会先退出。
+// - lines 184, 185：stdin read_to_string 错误路径。管道 stdin 不会产生 I/O 错误，
+//   无法在集成测试中模拟。
+// - line 338：format_polynomial 空系数向量（p.is_empty()）。
+//   多项式域对所有输入至少返回 [0.0]，无法产生空向量。

@@ -7,7 +7,7 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::{ArithmeticDomain, AstNode, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain};
+use crate::{ArithmeticDomain, AstNode, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain, VectorDomain};
 use crate::core::domain::CalculationDomain;
 use crate::{
     AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, parse,
@@ -34,11 +34,44 @@ struct Cli {
     /// Arbitrary precision mode: format result to N decimal places using BigRational arithmetic
     #[arg(long)]
     precision: Option<usize>,
+
+    /// Start interactive REPL mode (read-eval-print loop)
+    #[arg(long)]
+    repl: bool,
+
+    /// Batch evaluate expressions from file ('-' for stdin), one expression per line
+    #[arg(long)]
+    batch: Option<String>,
 }
 
 /// CLI 入口：解析参数、求值、输出结果，返回退出码。
 pub fn run() -> i32 {
     let cli = Cli::parse();
+
+    // --repl 模式：启动交互式 REPL
+    if cli.repl {
+        let mut ctx = match parse_vars(&cli.vars) {
+            Ok(ctx) => ctx,
+            Err(msg) => {
+                eprintln!("error: {}", msg);
+                return 2;
+            }
+        };
+        ctx.precision = cli.precision;
+        return crate::repl::ReplSession::new(ctx).run();
+    }
+
+    // --batch 模式：批量求值
+    if let Some(path) = &cli.batch {
+        let ctx = match parse_vars(&cli.vars) {
+            Ok(ctx) => ctx,
+            Err(msg) => {
+                eprintln!("error: {}", msg);
+                return 2;
+            }
+        };
+        return crate::batch::BatchProcessor::run(path, &ctx, cli.json);
+    }
 
     // 获取表达式（位置参数或 stdin）
     let expr = match get_expression(&cli) {
@@ -183,7 +216,7 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, String> {
 /// format_precision 用于 BigRational 输出格式化（--precision N 或 precision(N, expr)）。
 ///
 /// `cache` 参数允许调用方注入预填充的缓存（测试用），生产代码传入空缓存。
-fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>, cache: &CacheManager) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
+pub(crate) fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>, cache: &CacheManager) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     // 1. 解析
     let ast = parse(expr)?;
 
@@ -202,17 +235,7 @@ fn evaluate(expr: &str, ctx: &EvalContext, precision: Option<usize>, cache: &Cac
     }
 
     // 4. 常规模式：路由器分发
-    let mut router = DomainRouter::new();
-    router.register(Box::new(PrecisionDomain));
-    router.register(Box::new(ComplexDomain));
-    router.register(Box::new(MatrixDomain));
-    router.register(Box::new(VectorDomain));
-    router.register(Box::new(PolynomialDomain));
-    router.register(Box::new(NumberTheoryDomain));
-    router.register(Box::new(CombinatoricsDomain));
-    router.register(Box::new(ScientificDomain));
-    router.register(Box::new(StatisticsDomain));
-    router.register(Box::new(ArithmeticDomain));
+    let router = build_default_router();
 
     // 5. 缓存查询
     if let Some(cached) = cache.get(&cf) {
@@ -245,6 +268,40 @@ fn extract_format_precision(ast: &AstNode) -> Option<usize> {
         }
     }
     None
+}
+
+/// 构建默认路由器：注册全部 11 个计算域（含 SymbolicDomain）。
+/// 供 `evaluate` 与 REPL 共用。
+pub(crate) fn build_default_router() -> DomainRouter {
+    let mut router = DomainRouter::new();
+    router.register(Box::new(PrecisionDomain));
+    router.register(Box::new(ComplexDomain));
+    router.register(Box::new(MatrixDomain));
+    router.register(Box::new(VectorDomain));
+    router.register(Box::new(SymbolicDomain));
+    router.register(Box::new(PolynomialDomain));
+    router.register(Box::new(NumberTheoryDomain));
+    router.register(Box::new(CombinatoricsDomain));
+    router.register(Box::new(ScientificDomain));
+    router.register(Box::new(StatisticsDomain));
+    router.register(Box::new(ArithmeticDomain));
+    router
+}
+
+/// 格式化 EvalResult 为人类可读字符串（非 JSON 模式）。
+/// 供 CLI 与 REPL 共用。
+pub(crate) fn format_result(result: &EvalResult, fmt_prec: Option<usize>) -> String {
+    match result {
+        EvalResult::Scalar(v) => v.to_string(),
+        EvalResult::Complex(re, im) => format_complex(*re, *im),
+        EvalResult::Matrix(m) => format_matrix(m),
+        EvalResult::BigInt(b) => b.to_string(),
+        EvalResult::BigRational(r) => format_bigrational(r, fmt_prec),
+        EvalResult::Vector(v) => format_vector(v),
+        EvalResult::Polynomial(p) => format_polynomial(p),
+        EvalResult::ComplexList(c) => format_complex_list(c),
+        EvalResult::Symbolic(s) => s.clone(),
+    }
 }
 
 /// 格式化复数为 `re+imi` 形式（如 `3+4i`、`-2-3i`、`5+0i`）。

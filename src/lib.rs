@@ -2,6 +2,11 @@
 
 pub mod core;
 pub mod domains;
+pub mod symbolic;
+#[cfg(feature = "cli")]
+pub mod repl;
+#[cfg(feature = "cli")]
+pub mod batch;
 #[cfg(feature = "cli")]
 pub mod cli;
 
@@ -22,3 +27,4 @@ pub use domains::precision::PrecisionDomain;
 pub use domains::scientific::ScientificDomain;
 pub use domains::statistics::StatisticsDomain;
 pub use domains::vector::VectorDomain;
+pub use symbolic::SymbolicDomain;

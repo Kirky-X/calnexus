@@ -3,6 +3,56 @@
 本项目所有重要变更均记录于此文件。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.0] - 2026-06-29
+
+CalNexus v1.0.0：符号计算域、交互式 REPL、批量处理三大新功能，并修复 v0.8 全部已知限制。首个公开发布版本。
+
+### 新增
+
+- **符号计算域**（symbolic-domain）：priority=30，支持符号求导 `diff(expr, var)`、符号积分 `integrate(expr, var)`、
+  表达式化简 `simplify(expr)`、极限计算 `limit(expr, var, point)`（含洛必达法则）、泰勒级数 `taylor(expr, var, order)`；
+  `SymbolicExpr` IR 含 Const/Var/Add/Sub/Mul/Div/Pow/Neg/Ln/Sin/Cos/Tan/Exp 14 种节点，
+  `ast_to_symbolic`/`symbolic_to_string` 双向转换，同类项合并（`extract_coeff`/`coeff_times`）
+- **REPL 交互模式**（repl-mode）：`--repl` 启动基于 rustyline 14 的交互式 REPL，支持行编辑、历史记录、Tab 补全
+  （60+ 函数名 + 6 个 REPL 命令）；`:let NAME = VALUE` 变量绑定、`:vars` 列出变量、`:quit`/`:q` 退出、`:help` 帮助、`:clear` 清屏
+- **批量处理**（batch-processing）：`--batch FILE` 从文件批量求值，rayon 并行求值，`#` 注释与空行跳过，
+  单条 ≤ 4096 字符、总条数 ≤ 1000；`--json` 输出 JSON 数组格式；Summary 行含总数/成功/错误/缓存命中/耗时
+- **隐式乘法**：Parser 预处理 `insert_implicit_multiplication`，`2x`→`2*x`、`3(x+1)`→`3*(x+1)`、
+  `(x+1)(x-1)`→`(x+1)*(x-1)`；科学计数法（`1e308`）自动排除
+- **高次多项式求根**：`roots()` 支持 3 次（Cardano 公式）与 4 次（Ferrari 方法）多项式求根
+- **多项式除法扩展**：`poly_div` 支持 `Poly/Number`（逐系数除法）与 `Poly/Poly`（长除法）
+- **rustyline 14 + rayon 1 依赖**：`cli` feature 新增 `rustyline = "14"`（含 `derive` feature）与 `rayon = "1"`
+- **tempfile + predicates dev-dependency**：批量处理测试与 CLI 集成测试
+
+### 修复（v0.8 限制）
+
+- **BigNumber 路由冲突**：`PrecisionDomain::supports()` 当 AST 含 BigNumber 且同时含数论/组合函数时返回 false，
+  `is_prime(BigNumber)` 正确路由至 NumberTheory 而非 Precision
+- **`format_factor_linear(a=-1)` 格式化**：`a==-1.0` 时输出 `-(x-r)` 而非 `-*(x-r)`
+- **多项式除法**：`expr_to_coeffs` 新增 `BinaryOp::Div` 路径（`Poly/Number` 与 `Poly/Poly`）
+
+### 性能
+
+- 冷启动（`calnexus '2+3'`）：~3ms（release 构建，目标 < 100ms）
+- 缓存命中：~699ns/hit（release 构建，目标 < 100μs）
+- `diff(x^2, x)`：< 1ms（release 构建）
+- 批量 1000 条并行求值：~8ms（release 构建，目标 < 30s）
+
+### 测试
+
+- **1449 个测试全部通过**（lib + CLI + integration）：
+  - lib 单元测试：1222 个（core 模块 + 11 个域模块含 Symbolic，含 proptest 属性测试）
+  - CLI 集成测试：97 个（assert_cmd 端到端，覆盖 11 域 + --repl + --batch + --json + Symbolic + 错误退出码）
+  - 跨域集成测试：130 个（全链路 + Symbolic + BigNumber 路由 + 隐式乘法 + 多项式高次求根 + 缓存去重 + 错误传播）
+- **行覆盖率 99.10%**（cargo-llvm-cov）；Symbolic 99.01%、polynomial 99.80%、cli 97.24%
+- release 构建零警告
+
+### 已知限制
+
+- 符号积分 `integrate()` 仅支持多项式幂函数与基本初等函数（sin/cos/exp/1/x），不支持分部积分、换元积分等高级技巧
+- 3-4 次多项式求根（Cardano/Ferrari）在重根或判别式接近零时精度有限（浮点误差累积）
+- `limit()` 洛必达法则递归深度上限 5 层，深层嵌套的 0/0 型可能无法求解
+
 ## [0.8.0] - 2026-06-29
 
 CalNexus v0.8.0：四个新计算域（NumberTheory / Combinatorics / Vector / Polynomial），扩展大学数学计算覆盖。

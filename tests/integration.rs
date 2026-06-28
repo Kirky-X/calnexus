@@ -9,17 +9,19 @@
 use calnexus::{
     ArithmeticDomain, AstCanonicalizer, CacheManager, CalcError, CombinatoricsDomain,
     ComplexDomain, DomainRouter, EvalContext, EvalResult, MatrixDomain, NumberTheoryDomain,
-    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain, parse,
+    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
+    VectorDomain, parse,
 };
 
-/// 构建默认路由器：注册 v0.8 全部 10 个域。
-/// 优先级降序：Complex/Matrix/Vector (30+) > Precision/NumberTheory/Combinatorics/Polynomial (25) > Statistics/Scientific (20) > Arithmetic (10)。
+/// 构建默认路由器：注册 v1.0 全部 11 个域（含 SymbolicDomain）。
+/// 优先级降序：Complex/Matrix/Vector (30+) > Symbolic (30) > Precision/NumberTheory/Combinatorics/Polynomial (25) > Statistics/Scientific (20) > Arithmetic (10)。
 fn default_router() -> DomainRouter {
     let mut router = DomainRouter::new();
     router.register(Box::new(PrecisionDomain));
     router.register(Box::new(ComplexDomain));
     router.register(Box::new(MatrixDomain));
     router.register(Box::new(VectorDomain));
+    router.register(Box::new(SymbolicDomain));
     router.register(Box::new(NumberTheoryDomain));
     router.register(Box::new(CombinatoricsDomain));
     router.register(Box::new(PolynomialDomain));
@@ -1223,4 +1225,193 @@ fn test_v08_error_non_polynomial_expression() {
     let result = evaluate_full("poly_add(sin(x),x)", &EvalContext::new());
     assert!(result.is_err());
     assert!(matches!(result, Err(CalcError::DomainError(_))));
+}
+
+// ===== TG7.1 Symbolic 域集成测试 =====
+
+#[test]
+fn test_v10_symbolic_diff_power_rule() {
+    // diff(x^2, x) → 2*x → Symbolic("2*x")
+    let result = evaluate_full("diff(x^2, x)", &EvalContext::new());
+    let s = result.unwrap().as_symbolic().unwrap().clone();
+    assert!(s.contains("2"), "expected coefficient 2 in '{}'", s);
+    assert!(s.contains("x"), "expected variable x in '{}'", s);
+}
+
+#[test]
+fn test_v10_symbolic_diff_trig() {
+    // diff(sin(x), x) → cos(x)
+    let result = evaluate_full("diff(sin(x), x)", &EvalContext::new());
+    let s = result.unwrap().as_symbolic().unwrap().clone();
+    assert!(s.contains("cos"), "expected cos in '{}'", s);
+}
+
+#[test]
+fn test_v10_symbolic_diff_chain_rule() {
+    // diff(sin(x^2), x) → cos(x^2)*2*x
+    let result = evaluate_full("diff(sin(x^2), x)", &EvalContext::new());
+    let s = result.unwrap().as_symbolic().unwrap().clone();
+    assert!(s.contains("cos"), "expected cos in '{}'", s);
+}
+
+#[test]
+fn test_v10_symbolic_simplify_add_zero() {
+    // simplify(x+0) → x
+    let result = evaluate_full("simplify(x+0)", &EvalContext::new());
+    let s = result.unwrap().as_symbolic().unwrap().clone();
+    assert_eq!(s, "x");
+}
+
+#[test]
+fn test_v10_symbolic_simplify_mul_one() {
+    // simplify(1*x) → x
+    let result = evaluate_full("simplify(1*x)", &EvalContext::new());
+    let s = result.unwrap().as_symbolic().unwrap().clone();
+    assert_eq!(s, "x");
+}
+
+#[test]
+fn test_v10_symbolic_limit_direct() {
+    // limit(x^2, x, 3) → 9 (Scalar)
+    let result = evaluate_full("limit(x^2, x, 3)", &EvalContext::new());
+    let v = result.unwrap().as_scalar().unwrap();
+    assert!((v - 9.0).abs() < 1e-9, "expected 9.0, got {}", v);
+}
+
+#[test]
+fn test_v10_symbolic_limit_lhopital() {
+    // limit(sin(x)/x, x, 0) → 1 (L'Hôpital, Scalar)
+    let result = evaluate_full("limit(sin(x)/x, x, 0)", &EvalContext::new());
+    let v = result.unwrap().as_scalar().unwrap();
+    assert!((v - 1.0).abs() < 1e-9, "expected 1.0, got {}", v);
+}
+
+#[test]
+fn test_v10_symbolic_taylor_exp() {
+    // taylor(exp(x), x, 3) → 1+x+0.5*x^2+0.16666...*x^3
+    let result = evaluate_full("taylor(exp(x), x, 3)", &EvalContext::new());
+    let s = result.unwrap().as_symbolic().unwrap().clone();
+    assert!(s.contains("1"), "expected constant 1 in '{}'", s);
+    assert!(s.contains("x"), "expected x term in '{}'", s);
+}
+
+// ===== TG7.2 BigNumber 路由修复测试 =====
+
+#[test]
+fn test_v10_bignumber_is_prime_routes_to_number_theory() {
+    // is_prime(1000000000000000009) → 路由到 NumberTheory 而非 Precision
+    let ast = parse("is_prime(1000000000000000009)").unwrap();
+    let (canonical, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
+    let router = default_router();
+    let domain = router.route(&canonical).unwrap();
+    assert_eq!(domain.domain_name(), "number_theory");
+}
+
+#[test]
+fn test_v10_bignumber_gcd_routes_to_number_theory() {
+    // gcd(BigNumber, BigNumber) → 路由到 NumberTheory
+    let ast = parse("gcd(1000000000000000009, 1000000000000000007)").unwrap();
+    let (canonical, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
+    let router = default_router();
+    let domain = router.route(&canonical).unwrap();
+    assert_eq!(domain.domain_name(), "number_theory");
+}
+
+#[test]
+fn test_v10_bignumber_pure_routes_to_precision() {
+    // 纯 BigNumber 算术 → 路由到 Precision
+    let ast = parse("1000000000000000009+1").unwrap();
+    let (canonical, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
+    let router = default_router();
+    let domain = router.route(&canonical).unwrap();
+    assert_eq!(domain.domain_name(), "precision");
+}
+
+// ===== TG7.3 隐式乘法集成测试 =====
+
+#[test]
+fn test_v10_implicit_mult_2x() {
+    // 2x → 2*x → 2*3 = 6 (when x=3)
+    let ctx = EvalContext::new().with_var("x", 3.0);
+    let result = evaluate_with_ctx("2x", &ctx).unwrap();
+    assert_eq!(result, 6.0);
+}
+
+#[test]
+fn test_v10_implicit_mult_2x_no_var() {
+    // 2x with no var binding → error (undefined variable x)
+    let result = evaluate("2x");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_v10_implicit_mult_paren() {
+    // 3(x+1) → 3*(x+1) → 3*4 = 12 (when x=3)
+    let ctx = EvalContext::new().with_var("x", 3.0);
+    let result = evaluate_with_ctx("3(x+1)", &ctx).unwrap();
+    assert_eq!(result, 12.0);
+}
+
+// ===== TG7.4 多项式除法与高次求根测试 =====
+
+#[test]
+fn test_v10_poly_div_exact() {
+    // (x^2-1)/(x-1) → x+1
+    let result = evaluate_full("poly_div(x^2-1, x-1)", &EvalContext::new());
+    let p = result.unwrap().as_polynomial().unwrap().clone();
+    // 升幂存储：[1, 1] → 1 + x
+    assert_eq!(p, vec![1.0, 1.0]);
+}
+
+#[test]
+fn test_v10_poly_div_by_number() {
+    // poly_div(2*x+4, 2) → x+2
+    let result = evaluate_full("poly_div(2*x+4, 2)", &EvalContext::new());
+    let p = result.unwrap().as_polynomial().unwrap().clone();
+    assert_eq!(p, vec![2.0, 1.0]);
+}
+
+#[test]
+fn test_v10_roots_cubic_real() {
+    // roots(x^3-6*x^2+11*x-6) → 1, 2, 3
+    let result = evaluate_full("roots(x^3-6*x^2+11*x-6)", &EvalContext::new());
+    let v = result.unwrap().as_vector().unwrap().clone();
+    assert_eq!(v.len(), 3);
+    let mut sorted = v.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert!((sorted[0] - 1.0).abs() < 1e-6);
+    assert!((sorted[1] - 2.0).abs() < 1e-6);
+    assert!((sorted[2] - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_v10_roots_cubic_one_real() {
+    // roots(x^3+1) → -1 (one real root, two complex roots) → ComplexList
+    let result = evaluate_full("roots(x^3+1)", &EvalContext::new());
+    let v = result.unwrap().as_complex_list().unwrap().clone();
+    assert_eq!(v.len(), 3);
+    // 至少有一个实根 -1
+    assert!(v.iter().any(|(re, im)| (re - (-1.0)).abs() < 1e-6 && im.abs() < 1e-6));
+}
+
+#[test]
+fn test_v10_roots_quartic() {
+    // roots(x^4-5*x^2+4) → -2, -1, 1, 2
+    let result = evaluate_full("roots(x^4-5*x^2+4)", &EvalContext::new());
+    let v = result.unwrap().as_vector().unwrap().clone();
+    assert_eq!(v.len(), 4);
+    let mut sorted = v.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert!((sorted[0] - (-2.0)).abs() < 1e-5);
+    assert!((sorted[1] - (-1.0)).abs() < 1e-5);
+    assert!((sorted[2] - 1.0).abs() < 1e-5);
+    assert!((sorted[3] - 2.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_v10_roots_quartic_repeated() {
+    // roots(x^4-2*x^2+1) → -1, -1, 1, 1 (repeated roots)
+    let result = evaluate_full("roots(x^4-2*x^2+1)", &EvalContext::new());
+    let v = result.unwrap().as_vector().unwrap().clone();
+    assert!(!v.is_empty());
 }

@@ -33,7 +33,9 @@ impl CalculationDomain for PrecisionDomain {
     }
 
     fn supports(&self, ast: &AstNode) -> bool {
-        contains_precision(ast)
+        // 含 BigNumber 或 precision() 时认领，但排除其他域的专用函数
+        // （如 is_prime(BigNumber) 应路由至 NumberTheoryDomain，而非本域）
+        contains_precision(ast) && !contains_other_domain_function(ast)
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
@@ -232,6 +234,30 @@ fn contains_precision(ast: &AstNode) -> bool {
         AstNode::Matrix(rows) => rows.iter().flatten().any(contains_precision),
         AstNode::List(elements) => elements.iter().any(contains_precision),
         AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => false,
+    }
+}
+
+/// 其他域的专用函数列表（NumberTheory + Combinatorics）。
+/// 当 AST 含这些函数调用时，PrecisionDomain 不应认领，让位给更具体的域。
+const OTHER_DOMAIN_FUNCTIONS: &[&str] = &[
+    "gcd", "lcm", "is_prime", "prime_sieve", "mod_inverse", "mod_pow", "euler_phi",
+    "P", "C", "catalan", "stirling",
+];
+
+/// 递归检查 AST 是否含其他域的专用函数调用。
+fn contains_other_domain_function(ast: &AstNode) -> bool {
+    match ast {
+        AstNode::FunctionCall(name, args) => {
+            OTHER_DOMAIN_FUNCTIONS.contains(&name.as_str())
+                || args.iter().any(contains_other_domain_function)
+        }
+        AstNode::BinaryOp(_, l, r) => {
+            contains_other_domain_function(l) || contains_other_domain_function(r)
+        }
+        AstNode::UnaryOp(_, e) => contains_other_domain_function(e),
+        AstNode::Matrix(rows) => rows.iter().flatten().any(contains_other_domain_function),
+        AstNode::List(elements) => elements.iter().any(contains_other_domain_function),
+        AstNode::Number(_) | AstNode::Variable(_) | AstNode::BigNumber(_) | AstNode::Complex(_, _) => false,
     }
 }
 

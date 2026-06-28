@@ -1,13 +1,18 @@
 [package]
 name = "calnexus"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Kirky.X"]
 license = "MIT"
 rust-version = "1.76"
+description = "A command-line math expression evaluator with 11 computation domains, symbolic calculus, REPL, and batch processing"
+keywords = ["math", "calculator", "symbolic", "repl", "cli"]
+categories = ["command-line-utilities", "mathematics", "science"]
+repository = "https://github.com/kirky-x/calnexus"
+readme = "README.md"
 
 [features]
-cli = ["dep:clap"]
+cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
 
 [dependencies]
 mathexpr = "0.1"
@@ -23,10 +28,14 @@ num-rational = { version = "0.4", features = ["serde"] }
 num-integer = "0.1"
 num-traits = "0.2"
 clap = { version = "4", features = ["derive"], optional = true }
+rustyline = { version = "14", features = ["derive"], optional = true }
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 proptest = "1"
 assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }

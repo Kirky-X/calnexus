@@ -68,8 +68,11 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 阶乘预处理
     let after_factorial = preprocess_factorial(&after_complex)?;
 
+    // 隐式乘法预处理：`2x` → `2*x`、`3(x+1)` → `3*(x+1)`、`(x+1)(x-1)` → `(x+1)*(x-1)`
+    let after_implicit = insert_implicit_multiplication(&after_factorial);
+
     // mathexpr 解析
-    let expr = mathexpr::parse(&after_factorial)
+    let expr = mathexpr::parse(&after_implicit)
         .map_err(|e| CalcError::ParseError(format!("{}", e)))?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
@@ -485,6 +488,94 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
     }
 
     Ok(pos)
+}
+
+/// 隐式乘法预处理：在相邻 token 间插入 `*`。
+///
+/// 插入规则（spec: Implicit Multiplication）：
+/// - 数字 → 变量/`(`：`2x` → `2*x`、`3(x+1)` → `3*(x+1)`
+/// - `)` → 变量/数字/`(`：`(x+1)x` → `(x+1)*x`、`(x+1)2` → `(x+1)*2`、`(x+1)(x-1)` → `(x+1)*(x-1)`
+/// - 变量 → `(` 不插入（函数调用，如 `sin(x)`）
+///
+/// 注意：标识符内的数字（如 `__cb_0`、`beta_1`）不视为数字结尾，不触发插入。
+fn insert_implicit_multiplication(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let mut result = String::with_capacity(chars.len() + 16);
+
+    // 跟踪前一个字符的状态
+    let mut prev_was_number_end = false; // 前一个字符是数字且不属于标识符
+    let mut prev_was_close_paren = false;
+    let mut in_identifier = false; // 当前正在扫描标识符（以字母/下划线开头）
+
+    for (i, &c) in chars.iter().enumerate() {
+        if i > 0 {
+            // 科学计数法排除：数字后跟 e/E 且后接数字或 +/-数字 → 不插入 *
+            // 例如 1e308、1e-5、1E+10
+            if prev_was_number_end && (c == 'e' || c == 'E') && is_scientific_notation(&chars, i) {
+                // 不插入 *，但也不重置状态（e 后面跟数字时由标识符逻辑处理）
+            } else if should_insert_implicit_mult(prev_was_number_end, prev_was_close_paren, c) {
+                result.push('*');
+                in_identifier = false;
+            }
+        }
+
+        result.push(c);
+
+        // 更新状态
+        prev_was_close_paren = c == ')';
+
+        if c.is_alphabetic() || c == '_' {
+            in_identifier = true;
+            prev_was_number_end = false;
+        } else if c.is_ascii_digit() {
+            // 在标识符内的数字不视为数字结尾
+            prev_was_number_end = !in_identifier;
+        } else {
+            in_identifier = false;
+            prev_was_number_end = false;
+        }
+    }
+
+    result
+}
+
+/// 判断 `chars[pos]` 处的 `e`/`E` 是否为科学计数法的一部分。
+/// 即 `e` 后面紧跟数字，或 `+`/`-` 后跟数字。
+fn is_scientific_notation(chars: &[char], pos: usize) -> bool {
+    // pos 指向 'e' 或 'E'，检查下一个字符
+    if let Some(&next) = chars.get(pos + 1) {
+        if next.is_ascii_digit() {
+            return true;
+        }
+        if next == '+' || next == '-' {
+            // 检查 + / - 后是否有数字
+            if let Some(&next2) = chars.get(pos + 2) {
+                return next2.is_ascii_digit();
+            }
+        }
+    }
+    false
+}
+
+/// 判断是否应在当前字符前插入隐式乘法 `*`。
+fn should_insert_implicit_mult(
+    prev_was_number_end: bool,
+    prev_was_close_paren: bool,
+    curr: char,
+) -> bool {
+    let curr_is_var_start = curr.is_alphabetic() || curr == '_';
+    let curr_is_digit = curr.is_ascii_digit();
+    let curr_is_open_paren = curr == '(';
+
+    // 数字 → 变量/`(`（排除标识符内数字，由 prev_was_number_end 保证）
+    if prev_was_number_end && (curr_is_var_start || curr_is_open_paren) {
+        return true;
+    }
+    // `)` → 变量/数字/`(`
+    if prev_was_close_paren && (curr_is_var_start || curr_is_digit || curr_is_open_paren) {
+        return true;
+    }
+    false
 }
 
 /// 将 mathexpr 的 `Expr` 转换为 CalNexus 的 [`AstNode`]，带深度检查。
@@ -1231,6 +1322,168 @@ mod tests {
             ast,
             call("complex", vec![num(3.0), unary(UnaryOp::Neg, var("x"))])
         );
+    }
+
+    // ===== 隐式乘法预处理测试（任务 1.4） =====
+
+    #[test]
+    fn test_implicit_mult_number_before_variable() {
+        // `2x` → `2*x` → Mul(2, x)
+        let ast = parse("2x").unwrap();
+        assert_eq!(ast, binop(BinaryOp::Mul, num(2.0), var("x")));
+    }
+
+    #[test]
+    fn test_implicit_mult_number_before_paren() {
+        // `3(x+1)` → `3*(x+1)` → Mul(3, Add(x, 1))
+        let ast = parse("3(x+1)").unwrap();
+        assert_eq!(
+            ast,
+            binop(BinaryOp::Mul, num(3.0), binop(BinaryOp::Add, var("x"), num(1.0)))
+        );
+    }
+
+    #[test]
+    fn test_implicit_mult_close_paren_before_open_paren() {
+        // `(x+1)(x-1)` → `(x+1)*(x-1)` → Mul(Add(x,1), Sub(x,1))
+        let ast = parse("(x+1)(x-1)").unwrap();
+        assert_eq!(
+            ast,
+            binop(
+                BinaryOp::Mul,
+                binop(BinaryOp::Add, var("x"), num(1.0)),
+                binop(BinaryOp::Sub, var("x"), num(1.0))
+            )
+        );
+    }
+
+    #[test]
+    fn test_implicit_mult_variable_before_paren_not_triggered() {
+        // `sin(x)` → FunctionCall, NOT Mul(sin, x)
+        let ast = parse("sin(x)").unwrap();
+        assert_eq!(ast, call("sin", vec![var("x")]));
+    }
+
+    #[test]
+    fn test_implicit_mult_number_before_constant() {
+        // `2pi` → `2*pi` → Mul(2, Variable("pi"))
+        let ast = parse("2pi").unwrap();
+        assert_eq!(ast, binop(BinaryOp::Mul, num(2.0), var("pi")));
+    }
+
+    #[test]
+    fn test_implicit_mult_close_paren_before_variable() {
+        // `(x+1)x` → `(x+1)*x`
+        let ast = parse("(x+1)x").unwrap();
+        assert_eq!(
+            ast,
+            binop(BinaryOp::Mul, binop(BinaryOp::Add, var("x"), num(1.0)), var("x"))
+        );
+    }
+
+    #[test]
+    fn test_implicit_mult_close_paren_before_number() {
+        // `(x+1)2` → `(x+1)*2`
+        let ast = parse("(x+1)2").unwrap();
+        assert_eq!(
+            ast,
+            binop(BinaryOp::Mul, binop(BinaryOp::Add, var("x"), num(1.0)), num(2.0))
+        );
+    }
+
+    #[test]
+    fn test_implicit_mult_identifier_digit_not_triggered() {
+        // `beta_1` → 单个变量，不插入 `*`
+        let ast = parse("beta_1+1").unwrap();
+        assert_eq!(ast, binop(BinaryOp::Add, var("beta_1"), num(1.0)));
+    }
+
+    #[test]
+    fn test_implicit_mult_decimal_number() {
+        // `3.14x` → `3.14*x`（小数点不干扰数字结尾判断）
+        let ast = parse("3.14x").unwrap();
+        assert_eq!(ast, binop(BinaryOp::Mul, num(3.14), var("x")));
+    }
+
+    // ===== TG6.4: Symbolic 函数解析测试 =====
+
+    #[test]
+    fn test_parse_diff_function() {
+        // `diff(x^2, x)` → FunctionCall("diff", [Pow(x, 2), Variable("x")])
+        let ast = parse("diff(x^2, x)").unwrap();
+        assert_eq!(
+            ast,
+            call("diff", vec![
+                binop(BinaryOp::Pow, var("x"), num(2.0)),
+                var("x"),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_integrate_function() {
+        // `integrate(sin(x), x)` → FunctionCall("integrate", [Sin(x), Variable("x")])
+        let ast = parse("integrate(sin(x), x)").unwrap();
+        assert_eq!(
+            ast,
+            call("integrate", vec![
+                call("sin", vec![var("x")]),
+                var("x"),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_simplify_function() {
+        // `simplify(x^2+2*x+1)` → FunctionCall("simplify", [...])
+        let ast = parse("simplify(x^2+2*x+1)").unwrap();
+        let expected_inner = binop(
+            BinaryOp::Add,
+            binop(
+                BinaryOp::Add,
+                binop(BinaryOp::Pow, var("x"), num(2.0)),
+                binop(BinaryOp::Mul, num(2.0), var("x")),
+            ),
+            num(1.0),
+        );
+        assert_eq!(ast, call("simplify", vec![expected_inner]));
+    }
+
+    #[test]
+    fn test_parse_limit_function() {
+        // `limit(x^2, x, 0)` → FunctionCall("limit", [Pow(x,2), Variable("x"), Number(0)])
+        let ast = parse("limit(x^2, x, 0)").unwrap();
+        assert_eq!(
+            ast,
+            call("limit", vec![
+                binop(BinaryOp::Pow, var("x"), num(2.0)),
+                var("x"),
+                num(0.0),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_taylor_function() {
+        // `taylor(sin(x), x, 5)` → FunctionCall("taylor", [Sin(x), Variable("x"), Number(5)])
+        let ast = parse("taylor(sin(x), x, 5)").unwrap();
+        assert_eq!(
+            ast,
+            call("taylor", vec![
+                call("sin", vec![var("x")]),
+                var("x"),
+                num(5.0),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_symbolic_function_not_implicit_mult() {
+        // `diff(x)` 是函数调用，不是 `diff * (x)` 隐式乘法
+        let ast = parse("diff(x)").unwrap();
+        assert_eq!(ast, call("diff", vec![var("x")]));
+        // 确保不是 Mul(Variable("diff"), Variable("x"))
+        assert!(!matches!(ast, AstNode::BinaryOp(BinaryOp::Mul, _, _)));
     }
 
     // ===== proptest 属性测试（任务 2.5） =====

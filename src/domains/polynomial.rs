@@ -355,16 +355,36 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
                     Ok((poly_add_coeffs(&a, &neg_b), var))
                 }
                 BinaryOp::Div => {
-                    // Number / Number → 常数
+                    // Number / Number → 常数（保留显式路径以返回 DivisionByZero）
                     if let (AstNode::Number(a), AstNode::Number(b)) = (l.as_ref(), r.as_ref()) {
                         if *b == 0.0 {
                             return Err(CalcError::DivisionByZero);
                         }
                         return Ok((vec![a / b], String::new()));
                     }
-                    Err(CalcError::DomainError(
-                        "division in polynomial expression not supported".to_string(),
-                    ))
+                    // Poly / Number → 逐系数除法
+                    if let AstNode::Number(c) = r.as_ref() {
+                        if *c == 0.0 {
+                            return Err(CalcError::DivisionByZero);
+                        }
+                        let (mut coeffs, var) = expr_to_coeffs(l, ctx)?;
+                        for c_i in &mut coeffs {
+                            *c_i /= c;
+                        }
+                        return Ok((coeffs, var));
+                    }
+                    // Poly / Poly → 多项式长除法（要求整除，余数为零）
+                    let (a, var_a) = expr_to_coeffs(l, ctx)?;
+                    let (b, var_b) = expr_to_coeffs(r, ctx)?;
+                    let var = merge_var(&var_a, &var_b)?;
+                    let (quotient, remainder) = poly_div_coeffs(&a, &b);
+                    if is_zero_poly(&remainder) {
+                        Ok((quotient, var))
+                    } else {
+                        Err(CalcError::DomainError(
+                            "polynomial division has non-zero remainder".to_string(),
+                        ))
+                    }
                 }
                 BinaryOp::Mod => Err(CalcError::DomainError(
                     "modulo in polynomial expression not supported".to_string(),
@@ -499,7 +519,7 @@ fn is_zero_poly(coeffs: &[f64]) -> bool {
     coeffs.iter().all(|&c| c == 0.0)
 }
 
-/// 求根：支持 1 次、2 次多项式。高次返回 DomainError。
+/// 求根：支持 1-4 次多项式。>4 次返回 DomainError。
 /// 实根返回 Vector，复根返回 ComplexList。
 fn find_roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
     let c = trim_leading_zeros(coeffs);
@@ -536,11 +556,199 @@ fn find_roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
                 Ok(EvalResult::ComplexList(vec![(re, im), (re, -im)]))
             }
         }
+        3 => {
+            // ax^3 + bx^2 + cx + d = 0 (Cardano 公式)
+            let roots = solve_cubic(c[3], c[2], c[1], c[0]);
+            Ok(roots_to_eval_result(roots))
+        }
+        4 => {
+            // ax^4 + bx^3 + cx^2 + dx + e = 0 (Ferrari 方法)
+            let roots = solve_quartic(c[4], c[3], c[2], c[1], c[0]);
+            Ok(roots_to_eval_result(roots))
+        }
         _ => Err(CalcError::DomainError(format!(
-            "roots(): polynomial degree {} not supported (max degree 2 in v0.8)",
+            "roots(): polynomial degree {} not supported (max degree 4)",
             c.len() - 1
         ))),
     }
+}
+
+/// 将复根列表转换为 EvalResult：全实根 → Vector，含复根 → ComplexList。
+fn roots_to_eval_result(roots: Vec<(f64, f64)>) -> EvalResult {
+    const EPS: f64 = 1e-10;
+    let all_real = roots.iter().all(|(_, im)| im.abs() < EPS);
+    if all_real {
+        EvalResult::Vector(roots.into_iter().map(|(re, _)| re).collect())
+    } else {
+        EvalResult::ComplexList(roots)
+    }
+}
+
+/// 解二次方程 at² + bt + c = 0，返回 (实部, 虚部) 对。
+fn solve_quadratic_complex(a: f64, b: f64, c: f64) -> Vec<(f64, f64)> {
+    let disc = b * b - 4.0 * a * c;
+    if disc >= 0.0 {
+        let sqrt_d = disc.sqrt();
+        vec![
+            ((-b + sqrt_d) / (2.0 * a), 0.0),
+            ((-b - sqrt_d) / (2.0 * a), 0.0),
+        ]
+    } else {
+        let sqrt_d = (-disc).sqrt();
+        let re = -b / (2.0 * a);
+        let im = sqrt_d / (2.0 * a);
+        vec![(re, im), (re, -im)]
+    }
+}
+
+/// 解三次方程 ax³ + bx² + cx + d = 0（Cardano 公式），返回 (实部, 虚部) 对。
+///
+/// 判别式 Δ = (q/2)² + (p/3)³：
+/// - Δ > 0：1 实根 + 2 复共轭根
+/// - Δ = 0：3 实根（至少 2 个相等）
+/// - Δ < 0：3 个不同实根（三角公式）
+fn solve_cubic(a: f64, b: f64, c: f64, d: f64) -> Vec<(f64, f64)> {
+    const EPS: f64 = 1e-12;
+
+    // 归一化为首一多项式：x³ + Bx² + Cx + D = 0
+    let b = b / a;
+    let c = c / a;
+    let d = d / a;
+
+    // 代换 x = t - b/3 → t³ + pt + q = 0
+    let p = c - b * b / 3.0;
+    let q = 2.0 * b * b * b / 27.0 - b * c / 3.0 + d;
+    let shift = -b / 3.0;
+
+    let disc = (q / 2.0).powi(2) + (p / 3.0).powi(3);
+
+    if disc > EPS {
+        // Δ > 0：1 实根 + 2 复共轭根
+        let sqrt_d = disc.sqrt();
+        let u = (-q / 2.0 + sqrt_d).cbrt();
+        let v = (-q / 2.0 - sqrt_d).cbrt();
+        let t1 = u + v;
+        let re = -(u + v) / 2.0;
+        let im = (u - v) * 3.0_f64.sqrt() / 2.0;
+        vec![
+            (t1 + shift, 0.0),
+            (re + shift, im),
+            (re + shift, -im),
+        ]
+    } else if disc < -EPS {
+        // Δ < 0：3 个不同实根（三角公式）
+        let m = 2.0 * (-p / 3.0).sqrt();
+        let arg = (3.0 * q / (p * m)).clamp(-1.0, 1.0);
+        let theta = arg.acos() / 3.0;
+        let two_pi_3 = 2.0 * std::f64::consts::PI / 3.0;
+        vec![
+            (m * theta.cos() + shift, 0.0),
+            (m * (theta - two_pi_3).cos() + shift, 0.0),
+            (m * (theta + two_pi_3).cos() + shift, 0.0),
+        ]
+    } else {
+        // Δ = 0：3 实根，至少 2 个相等
+        if p.abs() < EPS {
+            // 三重根 0
+            vec![(shift, 0.0), (shift, 0.0), (shift, 0.0)]
+        } else {
+            let u = (-q / 2.0).cbrt();
+            vec![
+                (2.0 * u + shift, 0.0),
+                (-u + shift, 0.0),
+                (-u + shift, 0.0),
+            ]
+        }
+    }
+}
+
+/// 解四次方程 ax⁴ + bx³ + cx² + dx + e = 0（Ferrari 方法），返回 (实部, 虚部) 对。
+fn solve_quartic(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<(f64, f64)> {
+    const EPS: f64 = 1e-12;
+
+    // 归一化
+    let b = b / a;
+    let c = c / a;
+    let d = d / a;
+    let e = e / a;
+
+    // 代换 x = t - b/4 → t⁴ + pt² + qt + r = 0
+    let p = c - 3.0 * b * b / 8.0;
+    let q = d - b * c / 2.0 + b * b * b / 8.0;
+    let r = e - b * d / 4.0 + b * b * c / 16.0 - 3.0 * b.powi(4) / 256.0;
+    let shift = -b / 4.0;
+
+    if q.abs() < EPS {
+        // 双二次方程 t⁴ + pt² + r = 0
+        let disc = p * p - 4.0 * r;
+        if disc >= 0.0 {
+            let sqrt_disc = disc.sqrt();
+            let t2_1 = (-p + sqrt_disc) / 2.0;
+            let t2_2 = (-p - sqrt_disc) / 2.0;
+            let mut roots = Vec::new();
+            for &t2 in &[t2_1, t2_2] {
+                if t2 >= 0.0 {
+                    let t = t2.sqrt();
+                    roots.push((t + shift, 0.0));
+                    roots.push((-t + shift, 0.0));
+                } else {
+                    let t = (-t2).sqrt();
+                    roots.push((shift, t));
+                    roots.push((shift, -t));
+                }
+            }
+            roots
+        } else {
+            // 复数 t² → 需要复数平方根
+            let sqrt_disc = (-disc).sqrt();
+            let re_t2 = -p / 2.0;
+            let im_t2 = sqrt_disc / 2.0;
+            let mut roots = Vec::new();
+            for &sign in &[1.0, -1.0] {
+                let (sr, si) = complex_sqrt(re_t2, im_t2 * sign);
+                roots.push((sr + shift, si));
+                roots.push((-sr + shift, -si));
+            }
+            roots
+        }
+    } else {
+        // Ferrari 方法：解预解三次方程 m³ + 2pm² + (p² - 4r)m - q² = 0
+        let resolvent_roots = solve_cubic(1.0, 2.0 * p, p * p - 4.0 * r, -q * q);
+
+        // 找正实根 m（预解三次方程在 m=0 处值为 -q² < 0，故必存在正实根）
+        let m = resolvent_roots
+            .iter()
+            .find(|(re, im)| im.abs() < EPS && *re > 0.0)
+            .map(|(re, _)| *re)
+            .expect("resolvent cubic must have a positive real root");
+
+        let sqrt_m = m.sqrt();
+        let half_pm = (p + m) / 2.0;
+        let q_term = q / (2.0 * sqrt_m);
+
+        // 因式分解为两个二次方程：
+        // t² - √m·t + (half_pm + q_term) = 0
+        // t² + √m·t + (half_pm - q_term) = 0
+        let mut roots = Vec::new();
+        roots.extend(solve_quadratic_complex(1.0, -sqrt_m, half_pm + q_term));
+        roots.extend(solve_quadratic_complex(1.0, sqrt_m, half_pm - q_term));
+
+        roots
+            .into_iter()
+            .map(|(re, im)| (re + shift, im))
+            .collect()
+    }
+}
+
+/// 复数平方根 √(re + im·i)。
+fn complex_sqrt(re: f64, im: f64) -> (f64, f64) {
+    let mag = (re * re + im * im).sqrt();
+    let sqrt_re = ((mag + re) / 2.0).sqrt();
+    let mut sqrt_im = ((mag - re) / 2.0).sqrt();
+    if im < 0.0 {
+        sqrt_im = -sqrt_im;
+    }
+    (sqrt_re, sqrt_im)
 }
 
 /// 基础因式分解：二次整数系数多项式，使用有理根定理。
@@ -588,7 +796,7 @@ fn format_factor_linear(a: f64, r: f64) -> String {
     } else if a == -1.0 {
         "-".to_string()
     } else {
-        format!("{}", a as i64)
+        format!("{}*", a as i64)
     };
     let root_str = if r == 0.0 {
         "x".to_string()
@@ -597,11 +805,7 @@ fn format_factor_linear(a: f64, r: f64) -> String {
     } else {
         format!("(x+{})", (-r) as i64)
     };
-    if lead.is_empty() {
-        root_str
-    } else {
-        format!("{}*{}", lead, root_str)
-    }
+    format!("{}{}", lead, root_str)
 }
 
 /// 格式化二次因式分解：a(x-r1)(x-r2)。
@@ -858,8 +1062,99 @@ mod tests {
     }
 
     #[test]
-    fn test_roots_high_degree() {
-        let result = eval("roots(x^3+1)");
+    fn test_roots_cubic_one_real_two_complex() {
+        // x^3+1 = 0 → roots: -1, (1±i√3)/2
+        let result = eval("roots(x^3+1)").unwrap();
+        let roots = result.as_complex_list().expect("expected ComplexList");
+        assert_eq!(roots.len(), 3);
+        // 实根 -1
+        let real_roots: Vec<f64> = roots.iter().filter(|(_, im)| im.abs() < 1e-9).map(|(re, _)| *re).collect();
+        assert_eq!(real_roots.len(), 1);
+        assert_approx(real_roots[0], -1.0);
+        // 复共轭对 (0.5, ±√3/2)
+        let complex_roots: Vec<(f64, f64)> = roots.iter().filter(|(_, im)| im.abs() >= 1e-9).copied().collect();
+        assert_eq!(complex_roots.len(), 2);
+        assert_approx(complex_roots[0].0, 0.5);
+        assert_approx(complex_roots[1].0, 0.5);
+        assert_approx(complex_roots[0].1 + complex_roots[1].1, 0.0); // 共轭
+    }
+
+    #[test]
+    fn test_roots_cubic_three_real() {
+        // x^3-6x^2+11x-6 = 0 → roots: 1, 2, 3
+        let result = eval("roots(x^3-6*x^2+11*x-6)").unwrap();
+        let roots = result.as_vector().expect("expected Vector (all real roots)");
+        assert_eq!(roots.len(), 3);
+        let mut sorted = roots.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_approx(sorted[0], 1.0);
+        assert_approx(sorted[1], 2.0);
+        assert_approx(sorted[2], 3.0);
+    }
+
+    #[test]
+    fn test_roots_cubic_repeated() {
+        // x^3-3x^2+3x-1 = (x-1)^3 → triple root 1
+        let result = eval("roots(x^3-3*x^2+3*x-1)").unwrap();
+        let roots = result.as_vector().expect("expected Vector");
+        assert_eq!(roots.len(), 3);
+        for r in roots {
+            assert_approx(*r, 1.0);
+        }
+    }
+
+    #[test]
+    fn test_roots_quartic_four_real() {
+        // x^4-5x^2+4 = (x^2-1)(x^2-4) → roots: ±1, ±2
+        let result = eval("roots(x^4-5*x^2+4)").unwrap();
+        let roots = result.as_vector().expect("expected Vector (all real roots)");
+        assert_eq!(roots.len(), 4);
+        let mut sorted = roots.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_approx(sorted[0], -2.0);
+        assert_approx(sorted[1], -1.0);
+        assert_approx(sorted[2], 1.0);
+        assert_approx(sorted[3], 2.0);
+    }
+
+    #[test]
+    fn test_roots_quartic_two_real_two_complex() {
+        // x^4+1 = 0 → roots: (±√2/2)(1±i), 即 4 个复根
+        let result = eval("roots(x^4+1)").unwrap();
+        let roots = result.as_complex_list().expect("expected ComplexList");
+        assert_eq!(roots.len(), 4);
+        // 所有根的模应为 1（因为 |x^4| = |-1| → |x| = 1）
+        for &(re, im) in roots {
+            let mag = (re * re + im * im).sqrt();
+            assert!((mag - 1.0).abs() < 1e-6, "expected |root| = 1, got {}", mag);
+        }
+    }
+
+    #[test]
+    fn test_roots_quartic_with_cubic_term() {
+        // x^4-1 = 0 → roots: 1, -1, i, -i
+        let result = eval("roots(x^4-1)").unwrap();
+        let roots = result.as_complex_list().expect("expected ComplexList");
+        assert_eq!(roots.len(), 4);
+        // 找实根 ±1
+        let real_roots: Vec<f64> = roots.iter().filter(|(_, im)| im.abs() < 1e-9).map(|(re, _)| *re).collect();
+        assert_eq!(real_roots.len(), 2);
+        let mut sorted = real_roots.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_approx(sorted[0], -1.0);
+        assert_approx(sorted[1], 1.0);
+        // 找复根 ±i
+        let complex_roots: Vec<(f64, f64)> = roots.iter().filter(|(_, im)| im.abs() >= 1e-9).copied().collect();
+        assert_eq!(complex_roots.len(), 2);
+        assert_approx(complex_roots[0].0, 0.0);
+        assert_approx(complex_roots[1].0, 0.0);
+        assert_approx(complex_roots[0].1.abs(), 1.0);
+        assert_approx(complex_roots[1].1.abs(), 1.0);
+    }
+
+    #[test]
+    fn test_roots_degree_5_not_supported() {
+        let result = eval("roots(x^5+1)");
         assert!(matches!(result, Err(CalcError::DomainError(_))));
     }
 
@@ -1467,10 +1762,45 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_unsupported() {
-        // (x+1) / (x+2) → not supported
+        // (x+1) / (x+2) → non-zero remainder → DomainError
         let ast = parse("(x+1)/(x+2)").unwrap();
         let result = expr_to_coeffs(&ast, &EvalContext::new());
         assert!(matches!(result, Err(CalcError::DomainError(_))));
+    }
+
+    #[test]
+    fn test_expr_to_coeffs_div_poly_by_number() {
+        // (x^2-1)/2 → [-0.5, 0, 0.5]
+        let ast = parse("(x^2-1)/2").unwrap();
+        let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(var, "x");
+        assert_eq!(coeffs, vec![-0.5, 0.0, 0.5]);
+    }
+
+    #[test]
+    fn test_expr_to_coeffs_div_poly_by_number_zero() {
+        // (x+1)/0 → DivisionByZero
+        let ast = parse("(x+1)/0").unwrap();
+        let result = expr_to_coeffs(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    }
+
+    #[test]
+    fn test_expr_to_coeffs_div_poly_by_poly_exact() {
+        // (x^2-1)/(x-1) → quotient x+1 = [1, 1]
+        let ast = parse("(x^2-1)/(x-1)").unwrap();
+        let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(var, "x");
+        assert_eq!(coeffs, vec![1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_expr_to_coeffs_div_poly_by_poly_exact_higher() {
+        // (x^3-1)/(x-1) → quotient x^2+x+1 = [1, 1, 1]
+        let ast = parse("(x^3-1)/(x-1)").unwrap();
+        let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(var, "x");
+        assert_eq!(coeffs, vec![1.0, 1.0, 1.0]);
     }
 
     #[test]
@@ -1583,11 +1913,11 @@ mod tests {
 
     #[test]
     fn test_format_factor_linear_direct() {
-        // Direct test of format_factor_linear (note: a=-1 produces "-*prefix")
+        // Direct test of format_factor_linear (a=-1 produces "-prefix")
         assert_eq!(format_factor_linear(1.0, 3.0), "(x-3)");
         assert_eq!(format_factor_linear(1.0, -3.0), "(x+3)");
         assert_eq!(format_factor_linear(1.0, 0.0), "x");
-        assert_eq!(format_factor_linear(-1.0, 3.0), "-*(x-3)");
+        assert_eq!(format_factor_linear(-1.0, 3.0), "-(x-3)");
         assert_eq!(format_factor_linear(2.0, 3.0), "2*(x-3)");
     }
 
@@ -1695,6 +2025,126 @@ mod tests {
     fn test_not_supports_bignumber() {
         let ast = AstNode::BigNumber("42".to_string());
         assert!(!PolynomialDomain.supports(&ast));
+    }
+
+    // ===== 覆盖率补充测试（第二轮：覆盖剩余未覆盖路径）=====
+    // 注：eval_function 中 line 210 的 `_ => unreachable!("checked above")` 分支
+    // 在逻辑上不可达——name 已在 line 99 通过 POLYNOMIAL_FUNCTIONS 白名单校验，
+    // match 覆盖了全部 9 个白名单函数，故该分支无法被测试触发且不应被触发。
+
+    #[test]
+    fn test_eval_node_number_bare() {
+        // 覆盖 eval_node 的 AstNode::Number 分支（line 56）
+        // 直接对裸 Number AST 求值（不经过任何函数调用包装）
+        let ast = AstNode::Number(7.0);
+        let result = PolynomialDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 7.0);
+    }
+
+    #[test]
+    fn test_eval_node_binaryop_polynomial_bare() {
+        // 覆盖 eval_node 的 BinaryOp 成功返回路径（lines 63-64）
+        // 对裸多项式表达式（非函数调用）求值，触发 expr_to_coeffs + 返回 Polynomial
+        let result = eval_polynomial("x^2+2*x+1").unwrap();
+        assert_vec_approx(&result, &[1.0, 2.0, 1.0]);
+    }
+
+    #[test]
+    fn test_eval_scalar_sub() {
+        // 覆盖 eval_scalar 的 BinaryOp::Sub 分支（line 252）
+        // poly_eval(x+1, 10-3) = poly_eval(x+1, 7) = 8
+        let ast = AstNode::FunctionCall(
+            "poly_eval".to_string(),
+            vec![
+                parse("x+1").unwrap(),
+                AstNode::BinaryOp(
+                    BinaryOp::Sub,
+                    Box::new(AstNode::Number(10.0)),
+                    Box::new(AstNode::Number(3.0)),
+                ),
+            ],
+        );
+        let result = PolynomialDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 8.0);
+    }
+
+    #[test]
+    fn test_eval_scalar_mul() {
+        // 覆盖 eval_scalar 的 BinaryOp::Mul 分支（line 253）
+        // poly_eval(x+1, 2*3) = poly_eval(x+1, 6) = 7
+        let ast = AstNode::FunctionCall(
+            "poly_eval".to_string(),
+            vec![
+                parse("x+1").unwrap(),
+                AstNode::BinaryOp(
+                    BinaryOp::Mul,
+                    Box::new(AstNode::Number(2.0)),
+                    Box::new(AstNode::Number(3.0)),
+                ),
+            ],
+        );
+        let result = PolynomialDomain.evaluate(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(result.as_scalar().unwrap(), 7.0);
+    }
+
+    #[test]
+    fn test_expr_to_coeffs_mul_number_right() {
+        // 覆盖 expr_to_coeffs 的 Mul 分支中 Number 在右侧的路径（Poly * Number，lines 332-336）
+        // 已有测试覆盖 Number 在左侧（3*(x+1)），本测试覆盖 (x+1)*3
+        let ast = parse("(x+1)*3").unwrap();
+        let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(var, "x");
+        assert_vec_approx(&coeffs, &[3.0, 3.0]);
+    }
+
+    #[test]
+    fn test_solve_cubic_double_root() {
+        // 覆盖 solve_cubic 的 disc=0 且 p≠0 分支（双根情况，lines 655-659）
+        // x^3-3x+2 = (x-1)^2*(x+2) → roots: 1(二重), -2
+        // 此处 q/2=1, p/3=-1, disc=1+(-1)=0 恰好为零（无浮点误差），且 p=-3≠0
+        let result = eval("roots(x^3-3*x+2)").unwrap();
+        let roots = result.as_vector().expect("expected Vector (all real roots)");
+        assert_eq!(roots.len(), 3);
+        let mut sorted = roots.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_approx(sorted[0], -2.0);
+        assert_approx(sorted[1], 1.0);
+        assert_approx(sorted[2], 1.0);
+    }
+
+    #[test]
+    fn test_solve_quartic_ferrari_path() {
+        // 覆盖 solve_quartic 的 Ferrari 方法路径（q≠0，lines 716, 719-727, 732-739）
+        // 以及 solve_quadratic_complex 的两个分支（disc>=0 实根 lines 591-595，disc<0 复根 lines 597-600）
+        //
+        // x^4+x = x(x+1)(x^2-x+1) → roots: 0, -1, (1±i√3)/2
+        // 此多项式 b=0 但 q=d-bc/2+b^3/8=1≠0，故走 Ferrari 路径（非双二次路径）。
+        // 预解三次方程 m^3-1=0 → m=1，分解出的两个二次方程分别产生实根与复根，
+        // 从而同时覆盖 solve_quadratic_complex 的 disc>=0 与 disc<0 两个分支。
+        let result = eval("roots(x^4+x)").unwrap();
+        let roots = result.as_complex_list().expect("expected ComplexList (has complex roots)");
+        assert_eq!(roots.len(), 4);
+        // 实根 0 和 -1
+        let real_roots: Vec<f64> = roots
+            .iter()
+            .filter(|(_, im)| im.abs() < 1e-9)
+            .map(|(re, _)| *re)
+            .collect();
+        assert_eq!(real_roots.len(), 2, "expected 2 real roots, got {:?}", real_roots);
+        let mut sorted_real = real_roots.clone();
+        sorted_real.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_approx(sorted_real[0], -1.0);
+        assert_approx(sorted_real[1], 0.0);
+        // 复共轭对 (0.5, ±√3/2)
+        let complex_roots: Vec<(f64, f64)> = roots
+            .iter()
+            .filter(|(_, im)| im.abs() >= 1e-9)
+            .copied()
+            .collect();
+        assert_eq!(complex_roots.len(), 2);
+        assert_approx(complex_roots[0].0, 0.5);
+        assert_approx(complex_roots[1].0, 0.5);
+        assert_approx(complex_roots[0].1 + complex_roots[1].1, 0.0); // 共轭
     }
 
     // ===== proptest 属性测试 =====
