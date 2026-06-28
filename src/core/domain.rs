@@ -174,6 +174,7 @@ mod tests {
                 ARITHMETIC_FUNCTIONS.contains(&name.as_str())
                     && args.iter().all(is_arithmetic_only)
             }
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => false,
         }
     }
 

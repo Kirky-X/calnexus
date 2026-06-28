@@ -93,6 +93,12 @@ impl ScientificDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+                Err(CalcError::DomainError(format!(
+                    "scientific domain does not support this node type: {:?}",
+                    ast
+                )))
+            }
         }
     }
 
@@ -321,13 +327,18 @@ impl Default for ScientificDomain {
 /// 检查 AST 是否包含科学函数或 pi/e 常量。
 fn contains_scientific(ast: &AstNode) -> bool {
     match ast {
-        AstNode::Number(_) => false,
+        AstNode::Number(_) | AstNode::Complex(_, _) => false,
         AstNode::Variable(name) => name == "pi" || name == "e",
         AstNode::BinaryOp(_, l, r) => contains_scientific(l) || contains_scientific(r),
         AstNode::UnaryOp(_, e) => contains_scientific(e),
         AstNode::FunctionCall(name, args) => {
             SCIENTIFIC_FUNCTIONS.contains(&name.as_str()) || args.iter().any(contains_scientific)
         }
+        AstNode::Matrix(rows) => rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .any(contains_scientific),
+        AstNode::List(elements) => elements.iter().any(contains_scientific),
     }
 }
 

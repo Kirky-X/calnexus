@@ -11,11 +11,13 @@ use std::time::Duration;
 
 /// 表达式抽象语法树节点。
 ///
-/// v0.1 支持 5 种节点；v0.2+ 将扩展 BigInt/Matrix/Vector（ADD §3.4）。
+/// v0.1 支持 5 种节点；v0.5 扩展 Complex/Matrix/List（design.md D2）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {
     /// 数字字面量（浮点）。
     Number(f64),
+    /// 复数字面量：`(实部, 虚部)`，如 `3+4i` → `Complex(3.0, 4.0)`。
+    Complex(f64, f64),
     /// 变量引用，如 `x`、`y`。
     Variable(String),
     /// 二元运算：`lhs op rhs`。
@@ -24,6 +26,10 @@ pub enum AstNode {
     UnaryOp(UnaryOp, Box<AstNode>),
     /// 函数调用：`name(args...)`。
     FunctionCall(String, Vec<AstNode>),
+    /// 矩阵字面量：行列表，如 `[[1,2],[3,4]]`。
+    Matrix(Vec<Vec<AstNode>>),
+    /// 列表字面量：统计域用，如 `[1,2,3,4,5]`。
+    List(Vec<AstNode>),
 }
 
 /// 二元运算符。
@@ -317,5 +323,135 @@ mod tests {
         let node = AstNode::Number(1.0);
         let debug = format!("{:?}", node);
         assert!(debug.contains("Number"));
+    }
+
+    // ===== v0.5 新节点测试：Complex / Matrix / List =====
+
+    #[test]
+    fn ast_node_complex_construct_and_match() {
+        let node = AstNode::Complex(3.0, 4.0);
+        match node {
+            AstNode::Complex(re, im) => {
+                assert!((re - 3.0).abs() < f64::EPSILON);
+                assert!((im - 4.0).abs() < f64::EPSILON);
+            }
+            _ => panic!("expected Complex variant"),
+        }
+    }
+
+    #[test]
+    fn ast_node_complex_clone_and_eq() {
+        let node = AstNode::Complex(1.5, -2.5);
+        let cloned = node.clone();
+        assert_eq!(node, cloned);
+    }
+
+    #[test]
+    fn ast_node_complex_debug_format() {
+        let node = AstNode::Complex(3.0, 4.0);
+        let debug = format!("{:?}", node);
+        assert!(debug.contains("Complex"));
+    }
+
+    #[test]
+    fn ast_node_matrix_construct_and_match() {
+        let node = AstNode::Matrix(vec![
+            vec![AstNode::Number(1.0), AstNode::Number(2.0)],
+            vec![AstNode::Number(3.0), AstNode::Number(4.0)],
+        ]);
+        match node {
+            AstNode::Matrix(rows) => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].len(), 2);
+                assert_eq!(rows[1].len(), 2);
+                assert_eq!(rows[0][0], AstNode::Number(1.0));
+                assert_eq!(rows[1][1], AstNode::Number(4.0));
+            }
+            _ => panic!("expected Matrix variant"),
+        }
+    }
+
+    #[test]
+    fn ast_node_matrix_clone_and_eq() {
+        let node = AstNode::Matrix(vec![
+            vec![AstNode::Number(1.0), AstNode::Number(2.0)],
+            vec![AstNode::Number(3.0), AstNode::Number(4.0)],
+        ]);
+        let cloned = node.clone();
+        assert_eq!(node, cloned);
+    }
+
+    #[test]
+    fn ast_node_matrix_debug_format() {
+        let node = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
+        let debug = format!("{:?}", node);
+        assert!(debug.contains("Matrix"));
+    }
+
+    #[test]
+    fn ast_node_matrix_non_square() {
+        // 2x3 非方阵
+        let node = AstNode::Matrix(vec![
+            vec![AstNode::Number(1.0), AstNode::Number(2.0), AstNode::Number(3.0)],
+            vec![AstNode::Number(4.0), AstNode::Number(5.0), AstNode::Number(6.0)],
+        ]);
+        match node {
+            AstNode::Matrix(rows) => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].len(), 3);
+            }
+            _ => panic!("expected Matrix variant"),
+        }
+    }
+
+    #[test]
+    fn ast_node_list_construct_and_match() {
+        let node = AstNode::List(vec![
+            AstNode::Number(1.0),
+            AstNode::Number(2.0),
+            AstNode::Number(3.0),
+            AstNode::Number(4.0),
+            AstNode::Number(5.0),
+        ]);
+        match node {
+            AstNode::List(elements) => {
+                assert_eq!(elements.len(), 5);
+                assert_eq!(elements[0], AstNode::Number(1.0));
+                assert_eq!(elements[4], AstNode::Number(5.0));
+            }
+            _ => panic!("expected List variant"),
+        }
+    }
+
+    #[test]
+    fn ast_node_list_clone_and_eq() {
+        let node = AstNode::List(vec![AstNode::Number(42.0)]);
+        let cloned = node.clone();
+        assert_eq!(node, cloned);
+    }
+
+    #[test]
+    fn ast_node_list_debug_format() {
+        let node = AstNode::List(vec![AstNode::Number(1.0), AstNode::Number(2.0)]);
+        let debug = format!("{:?}", node);
+        assert!(debug.contains("List"));
+    }
+
+    #[test]
+    fn ast_node_list_single_element() {
+        let node = AstNode::List(vec![AstNode::Number(42.0)]);
+        match node {
+            AstNode::List(elements) => assert_eq!(elements.len(), 1),
+            _ => panic!("expected List variant"),
+        }
+    }
+
+    #[test]
+    fn ast_node_list_empty() {
+        let node = AstNode::List(vec![]);
+        match node {
+            AstNode::List(elements) => assert!(elements.is_empty()),
+            _ => panic!("expected List variant"),
+        }
     }
 }

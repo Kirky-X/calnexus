@@ -40,7 +40,7 @@ impl AstCanonicalizer {
     /// 3. 一元归一化（双重负号消除、一元常量折叠）
     fn transform(ast: &AstNode) -> Result<AstNode, CalcError> {
         match ast {
-            AstNode::Number(_) | AstNode::Variable(_) => Ok(ast.clone()),
+            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => Ok(ast.clone()),
             AstNode::BinaryOp(op, l, r) => {
                 let l = Self::transform(l)?;
                 let r = Self::transform(r)?;
@@ -83,6 +83,24 @@ impl AstCanonicalizer {
                     transformed_args.push(Self::transform(arg)?);
                 }
                 Ok(AstNode::FunctionCall(name.clone(), transformed_args))
+            }
+            AstNode::Matrix(rows) => {
+                let mut transformed_rows = Vec::with_capacity(rows.len());
+                for row in rows {
+                    let mut transformed_row = Vec::with_capacity(row.len());
+                    for elem in row {
+                        transformed_row.push(Self::transform(elem)?);
+                    }
+                    transformed_rows.push(transformed_row);
+                }
+                Ok(AstNode::Matrix(transformed_rows))
+            }
+            AstNode::List(elements) => {
+                let mut transformed = Vec::with_capacity(elements.len());
+                for elem in elements {
+                    transformed.push(Self::transform(elem)?);
+                }
+                Ok(AstNode::List(transformed))
             }
         }
     }
@@ -138,6 +156,9 @@ impl AstCanonicalizer {
     fn serialize(ast: &AstNode) -> String {
         match ast {
             AstNode::Number(n) => Self::format_number(*n),
+            AstNode::Complex(re, im) => {
+                format!("(complex {} {})", Self::format_number(*re), Self::format_number(*im))
+            }
             AstNode::Variable(v) => v.clone(),
             AstNode::BinaryOp(op, l, r) => {
                 let op_str = match op {
@@ -165,6 +186,20 @@ impl AstCanonicalizer {
                     let args_str: Vec<String> = args.iter().map(Self::serialize).collect();
                     format!("({} {})", name, args_str.join(" "))
                 }
+            }
+            AstNode::Matrix(rows) => {
+                let rows_str: Vec<String> = rows
+                    .iter()
+                    .map(|row| {
+                        let elems: Vec<String> = row.iter().map(Self::serialize).collect();
+                        format!("({})", elems.join(" "))
+                    })
+                    .collect();
+                format!("(matrix {})", rows_str.join(" "))
+            }
+            AstNode::List(elements) => {
+                let elems_str: Vec<String> = elements.iter().map(Self::serialize).collect();
+                format!("(list {})", elems_str.join(" "))
             }
         }
     }
@@ -433,13 +468,24 @@ mod tests {
     // 辅助函数：计算 AST 深度
     fn ast_depth(ast: &AstNode) -> usize {
         match ast {
-            AstNode::Number(_) | AstNode::Variable(_) => 1,
+            AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => 1,
             AstNode::BinaryOp(_, l, r) => {
                 1 + ast_depth(l).max(ast_depth(r))
             }
             AstNode::UnaryOp(_, e) => 1 + ast_depth(e),
             AstNode::FunctionCall(_, args) => {
                 1 + args.iter().map(ast_depth).max().unwrap_or(0)
+            }
+            AstNode::Matrix(rows) => {
+                1 + rows
+                    .iter()
+                    .flat_map(|row| row.iter())
+                    .map(ast_depth)
+                    .max()
+                    .unwrap_or(0)
+            }
+            AstNode::List(elements) => {
+                1 + elements.iter().map(ast_depth).max().unwrap_or(0)
             }
         }
     }

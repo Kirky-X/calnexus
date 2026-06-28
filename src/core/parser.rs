@@ -8,6 +8,7 @@
 //! 设计依据：design.md D2（mathexpr 集成）、D7（TDD）、expression-parsing spec
 
 use crate::core::types::{AstNode, BinaryOp, CalcError, UnaryOp};
+use regex::Regex;
 
 /// 最大 AST 深度（spec: AST 深度限制 ≤ 256）。
 const MAX_AST_DEPTH: usize = 256;
@@ -20,9 +21,12 @@ const MAX_EXPR_LEN: usize = 4096;
 /// # 流程
 /// 1. 长度检查（O(1) 快速失败）
 /// 2. 空字符串检查
-/// 3. 阶乘预处理：`5!` → `factorial(5)`
-/// 4. mathexpr 解析
-/// 5. 转换为 CalNexus AstNode（`%` → `mod()`，`pi`/`e` → Variable），带深度检查
+/// 3. 若以 `[` 开头：矩阵或列表字面量，走自定义解析器
+/// 4. 否则：
+///    a. 复数预处理（`3+4i` → `complex(3,4)`）
+///    b. 阶乘预处理：`5!` → `factorial(5)`
+///    c. mathexpr 解析
+///    d. 转换为 CalNexus AstNode（`complex()` → `Complex`，`%` → `mod()`，`pi`/`e` → Variable）
 pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 长度检查（spec: 超长输入不进入词法分析）
     if input.len() > MAX_EXPR_LEN {
@@ -40,11 +44,19 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
         return Err(CalcError::ParseError("expression is empty".to_string()));
     }
 
+    // 矩阵或列表字面量：以 `[` 开头，走自定义解析器（design.md D3）
+    if trimmed.starts_with('[') {
+        return parse_bracket_literal(trimmed);
+    }
+
     // 非法连续运算符检查（mathexpr 将 `+3` 当作数字字面量，需在此显式拒绝 `++`）
     validate_no_consecutive_plus(trimmed)?;
 
+    // 复数预处理：`3+4i` → `complex(3,4)`、`2i` → `complex(0,2)`
+    let after_complex = preprocess_complex(trimmed)?;
+
     // 阶乘预处理
-    let preprocessed = preprocess_factorial(trimmed)?;
+    let preprocessed = preprocess_factorial(&after_complex)?;
 
     // mathexpr 解析
     let expr = mathexpr::parse(&preprocessed)
@@ -54,6 +66,172 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     let ast = convert_with_depth(&expr, 1)?;
 
     Ok(ast)
+}
+
+/// 复数预处理：将 `a+bi`、`a-bi`、`bi` 转换为 `complex(a, b)` 字符串。
+///
+/// 匹配规则（design.md D3）：
+/// - `3+4i` → `complex(3, 4)`
+/// - `3-4i` → `complex(3, -4)`
+/// - `2i`   → `complex(0, 2)`
+/// - `5`    → 不变（不触发复数）
+///
+/// 顺序：先匹配 `a±bi`，再匹配纯 `bi`，避免 `3+4i` 中的 `4i` 被先替换。
+fn preprocess_complex(input: &str) -> Result<String, CalcError> {
+    // 正则1：`a+bi` 或 `a-bi`（a/b 为数字，可能含小数点）
+    // 使用 OnceLock 缓存编译后的正则，避免重复编译
+    use std::sync::OnceLock;
+    static RE_COMPLEX_FULL: OnceLock<Regex> = OnceLock::new();
+    static RE_PURE_IMAGINARY: OnceLock<Regex> = OnceLock::new();
+
+    let re_full = RE_COMPLEX_FULL.get_or_init(|| {
+        Regex::new(r"(\d+(?:\.\d+)?)\s*([+-])\s*(\d+(?:\.\d+)?)\s*i").unwrap()
+    });
+    let re_pure = RE_PURE_IMAGINARY.get_or_init(|| {
+        Regex::new(r"(\d+(?:\.\d+)?)\s*i").unwrap()
+    });
+
+    let mut result = input.to_string();
+
+    // 先替换 `a+bi` / `a-bi`（整体匹配，避免 `4i` 被先替换）
+    result = re_full.replace_all(&result, |caps: &regex::Captures| {
+        let re = caps.get(1).unwrap().as_str();
+        let sign = caps.get(2).unwrap().as_str();
+        let im = caps.get(3).unwrap().as_str();
+        format!("complex({},{})", re, format!("{}{}", sign, im))
+    }).to_string();
+
+    // 再替换纯虚数 `bi` → `complex(0, b)`
+    result = re_pure.replace_all(&result, |caps: &regex::Captures| {
+        let im = caps.get(1).unwrap().as_str();
+        format!("complex(0,{})", im)
+    }).to_string();
+
+    Ok(result)
+}
+
+/// 解析以 `[` 开头的字面量：矩阵 `[[...]]` 或列表 `[...]`（design.md D3）。
+fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
+    let trimmed = input.trim();
+    if trimmed.starts_with("[[") {
+        parse_matrix_literal(trimmed)
+    } else if trimmed.starts_with('[') {
+        parse_list_literal(trimmed)
+    } else {
+        Err(CalcError::ParseError(format!(
+            "expected bracket literal, got: {}",
+            trimmed
+        )))
+    }
+}
+
+/// 解析矩阵字面量 `[[row1],[row2],...]`。
+///
+/// 每行由 `[elem1,elem2,...]` 组成，元素递归调用 [`parse`]。
+fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
+    let trimmed = input.trim();
+    // 必须以 `[[` 开头、`]]` 结尾
+    if !trimmed.starts_with("[[") || !trimmed.ends_with("]]") {
+        return Err(CalcError::ParseError(format!(
+            "invalid matrix literal: {}",
+            trimmed
+        )));
+    }
+    // 去掉外层 `[[` 和 `]]`，得到 `row1],[row2],[...`
+    let inner = &trimmed[2..trimmed.len() - 2];
+    // 用 `],[` 分割行
+    let rows_str = split_by_pattern(inner, "],[");
+    let mut rows: Vec<Vec<AstNode>> = Vec::with_capacity(rows_str.len());
+    for row_str in &rows_str {
+        // 每行用 `[` 和 `]` 包裹，再用 parse_list_literal 解析
+        let row_full = format!("[{}]", row_str.trim());
+        let row_node = parse_list_literal(&row_full)?;
+        match row_node {
+            AstNode::List(elements) => rows.push(elements),
+            _ => {
+                return Err(CalcError::ParseError(format!(
+                    "expected list row in matrix, got: {:?}",
+                    row_node
+                )))
+            }
+        }
+    }
+    if rows.is_empty() {
+        return Err(CalcError::ParseError("empty matrix literal".to_string()));
+    }
+    Ok(AstNode::Matrix(rows))
+}
+
+/// 解析列表字面量 `[elem1,elem2,...]`。
+///
+/// 元素递归调用 [`parse`]，支持任意表达式元素。
+fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
+    let trimmed = input.trim();
+    // 必须以 `[` 开头、`]` 结尾
+    if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+        return Err(CalcError::ParseError(format!(
+            "invalid list literal: {}",
+            trimmed
+        )));
+    }
+    // 去掉 `[` 和 `]`
+    let inner = &trimmed[1..trimmed.len() - 1];
+    let inner_trimmed = inner.trim();
+    // 空列表 `[]`
+    if inner_trimmed.is_empty() {
+        return Ok(AstNode::List(vec![]));
+    }
+    // 用顶层 `,` 分割元素（跳过嵌套 `()` 和 `[]`）
+    let parts = split_top_level_commas(inner_trimmed);
+    let mut elements: Vec<AstNode> = Vec::with_capacity(parts.len());
+    for part in &parts {
+        elements.push(parse(part)?);
+    }
+    Ok(AstNode::List(elements))
+}
+
+/// 用指定分隔符模式分割字符串，跳过嵌套的 `()` 和 `[]`。
+fn split_by_pattern(input: &str, sep: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = input.chars().collect();
+    let sep_chars: Vec<char> = sep.chars().collect();
+    let mut i = 0;
+    let mut bracket_depth = 0i32;
+    let mut paren_depth = 0i32;
+
+    while i < chars.len() {
+        // 先检查分隔符（使用"之前"的深度，即当前字符尚未影响深度）
+        if bracket_depth == 0 && paren_depth == 0 && i + sep_chars.len() <= chars.len() {
+            let candidate: String = chars[i..i + sep_chars.len()].iter().collect();
+            if candidate == sep {
+                result.push(current.clone());
+                current.clear();
+                i += sep_chars.len();
+                continue;
+            }
+        }
+        // 更新深度（当前字符影响后续深度判断）
+        let c = chars[i];
+        if c == '[' {
+            bracket_depth += 1;
+        } else if c == ']' {
+            bracket_depth -= 1;
+        } else if c == '(' {
+            paren_depth += 1;
+        } else if c == ')' {
+            paren_depth -= 1;
+        }
+        current.push(c);
+        i += 1;
+    }
+    result.push(current);
+    result
+}
+
+/// 用顶层 `,` 分割字符串，跳过嵌套的 `()` 和 `[]`。
+fn split_top_level_commas(input: &str) -> Vec<String> {
+    split_by_pattern(input, ",")
 }
 
 /// 拒绝非法连续运算符 `++`。
@@ -203,6 +381,28 @@ fn convert_with_depth(expr: &mathexpr::Expr, depth: usize) -> Result<AstNode, Ca
             let mut converted_args = Vec::with_capacity(args.len());
             for arg in args {
                 converted_args.push(convert_with_depth(arg, depth + 1)?);
+            }
+            // 复数字面量：`complex(re, im)` → `Complex(re, im)`（design.md D3）
+            // mathexpr 可能将 `-4` 解析为 `UnaryOp(Neg, Number(4))`，需规范化
+            if name == "complex" && converted_args.len() == 2 {
+                let re_val = match &converted_args[0] {
+                    AstNode::Number(n) => Some(*n),
+                    _ => None,
+                };
+                let im_val = match &converted_args[1] {
+                    AstNode::Number(n) => Some(*n),
+                    AstNode::UnaryOp(UnaryOp::Neg, inner) => {
+                        if let AstNode::Number(n) = inner.as_ref() {
+                            Some(-*n)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                if let (Some(re), Some(im)) = (re_val, im_val) {
+                    return Ok(AstNode::Complex(re, im));
+                }
             }
             Ok(AstNode::FunctionCall(name.clone(), converted_args))
         }
@@ -600,6 +800,99 @@ mod tests {
             ast,
             binop(BinaryOp::Mul, num(2.0), call("factorial", vec![num(3.0)]))
         );
+    }
+
+    // ===== v0.5 复数字面量解析测试（任务 11.3） =====
+
+    #[test]
+    fn test_complex_standard_literal() {
+        // `3+4i` → Complex(3, 4)
+        let ast = parse("3+4i").unwrap();
+        assert_eq!(ast, AstNode::Complex(3.0, 4.0));
+    }
+
+    #[test]
+    fn test_complex_pure_imaginary() {
+        // `2i` → Complex(0, 2)
+        let ast = parse("2i").unwrap();
+        assert_eq!(ast, AstNode::Complex(0.0, 2.0));
+    }
+
+    #[test]
+    fn test_complex_negative_imaginary() {
+        // `3-4i` → Complex(3, -4)
+        let ast = parse("3-4i").unwrap();
+        assert_eq!(ast, AstNode::Complex(3.0, -4.0));
+    }
+
+    #[test]
+    fn test_complex_real_only_not_triggered() {
+        // `5` → Number(5)，不触发复数
+        let ast = parse("5").unwrap();
+        assert_eq!(ast, num(5.0));
+    }
+
+    // ===== v0.5 矩阵字面量解析测试（任务 11.5） =====
+
+    #[test]
+    fn test_matrix_2x2_literal() {
+        // `[[1,2],[3,4]]` → 2x2 Matrix
+        let ast = parse("[[1,2],[3,4]]").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::Matrix(vec![
+                vec![num(1.0), num(2.0)],
+                vec![num(3.0), num(4.0)],
+            ])
+        );
+    }
+
+    #[test]
+    fn test_matrix_2x3_literal() {
+        // `[[1,2,3],[4,5,6]]` → 2x3 Matrix
+        let ast = parse("[[1,2,3],[4,5,6]]").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::Matrix(vec![
+                vec![num(1.0), num(2.0), num(3.0)],
+                vec![num(4.0), num(5.0), num(6.0)],
+            ])
+        );
+    }
+
+    #[test]
+    fn test_matrix_1x3_literal() {
+        // `[[1,2,3]]` → 1x3 Matrix
+        let ast = parse("[[1,2,3]]").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::Matrix(vec![vec![num(1.0), num(2.0), num(3.0)]])
+        );
+    }
+
+    // ===== v0.5 列表字面量解析测试（任务 11.7） =====
+
+    #[test]
+    fn test_list_standard_literal() {
+        // `[1,2,3,4,5]` → 5 元素 List
+        let ast = parse("[1,2,3,4,5]").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::List(vec![
+                num(1.0),
+                num(2.0),
+                num(3.0),
+                num(4.0),
+                num(5.0),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_list_single_element() {
+        // `[42]` → 单元素 List
+        let ast = parse("[42]").unwrap();
+        assert_eq!(ast, AstNode::List(vec![num(42.0)]));
     }
 
     // ===== proptest 属性测试（任务 2.5） =====

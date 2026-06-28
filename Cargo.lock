@@ -253,6 +253,7 @@ dependencies = [
  "mathexpr",
  "oxcache",
  "proptest",
+ "regex",
  "serde",
  "tokio",
 ]
