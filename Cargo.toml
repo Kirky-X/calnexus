@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Kirky.X"]
 license = "MIT"
-rust-version = "1.76"
+rust-version = "1.85"
 description = "A command-line math expression evaluator with 11 computation domains, symbolic calculus, REPL, and batch processing"
 keywords = ["math", "calculator", "symbolic", "repl", "cli"]
 categories = ["command-line-utilities", "mathematics", "science"]
@@ -19,7 +19,7 @@ cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
-oxcache = { version = "0.2", features = ["core"], default-features = false }
+oxcache = { version = "0.3", features = ["core"], default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
 blake3 = { version = "1", default-features = false, features = ["std"] }
 # 序列化（仅 std + derive，禁用默认的 unstable 特性）

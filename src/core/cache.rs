@@ -8,7 +8,7 @@
 //! - l1-cache spec：7 个 requirements / 22 个 scenarios
 //!
 //! 实现说明：
-//! - oxcache v0.2 为 async/tokio 架构，本模块通过全局 tokio Runtime + block_on 同步调用
+//! - oxcache v0.3 为 async/tokio 架构，本模块通过全局 tokio Runtime + block_on 同步调用
 //! - 保持 CacheManager 公共 API 同步，对调用方透明
 //! - oxcache 使用 `core` feature（L1+L2 能力），但配置为 memory_only（仅 L1 实际使用）
 //!
