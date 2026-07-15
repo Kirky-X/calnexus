@@ -22,13 +22,14 @@ mod symbolic;
 
 pub use core::{
     parse, AstCanonicalizer, AstNode, BinaryOp, CacheKeyGen, CacheManager, CalcError,
-    CalculationDomain, CanonicalForm, DomainRouter, EvalContext, EvalResult, UnaryOp,
+    CalculationDomain, CanonicalForm, DomainRouter, ErrorKind, EvalContext, EvalResult, Span,
+    UnaryOp,
 };
-pub use i18n::{I18n, Lang};
 pub use domains::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
     PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain,
 };
+pub use i18n::{I18n, Lang};
 pub use symbolic::SymbolicDomain;
 
 #[cfg(feature = "cli")]

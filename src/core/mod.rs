@@ -20,4 +20,6 @@ pub use domain::{CalculationDomain, DomainRouter};
 pub use parser::parse;
 #[cfg(feature = "cli")]
 pub(crate) use parser::MAX_EXPR_LEN;
-pub use types::{AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp};
+pub use types::{
+    AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext, EvalResult, Span, UnaryOp,
+};

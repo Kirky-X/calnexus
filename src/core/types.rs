@@ -277,43 +277,229 @@ impl EvalResult {
     }
 }
 
-/// 计算错误。
+/// 源代码跨度（字节偏移）。
 ///
-/// 覆盖解析、求值、溢出、除零、定义域、深度、NaN/Inf 等所有错误路径。
-/// design.md D7 要求错误必须显性化（Rule 12: Fail Loud）。
-#[derive(Debug, Clone, PartialEq)]
-pub enum CalcError {
-    /// 表达式语法错误。
-    ParseError(String),
-    /// 求值过程中的通用错误。
-    EvalError(String),
-    /// 整数运算溢出（checked_* 检测到）。
-    Overflow,
-    /// 结果为 NaN 或 ±Inf。
-    NaNOrInf,
-    /// 函数定义域错误，如 `asin(2)`、`log(-1)`。
-    DomainError(String),
-    /// AST 深度超过限制（≤ 256）。
-    DepthExceeded,
-    /// 除零错误。
-    DivisionByZero,
+/// 用于精确定位错误在输入表达式中的位置。design.md §5.1。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Span {
+    /// 起始字节偏移（含）。
+    pub start: usize,
+    /// 结束字节偏移（不含）。
+    pub end: usize,
 }
 
-impl fmt::Display for CalcError {
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+    pub fn point(pos: usize) -> Self {
+        Self {
+            start: pos,
+            end: pos + 1,
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.start >= self.end
+    }
+}
+
+impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.start, self.end)
+    }
+}
+
+/// 错误分类，决定退出码和呈现策略。design.md §5.2。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorKind {
+    Parse,
+    Eval,
+    Overflow,
+    DivisionByZero,
+    Domain,
+    Depth,
+    NaNOrInf,
+    UndefinedSymbol,
+    Timeout,
+    Usage,
+}
+
+impl ErrorKind {
+    /// 退出码契约：0=成功, 1=计算错误, 2=用法错误, 3=超时。design.md §5.6。
+    pub fn exit_code(&self) -> i32 {
         match self {
-            CalcError::ParseError(msg) => write!(f, "parse error: {}", msg),
-            CalcError::EvalError(msg) => write!(f, "evaluation error: {}", msg),
-            CalcError::Overflow => write!(f, "integer overflow"),
-            CalcError::NaNOrInf => write!(f, "result is NaN or infinity"),
-            CalcError::DomainError(msg) => write!(f, "domain error: {}", msg),
-            CalcError::DepthExceeded => write!(f, "AST depth exceeded limit"),
-            CalcError::DivisionByZero => write!(f, "division by zero"),
+            Self::Timeout => 3,
+            Self::Usage => 2,
+            _ => 1,
+        }
+    }
+
+    /// i18n 消息键，对应 i18n.rs 中的翻译条目。
+    pub fn i18n_key(&self) -> &'static str {
+        match self {
+            Self::Parse => "error.parse",
+            Self::Eval => "error.eval",
+            Self::Overflow => "error.overflow",
+            Self::DivisionByZero => "error.division_by_zero",
+            Self::Domain => "error.domain",
+            Self::Depth => "error.depth",
+            Self::NaNOrInf => "error.nan_or_inf",
+            Self::UndefinedSymbol => "error.undefined_symbol",
+            Self::Timeout => "error.timeout",
+            Self::Usage => "error.usage",
         }
     }
 }
 
-impl std::error::Error for CalcError {}
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.i18n_key())
+    }
+}
+
+/// 计算错误。结构化设计：kind + message + span + hint。design.md §5.3。
+///
+/// 覆盖解析、求值、溢出、除零、定义域、深度、NaN/Inf 等所有错误路径。
+/// design.md D7 要求错误必须显性化（Rule 12: Fail Loud）。
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub struct CalcError {
+    pub kind: ErrorKind,
+    pub message: String,
+    pub span: Option<Span>,
+    pub hint: Option<String>,
+}
+
+impl fmt::Display for CalcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            ErrorKind::Parse => write!(f, "parse error: {}", self.message),
+            ErrorKind::Eval => write!(f, "evaluation error: {}", self.message),
+            ErrorKind::Overflow => write!(f, "integer overflow"),
+            ErrorKind::NaNOrInf => write!(f, "result is NaN or infinity"),
+            ErrorKind::Domain => write!(f, "domain error: {}", self.message),
+            ErrorKind::Depth => write!(f, "AST depth exceeded limit"),
+            ErrorKind::DivisionByZero => write!(f, "division by zero"),
+            ErrorKind::UndefinedSymbol => write!(f, "{}", self.message),
+            ErrorKind::Timeout => write!(f, "{}", self.message),
+            ErrorKind::Usage => write!(f, "{}", self.message),
+        }
+    }
+}
+
+impl CalcError {
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            span: None,
+            hint: None,
+        }
+    }
+    pub fn with_span(mut self, span: Span) -> Self {
+        self.span = Some(span);
+        self
+    }
+    pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+
+    // 便捷构造器（签名与旧 enum 变体兼容，迁移用）
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Parse, msg)
+    }
+    pub fn eval(msg: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Eval, msg)
+    }
+    pub fn overflow() -> Self {
+        Self::new(ErrorKind::Overflow, "integer overflow")
+    }
+    pub fn nan_or_inf() -> Self {
+        Self::new(ErrorKind::NaNOrInf, "result is NaN or infinity")
+    }
+    pub fn domain(msg: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Domain, msg)
+    }
+    pub fn depth_exceeded() -> Self {
+        Self::new(ErrorKind::Depth, "AST depth exceeded limit")
+    }
+    pub fn division_by_zero() -> Self {
+        Self::new(ErrorKind::DivisionByZero, "division by zero")
+    }
+    pub fn undefined_symbol(name: &str) -> Self {
+        Self::new(
+            ErrorKind::UndefinedSymbol,
+            format!("undefined symbol: {}", name),
+        )
+        .with_hint(format!("try defining it first: :let {} = <value>", name))
+    }
+    pub fn timeout() -> Self {
+        Self::new(ErrorKind::Timeout, "evaluation timed out")
+    }
+    pub fn usage(msg: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Usage, msg)
+    }
+
+    /// 中文友好文本（终端默认）。design.md §5.5。
+    pub fn friendly(&self, i18n: &crate::i18n::I18n) -> String {
+        let mut s = i18n.t(self.kind.i18n_key()).to_string();
+        if let Some(span) = self.span {
+            s.push_str(&format!(" (位置 {}:{})", span.start, span.end));
+        }
+        s.push_str(&format!(": {}", self.message));
+        if let Some(hint) = &self.hint {
+            s.push_str(&format!("\n  提示: {}", hint));
+        }
+        s
+    }
+
+    /// JSON 机器可读（--json）。手动构造避免 serde_json 运行时依赖。
+    pub fn to_json(&self) -> String {
+        let span = match &self.span {
+            Some(s) => format!(r#","span":{{"start":{},"end":{}}}"#, s.start, s.end),
+            None => String::new(),
+        };
+        let hint = match &self.hint {
+            Some(h) => format!(r#","hint":"{}""#, escape_json_string(h)),
+            None => String::new(),
+        };
+        format!(
+            r#"{{"error":{{"kind":"{:?}","message":"{}"{}{},"exit_code":{}}}}}"#,
+            self.kind,
+            escape_json_string(&self.message),
+            span,
+            hint,
+            self.kind.exit_code()
+        )
+    }
+
+    /// 教育模式（--explain）。design.md §5.5。
+    pub fn to_explain(&self, i18n: &crate::i18n::I18n) -> String {
+        let mut s = self.friendly(i18n);
+        s.push_str(&format!("\n\n  错误类别: {:?}", self.kind));
+        s.push_str(&format!("\n  退出码: {}", self.kind.exit_code()));
+        if let Some(hint) = &self.hint {
+            s.push_str(&format!("\n  建议: {}", hint));
+        }
+        s
+    }
+}
+
+fn escape_json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str(r#"\""#),
+            '\\' => out.push_str(r"\\"),
+            '\n' => out.push_str(r"\n"),
+            '\r' => out.push_str(r"\r"),
+            '\t' => out.push_str(r"\t"),
+            c if c.is_control() => out.push_str(&format!(r"\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
 
 /// AST 规范形式（S-表达式字符串）。
 ///
@@ -463,34 +649,37 @@ mod tests {
     #[test]
     fn calc_error_variants_display() {
         assert_eq!(
-            CalcError::ParseError("unexpected token".into()).to_string(),
+            CalcError::parse("unexpected token").to_string(),
             "parse error: unexpected token"
         );
-        assert_eq!(CalcError::Overflow.to_string(), "integer overflow");
-        assert_eq!(CalcError::NaNOrInf.to_string(), "result is NaN or infinity");
+        assert_eq!(CalcError::overflow().to_string(), "integer overflow");
         assert_eq!(
-            CalcError::DomainError("asin(2)".into()).to_string(),
+            CalcError::nan_or_inf().to_string(),
+            "result is NaN or infinity"
+        );
+        assert_eq!(
+            CalcError::domain("asin(2)").to_string(),
             "domain error: asin(2)"
         );
         assert_eq!(
-            CalcError::DepthExceeded.to_string(),
+            CalcError::depth_exceeded().to_string(),
             "AST depth exceeded limit"
         );
-        assert_eq!(CalcError::DivisionByZero.to_string(), "division by zero");
         assert_eq!(
-            CalcError::EvalError("unknown".into()).to_string(),
+            CalcError::division_by_zero().to_string(),
+            "division by zero"
+        );
+        assert_eq!(
+            CalcError::eval("unknown").to_string(),
             "evaluation error: unknown"
         );
     }
 
     #[test]
     fn calc_error_eq() {
-        assert_eq!(CalcError::Overflow, CalcError::Overflow);
-        assert_ne!(CalcError::Overflow, CalcError::DivisionByZero);
-        assert_eq!(
-            CalcError::ParseError("e1".into()),
-            CalcError::ParseError("e1".into())
-        );
+        assert_eq!(CalcError::overflow(), CalcError::overflow());
+        assert_ne!(CalcError::overflow(), CalcError::division_by_zero());
+        assert_eq!(CalcError::parse("e1"), CalcError::parse("e1"));
     }
 
     #[test]

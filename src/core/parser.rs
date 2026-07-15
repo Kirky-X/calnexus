@@ -32,7 +32,7 @@ pub(crate) const MAX_EXPR_LEN: usize = 4096;
 pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 长度检查（spec: 超长输入不进入词法分析）
     if input.len() > MAX_EXPR_LEN {
-        return Err(CalcError::ParseError(format!(
+        return Err(CalcError::parse(format!(
             "expression length {} exceeds maximum of {} characters",
             input.len(),
             MAX_EXPR_LEN
@@ -43,7 +43,7 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
 
     // 空字符串检查
     if trimmed.is_empty() {
-        return Err(CalcError::ParseError("expression is empty".to_string()));
+        return Err(CalcError::parse("expression is empty".to_string()));
     }
 
     // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
@@ -74,8 +74,7 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     let after_implicit = insert_implicit_multiplication(&after_factorial);
 
     // mathexpr 解析
-    let expr =
-        mathexpr::parse(&after_implicit).map_err(|e| CalcError::ParseError(format!("{}", e)))?;
+    let expr = mathexpr::parse(&after_implicit).map_err(|e| CalcError::parse(format!("{}", e)))?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
     let mut ast = convert_with_depth(&expr, 1)?;
@@ -137,7 +136,7 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
     } else if trimmed.starts_with('[') {
         parse_list_literal(trimmed)
     } else {
-        Err(CalcError::ParseError(format!(
+        Err(CalcError::parse(format!(
             "expected bracket literal, got: {}",
             trimmed
         )))
@@ -174,9 +173,7 @@ fn preprocess_brackets(
                 i += 1;
             }
             if depth != 0 {
-                return Err(CalcError::ParseError(
-                    "unmatched '[' in expression".to_string(),
-                ));
+                return Err(CalcError::parse("unmatched '[' in expression".to_string()));
             }
             // 提取子串并解析为 AST
             let literal: String = chars[start..i].iter().collect();
@@ -300,7 +297,7 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
     let trimmed = input.trim();
     // 必须以 `[[` 开头、`]]` 结尾
     if !trimmed.starts_with("[[") || !trimmed.ends_with("]]") {
-        return Err(CalcError::ParseError(format!(
+        return Err(CalcError::parse(format!(
             "invalid matrix literal: {}",
             trimmed
         )));
@@ -317,7 +314,7 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
         match row_node {
             AstNode::List(elements) => rows.push(elements),
             _ => {
-                return Err(CalcError::ParseError(format!(
+                return Err(CalcError::parse(format!(
                     "expected list row in matrix, got: {:?}",
                     row_node
                 )))
@@ -325,7 +322,7 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
         }
     }
     if rows.is_empty() {
-        return Err(CalcError::ParseError("empty matrix literal".to_string()));
+        return Err(CalcError::parse("empty matrix literal".to_string()));
     }
     Ok(AstNode::Matrix(rows))
 }
@@ -337,7 +334,7 @@ fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
     let trimmed = input.trim();
     // 必须以 `[` 开头、`]` 结尾
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
-        return Err(CalcError::ParseError(format!(
+        return Err(CalcError::parse(format!(
             "invalid list literal: {}",
             trimmed
         )));
@@ -409,7 +406,7 @@ fn split_top_level_commas(input: &str) -> Vec<String> {
 fn validate_no_consecutive_plus(input: &str) -> Result<(), CalcError> {
     let stripped: String = input.chars().filter(|c| !c.is_whitespace()).collect();
     if stripped.contains("++") {
-        return Err(CalcError::ParseError(
+        return Err(CalcError::parse(
             "illegal consecutive operators '++'".to_string(),
         ));
     }
@@ -460,7 +457,7 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
     }
 
     if pos == 0 {
-        return Err(CalcError::ParseError(
+        return Err(CalcError::parse(
             "factorial operator '!' has no operand".to_string(),
         ));
     }
@@ -478,7 +475,7 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
             }
         }
         if depth != 0 {
-            return Err(CalcError::ParseError(
+            return Err(CalcError::parse(
                 "unmatched parenthesis in factorial operand".to_string(),
             ));
         }
@@ -601,7 +598,7 @@ fn should_insert_implicit_mult(
 /// 深度检查在转换时执行，超过 MAX_AST_DEPTH 立即返回错误，防止递归栈溢出。
 fn convert_with_depth(expr: &mathexpr::Expr, depth: usize) -> Result<AstNode, CalcError> {
     if depth > MAX_AST_DEPTH {
-        return Err(CalcError::DepthExceeded);
+        return Err(CalcError::depth_exceeded());
     }
 
     use mathexpr::{BinOp as MBinOp, Expr};
@@ -928,29 +925,29 @@ mod tests {
     #[test]
     fn test_empty_string_rejected() {
         let err = parse("").unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("empty")));
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("empty"));
     }
 
     #[test]
     fn test_unmatched_parens_rejected() {
         let err1 = parse("(2+3").unwrap_err();
-        assert!(matches!(err1, CalcError::ParseError(_)));
+        assert!(err1.kind == ErrorKind::Parse);
 
         let err2 = parse("2+3)").unwrap_err();
-        assert!(matches!(err2, CalcError::ParseError(_)));
+        assert!(err2.kind == ErrorKind::Parse);
     }
 
     #[test]
     fn test_consecutive_operators_rejected() {
         // mathexpr 将 `+3` 当作数字字面量，需由 CalNexus 预处理层显式拒绝 `++`
         let err = parse("2++3").unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("consecutive operators")));
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("consecutive operators"));
     }
 
     #[test]
     fn test_unclosed_function_rejected() {
         let err = parse("sin(").unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(_)));
+        assert!(err.kind == ErrorKind::Parse);
     }
 
     #[test]
@@ -973,13 +970,13 @@ mod tests {
         // 257 个 1 用 + 连接 → AST 深度 = 257
         let expr = format!("1{}", "+1".repeat(256));
         let err = parse(&expr).unwrap_err();
-        assert_eq!(err, CalcError::DepthExceeded);
+        assert_eq!(err, CalcError::depth_exceeded());
     }
 
     #[test]
     fn test_depth_check_at_parse_time() {
         let deep_expr = format!("1{}", "+1".repeat(256));
-        assert!(matches!(parse(&deep_expr), Err(CalcError::DepthExceeded)));
+        assert!(matches!(parse(&deep_expr), Err(e) if e.kind == ErrorKind::Depth));
     }
 
     // ===== Requirement 11: 表达式长度限制 =====
@@ -1002,14 +999,14 @@ mod tests {
         }
         assert!(expr.len() > MAX_EXPR_LEN);
         let err = parse(&expr).unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("length")));
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("length"));
     }
 
     #[test]
     fn test_oversized_input_fast_fail() {
         let expr = "a".repeat(100_000);
         let err = parse(&expr).unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(_)));
+        assert!(err.kind == ErrorKind::Parse);
     }
 
     // ===== 额外边界测试 =====
@@ -1151,9 +1148,7 @@ mod tests {
         let result = parse_bracket_literal("abc");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(
-            matches!(err, CalcError::ParseError(msg) if msg.contains("expected bracket literal"))
-        );
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("expected bracket literal"));
     }
 
     // ===== 覆盖 preprocess_brackets 未匹配 '[' 错误 =====
@@ -1165,7 +1160,7 @@ mod tests {
         let result = parse("[[1,2]");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("unmatched '['")));
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("unmatched '['"));
     }
 
     // ===== 覆盖 replace_placeholders Matrix/List 分支 =====
@@ -1225,9 +1220,7 @@ mod tests {
         let result = parse_matrix_literal("[1,2]");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(
-            matches!(err, CalcError::ParseError(msg) if msg.contains("invalid matrix literal"))
-        );
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("invalid matrix literal"));
     }
 
     #[test]
@@ -1237,7 +1230,7 @@ mod tests {
         let result = parse_list_literal("1,2");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("invalid list literal")));
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("invalid list literal"));
     }
 
     // ===== 覆盖 split_by_pattern 括号深度分支 =====
@@ -1279,7 +1272,7 @@ mod tests {
         let result = parse("!5");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("no operand")));
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("no operand"));
     }
 
     #[test]
@@ -1300,7 +1293,7 @@ mod tests {
         let result = parse("1+2)!");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, CalcError::ParseError(msg) if msg.contains("unmatched parenthesis")));
+        assert!(err.kind == ErrorKind::Parse && err.message.contains("unmatched parenthesis"));
     }
 
     // ===== 覆盖 convert_with_depth CurrentValue =====
@@ -1596,7 +1589,7 @@ mod tests {
             if n <= 256 {
                 prop_assert!(result.is_ok(), "depth {} should pass, got {:?}", n, result);
             } else {
-                prop_assert!(matches!(result, Err(CalcError::DepthExceeded)),
+                prop_assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Depth),
                     "depth {} should fail, got {:?}", n, result);
             }
         }

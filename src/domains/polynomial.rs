@@ -66,7 +66,7 @@ impl PolynomialDomain {
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::BinaryOp(_, _, _) => {
                 // 尝试作为多项式表达式求值
                 let (coeffs, _var) = expr_to_coeffs(ast, ctx)?;
@@ -80,17 +80,17 @@ impl PolynomialDomain {
             AstNode::BigNumber(s) => {
                 let n: f64 = s
                     .parse()
-                    .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))?;
+                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
                 Ok(EvalResult::Scalar(n))
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-                Err(CalcError::DomainError(format!(
+                Err(CalcError::domain(format!(
                     "polynomial domain does not support this node type: {:?}",
                     ast
                 )))
             }
             AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
-                Err(CalcError::DomainError(format!(
+                Err(CalcError::domain(format!(
                     "polynomial domain does not support this unary op: {:?}",
                     ast
                 )))
@@ -106,7 +106,7 @@ impl PolynomialDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !POLYNOMIAL_FUNCTIONS.contains(&name) {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "unsupported function in polynomial domain: {}",
                 name
             )));
@@ -114,7 +114,7 @@ impl PolynomialDomain {
         match name {
             "poly_add" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "poly_add() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -125,7 +125,7 @@ impl PolynomialDomain {
             }
             "poly_sub" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "poly_sub() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -137,7 +137,7 @@ impl PolynomialDomain {
             }
             "poly_mul" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "poly_mul() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -148,7 +148,7 @@ impl PolynomialDomain {
             }
             "poly_div" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "poly_div() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -156,14 +156,14 @@ impl PolynomialDomain {
                 let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
                 let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
                 if is_zero_poly(&b) {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 let (quotient, _remainder) = poly_div_coeffs(&a, &b);
                 Ok(EvalResult::Polynomial(quotient))
             }
             "poly_eval" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "poly_eval() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -175,7 +175,7 @@ impl PolynomialDomain {
             }
             "roots" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "roots() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -186,7 +186,7 @@ impl PolynomialDomain {
             }
             "poly_diff" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "poly_diff() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -196,7 +196,7 @@ impl PolynomialDomain {
             }
             "poly_integrate" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "poly_integrate() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -206,7 +206,7 @@ impl PolynomialDomain {
             }
             "factor" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "factor() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -232,7 +232,7 @@ impl PolynomialDomain {
             let result = self.eval_node(ast, ctx)?;
             return match result {
                 EvalResult::Polynomial(coeffs) => Ok((coeffs, String::new())),
-                _ => Err(CalcError::DomainError(format!(
+                _ => Err(CalcError::domain(format!(
                     "expected polynomial result from nested call, got {:?}",
                     ast
                 ))),
@@ -247,10 +247,10 @@ impl PolynomialDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::BigNumber(s) => s
                 .parse::<f64>()
-                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
+                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(-self.eval_scalar(e, ctx)?),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_scalar(l, ctx)?;
@@ -261,20 +261,20 @@ impl PolynomialDomain {
                     BinaryOp::Mul => Ok(a * b),
                     BinaryOp::Div => {
                         if b == 0.0 {
-                            return Err(CalcError::DivisionByZero);
+                            return Err(CalcError::division_by_zero());
                         }
                         Ok(a / b)
                     }
                     BinaryOp::Pow => Ok(a.powf(b)),
                     BinaryOp::Mod => {
                         if b == 0.0 {
-                            return Err(CalcError::DivisionByZero);
+                            return Err(CalcError::division_by_zero());
                         }
                         Ok(a % b)
                     }
                 }
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "polynomial domain cannot evaluate scalar from: {:?}",
                 ast
             ))),
@@ -290,7 +290,7 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
         AstNode::BigNumber(s) => {
             let n: f64 = s
                 .parse()
-                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))?;
+                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
             Ok((vec![n], String::new()))
         }
         AstNode::Variable(name) => {
@@ -307,7 +307,7 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
                     if let (AstNode::Variable(name), AstNode::Number(n)) = (l.as_ref(), r.as_ref())
                     {
                         if *n < 0.0 || n.fract() != 0.0 {
-                            return Err(CalcError::DomainError(
+                            return Err(CalcError::domain(
                                 "polynomial exponent must be non-negative integer".to_string(),
                             ));
                         }
@@ -315,7 +315,7 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
                         const MAX_POLY_DEGREE: usize = 1000;
                         let exp = *n as usize;
                         if exp > MAX_POLY_DEGREE {
-                            return Err(CalcError::Overflow);
+                            return Err(CalcError::overflow());
                         }
                         let mut coeffs = vec![0.0; exp + 1];
                         coeffs[exp] = 1.0;
@@ -329,7 +329,7 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
                     if let (AstNode::Number(a), AstNode::Number(b)) = (l.as_ref(), r.as_ref()) {
                         return Ok((vec![a.powf(*b)], String::new()));
                     }
-                    Err(CalcError::DomainError(
+                    Err(CalcError::domain(
                         "not a polynomial: unsupported power expression".to_string(),
                     ))
                 }
@@ -372,14 +372,14 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
                     // Number / Number → 常数（保留显式路径以返回 DivisionByZero）
                     if let (AstNode::Number(a), AstNode::Number(b)) = (l.as_ref(), r.as_ref()) {
                         if *b == 0.0 {
-                            return Err(CalcError::DivisionByZero);
+                            return Err(CalcError::division_by_zero());
                         }
                         return Ok((vec![a / b], String::new()));
                     }
                     // Poly / Number → 逐系数除法
                     if let AstNode::Number(c) = r.as_ref() {
                         if *c == 0.0 {
-                            return Err(CalcError::DivisionByZero);
+                            return Err(CalcError::division_by_zero());
                         }
                         let (mut coeffs, var) = expr_to_coeffs(l, ctx)?;
                         for c_i in &mut coeffs {
@@ -395,12 +395,12 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
                     if is_zero_poly(&remainder) {
                         Ok((quotient, var))
                     } else {
-                        Err(CalcError::DomainError(
+                        Err(CalcError::domain(
                             "polynomial division has non-zero remainder".to_string(),
                         ))
                     }
                 }
-                BinaryOp::Mod => Err(CalcError::DomainError(
+                BinaryOp::Mod => Err(CalcError::domain(
                     "modulo in polynomial expression not supported".to_string(),
                 )),
             }
@@ -410,7 +410,7 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
             let neg: Vec<f64> = coeffs.iter().map(|x| -x).collect();
             Ok((neg, var))
         }
-        _ => Err(CalcError::DomainError(format!(
+        _ => Err(CalcError::domain(format!(
             "not a polynomial expression: {:?}",
             ast
         ))),
@@ -428,7 +428,7 @@ fn merge_var(a: &str, b: &str) -> Result<String, CalcError> {
     if a == b {
         return Ok(a.to_string());
     }
-    Err(CalcError::DomainError(format!(
+    Err(CalcError::domain(format!(
         "polynomial in multiple variables: {} and {}",
         a, b
     )))
@@ -539,7 +539,7 @@ fn find_roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
     let c = trim_leading_zeros(coeffs);
     if c.len() == 1 {
         if c[0] == 0.0 {
-            return Err(CalcError::DomainError(
+            return Err(CalcError::domain(
                 "roots(): zero polynomial has infinite roots".to_string(),
             ));
         }
@@ -580,7 +580,7 @@ fn find_roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
             let roots = solve_quartic(c[4], c[3], c[2], c[1], c[0]);
             Ok(roots_to_eval_result(roots))
         }
-        _ => Err(CalcError::DomainError(format!(
+        _ => Err(CalcError::domain(format!(
             "roots(): polynomial degree {} not supported (max degree 4)",
             c.len() - 1
         ))),
@@ -776,7 +776,7 @@ fn factor_polynomial(coeffs: &[f64]) -> Result<String, CalcError> {
             let cc = c[0];
             let discriminant = b * b - 4.0 * a * cc;
             if discriminant < 0.0 {
-                return Err(CalcError::DomainError(
+                return Err(CalcError::domain(
                     "factor(): complex roots cannot be factored over reals".to_string(),
                 ));
             }
@@ -785,7 +785,7 @@ fn factor_polynomial(coeffs: &[f64]) -> Result<String, CalcError> {
             let r2 = (-b - sqrt_d) / (2.0 * a);
             Ok(format_factor_quadratic(a, r1, r2))
         }
-        _ => Err(CalcError::DomainError(format!(
+        _ => Err(CalcError::domain(format!(
             "factor(): polynomial degree {} not supported (max degree 2 in v0.8)",
             c.len() - 1
         ))),
@@ -858,6 +858,7 @@ fn contains_polynomial_function(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();
@@ -1065,7 +1066,7 @@ mod tests {
     #[test]
     fn test_roots_zero_polynomial() {
         let result = eval("roots(0)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1182,13 +1183,13 @@ mod tests {
     #[test]
     fn test_roots_degree_5_not_supported() {
         let result = eval("roots(x^5+1)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_poly_div_by_zero() {
         let result = eval("poly_div(x+1, 0)");
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1200,13 +1201,13 @@ mod tests {
     #[test]
     fn test_factor_complex_error() {
         let result = eval("factor(x^2+1)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_factor_high_degree() {
         let result = eval("factor(x^3+1)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 域元信息测试 =====
@@ -1254,42 +1255,42 @@ mod tests {
     fn test_unsupported_function() {
         let ast = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_poly_add_wrong_args() {
         let ast = AstNode::FunctionCall("poly_add".to_string(), vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_complex_rejected() {
         let ast = AstNode::Complex(1.0, 2.0);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_matrix_rejected() {
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_list_rejected() {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_factorial_rejected() {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1301,7 +1302,7 @@ mod tests {
             Box::new(AstNode::Variable("y".to_string())),
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1312,7 +1313,7 @@ mod tests {
             Box::new(AstNode::Number(-1.0)),
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 底层算法测试 =====
@@ -1445,7 +1446,7 @@ mod tests {
     fn test_eval_node_bignumber_invalid() {
         let ast = AstNode::BigNumber("not_a_number".to_string());
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1453,7 +1454,7 @@ mod tests {
         // eval_node UnaryOp::Abs rejection
         let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(5.0)));
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1499,7 +1500,7 @@ mod tests {
             ],
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1523,7 +1524,7 @@ mod tests {
             vec![parse("x+1").unwrap(), AstNode::BigNumber("xyz".to_string())],
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1546,7 +1547,7 @@ mod tests {
             vec![parse("x+1").unwrap(), AstNode::Variable("z".to_string())],
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -1620,7 +1621,7 @@ mod tests {
             ],
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1678,7 +1679,7 @@ mod tests {
             ],
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1689,7 +1690,7 @@ mod tests {
             vec![parse("x+1").unwrap(), AstNode::Complex(1.0, 2.0)],
         );
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1705,7 +1706,7 @@ mod tests {
     fn test_expr_to_coeffs_bignumber_invalid() {
         let ast = AstNode::BigNumber("xyz".to_string());
         let result = expr_to_coeffs(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1750,7 +1751,7 @@ mod tests {
             Box::new(AstNode::Number(2.0)),
         );
         let result = expr_to_coeffs(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1793,7 +1794,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = expr_to_coeffs(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1801,7 +1802,7 @@ mod tests {
         // (x+1) / (x+2) → non-zero remainder → DomainError
         let ast = parse("(x+1)/(x+2)").unwrap();
         let result = expr_to_coeffs(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1818,7 +1819,7 @@ mod tests {
         // (x+1)/0 → DivisionByZero
         let ast = parse("(x+1)/0").unwrap();
         let result = expr_to_coeffs(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1848,7 +1849,7 @@ mod tests {
             Box::new(AstNode::Number(2.0)),
         );
         let result = expr_to_coeffs(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1856,7 +1857,7 @@ mod tests {
         // Complex node → not a polynomial expression
         let ast = AstNode::Complex(1.0, 2.0);
         let result = expr_to_coeffs(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1977,56 +1978,56 @@ mod tests {
     fn test_poly_sub_wrong_args() {
         let ast = AstNode::FunctionCall("poly_sub".to_string(), vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_poly_mul_wrong_args() {
         let ast = AstNode::FunctionCall("poly_mul".to_string(), vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_poly_div_wrong_args() {
         let ast = AstNode::FunctionCall("poly_div".to_string(), vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_poly_eval_wrong_args() {
         let ast = AstNode::FunctionCall("poly_eval".to_string(), vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_poly_diff_wrong_args() {
         let ast = AstNode::FunctionCall("poly_diff".to_string(), vec![]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_poly_integrate_wrong_args() {
         let ast = AstNode::FunctionCall("poly_integrate".to_string(), vec![]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_factor_wrong_args() {
         let ast = AstNode::FunctionCall("factor".to_string(), vec![]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_roots_wrong_args() {
         let ast = AstNode::FunctionCall("roots".to_string(), vec![]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]

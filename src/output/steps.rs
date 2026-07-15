@@ -40,13 +40,13 @@ fn walk(
     depth: usize,
 ) -> Result<f64, CalcError> {
     if depth > MAX_DEPTH {
-        return Err(CalcError::DepthExceeded);
+        return Err(CalcError::depth_exceeded());
     }
     match node {
         AstNode::Number(n) => Ok(*n),
         AstNode::BigNumber(s) => s
             .parse::<f64>()
-            .map_err(|_| CalcError::EvalError(format!("invalid BigNumber: {}", s))),
+            .map_err(|_| CalcError::eval(format!("invalid BigNumber: {}", s))),
         AstNode::Complex(re, _im) => Ok(*re),
         AstNode::Variable(name) => Ok(ctx.get_var(name).unwrap_or(0.0)),
         AstNode::BinaryOp(op, lhs, rhs) => {
@@ -109,25 +109,25 @@ fn eval_binary(op: BinaryOp, a: f64, b: f64) -> Result<f64, CalcError> {
         BinaryOp::Mul => a * b,
         BinaryOp::Div => {
             if b == 0.0 {
-                return Err(CalcError::DivisionByZero);
+                return Err(CalcError::division_by_zero());
             }
             a / b
         }
         BinaryOp::Pow => {
             if a == 0.0 && b < 0.0 {
-                return Err(CalcError::DivisionByZero);
+                return Err(CalcError::division_by_zero());
             }
             a.powf(b)
         }
         BinaryOp::Mod => {
             if b == 0.0 {
-                return Err(CalcError::DivisionByZero);
+                return Err(CalcError::division_by_zero());
             }
             a % b
         }
     };
     if result.is_nan() || result.is_infinite() {
-        return Err(CalcError::NaNOrInf);
+        return Err(CalcError::nan_or_inf());
     }
     Ok(result)
 }
@@ -138,20 +138,20 @@ fn eval_unary(op: UnaryOp, v: f64) -> Result<f64, CalcError> {
         UnaryOp::Neg => -v,
         UnaryOp::Factorial => {
             if v < 0.0 || v.fract() != 0.0 {
-                return Err(CalcError::DomainError(format!(
+                return Err(CalcError::domain(format!(
                     "factorial requires non-negative integer, got {}",
                     v
                 )));
             }
             if v > 170.0 {
-                return Err(CalcError::Overflow);
+                return Err(CalcError::overflow());
             }
             let n = v as u64;
             let mut acc: f64 = 1.0;
             for i in 2..=n {
                 acc *= i as f64;
                 if !acc.is_finite() {
-                    return Err(CalcError::Overflow);
+                    return Err(CalcError::overflow());
                 }
             }
             acc
@@ -159,7 +159,7 @@ fn eval_unary(op: UnaryOp, v: f64) -> Result<f64, CalcError> {
         UnaryOp::Abs => v.abs(),
     };
     if result.is_nan() || result.is_infinite() {
-        return Err(CalcError::NaNOrInf);
+        return Err(CalcError::nan_or_inf());
     }
     Ok(result)
 }
@@ -173,19 +173,13 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         ("tan", &[x]) => x.tan(),
         ("asin", &[x]) => {
             if !(-1.0..=1.0).contains(&x) {
-                return Err(CalcError::DomainError(format!(
-                    "asin domain [-1,1], got {}",
-                    x
-                )));
+                return Err(CalcError::domain(format!("asin domain [-1,1], got {}", x)));
             }
             x.asin()
         }
         ("acos", &[x]) => {
             if !(-1.0..=1.0).contains(&x) {
-                return Err(CalcError::DomainError(format!(
-                    "acos domain [-1,1], got {}",
-                    x
-                )));
+                return Err(CalcError::domain(format!("acos domain [-1,1], got {}", x)));
             }
             x.acos()
         }
@@ -193,7 +187,7 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         ("atan2", &[y, x]) => y.atan2(x),
         ("sqrt", &[x]) => {
             if x < 0.0 {
-                return Err(CalcError::DomainError(format!(
+                return Err(CalcError::domain(format!(
                     "sqrt requires non-negative, got {}",
                     x
                 )));
@@ -203,7 +197,7 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         ("exp", &[x]) => x.exp(),
         ("ln", &[x]) | ("log", &[x]) => {
             if x <= 0.0 {
-                return Err(CalcError::DomainError(format!(
+                return Err(CalcError::domain(format!(
                     "ln requires positive, got {}",
                     x
                 )));
@@ -212,7 +206,7 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         }
         ("log10", &[x]) => {
             if x <= 0.0 {
-                return Err(CalcError::DomainError(format!(
+                return Err(CalcError::domain(format!(
                     "log10 requires positive, got {}",
                     x
                 )));
@@ -221,7 +215,7 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         }
         ("log2", &[x]) => {
             if x <= 0.0 {
-                return Err(CalcError::DomainError(format!(
+                return Err(CalcError::domain(format!(
                     "log2 requires positive, got {}",
                     x
                 )));
@@ -248,7 +242,7 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         ("pi", &[]) => PI,
         ("e", &[]) => std::f64::consts::E,
         _ => {
-            return Err(CalcError::EvalError(format!(
+            return Err(CalcError::eval(format!(
                 "unknown function '{}' with {} args in steps",
                 name,
                 args.len()
@@ -256,7 +250,7 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         }
     };
     if result.is_nan() || result.is_infinite() {
-        return Err(CalcError::NaNOrInf);
+        return Err(CalcError::nan_or_inf());
     }
     Ok(result)
 }
@@ -304,6 +298,7 @@ fn format_value(v: f64) -> String {
 mod tests {
     use super::*;
     use crate::core::BinaryOp;
+    use crate::core::ErrorKind;
 
     #[test]
     fn steps_basic_arithmetic_2plus3() {
@@ -475,42 +470,42 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert_eq!(err, CalcError::DivisionByZero);
+        assert_eq!(err, CalcError::division_by_zero());
     }
 
     #[test]
     fn steps_factorial_overflow_returns_error() {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(200.0)));
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert_eq!(err, CalcError::Overflow);
+        assert_eq!(err, CalcError::overflow());
     }
 
     #[test]
     fn steps_factorial_negative_returns_domain_error() {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(-3.0)));
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert!(matches!(err, CalcError::DomainError(_)));
+        assert!(err.kind == ErrorKind::Domain);
     }
 
     #[test]
     fn steps_log_negative_returns_domain_error() {
         let ast = AstNode::FunctionCall("ln".to_string(), vec![AstNode::Number(-1.0)]);
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert!(matches!(err, CalcError::DomainError(_)));
+        assert!(err.kind == ErrorKind::Domain);
     }
 
     #[test]
     fn steps_sqrt_negative_returns_domain_error() {
         let ast = AstNode::FunctionCall("sqrt".to_string(), vec![AstNode::Number(-4.0)]);
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert!(matches!(err, CalcError::DomainError(_)));
+        assert!(err.kind == ErrorKind::Domain);
     }
 
     #[test]
     fn steps_unknown_function_returns_error() {
         let ast = AstNode::FunctionCall("unknownfn".to_string(), vec![AstNode::Number(1.0)]);
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert!(matches!(err, CalcError::EvalError(_)));
+        assert!(err.kind == ErrorKind::Eval);
     }
 
     #[test]
@@ -589,13 +584,13 @@ mod tests {
     fn steps_eval_binary_returns_nan_or_inf_error() {
         // (-1)^0.5 = NaN（负数的非整数次幂）
         let err = eval_binary(BinaryOp::Pow, -1.0, 0.5).unwrap_err();
-        assert_eq!(err, CalcError::NaNOrInf);
+        assert_eq!(err, CalcError::nan_or_inf());
     }
 
     #[test]
     fn steps_eval_unary_neg_nan() {
         let err = eval_unary(UnaryOp::Neg, f64::NAN).unwrap_err();
-        assert_eq!(err, CalcError::NaNOrInf);
+        assert_eq!(err, CalcError::nan_or_inf());
     }
 
     // ===== 覆盖 walk DepthExceeded 路径 =====
@@ -608,7 +603,7 @@ mod tests {
             ast = AstNode::BinaryOp(BinaryOp::Add, Box::new(ast), Box::new(AstNode::Number(1.0)));
         }
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert_eq!(err, CalcError::DepthExceeded);
+        assert_eq!(err, CalcError::depth_exceeded());
     }
 
     // ===== 覆盖 BigNumber 叶节点路径 =====
@@ -626,7 +621,7 @@ mod tests {
         // BigNumber 解析失败（line 49）
         let ast = AstNode::BigNumber("not_a_number".to_string());
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
-        assert!(matches!(err, CalcError::EvalError(_)));
+        assert!(err.kind == ErrorKind::Eval);
     }
 
     // ===== 覆盖 eval_binary 边界路径 =====
@@ -635,14 +630,14 @@ mod tests {
     fn steps_zero_pow_negative_returns_error() {
         // 0^(-1) → DivisionByZero（line 118）
         let err = eval_binary(BinaryOp::Pow, 0.0, -1.0).unwrap_err();
-        assert_eq!(err, CalcError::DivisionByZero);
+        assert_eq!(err, CalcError::division_by_zero());
     }
 
     #[test]
     fn steps_mod_by_zero_returns_error() {
         // 10 % 0 → DivisionByZero（line 124）
         let err = eval_binary(BinaryOp::Mod, 10.0, 0.0).unwrap_err();
-        assert_eq!(err, CalcError::DivisionByZero);
+        assert_eq!(err, CalcError::division_by_zero());
     }
 
     // ===== 覆盖 eval_function asin/acos/sqrt/ln/log10/log2 =====
@@ -651,7 +646,7 @@ mod tests {
     fn steps_asin_domain_error_and_success() {
         // asin 越界 → DomainError（lines 175-179）
         let err = eval_function("asin", &[2.0]).unwrap_err();
-        assert!(matches!(err, CalcError::DomainError(_)));
+        assert!(err.kind == ErrorKind::Domain);
         // asin 合法 → 返回值（line 181）
         let result = eval_function("asin", &[0.5]).unwrap();
         assert!((result - 0.5f64.asin()).abs() < 1e-10);
@@ -661,7 +656,7 @@ mod tests {
     fn steps_acos_domain_error_and_success() {
         // acos 越界 → DomainError（lines 184-188）
         let err = eval_function("acos", &[2.0]).unwrap_err();
-        assert!(matches!(err, CalcError::DomainError(_)));
+        assert!(err.kind == ErrorKind::Domain);
         // acos 合法 → 返回值（line 190）
         let result = eval_function("acos", &[0.5]).unwrap();
         assert!((result - 0.5f64.acos()).abs() < 1e-10);
@@ -685,7 +680,7 @@ mod tests {
     fn steps_log10_error_and_success() {
         // log10(0) → DomainError（lines 214-218）
         let err = eval_function("log10", &[0.0]).unwrap_err();
-        assert!(matches!(err, CalcError::DomainError(_)));
+        assert!(err.kind == ErrorKind::Domain);
         // log10(100) = 2（line 220）
         let result = eval_function("log10", &[100.0]).unwrap();
         assert!((result - 2.0).abs() < 1e-10);
@@ -695,7 +690,7 @@ mod tests {
     fn steps_log2_error_and_success() {
         // log2(0) → DomainError（lines 223-227）
         let err = eval_function("log2", &[0.0]).unwrap_err();
-        assert!(matches!(err, CalcError::DomainError(_)));
+        assert!(err.kind == ErrorKind::Domain);
         // log2(8) = 3（line 229）
         let result = eval_function("log2", &[8.0]).unwrap();
         assert!((result - 3.0).abs() < 1e-10);
@@ -707,7 +702,7 @@ mod tests {
     fn steps_function_returns_nan_or_inf_error() {
         // exp(1000) → Inf → NaNOrInf 错误（line 259）
         let err = eval_function("exp", &[1000.0]).unwrap_err();
-        assert_eq!(err, CalcError::NaNOrInf);
+        assert_eq!(err, CalcError::nan_or_inf());
     }
 
     // ===== 覆盖 lcm 零值路径 =====

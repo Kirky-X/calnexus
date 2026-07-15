@@ -260,7 +260,11 @@ mod tests {
                 "key '{}' has no English translation (returned key itself)",
                 key
             );
-            assert!(!msg.is_empty(), "key '{}' has empty English translation", key);
+            assert!(
+                !msg.is_empty(),
+                "key '{}' has empty English translation",
+                key
+            );
         }
     }
 
@@ -286,7 +290,11 @@ mod tests {
                 "key '{}' has no Chinese translation (returned key itself)",
                 key
             );
-            assert!(!msg.is_empty(), "key '{}' has empty Chinese translation", key);
+            assert!(
+                !msg.is_empty(),
+                "key '{}' has empty Chinese translation",
+                key
+            );
         }
     }
 

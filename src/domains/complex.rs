@@ -46,13 +46,13 @@ impl CalculationDomain for ComplexDomain {
         match value {
             ComplexValue::Scalar(v) => {
                 if !v.is_finite() {
-                    return Err(CalcError::NaNOrInf);
+                    return Err(CalcError::nan_or_inf());
                 }
                 Ok(EvalResult::Scalar(v))
             }
             ComplexValue::Complex(c) => {
                 if !c.re.is_finite() || !c.im.is_finite() {
-                    return Err(CalcError::NaNOrInf);
+                    return Err(CalcError::nan_or_inf());
                 }
                 Ok(EvalResult::Complex(c.re, c.im))
             }
@@ -78,7 +78,7 @@ impl ComplexDomain {
                 }
                 ctx.get_var(name)
                     .map(ComplexValue::Scalar)
-                    .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name)))
+                    .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name)))
             }
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval(l, ctx)?;
@@ -93,14 +93,14 @@ impl ComplexDomain {
                         ComplexValue::Complex(c) => Ok(ComplexValue::Complex(-c)),
                     },
                     UnaryOp::Abs => Ok(ComplexValue::Scalar(v.to_complex().norm())),
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in complex domain".to_string(),
                     )),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
-                Err(CalcError::DomainError(format!(
+                Err(CalcError::domain(format!(
                     "complex domain does not support this node type: {:?}",
                     ast
                 )))
@@ -125,13 +125,13 @@ impl ComplexDomain {
                 BinaryOp::Mul => av * bv,
                 BinaryOp::Div => {
                     if *bv == 0.0 {
-                        return Err(CalcError::DivisionByZero);
+                        return Err(CalcError::division_by_zero());
                     }
                     av / bv
                 }
                 BinaryOp::Pow => av.powf(*bv),
                 BinaryOp::Mod => {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "mod not supported in complex domain".to_string(),
                     ))
                 }
@@ -148,13 +148,13 @@ impl ComplexDomain {
             BinaryOp::Mul => ac * bc,
             BinaryOp::Div => {
                 if bc.norm() == 0.0 {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 ac / bc
             }
             BinaryOp::Pow => ac.powc(bc),
             BinaryOp::Mod => {
-                return Err(CalcError::DomainError(
+                return Err(CalcError::domain(
                     "mod not supported for complex numbers".to_string(),
                 ))
             }
@@ -172,7 +172,7 @@ impl ComplexDomain {
         match name {
             "complex" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "complex() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -201,7 +201,7 @@ impl ComplexDomain {
                 let c = self.expect_one_arg(name, args, ctx)?;
                 Ok(ComplexValue::Complex(c.ln()))
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "unsupported function in complex domain: {}",
                 name
             ))),
@@ -216,7 +216,7 @@ impl ComplexDomain {
         ctx: &EvalContext,
     ) -> Result<Complex64, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "{}() requires exactly 1 argument, got {}",
                 name,
                 args.len()
@@ -277,6 +277,7 @@ fn contains_complex(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     /// 测试浮点近似相等（默认容差 1e-10）。
     fn assert_approx(actual: f64, expected: f64) {
@@ -530,7 +531,7 @@ mod tests {
         let result = domain.evaluate(&ast, &default_ctx());
         let e = result.unwrap_err();
         assert!(
-            matches!(e, CalcError::DomainError(_)),
+            e.kind == ErrorKind::Domain,
             "expected DomainError, got {:?}",
             e
         );
@@ -542,7 +543,7 @@ mod tests {
         let result = parse("3+*4i");
         let e = result.unwrap_err();
         assert!(
-            matches!(e, CalcError::ParseError(_)),
+            e.kind == ErrorKind::Parse,
             "expected ParseError, got {:?}",
             e
         );
@@ -572,7 +573,7 @@ mod tests {
         let ast = parse("(1+2i) / 0").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -581,7 +582,7 @@ mod tests {
         let ast = parse("unknown_func(1+2i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -590,7 +591,7 @@ mod tests {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Complex(1.0, 2.0)));
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -599,7 +600,7 @@ mod tests {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -608,7 +609,7 @@ mod tests {
         let ast = AstNode::FunctionCall("conj".to_string(), vec![]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -662,7 +663,7 @@ mod tests {
         let ast = parse("(0+0i) / 0").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     // ===== 额外覆盖：pi/e 自动绑定（ctx 无 pi/e 时触发）=====
@@ -692,7 +693,7 @@ mod tests {
         );
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     // ===== 额外覆盖：复数结果 NaNOrInf =====
@@ -703,7 +704,7 @@ mod tests {
         let ast = AstNode::FunctionCall("exp".to_string(), vec![AstNode::Complex(1000.0, 0.0)]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     // ===== 额外覆盖：标量取负（Neg on Scalar）=====
@@ -787,7 +788,7 @@ mod tests {
         );
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -819,7 +820,7 @@ mod tests {
         );
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：复数 Mod 不支持 =====
@@ -834,7 +835,7 @@ mod tests {
         );
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：complex() 函数调用 =====
@@ -857,7 +858,7 @@ mod tests {
         let ast = AstNode::FunctionCall("complex".to_string(), vec![AstNode::Number(1.0)]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：contains_complex 对 UnaryOp/Matrix/List 的路由 =====

@@ -52,7 +52,7 @@ impl ArithmeticDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -70,7 +70,7 @@ impl ArithmeticDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
+            | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
                 "arithmetic domain does not support this node type: {:?}",
                 ast
             ))),
@@ -87,10 +87,10 @@ impl ArithmeticDomain {
                 if b == 0.0 {
                     if a == 0.0 {
                         // 0/0 = NaN (Req 8 Scen 1)
-                        return Err(CalcError::NaNOrInf);
+                        return Err(CalcError::nan_or_inf());
                     }
                     // x/0 for x≠0 (Req 7 Scen 1)
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a / b
             }
@@ -104,13 +104,13 @@ impl ArithmeticDomain {
             BinaryOp::Mod => {
                 if b == 0.0 {
                     // Rust % by zero panics，必须预检查 (Req 7 Scen 2)
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a % b
             }
         };
         if !result.is_finite() {
-            return Err(CalcError::NaNOrInf);
+            return Err(CalcError::nan_or_inf());
         }
         Ok(result)
     }
@@ -121,20 +121,20 @@ impl ArithmeticDomain {
     /// 超过 f64 表示范围时返回 `Overflow`。
     fn eval_factorial(&self, n: f64) -> Result<f64, CalcError> {
         if n < 0.0 || n.fract() != 0.0 {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "factorial requires non-negative integer, got {}",
                 n
             )));
         }
         let n = n as u64;
         if n > MAX_FACTORIAL_INPUT {
-            return Err(CalcError::Overflow);
+            return Err(CalcError::overflow());
         }
         let mut result: f64 = 1.0;
         for i in 2..=n {
             result *= i as f64;
             if result.is_infinite() {
-                return Err(CalcError::Overflow);
+                return Err(CalcError::overflow());
             }
         }
         Ok(result)
@@ -150,7 +150,7 @@ impl ArithmeticDomain {
         match name {
             "factorial" => {
                 if args.len() != 1 {
-                    return Err(CalcError::EvalError(format!(
+                    return Err(CalcError::eval(format!(
                         "factorial expects 1 argument, got {}",
                         args.len()
                     )));
@@ -160,7 +160,7 @@ impl ArithmeticDomain {
             }
             "mod" => {
                 if args.len() != 2 {
-                    return Err(CalcError::EvalError(format!(
+                    return Err(CalcError::eval(format!(
                         "mod expects 2 arguments, got {}",
                         args.len()
                     )));
@@ -171,7 +171,7 @@ impl ArithmeticDomain {
             }
             "abs" => {
                 if args.len() != 1 {
-                    return Err(CalcError::EvalError(format!(
+                    return Err(CalcError::eval(format!(
                         "abs expects 1 argument, got {}",
                         args.len()
                     )));
@@ -179,7 +179,7 @@ impl ArithmeticDomain {
                 let v = self.eval_node(&args[0], ctx)?;
                 Ok(v.abs())
             }
-            _ => Err(CalcError::EvalError(format!("unknown function: {}", name))),
+            _ => Err(CalcError::eval(format!("unknown function: {}", name))),
         }
     }
 }
@@ -209,6 +209,7 @@ fn is_arithmetic_only(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     /// 辅助函数：解析 + 求值，返回 f64
     fn eval(input: &str) -> Result<f64, CalcError> {
@@ -333,7 +334,7 @@ mod tests {
         let result = eval("factorial(10001)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::Overflow)),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Overflow),
             "expected Overflow, got {:?}",
             result
         );
@@ -345,7 +346,7 @@ mod tests {
         let result = eval("factorial(171)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::Overflow)),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Overflow),
             "expected Overflow, got {:?}",
             result
         );
@@ -359,7 +360,7 @@ mod tests {
         let result = eval("5/0");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DivisionByZero)),
+            matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero),
             "expected DivisionByZero, got {:?}",
             result
         );
@@ -371,7 +372,7 @@ mod tests {
         let result = eval("mod(10,0)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DivisionByZero)),
+            matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero),
             "expected DivisionByZero, got {:?}",
             result
         );
@@ -385,7 +386,7 @@ mod tests {
         let result = eval("0/0");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::NaNOrInf)),
+            matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf),
             "expected NaNOrInf, got {:?}",
             result
         );
@@ -402,8 +403,8 @@ mod tests {
         // 接受 DivisionByZero 或 NaNOrInf（取决于实现策略）
         assert!(
             matches!(
-                result,
-                Err(CalcError::DivisionByZero) | Err(CalcError::NaNOrInf)
+                &result,
+                Err(e) if matches!(e.kind, ErrorKind::DivisionByZero | ErrorKind::NaNOrInf)
             ),
             "expected DivisionByZero or NaNOrInf, got {:?}",
             result
@@ -424,7 +425,7 @@ mod tests {
         let result = eval("(-2)^0.5");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::NaNOrInf)),
+            matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf),
             "expected NaNOrInf, got {:?}",
             result
         );
@@ -445,7 +446,7 @@ mod tests {
         let result = eval("y*2");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::EvalError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Eval),
             "expected EvalError, got {:?}",
             result
         );
@@ -503,7 +504,7 @@ mod tests {
         let ast = AstNode::Complex(1.0, 2.0);
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -511,7 +512,7 @@ mod tests {
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -519,7 +520,7 @@ mod tests {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -527,7 +528,7 @@ mod tests {
         let ast = AstNode::BigNumber("123".to_string());
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：阶乘输入校验 =====
@@ -537,7 +538,7 @@ mod tests {
         let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(-1.0)]);
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -545,7 +546,7 @@ mod tests {
         let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(2.5)]);
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：函数参数数量校验 =====
@@ -555,7 +556,7 @@ mod tests {
         let ast = AstNode::FunctionCall("mod".to_string(), vec![AstNode::Number(1.0)]);
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -566,7 +567,7 @@ mod tests {
         );
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -574,7 +575,7 @@ mod tests {
         let ast = AstNode::FunctionCall("foo".to_string(), vec![AstNode::Number(1.0)]);
         let domain = ArithmeticDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     // ===== 额外覆盖：Default impl =====

@@ -53,7 +53,7 @@ impl CombinatoricsDomain {
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "combinatorics domain requires integer, got {}",
                         n
                     )));
@@ -63,13 +63,13 @@ impl CombinatoricsDomain {
             AstNode::BigNumber(s) => {
                 let b: BigInt = s
                     .parse()
-                    .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))?;
+                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
                 Ok(EvalResult::BigInt(b))
             }
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;
                 let b = self.eval_int(r, ctx)?;
@@ -81,13 +81,13 @@ impl CombinatoricsDomain {
                 match op {
                     UnaryOp::Neg => Ok(bigint_to_result(-v)),
                     UnaryOp::Abs => Ok(bigint_to_result(v.abs())),
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in combinatorics domain".to_string(),
                     )),
                 }
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-                Err(CalcError::DomainError(format!(
+                Err(CalcError::domain(format!(
                     "combinatorics domain does not support this node type: {:?}",
                     ast
                 )))
@@ -100,25 +100,25 @@ impl CombinatoricsDomain {
         match ast {
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "expected integer argument, got {}",
                         n
                     )));
                 }
                 if *n > i64::MAX as f64 || *n < i64::MIN as f64 {
-                    return Err(CalcError::Overflow);
+                    return Err(CalcError::overflow());
                 }
                 Ok(BigInt::from(*n as i64))
             }
             AstNode::BigNumber(s) => s
                 .parse::<BigInt>()
-                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
+                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
             AstNode::Variable(name) => {
                 let v = ctx
                     .get_var(name)
-                    .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name)))?;
+                    .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name)))?;
                 if v.fract() != 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "variable {} is not an integer: {}",
                         name, v
                     )));
@@ -135,7 +135,7 @@ impl CombinatoricsDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Abs => Ok(v.abs()),
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in combinatorics domain".to_string(),
                     )),
                 }
@@ -143,7 +143,7 @@ impl CombinatoricsDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::FunctionCall(_, _) => Err(CalcError::DomainError(format!(
+            | AstNode::FunctionCall(_, _) => Err(CalcError::domain(format!(
                 "expected integer expression, got: {:?}",
                 ast
             ))),
@@ -158,22 +158,22 @@ impl CombinatoricsDomain {
             BinaryOp::Mul => Ok(a * b),
             BinaryOp::Div => {
                 if b.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 Ok(a / b)
             }
             BinaryOp::Pow => {
                 if b.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "negative exponent not supported for integers".to_string(),
                     ));
                 }
-                let exp: u32 = b.to_u32().ok_or(CalcError::Overflow)?;
+                let exp: u32 = b.to_u32().ok_or(CalcError::overflow())?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {
                 if b.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 Ok(a % b)
             }
@@ -188,7 +188,7 @@ impl CombinatoricsDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !COMBINATORICS_FUNCTIONS.contains(&name) {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "unsupported function in combinatorics domain: {}",
                 name
             )));
@@ -196,7 +196,7 @@ impl CombinatoricsDomain {
         match name {
             "P" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "P() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -204,7 +204,7 @@ impl CombinatoricsDomain {
                 let n = self.eval_int(&args[0], ctx)?;
                 let k = self.eval_int(&args[1], ctx)?;
                 if n.is_negative() || k.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "P() requires non-negative arguments".to_string(),
                     ));
                 }
@@ -216,7 +216,7 @@ impl CombinatoricsDomain {
             }
             "C" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "C() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -224,7 +224,7 @@ impl CombinatoricsDomain {
                 let n = self.eval_int(&args[0], ctx)?;
                 let k = self.eval_int(&args[1], ctx)?;
                 if n.is_negative() || k.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "C() requires non-negative arguments".to_string(),
                     ));
                 }
@@ -236,14 +236,14 @@ impl CombinatoricsDomain {
             }
             "catalan" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "catalan() requires exactly 1 argument, got {}",
                         args.len()
                     )));
                 }
                 let n = self.eval_int(&args[0], ctx)?;
                 if n.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "catalan() requires non-negative argument".to_string(),
                     ));
                 }
@@ -252,7 +252,7 @@ impl CombinatoricsDomain {
             }
             "stirling" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "stirling() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -260,7 +260,7 @@ impl CombinatoricsDomain {
                 let n = self.eval_int(&args[0], ctx)?;
                 let k = self.eval_int(&args[1], ctx)?;
                 if n.is_negative() || k.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "stirling() requires non-negative arguments".to_string(),
                     ));
                 }
@@ -291,9 +291,9 @@ fn permutation(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
         return Ok(BigInt::zero());
     }
     const MAX_PERMUTATION_K: u64 = 10000;
-    let k_u64 = k.to_u64().ok_or(CalcError::Overflow)?;
+    let k_u64 = k.to_u64().ok_or(CalcError::overflow())?;
     if k_u64 > MAX_PERMUTATION_K {
-        return Err(CalcError::Overflow);
+        return Err(CalcError::overflow());
     }
     let mut result = BigInt::one();
     let mut current = n.clone();
@@ -316,9 +316,9 @@ fn combination(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     // C(n,k) = C(n, n-k)，取较小的 k 提高效率
     let k_opt = if k < &(n - k) { k.clone() } else { n - k };
     const MAX_COMBINATION_K: u64 = 10000;
-    let k_u64 = k_opt.to_u64().ok_or(CalcError::Overflow)?;
+    let k_u64 = k_opt.to_u64().ok_or(CalcError::overflow())?;
     if k_u64 > MAX_COMBINATION_K {
-        return Err(CalcError::Overflow);
+        return Err(CalcError::overflow());
     }
     let mut result = BigInt::one();
     let mut current = n.clone();
@@ -337,9 +337,9 @@ fn catalan(n: &BigInt) -> Result<BigInt, CalcError> {
         return Ok(BigInt::one());
     }
     const MAX_CATALAN_N: u64 = 5000;
-    let n_u64 = n.to_u64().ok_or(CalcError::Overflow)?;
+    let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
     if n_u64 > MAX_CATALAN_N {
-        return Err(CalcError::Overflow);
+        return Err(CalcError::overflow());
     }
     let two_n = n * 2;
     let c_2n_n = combination(&two_n, n)?;
@@ -361,10 +361,10 @@ fn stirling_second(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
         return Ok(BigInt::zero());
     }
     const MAX_STIRLING_N: u64 = 5000;
-    let n_u64 = n.to_u64().ok_or(CalcError::Overflow)?;
-    let k_u64 = k.to_u64().ok_or(CalcError::Overflow)?;
+    let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
+    let k_u64 = k.to_u64().ok_or(CalcError::overflow())?;
     if n_u64 > MAX_STIRLING_N || k_u64 > MAX_STIRLING_N {
-        return Err(CalcError::Overflow);
+        return Err(CalcError::overflow());
     }
     // DP 表
     let mut dp: Vec<Vec<BigInt>> =
@@ -403,6 +403,7 @@ fn contains_combinatorics_function(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();
@@ -469,7 +470,7 @@ mod tests {
     #[test]
     fn test_combination_negative_n() {
         let result = eval("C(-1,2)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== UT-CMB-009: k<0 =====
@@ -477,7 +478,7 @@ mod tests {
     #[test]
     fn test_combination_negative_k() {
         let result = eval("C(5,-1)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== UT-CMB-010: 大数 C =====
@@ -573,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_permutation_negative() {
-        assert!(matches!(eval("P(-1,2)"), Err(CalcError::DomainError(_))));
+        assert!(matches!(eval("P(-1,2)"), Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -599,7 +600,7 @@ mod tests {
     fn test_catalan_negative() {
         assert!(matches!(
             eval("catalan(-1)"),
-            Err(CalcError::DomainError(_))
+            Err(e) if e.kind == ErrorKind::Domain
         ));
     }
 
@@ -632,7 +633,7 @@ mod tests {
     fn test_stirling_negative() {
         assert!(matches!(
             eval("stirling(-1,2)"),
-            Err(CalcError::DomainError(_))
+            Err(e) if e.kind == ErrorKind::Domain
         ));
     }
 
@@ -693,14 +694,14 @@ mod tests {
     fn test_unsupported_function() {
         let ast = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Number(1.0)]);
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_P_wrong_args() {
         let ast = AstNode::FunctionCall("P".to_string(), vec![AstNode::Number(1.0)]);
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -710,35 +711,35 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0)],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_eval_node_float_rejected() {
         let ast = AstNode::Number(3.14);
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_eval_node_complex_rejected() {
         let ast = AstNode::Complex(1.0, 2.0);
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_eval_node_list_rejected() {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_unbound_variable() {
         let ast = AstNode::Variable("x".to_string());
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -749,7 +750,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -760,7 +761,7 @@ mod tests {
             Box::new(AstNode::Number(-1.0)),
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -776,7 +777,7 @@ mod tests {
     fn test_big_number_invalid() {
         let ast = AstNode::BigNumber("not_a_number".to_string());
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 底层算法测试 =====
@@ -898,7 +899,7 @@ mod tests {
         // eval_node UnaryOp::Factorial error
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -909,7 +910,7 @@ mod tests {
             vec![AstNode::Number(3.14), AstNode::Number(2.0)],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -920,7 +921,7 @@ mod tests {
             vec![AstNode::Number(1.0e20), AstNode::Number(2.0)],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::Overflow)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Overflow));
     }
 
     #[test]
@@ -957,7 +958,7 @@ mod tests {
             vec![AstNode::Variable("x".to_string()), AstNode::Number(2.0)],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &ctx);
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -993,7 +994,7 @@ mod tests {
             ],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1004,7 +1005,7 @@ mod tests {
             vec![AstNode::Complex(1.0, 2.0), AstNode::Number(2.0)],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1048,21 +1049,21 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
     fn test_C_wrong_args() {
         let ast = AstNode::FunctionCall("C".to_string(), vec![AstNode::Number(1.0)]);
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_stirling_wrong_args() {
         let ast = AstNode::FunctionCall("stirling".to_string(), vec![AstNode::Number(1.0)]);
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1086,7 +1087,7 @@ mod tests {
             ],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1104,7 +1105,7 @@ mod tests {
             ],
         );
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::Overflow)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Overflow));
     }
 
     // ===== proptest 属性测试 =====

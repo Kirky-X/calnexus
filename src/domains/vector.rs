@@ -65,13 +65,13 @@ impl VectorDomain {
             AstNode::BigNumber(s) => {
                 let n: f64 = s
                     .parse()
-                    .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))?;
+                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
                 Ok(EvalResult::Scalar(n))
             }
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::List(_) => {
                 // 裸 List 节点 → 转为 Vector 结果
                 let v = self.list_to_vector(ast, ctx)?;
@@ -112,12 +112,12 @@ impl VectorDomain {
                             Ok(EvalResult::Scalar(v.abs()))
                         }
                     }
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in vector domain".to_string(),
                     )),
                 }
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) => Err(CalcError::DomainError(format!(
+            AstNode::Complex(_, _) | AstNode::Matrix(_) => Err(CalcError::domain(format!(
                 "vector domain does not support this node type: {:?}",
                 ast
             ))),
@@ -130,10 +130,10 @@ impl VectorDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::BigNumber(s) => s
                 .parse::<f64>()
-                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
+                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_scalar(l, ctx)?;
                 let b = self.eval_scalar(r, ctx)?;
@@ -144,12 +144,12 @@ impl VectorDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Abs => Ok(v.abs()),
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in vector domain".to_string(),
                     )),
                 }
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "expected scalar expression, got: {:?}",
                 ast
             ))),
@@ -165,22 +165,22 @@ impl VectorDomain {
             BinaryOp::Div => {
                 if b == 0.0 {
                     if a == 0.0 {
-                        return Err(CalcError::NaNOrInf);
+                        return Err(CalcError::nan_or_inf());
                     }
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a / b
             }
             BinaryOp::Pow => a.powf(b),
             BinaryOp::Mod => {
                 if b == 0.0 {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a % b
             }
         };
         if !result.is_finite() {
-            return Err(CalcError::NaNOrInf);
+            return Err(CalcError::nan_or_inf());
         }
         Ok(result)
     }
@@ -202,7 +202,7 @@ impl VectorDomain {
                 let a = self.list_to_vector(l, ctx)?;
                 let b = self.list_to_vector(r, ctx)?;
                 if a.len() != b.len() {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "vector dimension mismatch: {} vs {}",
                         a.len(),
                         b.len()
@@ -228,7 +228,7 @@ impl VectorDomain {
                 let result: Vec<f64> = v.iter().map(|x| scalar * x).collect();
                 Ok(EvalResult::Vector(result))
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "unsupported vector binary operation: {:?}",
                 op
             ))),
@@ -243,7 +243,7 @@ impl VectorDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !VECTOR_FUNCTIONS.contains(&name) {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "unsupported function in vector domain: {}",
                 name
             )));
@@ -251,7 +251,7 @@ impl VectorDomain {
         match name {
             "dot" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "dot() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -259,7 +259,7 @@ impl VectorDomain {
                 let a = self.list_to_vector(&args[0], ctx)?;
                 let b = self.list_to_vector(&args[1], ctx)?;
                 if a.len() != b.len() {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "dot(): dimension mismatch {} vs {}",
                         a.len(),
                         b.len()
@@ -271,7 +271,7 @@ impl VectorDomain {
             }
             "cross" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "cross() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -279,7 +279,7 @@ impl VectorDomain {
                 let a = self.list_to_vector(&args[0], ctx)?;
                 let b = self.list_to_vector(&args[1], ctx)?;
                 if a.len() != 3 || b.len() != 3 {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "cross() requires 3-dimensional vectors".to_string(),
                     ));
                 }
@@ -292,7 +292,7 @@ impl VectorDomain {
             }
             "norm" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "norm() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -303,7 +303,7 @@ impl VectorDomain {
             }
             "angle" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "angle() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -311,7 +311,7 @@ impl VectorDomain {
                 let a = self.list_to_vector(&args[0], ctx)?;
                 let b = self.list_to_vector(&args[1], ctx)?;
                 if a.len() != b.len() {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "angle(): dimension mismatch {} vs {}",
                         a.len(),
                         b.len()
@@ -322,7 +322,7 @@ impl VectorDomain {
                 let norm_a = dv_a.norm();
                 let norm_b = dv_b.norm();
                 if norm_a == 0.0 || norm_b == 0.0 {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "angle(): zero vector has no angle".to_string(),
                     ));
                 }
@@ -332,7 +332,7 @@ impl VectorDomain {
             }
             "normalize" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "normalize() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -341,7 +341,7 @@ impl VectorDomain {
                 let dv = DVector::from_vec(v);
                 let norm = dv.norm();
                 if norm == 0.0 {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "normalize(): cannot normalize zero vector".to_string(),
                     ));
                 }
@@ -350,7 +350,7 @@ impl VectorDomain {
             }
             "scalar_triple" => {
                 if args.len() != 3 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "scalar_triple() requires exactly 3 arguments, got {}",
                         args.len()
                     )));
@@ -359,7 +359,7 @@ impl VectorDomain {
                 let b = self.list_to_vector(&args[1], ctx)?;
                 let c = self.list_to_vector(&args[2], ctx)?;
                 if a.len() != 3 || b.len() != 3 || c.len() != 3 {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "scalar_triple() requires 3-dimensional vectors".to_string(),
                     ));
                 }
@@ -383,13 +383,13 @@ impl VectorDomain {
                 for elem in elements {
                     let v = self.eval_scalar(elem, ctx)?;
                     if !v.is_finite() {
-                        return Err(CalcError::NaNOrInf);
+                        return Err(CalcError::nan_or_inf());
                     }
                     values.push(v);
                 }
                 Ok(values)
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "expected vector (list), got: {:?}",
                 ast
             ))),
@@ -443,6 +443,7 @@ fn contains_vector_arithmetic(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();
@@ -543,7 +544,7 @@ mod tests {
     #[test]
     fn test_dimension_mismatch_dot() {
         let result = eval("dot([1,2],[1,2,3])");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== UT-VEC-010: 零向量 =====
@@ -565,31 +566,31 @@ mod tests {
     #[test]
     fn test_normalize_zero_vector() {
         let result = eval("normalize([0,0])");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_angle_zero_vector() {
         let result = eval("angle([0,0],[1,0])");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_cross_2d_error() {
         let result = eval("cross([1,2],[3,4])");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_scalar_triple_2d_error() {
         let result = eval("scalar_triple([1,0],[0,1],[1,1])");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_vector_add_mismatch() {
         let result = eval("[1,2]+[1,2,3]");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -693,14 +694,14 @@ mod tests {
     fn test_unsupported_function() {
         let ast = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Number(1.0)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_dot_wrong_args() {
         let ast = AstNode::FunctionCall("dot".to_string(), vec![AstNode::Number(1.0)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -710,7 +711,7 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0)],
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -720,21 +721,21 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0)],
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_unbound_variable_in_list() {
         let ast = AstNode::List(vec![AstNode::Variable("y".to_string())]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
     fn test_complex_in_list_rejected() {
         let ast = AstNode::List(vec![AstNode::Complex(1.0, 2.0)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -746,21 +747,21 @@ mod tests {
             Box::new(AstNode::List(vec![AstNode::Number(2.0)])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_unary_factorial_rejected() {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_matrix_rejected() {
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -771,7 +772,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -782,7 +783,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
@@ -819,7 +820,7 @@ mod tests {
     fn test_eval_node_bignumber_invalid() {
         let ast = AstNode::BigNumber("not_a_number".to_string());
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -835,7 +836,7 @@ mod tests {
     fn test_eval_node_unbound_variable() {
         let ast = AstNode::Variable("y".to_string());
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -912,7 +913,7 @@ mod tests {
             Box::new(AstNode::List(vec![AstNode::Number(1.0)])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -958,7 +959,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -970,7 +971,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -982,7 +983,7 @@ mod tests {
             Box::new(AstNode::Number(f64::INFINITY)),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
@@ -995,7 +996,7 @@ mod tests {
         );
         // 1.0 / 0.0 → DivisionByZero (a != 0, b == 0)
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1010,7 +1011,7 @@ mod tests {
             Box::new(AstNode::List(vec![AstNode::Number(1.0)])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1018,7 +1019,7 @@ mod tests {
         // eval_scalar wildcard `_ =>` with Complex
         let ast = AstNode::Complex(1.0, 2.0);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1026,7 +1027,7 @@ mod tests {
         // eval_node Matrix rejection
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1044,7 +1045,7 @@ mod tests {
             ])),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1058,7 +1059,7 @@ mod tests {
             ],
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1066,42 +1067,42 @@ mod tests {
         // list_to_vector with inf element → NaNOrInf
         let ast = AstNode::List(vec![AstNode::Number(f64::INFINITY)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
     fn test_cross_wrong_args() {
         let ast = AstNode::FunctionCall("cross".to_string(), vec![AstNode::Number(1.0)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_angle_wrong_args() {
         let ast = AstNode::FunctionCall("angle".to_string(), vec![AstNode::Number(1.0)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_normalize_wrong_args() {
         let ast = AstNode::FunctionCall("normalize".to_string(), vec![]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_scalar_triple_wrong_args() {
         let ast = AstNode::FunctionCall("scalar_triple".to_string(), vec![AstNode::Number(1.0)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_angle_dimension_mismatch() {
         let ast = parse("angle([1,2],[1,2,3])").unwrap();
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1185,7 +1186,7 @@ mod tests {
             Box::new(AstNode::Variable("z".to_string())),
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     // ===== 覆盖 eval_node 裸 Number / UnaryOp::Neg 非列表 / Div 成功 =====

@@ -80,7 +80,7 @@ impl ScientificDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -98,7 +98,7 @@ impl ScientificDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
+            | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
                 "scientific domain does not support this node type: {:?}",
                 ast
             ))),
@@ -114,9 +114,9 @@ impl ScientificDomain {
             BinaryOp::Div => {
                 if b == 0.0 {
                     if a == 0.0 {
-                        return Err(CalcError::NaNOrInf);
+                        return Err(CalcError::nan_or_inf());
                     }
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a / b
             }
@@ -128,13 +128,13 @@ impl ScientificDomain {
             }
             BinaryOp::Mod => {
                 if b == 0.0 {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a % b
             }
         };
         if !result.is_finite() {
-            return Err(CalcError::NaNOrInf);
+            return Err(CalcError::nan_or_inf());
         }
         Ok(result)
     }
@@ -142,20 +142,20 @@ impl ScientificDomain {
     /// 求值阶乘（与 ArithmeticDomain 等价）。
     fn eval_factorial(&self, n: f64) -> Result<f64, CalcError> {
         if n < 0.0 || n.fract() != 0.0 {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "factorial requires non-negative integer, got {}",
                 n
             )));
         }
         let n = n as u64;
         if n > 10_000 {
-            return Err(CalcError::Overflow);
+            return Err(CalcError::overflow());
         }
         let mut result: f64 = 1.0;
         for i in 2..=n {
             result *= i as f64;
             if result.is_infinite() {
-                return Err(CalcError::Overflow);
+                return Err(CalcError::overflow());
             }
         }
         Ok(result)
@@ -186,7 +186,7 @@ impl ScientificDomain {
             "asin" => {
                 let x = self.eval_one_arg(name, args, ctx)?;
                 if !(-1.0..=1.0).contains(&x) {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "asin requires argument in [-1, 1], got {}",
                         x
                     )));
@@ -196,7 +196,7 @@ impl ScientificDomain {
             "acos" => {
                 let x = self.eval_one_arg(name, args, ctx)?;
                 if !(-1.0..=1.0).contains(&x) {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "acos requires argument in [-1, 1], got {}",
                         x
                     )));
@@ -211,7 +211,7 @@ impl ScientificDomain {
             "ln" => {
                 let x = self.eval_one_arg(name, args, ctx)?;
                 if x <= 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "ln requires positive argument, got {}",
                         x
                     )));
@@ -221,7 +221,7 @@ impl ScientificDomain {
             "log10" => {
                 let x = self.eval_one_arg(name, args, ctx)?;
                 if x <= 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "log10 requires positive argument, got {}",
                         x
                     )));
@@ -231,7 +231,7 @@ impl ScientificDomain {
             "log2" => {
                 let x = self.eval_one_arg(name, args, ctx)?;
                 if x <= 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "log2 requires positive argument, got {}",
                         x
                     )));
@@ -241,7 +241,7 @@ impl ScientificDomain {
             "log" => {
                 // log(value, base) = log_base(value)
                 if args.len() != 2 {
-                    return Err(CalcError::EvalError(format!(
+                    return Err(CalcError::eval(format!(
                         "log expects 2 arguments (value, base), got {}",
                         args.len()
                     )));
@@ -249,13 +249,13 @@ impl ScientificDomain {
                 let value = self.eval_node(&args[0], ctx)?;
                 let base = self.eval_node(&args[1], ctx)?;
                 if value <= 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "log requires positive value, got {}",
                         value
                     )));
                 }
                 if base <= 0.0 || base == 1.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "log requires positive base != 1, got {}",
                         base
                     )));
@@ -291,7 +291,7 @@ impl ScientificDomain {
                 let result = erf(x);
                 self.check_finite(result, name)
             }
-            _ => Err(CalcError::EvalError(format!("unknown function: {}", name))),
+            _ => Err(CalcError::eval(format!("unknown function: {}", name))),
         }
     }
 
@@ -303,7 +303,7 @@ impl ScientificDomain {
         ctx: &EvalContext,
     ) -> Result<f64, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::EvalError(format!(
+            return Err(CalcError::eval(format!(
                 "{} expects 1 argument, got {}",
                 name,
                 args.len()
@@ -315,7 +315,7 @@ impl ScientificDomain {
     /// 检查结果是否有限，非有限返回 NaNOrInf。
     fn check_finite(&self, value: f64, _name: &str) -> Result<f64, CalcError> {
         if !value.is_finite() {
-            return Err(CalcError::NaNOrInf);
+            return Err(CalcError::nan_or_inf());
         }
         Ok(value)
     }
@@ -380,6 +380,7 @@ fn erf(x: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     /// 辅助函数：解析 + 求值，返回 f64
     fn eval(input: &str) -> Result<f64, CalcError> {
@@ -459,7 +460,7 @@ mod tests {
         let result = eval("asin(2)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -471,7 +472,7 @@ mod tests {
         let result = eval("acos(-1.5)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -517,7 +518,7 @@ mod tests {
         let result = eval("ln(-1)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -529,7 +530,7 @@ mod tests {
         let result = eval("ln(0)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -541,7 +542,7 @@ mod tests {
         let result = eval("log10(-5)");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -710,7 +711,7 @@ mod tests {
         let ast = AstNode::Complex(1.0, 2.0);
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -719,7 +720,7 @@ mod tests {
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -728,7 +729,7 @@ mod tests {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -737,7 +738,7 @@ mod tests {
         let ast = AstNode::BigNumber("123".to_string());
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -763,7 +764,7 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
@@ -776,7 +777,7 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -802,7 +803,7 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -828,7 +829,7 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
@@ -837,7 +838,7 @@ mod tests {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(-1.0)));
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -846,7 +847,7 @@ mod tests {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(2.5)));
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -855,7 +856,7 @@ mod tests {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(10001.0)));
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::Overflow)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Overflow));
     }
 
     #[test]
@@ -864,7 +865,7 @@ mod tests {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(171.0)));
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::Overflow)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Overflow));
     }
 
     #[test]
@@ -880,7 +881,7 @@ mod tests {
     fn test_log2_non_positive() {
         // lines 230-234: log2(0) → DomainError
         let result = eval("log2(0)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -889,7 +890,7 @@ mod tests {
         let ast = AstNode::FunctionCall("log".to_string(), vec![AstNode::Number(100.0)]);
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -901,7 +902,7 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -913,7 +914,7 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -925,7 +926,7 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -934,7 +935,7 @@ mod tests {
         let ast = AstNode::FunctionCall("unknown_func".to_string(), vec![AstNode::Number(1.0)]);
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -946,14 +947,14 @@ mod tests {
         );
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
     fn test_check_finite_nan_or_inf() {
         // line 315: check_finite 返回 NaNOrInf
         let result = eval("exp(1000)");
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]

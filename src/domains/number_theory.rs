@@ -67,7 +67,7 @@ impl NumberTheoryDomain {
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "number theory domain requires integer, got {}",
                         n
                     )));
@@ -77,13 +77,13 @@ impl NumberTheoryDomain {
             AstNode::BigNumber(s) => {
                 let b: BigInt = s
                     .parse()
-                    .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))?;
+                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
                 Ok(EvalResult::BigInt(b))
             }
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;
                 let b = self.eval_int(r, ctx)?;
@@ -95,13 +95,13 @@ impl NumberTheoryDomain {
                 match op {
                     UnaryOp::Neg => Ok(bigint_to_result(-v)),
                     UnaryOp::Abs => Ok(bigint_to_result(v.abs())),
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in number theory domain".to_string(),
                     )),
                 }
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-                Err(CalcError::DomainError(format!(
+                Err(CalcError::domain(format!(
                     "number theory domain does not support this node type: {:?}",
                     ast
                 )))
@@ -115,25 +115,25 @@ impl NumberTheoryDomain {
         match ast {
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "expected integer argument, got {}",
                         n
                     )));
                 }
                 if *n > i64::MAX as f64 || *n < i64::MIN as f64 {
-                    return Err(CalcError::Overflow);
+                    return Err(CalcError::overflow());
                 }
                 Ok(BigInt::from(*n as i64))
             }
             AstNode::BigNumber(s) => s
                 .parse::<BigInt>()
-                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
+                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
             AstNode::Variable(name) => {
                 let v = ctx
                     .get_var(name)
-                    .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name)))?;
+                    .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name)))?;
                 if v.fract() != 0.0 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "variable {} is not an integer: {}",
                         name, v
                     )));
@@ -150,7 +150,7 @@ impl NumberTheoryDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Abs => Ok(v.abs()),
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in number theory domain".to_string(),
                     )),
                 }
@@ -161,25 +161,25 @@ impl NumberTheoryDomain {
                 match result {
                     EvalResult::Scalar(n) => {
                         if n.fract() != 0.0 {
-                            return Err(CalcError::DomainError(format!(
+                            return Err(CalcError::domain(format!(
                                 "expected integer result, got {}",
                                 n
                             )));
                         }
                         if n > i64::MAX as f64 || n < i64::MIN as f64 {
-                            return Err(CalcError::Overflow);
+                            return Err(CalcError::overflow());
                         }
                         Ok(BigInt::from(n as i64))
                     }
                     EvalResult::BigInt(b) => Ok(b),
-                    _ => Err(CalcError::DomainError(format!(
+                    _ => Err(CalcError::domain(format!(
                         "expected integer result from function call, got {:?}",
                         ast
                     ))),
                 }
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(
-                CalcError::DomainError(format!("expected integer expression, got: {:?}", ast)),
+                CalcError::domain(format!("expected integer expression, got: {:?}", ast)),
             ),
         }
     }
@@ -192,22 +192,22 @@ impl NumberTheoryDomain {
             BinaryOp::Mul => Ok(a * b),
             BinaryOp::Div => {
                 if b.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 Ok(a / b)
             }
             BinaryOp::Pow => {
                 if b.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "negative exponent not supported for integers".to_string(),
                     ));
                 }
-                let exp: u32 = b.to_u32().ok_or(CalcError::Overflow)?;
+                let exp: u32 = b.to_u32().ok_or(CalcError::overflow())?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {
                 if b.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 Ok(a % b)
             }
@@ -222,7 +222,7 @@ impl NumberTheoryDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !NUMBER_THEORY_FUNCTIONS.contains(&name) {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "unsupported function in number theory domain: {}",
                 name
             )));
@@ -230,7 +230,7 @@ impl NumberTheoryDomain {
         match name {
             "gcd" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "gcd() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -242,7 +242,7 @@ impl NumberTheoryDomain {
             }
             "lcm" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "lcm() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -257,7 +257,7 @@ impl NumberTheoryDomain {
             }
             "is_prime" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "is_prime() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -268,18 +268,18 @@ impl NumberTheoryDomain {
             }
             "prime_sieve" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "prime_sieve() requires exactly 1 argument, got {}",
                         args.len()
                     )));
                 }
                 let n = self.eval_int(&args[0], ctx)?;
                 if n.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "prime_sieve() requires non-negative argument".to_string(),
                     ));
                 }
-                let n_u64 = n.to_u64().ok_or(CalcError::Overflow)?;
+                let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
                 let primes = prime_sieve_u64(n_u64);
                 Ok(EvalResult::Vector(
                     primes.into_iter().map(|p| p as f64).collect(),
@@ -287,7 +287,7 @@ impl NumberTheoryDomain {
             }
             "mod_inverse" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "mod_inverse() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -295,12 +295,12 @@ impl NumberTheoryDomain {
                 let a = self.eval_int(&args[0], ctx)?;
                 let m = self.eval_int(&args[1], ctx)?;
                 if m.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 let m_abs = m.abs();
                 match mod_inverse(&a, &m_abs) {
                     Some(inv) => Ok(bigint_to_result(inv)),
-                    None => Err(CalcError::DomainError(format!(
+                    None => Err(CalcError::domain(format!(
                         "mod_inverse: {} and {} are not coprime",
                         a, m
                     ))),
@@ -308,7 +308,7 @@ impl NumberTheoryDomain {
             }
             "mod_pow" => {
                 if args.len() != 3 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "mod_pow() requires exactly 3 arguments, got {}",
                         args.len()
                     )));
@@ -317,10 +317,10 @@ impl NumberTheoryDomain {
                 let exp = self.eval_int(&args[1], ctx)?;
                 let m = self.eval_int(&args[2], ctx)?;
                 if m.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 if exp.is_negative() {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "mod_pow() requires non-negative exponent".to_string(),
                     ));
                 }
@@ -330,7 +330,7 @@ impl NumberTheoryDomain {
             }
             "euler_phi" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "euler_phi() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -599,6 +599,7 @@ fn contains_number_theory_function(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();
@@ -791,7 +792,7 @@ mod tests {
     #[test]
     fn test_mod_inverse_not_coprime() {
         let result = eval("mod_inverse(2,4)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -808,7 +809,7 @@ mod tests {
     #[test]
     fn test_mod_pow_negative_exp() {
         let result = eval("mod_pow(2,-1,100)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -884,14 +885,14 @@ mod tests {
     fn test_unsupported_function() {
         let ast = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Number(1.0)]);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_gcd_wrong_args() {
         let ast = AstNode::FunctionCall("gcd".to_string(), vec![AstNode::Number(1.0)]);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -901,28 +902,28 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_eval_node_float_rejected() {
         let ast = AstNode::Number(3.14);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_eval_node_complex_rejected() {
         let ast = AstNode::Complex(1.0, 2.0);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_eval_node_list_rejected() {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -936,14 +937,14 @@ mod tests {
             ],
         );
         let result = NumberTheoryDomain.evaluate(&outer, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_unbound_variable() {
         let ast = AstNode::Variable("x".to_string());
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -954,7 +955,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -965,7 +966,7 @@ mod tests {
             Box::new(AstNode::Number(0.0)),
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -976,7 +977,7 @@ mod tests {
             Box::new(AstNode::Number(-1.0)),
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1001,7 +1002,7 @@ mod tests {
     fn test_unary_factorial_rejected() {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1020,7 +1021,7 @@ mod tests {
     fn test_big_number_invalid() {
         let ast = AstNode::BigNumber("not_a_number".to_string());
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1166,7 +1167,7 @@ mod tests {
             vec![AstNode::Number(3.14), AstNode::Number(6.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1177,7 +1178,7 @@ mod tests {
             vec![AstNode::Number(1.0e20), AstNode::Number(6.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::Overflow)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Overflow));
     }
 
     #[test]
@@ -1201,7 +1202,7 @@ mod tests {
             vec![AstNode::Variable("x".to_string()), AstNode::Number(18.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &ctx);
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1231,7 +1232,7 @@ mod tests {
             ],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1269,7 +1270,7 @@ mod tests {
             vec![AstNode::Complex(1.0, 2.0), AstNode::Number(18.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1304,7 +1305,7 @@ mod tests {
     fn test_lcm_wrong_args() {
         let ast = AstNode::FunctionCall("lcm".to_string(), vec![AstNode::Number(1.0)]);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1314,26 +1315,26 @@ mod tests {
             vec![AstNode::Number(1.0), AstNode::Number(2.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_prime_sieve_negative() {
         let result = eval("prime_sieve(-5)");
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_mod_inverse_wrong_args() {
         let ast = AstNode::FunctionCall("mod_inverse".to_string(), vec![AstNode::Number(3.0)]);
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_mod_inverse_zero_modulus() {
         let result = eval("mod_inverse(3, 0)");
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1343,13 +1344,13 @@ mod tests {
             vec![AstNode::Number(2.0), AstNode::Number(10.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
     fn test_mod_pow_zero_modulus() {
         let result = eval("mod_pow(2, 10, 0)");
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1359,7 +1360,7 @@ mod tests {
             vec![AstNode::Number(10.0), AstNode::Number(20.0)],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1415,7 +1416,7 @@ mod tests {
             ],
         );
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]

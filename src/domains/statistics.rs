@@ -47,7 +47,7 @@ impl CalculationDomain for StatisticsDomain {
 
         let value = self.eval_node(ast, &ctx)?;
         if !value.is_finite() {
-            return Err(CalcError::NaNOrInf);
+            return Err(CalcError::nan_or_inf());
         }
         Ok(EvalResult::Scalar(value))
     }
@@ -60,7 +60,7 @@ impl StatisticsDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -71,7 +71,7 @@ impl StatisticsDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Abs => Ok(v.abs()),
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in statistics domain".to_string(),
                     )),
                 }
@@ -80,7 +80,7 @@ impl StatisticsDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => Err(CalcError::DomainError(format!(
+            | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
                 "statistics domain does not support this node type: {:?}",
                 ast
             ))),
@@ -96,9 +96,9 @@ impl StatisticsDomain {
             BinaryOp::Div => {
                 if b == 0.0 {
                     if a == 0.0 {
-                        return Err(CalcError::NaNOrInf);
+                        return Err(CalcError::nan_or_inf());
                     }
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a / b
             }
@@ -111,13 +111,13 @@ impl StatisticsDomain {
             }
             BinaryOp::Mod => {
                 if b == 0.0 {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a % b
             }
         };
         if !result.is_finite() {
-            return Err(CalcError::NaNOrInf);
+            return Err(CalcError::nan_or_inf());
         }
         Ok(result)
     }
@@ -130,13 +130,13 @@ impl StatisticsDomain {
         ctx: &EvalContext,
     ) -> Result<f64, CalcError> {
         if !STATISTICS_FUNCTIONS.contains(&name) {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "unsupported function in statistics domain: {}",
                 name
             )));
         }
         if args.len() != 1 {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "{}() requires exactly 1 argument, got {}",
                 name,
                 args.len()
@@ -145,7 +145,7 @@ impl StatisticsDomain {
         let values = self.extract_list(&args[0], ctx)?;
         // 空列表 → DomainError（spec Req 8）
         if values.is_empty() {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "{}() requires a non-empty list",
                 name
             )));
@@ -194,7 +194,7 @@ impl StatisticsDomain {
                 }
                 Ok(values)
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "statistics functions require a list argument, got: {:?}",
                 ast
             ))),
@@ -230,6 +230,7 @@ fn contains_statistics_function(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     fn assert_approx(actual: f64, expected: f64) {
         assert!(
@@ -363,7 +364,7 @@ mod tests {
         let result = eval("mean([])");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -375,7 +376,7 @@ mod tests {
         let result = eval("sum([])");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -389,7 +390,7 @@ mod tests {
         let result = eval("mean([1, [2,3], 4])");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -401,7 +402,7 @@ mod tests {
         let result = eval("max([1, [[2,3],[4,5]], 6])");
         assert!(result.is_err());
         assert!(
-            matches!(result, Err(CalcError::DomainError(_))),
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
             "expected DomainError, got {:?}",
             result
         );
@@ -466,7 +467,7 @@ mod tests {
         let domain = StatisticsDomain;
         let ctx = EvalContext::new();
         let result = domain.evaluate(&ast, &ctx);
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -476,7 +477,7 @@ mod tests {
         let domain = StatisticsDomain;
         let ctx = EvalContext::new();
         let result = domain.evaluate(&ast, &ctx);
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -492,7 +493,7 @@ mod tests {
         let domain = StatisticsDomain;
         let ctx = EvalContext::new();
         let result = domain.evaluate(&ast, &ctx);
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -533,7 +534,7 @@ mod tests {
         );
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
@@ -545,7 +546,7 @@ mod tests {
         );
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -563,7 +564,7 @@ mod tests {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -576,7 +577,7 @@ mod tests {
         );
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
@@ -589,7 +590,7 @@ mod tests {
         );
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -641,7 +642,7 @@ mod tests {
         );
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -667,7 +668,7 @@ mod tests {
         );
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]

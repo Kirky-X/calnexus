@@ -14,7 +14,8 @@ mod common;
 use common::default_router;
 
 use calnexus::{
-    parse, AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult, PrecisionDomain,
+    parse, AstCanonicalizer, CacheManager, CalcError, ErrorKind, EvalContext, EvalResult,
+    PrecisionDomain,
 };
 
 /// 全链路求值（无变量绑定）：parse → canonicalize → cache → route → evaluate。
@@ -29,7 +30,7 @@ fn evaluate_with_ctx(expr: &str, ctx: &EvalContext) -> Result<f64, CalcError> {
     let result = evaluate_full(expr, ctx)?;
     result
         .as_scalar()
-        .ok_or_else(|| CalcError::EvalError("unexpected non-scalar result".to_string()))
+        .ok_or_else(|| CalcError::eval("unexpected non-scalar result".to_string()))
 }
 
 /// 全链路求值（返回完整 EvalResult，支持 Complex/Matrix/BigInt/BigRational）。
@@ -254,7 +255,7 @@ fn test_cache_does_not_store_errors() {
     // 错误结果不写入缓存
     let cf = calnexus::CanonicalForm::new("(+ 1 2)");
     let cache = CacheManager::new();
-    cache.insert(&cf, &Err(CalcError::DivisionByZero));
+    cache.insert(&cf, &Err(CalcError::division_by_zero()));
     assert_eq!(cache.get(&cf), None, "错误结果不应写入缓存");
 }
 
@@ -266,7 +267,7 @@ fn test_error_parse_error() {
     let result = evaluate("2++");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::ParseError(_))),
+        matches!(&result, Err(e) if e.kind == ErrorKind::Parse),
         "expected ParseError, got {:?}",
         result
     );
@@ -277,7 +278,7 @@ fn test_error_unbalanced_parens() {
     // 不平衡括号 → ParseError
     let result = evaluate("(2+3");
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::ParseError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Parse));
 }
 
 #[test]
@@ -287,7 +288,7 @@ fn test_error_depth_exceeded() {
     let result = evaluate(&deep_expr);
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::DepthExceeded)),
+        matches!(&result, Err(e) if e.kind == ErrorKind::Depth),
         "expected DepthExceeded, got {:?}",
         result
     );
@@ -299,7 +300,7 @@ fn test_error_division_by_zero() {
     let result = evaluate("5/0");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::DivisionByZero)),
+        matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero),
         "expected DivisionByZero, got {:?}",
         result
     );
@@ -311,7 +312,7 @@ fn test_error_modulo_by_zero() {
     let result = evaluate("mod(10,0)");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::DivisionByZero)),
+        matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero),
         "expected DivisionByZero, got {:?}",
         result
     );
@@ -323,7 +324,7 @@ fn test_error_nan_or_inf_overflow() {
     let result = evaluate("1e308+1e308");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::NaNOrInf)),
+        matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf),
         "expected NaNOrInf, got {:?}",
         result
     );
@@ -335,7 +336,7 @@ fn test_error_domain_error_asin_out_of_range() {
     let result = evaluate("asin(2)");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::DomainError(_))),
+        matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
         "expected DomainError, got {:?}",
         result
     );
@@ -346,7 +347,7 @@ fn test_error_domain_error_log_negative() {
     // ln(-1) → DomainError
     let result = evaluate("ln(-1)");
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
@@ -354,7 +355,7 @@ fn test_error_domain_error_unknown_function() {
     // foo(1) → 无域支持 → DomainError（路由阶段）
     let result = evaluate("foo(1)");
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
@@ -363,7 +364,7 @@ fn test_error_overflow_factorial_too_large() {
     let result = evaluate("factorial(10001)");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::Overflow)),
+        matches!(&result, Err(e) if e.kind == ErrorKind::Overflow),
         "expected Overflow, got {:?}",
         result
     );
@@ -375,7 +376,7 @@ fn test_error_overflow_factorial_infinite() {
     let result = evaluate("factorial(1000)");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::Overflow)),
+        matches!(&result, Err(e) if e.kind == ErrorKind::Overflow),
         "expected Overflow, got {:?}",
         result
     );
@@ -394,7 +395,7 @@ fn test_error_eval_error_wrong_arg_count() {
     let result = evaluate("factorial(1,2)");
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::EvalError(_))),
+        matches!(&result, Err(e) if e.kind == ErrorKind::Eval),
         "expected EvalError, got {:?}",
         result
     );
@@ -405,16 +406,16 @@ fn test_all_seven_error_variants_covered() {
     // 元测试：确认 7 种 CalcError 变体均已在集成测试中覆盖传播路径
     // ParseError, EvalError, Overflow, NaNOrInf, DomainError, DepthExceeded, DivisionByZero
     let covered = [
-        matches!(evaluate("2++"), Err(CalcError::ParseError(_))), // ParseError
-        matches!(evaluate("factorial(1,2)"), Err(CalcError::EvalError(_))), // EvalError
-        matches!(evaluate("factorial(10001)"), Err(CalcError::Overflow)), // Overflow
-        matches!(evaluate("1e308+1e308"), Err(CalcError::NaNOrInf)), // NaNOrInf
-        matches!(evaluate("asin(2)"), Err(CalcError::DomainError(_))), // DomainError
+        matches!(evaluate("2++"), Err(e) if e.kind == ErrorKind::Parse), // ParseError
+        matches!(evaluate("factorial(1,2)"), Err(e) if e.kind == ErrorKind::Eval), // EvalError
+        matches!(evaluate("factorial(10001)"), Err(e) if e.kind == ErrorKind::Overflow), // Overflow
+        matches!(evaluate("1e308+1e308"), Err(e) if e.kind == ErrorKind::NaNOrInf), // NaNOrInf
+        matches!(evaluate("asin(2)"), Err(e) if e.kind == ErrorKind::Domain), // DomainError
         matches!(
             evaluate(&format!("1{}", "+1".repeat(300))),
-            Err(CalcError::DepthExceeded)
+            Err(e) if e.kind == ErrorKind::Depth
         ), // DepthExceeded
-        matches!(evaluate("5/0"), Err(CalcError::DivisionByZero)), // DivisionByZero
+        matches!(evaluate("5/0"), Err(e) if e.kind == ErrorKind::DivisionByZero), // DivisionByZero
     ];
     for (i, ok) in covered.iter().enumerate() {
         assert!(ok, "error variant #{} not properly triggered", i);
@@ -679,7 +680,7 @@ fn test_statistics_pipeline_empty_list_error() {
     // mean([]) → DomainError（空列表）
     let result = evaluate("mean([])");
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 // ----- Precision 域全链路（路由器路径） -----
@@ -869,7 +870,7 @@ fn test_error_matrix_dimension_mismatch() {
     // [[1,2],[3,4]] + [[1,2,3]] → 维度不一致 → DomainError
     let result = evaluate_full("[[1,2],[3,4]] + [[1,2,3]]", &EvalContext::new());
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
@@ -877,7 +878,7 @@ fn test_error_matrix_singular_inverse() {
     // inverse([[1,2],[2,4]]) → 奇异矩阵 → DomainError
     let result = evaluate_full("inverse([[1,2],[2,4]])", &EvalContext::new());
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
@@ -893,7 +894,7 @@ fn test_error_precision_division_by_zero() {
     let result = evaluate_precision("1/0", &EvalContext::new());
     assert!(result.is_err());
     assert!(
-        matches!(result, Err(CalcError::DivisionByZero)),
+        matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero),
         "expected DivisionByZero, got {:?}",
         result
     );
@@ -1054,7 +1055,7 @@ fn test_vector_scalar_triple_pipeline() {
 fn test_vector_dimension_mismatch_error() {
     let result = evaluate_full("[1,2]+[3,4,5]", &EvalContext::new());
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
@@ -1179,28 +1180,28 @@ fn test_v08_cache_dedup_different_expression() {
 fn test_v08_error_unknown_function() {
     let result = evaluate("unknown_func(1)");
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
 fn test_v08_error_negative_combinatorics() {
     let result = evaluate("C(-1,2)");
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
 fn test_v08_error_vector_dimension_mismatch() {
     let result = evaluate_full("[1,2]+[3,4,5]", &EvalContext::new());
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 #[test]
 fn test_v08_error_divide_by_zero_polynomial() {
     let result = evaluate_full("poly_div(x+1,0)", &EvalContext::new());
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DivisionByZero)));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::DivisionByZero));
 }
 
 #[test]
@@ -1208,7 +1209,7 @@ fn test_v08_error_non_polynomial_expression() {
     // sin(x) 不是多项式
     let result = evaluate_full("poly_add(sin(x),x)", &EvalContext::new());
     assert!(result.is_err());
-    assert!(matches!(result, Err(CalcError::DomainError(_))));
+    assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
 // ===== TG7.1 Symbolic 域集成测试 =====

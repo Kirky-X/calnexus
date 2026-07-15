@@ -44,7 +44,7 @@ impl CalculationDomain for MatrixDomain {
         match value {
             MatrixValue::Scalar(v) => {
                 if !v.is_finite() {
-                    return Err(CalcError::NaNOrInf);
+                    return Err(CalcError::nan_or_inf());
                 }
                 Ok(EvalResult::Scalar(v))
             }
@@ -66,7 +66,7 @@ impl MatrixDomain {
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(MatrixValue::Scalar)
-                .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::Matrix(rows) => self.eval_matrix_literal(rows, ctx),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval(l, ctx)?;
@@ -82,18 +82,18 @@ impl MatrixDomain {
                     },
                     UnaryOp::Abs => match v {
                         MatrixValue::Scalar(s) => Ok(MatrixValue::Scalar(s.abs())),
-                        MatrixValue::Matrix(_) => Err(CalcError::DomainError(
+                        MatrixValue::Matrix(_) => Err(CalcError::domain(
                             "abs() not supported for matrices".to_string(),
                         )),
                     },
-                    UnaryOp::Factorial => Err(CalcError::DomainError(
+                    UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in matrix domain".to_string(),
                     )),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Complex(_, _) | AstNode::List(_) | AstNode::BigNumber(_) => {
-                Err(CalcError::DomainError(format!(
+                Err(CalcError::domain(format!(
                     "matrix domain does not support this node type: {:?}",
                     ast
                 )))
@@ -110,15 +110,15 @@ impl MatrixDomain {
         ctx: &EvalContext,
     ) -> Result<MatrixValue, CalcError> {
         if rows.is_empty() {
-            return Err(CalcError::DomainError("empty matrix literal".to_string()));
+            return Err(CalcError::domain("empty matrix literal".to_string()));
         }
         let ncols = rows[0].len();
         if ncols == 0 {
-            return Err(CalcError::DomainError("empty matrix row".to_string()));
+            return Err(CalcError::domain("empty matrix row".to_string()));
         }
         for (i, row) in rows.iter().enumerate() {
             if row.len() != ncols {
-                return Err(CalcError::DomainError(format!(
+                return Err(CalcError::domain(format!(
                     "matrix row {} has {} elements, expected {}",
                     i,
                     row.len(),
@@ -132,7 +132,7 @@ impl MatrixDomain {
                 match self.eval(elem, ctx)? {
                     MatrixValue::Scalar(s) => data.push(s),
                     MatrixValue::Matrix(_) => {
-                        return Err(CalcError::DomainError(
+                        return Err(CalcError::domain(
                             "matrix elements must be scalars".to_string(),
                         ))
                     }
@@ -159,9 +159,9 @@ impl MatrixDomain {
                 BinaryOp::Div => {
                     if *bv == 0.0 {
                         if *av == 0.0 {
-                            return Err(CalcError::NaNOrInf);
+                            return Err(CalcError::nan_or_inf());
                         }
-                        return Err(CalcError::DivisionByZero);
+                        return Err(CalcError::division_by_zero());
                     }
                     av / bv
                 }
@@ -174,13 +174,13 @@ impl MatrixDomain {
                 }
                 BinaryOp::Mod => {
                     if *bv == 0.0 {
-                        return Err(CalcError::DivisionByZero);
+                        return Err(CalcError::division_by_zero());
                     }
                     av % bv
                 }
             };
             if !result.is_finite() {
-                return Err(CalcError::NaNOrInf);
+                return Err(CalcError::nan_or_inf());
             }
             return Ok(MatrixValue::Scalar(result));
         }
@@ -189,7 +189,7 @@ impl MatrixDomain {
             BinaryOp::Add | BinaryOp::Sub => match (a, b) {
                 (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
                     if am.shape() != bm.shape() {
-                        return Err(CalcError::DomainError(format!(
+                        return Err(CalcError::domain(format!(
                             "matrix dimension mismatch for add/sub: {}x{} vs {}x{}",
                             am.nrows(),
                             am.ncols(),
@@ -204,7 +204,7 @@ impl MatrixDomain {
                     };
                     Ok(MatrixValue::Matrix(result))
                 }
-                _ => Err(CalcError::DomainError(
+                _ => Err(CalcError::domain(
                     "matrix add/sub requires two matrices of the same dimension".to_string(),
                 )),
             },
@@ -213,7 +213,7 @@ impl MatrixDomain {
                 (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => Ok(MatrixValue::Matrix(&m * s)),
                 (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
                     if am.ncols() != bm.nrows() {
-                        return Err(CalcError::DomainError(format!(
+                        return Err(CalcError::domain(format!(
                             "matrix multiplication dimension mismatch: {}x{} * {}x{}",
                             am.nrows(),
                             am.ncols(),
@@ -228,20 +228,16 @@ impl MatrixDomain {
             BinaryOp::Div => match (a, b) {
                 (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => {
                     if s == 0.0 {
-                        return Err(CalcError::DivisionByZero);
+                        return Err(CalcError::division_by_zero());
                     }
                     Ok(MatrixValue::Matrix(&m / s))
                 }
-                _ => Err(CalcError::DomainError(
+                _ => Err(CalcError::domain(
                     "matrix division only supports matrix / scalar".to_string(),
                 )),
             },
-            BinaryOp::Pow => Err(CalcError::DomainError(
-                "matrix power not supported".to_string(),
-            )),
-            BinaryOp::Mod => Err(CalcError::DomainError(
-                "matrix mod not supported".to_string(),
-            )),
+            BinaryOp::Pow => Err(CalcError::domain("matrix power not supported".to_string())),
+            BinaryOp::Mod => Err(CalcError::domain("matrix mod not supported".to_string())),
         }
     }
 
@@ -255,7 +251,7 @@ impl MatrixDomain {
         match name {
             "det" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "det() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -264,7 +260,7 @@ impl MatrixDomain {
                 match m {
                     MatrixValue::Matrix(matrix) => {
                         if !matrix.is_square() {
-                            return Err(CalcError::DomainError(format!(
+                            return Err(CalcError::domain(format!(
                                 "det() requires a square matrix, got {}x{}",
                                 matrix.nrows(),
                                 matrix.ncols()
@@ -272,14 +268,14 @@ impl MatrixDomain {
                         }
                         Ok(MatrixValue::Scalar(matrix.determinant()))
                     }
-                    _ => Err(CalcError::DomainError(
+                    _ => Err(CalcError::domain(
                         "det() requires a matrix argument".to_string(),
                     )),
                 }
             }
             "transpose" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "transpose() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -287,14 +283,14 @@ impl MatrixDomain {
                 let m = self.eval(&args[0], ctx)?;
                 match m {
                     MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(matrix.transpose())),
-                    _ => Err(CalcError::DomainError(
+                    _ => Err(CalcError::domain(
                         "transpose() requires a matrix argument".to_string(),
                     )),
                 }
             }
             "inverse" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "inverse() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -303,7 +299,7 @@ impl MatrixDomain {
                 match m {
                     MatrixValue::Matrix(matrix) => {
                         if !matrix.is_square() {
-                            return Err(CalcError::DomainError(format!(
+                            return Err(CalcError::domain(format!(
                                 "inverse() requires a square matrix, got {}x{}",
                                 matrix.nrows(),
                                 matrix.ncols()
@@ -311,19 +307,19 @@ impl MatrixDomain {
                         }
                         match matrix.try_inverse() {
                             Some(inv) => Ok(MatrixValue::Matrix(inv)),
-                            None => Err(CalcError::DomainError(
+                            None => Err(CalcError::domain(
                                 "matrix is singular (not invertible)".to_string(),
                             )),
                         }
                     }
-                    _ => Err(CalcError::DomainError(
+                    _ => Err(CalcError::domain(
                         "inverse() requires a matrix argument".to_string(),
                     )),
                 }
             }
             "identity" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "identity() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -332,14 +328,14 @@ impl MatrixDomain {
                 match n_val {
                     MatrixValue::Scalar(n) => {
                         if n < 1.0 || n != n.trunc() {
-                            return Err(CalcError::DomainError(format!(
+                            return Err(CalcError::domain(format!(
                                 "identity() requires a positive integer, got {}",
                                 n
                             )));
                         }
                         const MAX_MATRIX_DIM: usize = 1000;
                         if n as usize > MAX_MATRIX_DIM {
-                            return Err(CalcError::DomainError(format!(
+                            return Err(CalcError::domain(format!(
                                 "identity() dimension {} exceeds maximum of {}",
                                 n, MAX_MATRIX_DIM
                             )));
@@ -347,12 +343,12 @@ impl MatrixDomain {
                         let n = n as usize;
                         Ok(MatrixValue::Matrix(DMatrix::identity(n, n)))
                     }
-                    _ => Err(CalcError::DomainError(
+                    _ => Err(CalcError::domain(
                         "identity() requires a scalar argument".to_string(),
                     )),
                 }
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "unsupported function in matrix domain: {}",
                 name
             ))),
@@ -392,6 +388,7 @@ fn contains_matrix(ast: &AstNode) -> bool {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     fn assert_approx(actual: f64, expected: f64) {
         assert!(
@@ -582,7 +579,7 @@ mod tests {
         let ast = parse("inverse([[1,2],[2,4]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== Requirement 8: 单位矩阵 =====
@@ -616,7 +613,7 @@ mod tests {
         let ast = parse("[[1,2],[3,4]] + [[1,2,3],[4,5,6]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -640,7 +637,7 @@ mod tests {
         let ast = parse("[[1,2,3]] * [[1,2],[3,4]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== Requirement 10: 域路由 =====
@@ -694,7 +691,7 @@ mod tests {
         let ast = parse("[[1,2]] / 0").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -703,7 +700,7 @@ mod tests {
         let ast = parse("det([[1,2,3],[4,5,6]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -712,7 +709,7 @@ mod tests {
         let ast = parse("inverse([[1,2,3],[4,5,6]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -721,7 +718,7 @@ mod tests {
         let ast = parse("identity(0)").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -730,7 +727,7 @@ mod tests {
         let ast = AstNode::FunctionCall("identity".to_string(), vec![AstNode::Number(2.5)]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -739,7 +736,7 @@ mod tests {
         let ast = parse("sin([[1,2],[3,4]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -748,7 +745,7 @@ mod tests {
         let ast = AstNode::Complex(1.0, 2.0);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -757,7 +754,7 @@ mod tests {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -766,7 +763,7 @@ mod tests {
         let ast = AstNode::FunctionCall("det".to_string(), vec![]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -787,7 +784,7 @@ mod tests {
         ]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -796,7 +793,7 @@ mod tests {
         let ast = AstNode::Matrix(vec![]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -852,7 +849,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     // ===== 额外覆盖：未绑定变量 =====
@@ -868,7 +865,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -915,7 +912,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -924,7 +921,7 @@ mod tests {
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：矩阵字面量校验 =====
@@ -935,7 +932,7 @@ mod tests {
         let ast = AstNode::Matrix(vec![vec![]]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -946,7 +943,7 @@ mod tests {
         )]])]]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：标量二元运算 =====
@@ -961,7 +958,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     #[test]
@@ -974,7 +971,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1013,7 +1010,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1026,7 +1023,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::NaNOrInf)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
     // ===== 额外覆盖：矩阵运算错误路径 =====
@@ -1041,7 +1038,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1054,7 +1051,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1067,7 +1064,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1080,7 +1077,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：函数参数校验 =====
@@ -1091,7 +1088,7 @@ mod tests {
         let ast = AstNode::FunctionCall("det".to_string(), vec![AstNode::Number(5.0)]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1100,7 +1097,7 @@ mod tests {
         let ast = AstNode::FunctionCall("transpose".to_string(), vec![]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1109,7 +1106,7 @@ mod tests {
         let ast = AstNode::FunctionCall("transpose".to_string(), vec![AstNode::Number(5.0)]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1118,7 +1115,7 @@ mod tests {
         let ast = AstNode::FunctionCall("inverse".to_string(), vec![]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1127,7 +1124,7 @@ mod tests {
         let ast = AstNode::FunctionCall("inverse".to_string(), vec![AstNode::Number(5.0)]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1136,7 +1133,7 @@ mod tests {
         let ast = AstNode::FunctionCall("identity".to_string(), vec![]);
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1148,7 +1145,7 @@ mod tests {
         );
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：contains_matrix 路由 =====

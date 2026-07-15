@@ -86,7 +86,7 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
         AstNode::BigNumber(s) => {
             let n: f64 = s
                 .parse()
-                .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s)))?;
+                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
             Ok(SymbolicExpr::Const(n))
         }
         AstNode::Variable(name) => {
@@ -107,7 +107,7 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 BinaryOp::Div => SymbolicExpr::Div(Box::new(l), Box::new(r)),
                 BinaryOp::Pow => SymbolicExpr::Pow(Box::new(l), Box::new(r)),
                 BinaryOp::Mod => {
-                    return Err(CalcError::DomainError(
+                    return Err(CalcError::domain(
                         "modulo not supported in symbolic expressions".to_string(),
                     ));
                 }
@@ -115,7 +115,7 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
         }
         AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?))),
         AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
-            Err(CalcError::DomainError(format!(
+            Err(CalcError::domain(format!(
                 "unary op not supported in symbolic expressions: {:?}",
                 ast
             )))
@@ -123,7 +123,7 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
         AstNode::FunctionCall(name, args) => {
             let unary = |arg: &AstNode| -> Result<Box<SymbolicExpr>, CalcError> {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "{}() requires exactly 1 argument, got {}",
                         name,
                         args.len()
@@ -137,18 +137,15 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 "tan" => Ok(SymbolicExpr::Tan(unary(&args[0])?)),
                 "ln" | "log" => Ok(SymbolicExpr::Ln(unary(&args[0])?)),
                 "exp" => Ok(SymbolicExpr::Exp(unary(&args[0])?)),
-                _ => Err(CalcError::DomainError(format!(
+                _ => Err(CalcError::domain(format!(
                     "function not supported in symbolic expressions: {}",
                     name
                 ))),
             }
         }
-        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-            Err(CalcError::DomainError(format!(
-                "node type not supported in symbolic expressions: {:?}",
-                ast
-            )))
-        }
+        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
+            format!("node type not supported in symbolic expressions: {:?}", ast),
+        )),
     }
 }
 
@@ -407,7 +404,7 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
                     Box::new(integrate(f, var)?),
                 ));
             }
-            Err(CalcError::DomainError(
+            Err(CalcError::domain(
                 "integrate() does not support product of two non-constant expressions".to_string(),
             ))
         }
@@ -430,7 +427,7 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
                     ));
                 }
             }
-            Err(CalcError::DomainError(
+            Err(CalcError::domain(
                 "integrate() only supports power of the integration variable".to_string(),
             ))
         }
@@ -441,7 +438,7 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
                     SymbolicExpr::Var(var.to_string()),
                 )))))
             } else {
-                Err(CalcError::DomainError(
+                Err(CalcError::domain(
                     "integrate() only supports sin(var) form".to_string(),
                 ))
             }
@@ -453,7 +450,7 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
                     var.to_string(),
                 ))))
             } else {
-                Err(CalcError::DomainError(
+                Err(CalcError::domain(
                     "integrate() only supports cos(var) form".to_string(),
                 ))
             }
@@ -465,7 +462,7 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
                     var.to_string(),
                 ))))
             } else {
-                Err(CalcError::DomainError(
+                Err(CalcError::domain(
                     "integrate() only supports exp(var) form".to_string(),
                 ))
             }
@@ -479,14 +476,14 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
                     ))));
                 }
             }
-            Err(CalcError::DomainError(
+            Err(CalcError::domain(
                 "integrate() only supports 1/var form for division".to_string(),
             ))
         }
         // ∫-f dx = -∫f dx
         SymbolicExpr::Neg(f) => Ok(SymbolicExpr::Neg(Box::new(integrate(f, var)?))),
         // ln/tan 不支持直接积分
-        SymbolicExpr::Ln(_) | SymbolicExpr::Tan(_) => Err(CalcError::DomainError(
+        SymbolicExpr::Ln(_) | SymbolicExpr::Tan(_) => Err(CalcError::domain(
             "integrate() does not support ln/tan forms".to_string(),
         )),
     }
@@ -699,7 +696,7 @@ fn limit_recursive(
             let d_den = diff(den, var);
             // 若分母导数为常数 0，说明无法继续
             if d_den.is_zero() {
-                return Err(CalcError::DomainError(
+                return Err(CalcError::domain(
                     "limit(): denominator derivative is zero, cannot apply L'Hôpital".to_string(),
                 ));
             }
@@ -712,7 +709,7 @@ fn limit_recursive(
         }
     }
 
-    Err(CalcError::DomainError(format!(
+    Err(CalcError::domain(format!(
         "limit() could not resolve indeterminate form (depth {})",
         depth
     )))
@@ -725,7 +722,7 @@ fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64,
         SymbolicExpr::Var(name) => env
             .get(name)
             .copied()
-            .ok_or_else(|| CalcError::EvalError(format!("unbound variable: {}", name))),
+            .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
         SymbolicExpr::Add(l, r) => Ok(eval_symbolic(l, env)? + eval_symbolic(r, env)?),
         SymbolicExpr::Sub(l, r) => Ok(eval_symbolic(l, env)? - eval_symbolic(r, env)?),
         SymbolicExpr::Mul(l, r) => Ok(eval_symbolic(l, env)? * eval_symbolic(r, env)?),
@@ -760,7 +757,7 @@ fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64,
 /// 返回 `EvalResult::Symbolic`（多项式字符串）。
 pub fn taylor(expr: &SymbolicExpr, var: &str, order: u32) -> Result<EvalResult, CalcError> {
     if order > 20 {
-        return Err(CalcError::DomainError(format!(
+        return Err(CalcError::domain(format!(
             "taylor() order {} exceeds maximum of 20",
             order
         )));
@@ -860,7 +857,7 @@ impl SymbolicDomain {
     fn eval_node(&self, ast: &AstNode) -> Result<EvalResult, CalcError> {
         match ast {
             AstNode::FunctionCall(name, args) => self.eval_function(name, args),
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "symbolic domain expects function call, got: {:?}",
                 ast
             ))),
@@ -870,7 +867,7 @@ impl SymbolicDomain {
     /// 求值符号函数调用。
     fn eval_function(&self, name: &str, args: &[AstNode]) -> Result<EvalResult, CalcError> {
         if !SYMBOLIC_FUNCTIONS.contains(&name) {
-            return Err(CalcError::DomainError(format!(
+            return Err(CalcError::domain(format!(
                 "unsupported function in symbolic domain: {}",
                 name
             )));
@@ -878,7 +875,7 @@ impl SymbolicDomain {
         match name {
             "diff" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "diff() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -890,7 +887,7 @@ impl SymbolicDomain {
             }
             "integrate" => {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "integrate() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -902,7 +899,7 @@ impl SymbolicDomain {
             }
             "simplify" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "simplify() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -913,7 +910,7 @@ impl SymbolicDomain {
             }
             "limit" => {
                 if args.len() != 3 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "limit() requires exactly 3 arguments, got {}",
                         args.len()
                     )));
@@ -925,7 +922,7 @@ impl SymbolicDomain {
             }
             "taylor" => {
                 if args.len() != 3 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "taylor() requires exactly 3 arguments, got {}",
                         args.len()
                     )));
@@ -959,7 +956,7 @@ fn contains_symbolic_function(ast: &AstNode) -> bool {
 fn extract_var_name(ast: &AstNode) -> Result<String, CalcError> {
     match ast {
         AstNode::Variable(name) => Ok(name.clone()),
-        _ => Err(CalcError::DomainError(format!(
+        _ => Err(CalcError::domain(format!(
             "expected variable name, got: {:?}",
             ast
         ))),
@@ -972,9 +969,9 @@ fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
         AstNode::Number(n) => Ok(*n),
         AstNode::BigNumber(s) => s
             .parse::<f64>()
-            .map_err(|_| CalcError::DomainError(format!("invalid big number: {}", s))),
+            .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
         AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(-extract_number(e)?),
-        _ => Err(CalcError::DomainError(format!(
+        _ => Err(CalcError::domain(format!(
             "expected number, got: {:?}",
             ast
         ))),

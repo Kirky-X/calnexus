@@ -45,7 +45,7 @@ impl CalculationDomain for PrecisionDomain {
         if let AstNode::FunctionCall(name, args) = ast {
             if name == "precision" {
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "precision() requires exactly 2 arguments (N, expr), got {}",
                         args.len()
                     )));
@@ -72,13 +72,13 @@ impl PrecisionDomain {
                 } else {
                     // 非整数 f64：近似转换（仅用于混合表达式中的小数）
                     BigRational::from_float(*n).ok_or_else(|| {
-                        CalcError::EvalError(format!("cannot convert {} to BigRational", n))
+                        CalcError::eval(format!("cannot convert {} to BigRational", n))
                     })
                 }
             }
             AstNode::BigNumber(s) => {
                 let big = BigInt::parse_bytes(s.as_bytes(), 10).ok_or_else(|| {
-                    CalcError::ParseError(format!("invalid big integer literal: {}", s))
+                    CalcError::parse(format!("invalid big integer literal: {}", s))
                 })?;
                 Ok(BigRational::from_integer(big))
             }
@@ -88,11 +88,11 @@ impl PrecisionDomain {
                         Ok(BigRational::from_integer(BigInt::from(v as i64)))
                     } else {
                         BigRational::from_float(v).ok_or_else(|| {
-                            CalcError::EvalError(format!("cannot convert {} to BigRational", v))
+                            CalcError::eval(format!("cannot convert {} to BigRational", v))
                         })
                     }
                 } else {
-                    Err(CalcError::EvalError(format!("unbound variable: {}", name)))
+                    Err(CalcError::eval(format!("unbound variable: {}", name)))
                 }
             }
             AstNode::BinaryOp(op, l, r) => {
@@ -113,7 +113,7 @@ impl PrecisionDomain {
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-                Err(CalcError::DomainError(format!(
+                Err(CalcError::domain(format!(
                     "precision domain does not support this node type: {:?}",
                     ast
                 )))
@@ -134,21 +134,20 @@ impl PrecisionDomain {
             BinaryOp::Mul => Ok(a * b),
             BinaryOp::Div => {
                 if b.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 Ok(a / b)
             }
             BinaryOp::Pow => {
                 let exp = rational_to_int(&b, "power exponent")?;
                 // BigRational::pow 接受 i32 指数
-                let exp_i32 = i32::try_from(&exp).map_err(|_| {
-                    CalcError::DomainError(format!("power exponent too large: {}", exp))
-                })?;
+                let exp_i32 = i32::try_from(&exp)
+                    .map_err(|_| CalcError::domain(format!("power exponent too large: {}", exp)))?;
                 Ok(a.pow(exp_i32))
             }
             BinaryOp::Mod => {
                 if b.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 // 大整数取模：提取整数部分计算
                 let a_int = rational_to_int(&a, "mod operand")?;
@@ -168,7 +167,7 @@ impl PrecisionDomain {
         match name {
             "factorial" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "factorial() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -179,7 +178,7 @@ impl PrecisionDomain {
             }
             "abs" => {
                 if args.len() != 1 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "abs() requires exactly 1 argument, got {}",
                         args.len()
                     )));
@@ -189,14 +188,14 @@ impl PrecisionDomain {
             }
             "precision" => {
                 // precision(N, expr) 在 evaluate() 顶层处理，此处不应到达
-                Err(CalcError::DomainError(
+                Err(CalcError::domain(
                     "precision() must be at expression top level".to_string(),
                 ))
             }
             "mod" => {
                 // parser 将 `%` 转换为 mod(a, b) 函数调用
                 if args.len() != 2 {
-                    return Err(CalcError::DomainError(format!(
+                    return Err(CalcError::domain(format!(
                         "mod() requires exactly 2 arguments, got {}",
                         args.len()
                     )));
@@ -204,13 +203,13 @@ impl PrecisionDomain {
                 let a = self.eval(&args[0], ctx)?;
                 let b = self.eval(&args[1], ctx)?;
                 if b.is_zero() {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 let a_int = rational_to_int(&a, "mod operand")?;
                 let b_int = rational_to_int(&b, "mod operand")?;
                 Ok(BigRational::from_integer(a_int % b_int))
             }
-            _ => Err(CalcError::DomainError(format!(
+            _ => Err(CalcError::domain(format!(
                 "unsupported function in precision domain: {}",
                 name
             ))),
@@ -283,7 +282,7 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
             if n.fract() == 0.0 && *n > 0.0 {
                 *n as usize
             } else {
-                return Err(CalcError::DomainError(format!(
+                return Err(CalcError::domain(format!(
                     "precision N must be a positive integer, got {}",
                     n
                 )));
@@ -291,18 +290,18 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
         }
         AstNode::BigNumber(s) => {
             let big = BigInt::parse_bytes(s.as_bytes(), 10)
-                .ok_or_else(|| CalcError::ParseError(format!("invalid precision value: {}", s)))?;
+                .ok_or_else(|| CalcError::parse(format!("invalid precision value: {}", s)))?;
             usize::try_from(big)
-                .map_err(|_| CalcError::DomainError(format!("precision N out of range: {}", s)))?
+                .map_err(|_| CalcError::domain(format!("precision N out of range: {}", s)))?
         }
         _ => {
-            return Err(CalcError::DomainError(
+            return Err(CalcError::domain(
                 "precision N must be a literal integer".to_string(),
             ));
         }
     };
     if v == 0 {
-        return Err(CalcError::DomainError(
+        return Err(CalcError::domain(
             "precision N must be positive".to_string(),
         ));
     }
@@ -323,7 +322,7 @@ fn rational_to_result(value: BigRational) -> EvalResult {
 /// 从 BigRational 提取 BigInt（要求为整数）。
 fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
     if !r.is_integer() {
-        return Err(CalcError::DomainError(format!(
+        return Err(CalcError::domain(format!(
             "{} requires integer operand, got {}",
             ctx, r
         )));
@@ -398,6 +397,7 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     /// 创建默认上下文。
     fn default_ctx() -> EvalContext {
@@ -708,7 +708,7 @@ mod tests {
         let ast = parse("1/0").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -716,7 +716,7 @@ mod tests {
         let ast = AstNode::Complex(1.0, 2.0);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -724,7 +724,7 @@ mod tests {
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -732,7 +732,7 @@ mod tests {
         let ast = AstNode::List(vec![AstNode::Number(1.0)]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -740,7 +740,7 @@ mod tests {
         let ast = parse("sin(1)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -748,7 +748,7 @@ mod tests {
         let ast = AstNode::FunctionCall("precision".to_string(), vec![]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -760,7 +760,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -908,7 +908,7 @@ mod tests {
         let ast = AstNode::Number(f64::INFINITY);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -917,7 +917,7 @@ mod tests {
         let ast = AstNode::BigNumber("abc".to_string());
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::ParseError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Parse));
     }
 
     #[test]
@@ -947,7 +947,7 @@ mod tests {
         let ctx = EvalContext::new().with_var("z", f64::INFINITY);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &ctx);
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -956,7 +956,7 @@ mod tests {
         let ast = AstNode::Variable("w".to_string());
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::EvalError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Eval));
     }
 
     #[test]
@@ -981,7 +981,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1007,7 +1007,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1019,7 +1019,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1031,7 +1031,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1046,7 +1046,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1055,7 +1055,7 @@ mod tests {
         let ast = AstNode::FunctionCall("mod".to_string(), vec![AstNode::Number(10.0)]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1070,7 +1070,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DivisionByZero)));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
     #[test]
@@ -1118,7 +1118,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::ParseError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Parse));
     }
 
     #[test]
@@ -1130,7 +1130,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1142,7 +1142,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1154,7 +1154,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1163,7 +1163,7 @@ mod tests {
         let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(1.5)]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     #[test]
@@ -1176,7 +1176,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 覆盖 extract_precision_value BigNumber("0") 路径（lines 265-268）=====
@@ -1192,7 +1192,7 @@ mod tests {
         );
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
-        assert!(matches!(result, Err(CalcError::DomainError(_))));
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 覆盖测试辅助函数的 panic 分支（lines 382, 395）=====

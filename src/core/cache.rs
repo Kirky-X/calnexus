@@ -399,7 +399,7 @@ mod tests {
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("1/0");
 
-        let result = cache.get_or_compute(&cf, || Err(CalcError::DivisionByZero));
+        let result = cache.get_or_compute(&cf, || Err(CalcError::division_by_zero()));
 
         assert!(result.is_err());
         assert_eq!(cache.get(&cf), None, "错误结果不应写入缓存");
@@ -411,7 +411,7 @@ mod tests {
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("sqrt(-1)");
 
-        let result = cache.get_or_compute(&cf, || Err(CalcError::NaNOrInf));
+        let result = cache.get_or_compute(&cf, || Err(CalcError::nan_or_inf()));
 
         assert!(result.is_err());
         assert_eq!(cache.get(&cf), None, "NaN 错误不应写入缓存");
@@ -425,7 +425,7 @@ mod tests {
         let cf_err = CanonicalForm::new("(1/0)");
 
         cache.insert(&cf_ok, &Ok(EvalResult::Scalar(3.0)));
-        cache.insert(&cf_err, &Err(CalcError::DivisionByZero));
+        cache.insert(&cf_err, &Err(CalcError::division_by_zero()));
 
         assert_eq!(cache.get(&cf_ok), Some(EvalResult::Scalar(3.0)));
         assert_eq!(cache.get(&cf_err), None, "错误结果不应写入");

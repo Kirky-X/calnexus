@@ -161,20 +161,20 @@ impl AstCanonicalizer {
             BinaryOp::Mul => a * b,
             BinaryOp::Div => {
                 if b == 0.0 {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a / b
             }
             BinaryOp::Pow => a.powf(b),
             BinaryOp::Mod => {
                 if b == 0.0 {
-                    return Err(CalcError::DivisionByZero);
+                    return Err(CalcError::division_by_zero());
                 }
                 a % b
             }
         };
         if result.is_nan() || result.is_infinite() {
-            return Err(CalcError::NaNOrInf);
+            return Err(CalcError::nan_or_inf());
         }
         Ok(result)
     }
@@ -269,6 +269,7 @@ impl AstCanonicalizer {
 mod tests {
     use super::*;
     use crate::core::parser::parse;
+    use crate::core::ErrorKind;
 
     // 辅助函数：解析 + 规范化，返回 CanonicalForm 字符串
     fn canon(input: &str) -> Result<String, CalcError> {
@@ -358,9 +359,9 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         // 分别求值每个 matches! 分支，避免 || 短路导致 lines 312-313 未覆盖
-        let is_div_zero = matches!(err, CalcError::DivisionByZero);
-        let is_eval_err = matches!(err, CalcError::EvalError(_));
-        let is_nan_inf = matches!(err, CalcError::NaNOrInf);
+        let is_div_zero = err.kind == ErrorKind::DivisionByZero;
+        let is_eval_err = err.kind == ErrorKind::Eval;
+        let is_nan_inf = err.kind == ErrorKind::NaNOrInf;
         assert!(
             is_div_zero || is_eval_err || is_nan_inf,
             "expected division by zero error, got {:?}",
@@ -590,7 +591,7 @@ mod tests {
         );
         let result = AstCanonicalizer::canonicalize(&ast);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CalcError::DivisionByZero));
+        assert!(result.unwrap_err().kind == ErrorKind::DivisionByZero);
     }
 
     #[test]
@@ -610,7 +611,7 @@ mod tests {
         // 2^99999 → Inf → NaNOrInf 错误
         let result = canon("2^99999");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CalcError::NaNOrInf));
+        assert!(result.unwrap_err().kind == ErrorKind::NaNOrInf);
     }
 
     // ===== 覆盖 BigNumber/Complex 序列化 =====

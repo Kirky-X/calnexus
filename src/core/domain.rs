@@ -82,7 +82,7 @@ impl DomainRouter {
         } else {
             format!("functions: {:?}", functions)
         };
-        Err(CalcError::DomainError(format!(
+        Err(CalcError::domain(format!(
             "no registered domain supports this expression ({})",
             detail
         )))
@@ -144,6 +144,7 @@ fn collect_function_names_recursive(ast: &AstNode, names: &mut Vec<String>) {
 mod tests {
     use super::*;
     use crate::core::parser::parse;
+    use crate::core::ErrorKind;
 
     /// 科学函数集合（Req 2）。
     const SCIENTIFIC_FUNCTIONS: &[&str] = &[
@@ -430,7 +431,7 @@ mod tests {
         let result = router.route(&ast);
         let e = result.err().expect("expected error");
         assert!(
-            matches!(e, CalcError::DomainError(_)),
+            e.kind == ErrorKind::Domain,
             "expected DomainError, got {:?}",
             e
         );
@@ -444,7 +445,7 @@ mod tests {
         let result = router.route(&ast);
         let e = result.err().expect("expected error");
         assert!(
-            matches!(e, CalcError::DomainError(_)),
+            e.kind == ErrorKind::Domain,
             "expected DomainError, got {:?}",
             e
         );
@@ -456,9 +457,13 @@ mod tests {
         let router = default_router();
         let ast = parse("bar(2)").unwrap();
         let err = router.route(&ast).err().expect("expected error");
-        let CalcError::DomainError(msg) = err else {
-            panic!("expected DomainError, got {:?}", err)
-        };
+        assert_eq!(
+            err.kind,
+            ErrorKind::Domain,
+            "expected DomainError, got {:?}",
+            err
+        );
+        let msg = &err.message;
         assert!(
             msg.contains("bar"),
             "error message should contain 'bar': {}",
@@ -753,7 +758,7 @@ mod tests {
         let ast = parse("unknown_func(1)").unwrap();
         let result = router.route(&ast);
         let e = result.err().expect("expected error");
-        assert!(matches!(e, CalcError::DomainError(_)));
+        assert!(e.kind == ErrorKind::Domain);
         assert!(
             e.to_string().contains("unknown_func"),
             "错误信息应包含 'unknown_func': {}",
