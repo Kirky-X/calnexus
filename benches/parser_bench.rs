@@ -6,7 +6,8 @@
 //! 基线：`target/criterion/` 目录。
 
 use calnexus::{parse, AstCanonicalizer};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 /// BENCH-001: parser throughput ≥ 10000 expr/s（目标：单表达式解析 < 100μs）
 fn bench_parser_throughput(c: &mut Criterion) {

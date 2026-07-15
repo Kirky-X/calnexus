@@ -6,7 +6,8 @@
 //! 基线：`target/criterion/` 目录。
 
 use calnexus::{CacheManager, EvalContext};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 /// BENCH-004: arithmetic domain < 1ms
 fn bench_arithmetic(c: &mut Criterion) {

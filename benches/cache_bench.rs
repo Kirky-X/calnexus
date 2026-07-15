@@ -6,7 +6,8 @@
 //! 基线：`target/criterion/` 目录。
 
 use calnexus::{parse, AstCanonicalizer, CacheManager, EvalContext};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
 
 /// BENCH-002: cache hit < 100μs（第二次求值命中缓存）
 fn bench_cache_hit(c: &mut Criterion) {
