@@ -143,13 +143,15 @@ fn parse_lang_icu(s: &str) -> Lang {
 }
 
 /// 使用简单字符串匹配解析语言标签（无 `icu` feature 时的回退）。
+///
+/// 仅精确匹配 `zh`、`zh-CN`、`zh-TW`（忽略大小写），避免 `starts_with("zh")`
+/// 误匹配 `zhongwen` 等字符串。
 #[cfg(not(feature = "icu"))]
 fn parse_lang_simple(s: &str) -> Lang {
     let lower = s.to_ascii_lowercase();
-    if lower.starts_with("zh") {
-        Lang::Zh
-    } else {
-        Lang::En
+    match lower.as_str() {
+        "zh" | "zh-cn" | "zh-tw" => Lang::Zh,
+        _ => Lang::En,
     }
 }
 
@@ -235,6 +237,13 @@ mod tests {
     #[test]
     fn test_from_str_invalid_string_fallback_to_en() {
         assert_eq!(I18n::from_str("!!!").lang(), Lang::En);
+    }
+
+    /// T010 Red: "zhongwen" 以 "zh" 开头但不是有效的中文语言代码，应回退到 En
+    #[test]
+    fn test_from_str_zhongwen_falls_back_to_en() {
+        let i18n = I18n::from_str("zhongwen");
+        assert_eq!(i18n.lang(), Lang::En, "zhongwen should fall back to En, not Zh");
     }
 
     // ===== I18n::from_str — 大小写不敏感 =====

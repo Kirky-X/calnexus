@@ -22,4 +22,5 @@ pub use parser::parse;
 pub(crate) use parser::MAX_EXPR_LEN;
 pub use types::{
     AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext, EvalResult, Span, UnaryOp,
+    escape_json_string,
 };

@@ -490,7 +490,7 @@ impl CalcError {
     }
 }
 
-fn escape_json_string(s: &str) -> String {
+pub fn escape_json_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {

@@ -117,8 +117,8 @@ impl BatchProcessor {
                         println!(
                             r#"  {{"line":{},"expr":"{}","result":"{}","domain":"{}","cache":"{}"}}"{}"#,
                             r.line_no,
-                            escape_json(&r.expr),
-                            escape_json(&value),
+                            crate::core::escape_json_string(&r.expr),
+                            crate::core::escape_json_string(&value),
                             domain,
                             if *hit { "hit" } else { "miss" },
                             if i + 1 < total { "," } else { "" }
@@ -128,8 +128,8 @@ impl BatchProcessor {
                         println!(
                             r#"  {{"line":{},"expr":"{}","error":"{}"}}"{}"#,
                             r.line_no,
-                            escape_json(&r.expr),
-                            escape_json(&e.to_string()),
+                            crate::core::escape_json_string(&r.expr),
+                            crate::core::escape_json_string(&e.to_string()),
                             if i + 1 < total { "," } else { "" }
                         );
                     }
@@ -205,15 +205,6 @@ fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
     Ok(lines)
 }
 
-/// 转义 JSON 字符串中的特殊字符。
-fn escape_json(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-}
-
 // ============================ 单元测试 (TG5.6) ============================
 
 #[cfg(test)]
@@ -238,11 +229,13 @@ mod tests {
     }
 
     #[test]
-    fn test_escape_json() {
-        assert_eq!(escape_json("hello"), "hello");
-        assert_eq!(escape_json(r#"a"b"#), r#"a\"b"#);
-        assert_eq!(escape_json("a\\b"), "a\\\\b");
-        assert_eq!(escape_json("a\nb"), "a\\nb");
+    fn test_batch_json_escape_control_chars() {
+        // JSON 规范要求控制字符（U+0000 ~ U+001F）必须转义为 \uXXXX。
+        // batch.rs 现复用 core::escape_json_string，须正确处理控制字符。
+        // \u{0007} (bell) 与 \u{000c} (form feed) 不在 {\n,\r,\t} 之列。
+        assert_eq!(crate::core::escape_json_string("\u{0007}"), "\\u0007");
+        assert_eq!(crate::core::escape_json_string("\u{000c}"), "\\u000c");
+        assert_eq!(crate::core::escape_json_string("a\u{0001}b"), "a\\u0001b");
     }
 
     #[test]

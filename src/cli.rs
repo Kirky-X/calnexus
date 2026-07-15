@@ -48,7 +48,7 @@ struct Cli {
     explain: bool,
 
     /// Language for error messages: en or zh (default: en)
-    #[arg(long, default_value = "en")]
+    #[arg(long, default_value = "en", value_parser = clap::builder::PossibleValuesParser::new(["en", "zh"]))]
     lang: String,
 
     /// Arbitrary precision mode: format result to N decimal places using BigRational arithmetic

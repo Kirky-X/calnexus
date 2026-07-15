@@ -1397,3 +1397,20 @@ fn test_json_mode_empty_stdin_error_output_format() {
         stderr
     );
 }
+
+/// T008: --lang 未知值时 clap 退出码 2（fail-loud）
+///
+/// PossibleValuesParser 限制 --lang 只接受 "en"/"zh"，
+/// 传入 "fr" 时 clap 报错并退出码 2。
+#[test]
+fn test_lang_invalid_value_exit_2() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd.args(["--lang", "fr", "2+3"]).assert().failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "invalid --lang value should exit with code 2, got: {:?}",
+        output.status
+    );
+}
