@@ -4,10 +4,11 @@
 //!
 //! 全链路：Parser → Canonicalizer → CacheManager → DomainRouter → Domain::evaluate
 //!
-//! 退出码（cli-interface spec）：
+//! 退出码（design.md §5.6）：
 //! - 0：成功
 //! - 1：计算错误 / 解析错误
-//! - 2：系统错误（无效参数）
+//! - 2：用法错误
+//! - 3：超时
 
 use crate::core::CalculationDomain;
 use crate::domains::format_bigrational;
@@ -42,6 +43,14 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["latex", "canonical", "steps"])]
     json: bool,
 
+    /// Output detailed error explanation (conflicts with --json)
+    #[arg(long, conflicts_with_all = ["json"])]
+    explain: bool,
+
+    /// Language for error messages: en or zh (default: en)
+    #[arg(long, default_value = "en")]
+    lang: String,
+
     /// Arbitrary precision mode: format result to N decimal places using BigRational arithmetic
     #[arg(long, conflicts_with_all = ["canonical"])]
     precision: Option<usize>,
@@ -70,6 +79,7 @@ struct Cli {
 /// CLI 入口：解析参数、求值、输出结果，返回退出码。
 pub fn run() -> i32 {
     let cli = Cli::parse();
+    let i18n = crate::i18n::I18n::from_str(&cli.lang);
 
     // --repl 模式：启动交互式 REPL
     if cli.repl {
@@ -116,36 +126,24 @@ pub fn run() -> i32 {
     if cli.canonical {
         let ast = match parse(&expr) {
             Ok(ast) => ast,
-            Err(e) => {
-                eprintln!("error: {}", e);
-                return 1;
-            }
+            Err(e) => return handle_error(&e, &cli, &i18n),
         };
         match AstCanonicalizer::canonicalize_no_fold(&ast) {
             Ok((_canonical_ast, cf)) => {
                 println!("{}", format_canonical(&cf));
                 0
             }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                1
-            }
+            Err(e) => handle_error(&e, &cli, &i18n),
         }
     } else if cli.latex || cli.steps {
         // --latex 和/或 --steps：解析 + 规范化 + 求值 + 格式化输出
         let ast = match parse(&expr) {
             Ok(ast) => ast,
-            Err(e) => {
-                eprintln!("error: {}", e);
-                return 1;
-            }
+            Err(e) => return handle_error(&e, &cli, &i18n),
         };
         let (canonical_ast, _cf) = match AstCanonicalizer::canonicalize(&ast) {
             Ok(pair) => pair,
-            Err(e) => {
-                eprintln!("error: {}", e);
-                return 1;
-            }
+            Err(e) => return handle_error(&e, &cli, &i18n),
         };
 
         // --steps 先输出步骤（基于原始 AST，避免常量折叠后无步骤可显示）
@@ -156,10 +154,7 @@ pub fn run() -> i32 {
                         println!("{}", line);
                     }
                 }
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    return 1;
-                }
+                Err(e) => return handle_error(&e, &cli, &i18n),
             }
         }
 
@@ -171,10 +166,7 @@ pub fn run() -> i32 {
                     let latex_str = format_latex(&result, &canonical_ast, &expr, fmt_prec);
                     println!("{}", latex_str);
                 }
-                Err(e) => {
-                    eprintln!("error: {}", e);
-                    return 1;
-                }
+                Err(e) => return handle_error(&e, &cli, &i18n),
             }
         }
         0
@@ -258,12 +250,28 @@ pub fn run() -> i32 {
                 }
                 0
             }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                1
-            }
+            Err(e) => handle_error(&e, &cli, &i18n),
         }
     }
+}
+
+/// 根据 CLI 配置输出 CalcError 并返回退出码。
+///
+/// - `--json`：输出 JSON 错误对象到 stdout
+/// - `--explain`：输出详细解释到 stderr
+/// - 默认：输出友好提示到 stderr
+///
+/// 退出码由 `ErrorKind::exit_code()` 决定（0/1/2/3）。
+fn handle_error(e: &CalcError, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+    if cli.json {
+        // to_json() 已返回 {"error":{...}} 完整结构，无需再包装
+        println!("{}", e.to_json());
+    } else if cli.explain {
+        eprintln!("{}", e.to_explain(i18n));
+    } else {
+        eprintln!("error: {}", e.friendly(i18n));
+    }
+    e.kind.exit_code()
 }
 
 /// 从位置参数或 stdin 获取表达式。

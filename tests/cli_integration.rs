@@ -1225,3 +1225,89 @@ fn it_cli_latex_eval_error_exit_1() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.args(["--latex", "sqrt(-1)"]).assert().failure().code(1);
 }
+
+// ===== T0.4.7: --explain / --lang / --json error / 退出码契约 =====
+
+/// `--explain "2++3"` → stderr 包含详细解释，退出码 1
+#[test]
+fn test_explain_parse_error_exit_1() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--explain", "2++3"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicates::str::contains("Parse error"));
+}
+
+/// `--explain "1/0"` → stderr 包除零 hint，退出码 1
+#[test]
+fn test_explain_div_zero_hint() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--explain", "1/0"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicates::str::contains("check divisor"));
+}
+
+/// `--lang zh "2++3"` → stderr 包含中文错误消息，退出码 1
+#[test]
+fn test_lang_zh_parse_error() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--lang", "zh", "2++3"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicates::str::contains("解析错误"));
+}
+
+/// `--lang en "2++3"` → stderr 包含英文错误消息，退出码 1
+#[test]
+fn test_lang_en_parse_error() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--lang", "en", "2++3"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicates::str::contains("Parse error"));
+}
+
+/// `--json "2++3"` → stdout 输出 JSON error 对象（非双层嵌套），退出码 1
+/// 断言用 starts_with 捕获 `{"error":{"error":...}}` 双层嵌套 bug
+#[test]
+fn test_json_error_output_exit_1() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--json", "2++3"])
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicates::str::starts_with(r#"{"error":{"kind":"#));
+}
+
+/// `--explain --json` 互斥 → clap 报错，退出码 2
+#[test]
+fn test_explain_conflicts_with_json() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--explain", "--json", "2+3"])
+        .assert()
+        .failure()
+        .code(2);
+}
+
+/// 成功求值退出码 0
+#[test]
+fn test_success_exit_0() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("2+3").assert().success().code(0);
+}
+
+/// `--explain "asin(2)"` → stderr 包含 domain hint，退出码 1
+#[test]
+fn test_explain_domain_hint() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--explain", "asin(2)"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicates::str::contains("asin domain is [-1, 1]"));
+}
