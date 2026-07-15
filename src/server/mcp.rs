@@ -9,10 +9,187 @@
 //!
 //! `evaluate`
 //! - Args: `{"expr":"2+3","vars":{"x":1.0},"precision":null}`
-//! - Result: `{"result":5,"domain":"arithmetic","cache":"miss"}`
-//! - Error: 同 HTTP ErrorDetail
+//! - Result: `{"result":5,"domain":"arithmetic","cache":"miss"}`（JSON 字符串放入 ContentBlock::Text）
+//! - Error: `{"error":{"kind":"Parse","message":"...","exit_code":1}}` + `is_error=true`
 
+use super::types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse};
 use super::ServerError;
+use crate::evaluate;
+use crate::CacheManager;
+use sdforge::core::ApiMetadata;
+use sdforge::mcp::{McpToolRegistration, SdForgeMcpServer, SdForgeTool};
+use sdforge::rmcp::model::{CallToolResult, ContentBlock, ErrorData};
+use std::future::Future;
+use std::sync::{Arc, OnceLock};
+
+/// 进程级共享缓存（OnceLock 懒初始化，跨请求共享）。
+///
+/// 与 HTTP 模块同理，使用全局 OnceLock 而非每请求新建 CacheManager，
+/// 确保相同表达式的第二次请求能命中缓存（spec.md R-sdforge-003 缓存语义）。
+static SHARED_CACHE: OnceLock<CacheManager> = OnceLock::new();
+
+/// 获取共享 CacheManager 实例。
+fn shared_cache() -> &'static CacheManager {
+    SHARED_CACHE.get_or_init(CacheManager::new)
+}
+
+/// `evaluate` tool：将 CalNexus 的 `evaluate` 函数暴露为 MCP tool。
+///
+/// 实现 `SdForgeTool` trait。`call()` 内部用 `std::thread::scope` + `spawn`
+/// 在独立线程执行 evaluate，避免 oxcache async `block_on` 在 tokio runtime
+/// context 中嵌套 panic（"Cannot start a runtime from within a runtime"）。
+/// 与 HTTP 模块 `spawn_blocking` 策略同理，但 MCP 的 `call()` 是同步方法，
+/// 无法使用 `spawn_blocking`（返回 Future 需 await），故用 `thread::scope`。
+#[derive(Debug, Default)]
+struct EvaluateTool;
+
+impl SdForgeTool for EvaluateTool {
+    fn name(&self) -> &str {
+        "evaluate"
+    }
+
+    fn description(&self) -> &str {
+        "Evaluate a math expression. Returns {result, domain, cache}. Supports vars and precision."
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "expr": {
+                    "type": "string",
+                    "description": "Math expression to evaluate (e.g. \"2+3\", \"sin(1)\", \"gcd(12,18)\")"
+                },
+                "vars": {
+                    "type": "object",
+                    "description": "Variable bindings (e.g. {\"x\": 1.0})",
+                    "additionalProperties": {"type": "number"}
+                },
+                "precision": {
+                    "type": ["integer", "null"],
+                    "description": "Precision digits for BigRational mode (null = regular mode)",
+                    "minimum": 0
+                }
+            },
+            "required": ["expr"]
+        })
+    }
+
+    fn call(&self, input: Option<serde_json::Value>) -> Result<CallToolResult, ErrorData> {
+        // 1. 解析输入参数（None / Null → invalid_params）
+        let input = input.unwrap_or(serde_json::Value::Null);
+        let req: EvaluateRequest = serde_json::from_value(input).map_err(|e| {
+            ErrorData::invalid_params(format!("invalid arguments: {}", e), None)
+        })?;
+
+        // 2. 安全校验（vars ≤1024 键，precision ≤10000），与 HTTP handler 同理
+        if let Err(e) = req.validate() {
+            let resp = ErrorResponse {
+                error: ErrorDetail {
+                    kind: "Validation".to_string(),
+                    message: e.to_string(),
+                    exit_code: 2,
+                },
+            };
+            let json = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
+            // 校验失败是 tool 级错误（用户输入问题），用 CallToolResult::error 而非 Err(ErrorData)
+            return Ok(CallToolResult::error(vec![ContentBlock::text(json)]));
+        }
+
+        // 3. 准备 evaluate 参数
+        let ctx = req.to_eval_context();
+        let precision = req.precision;
+        let expr = req.expr.clone();
+
+        // 4. 在独立线程执行 evaluate
+        //    SdForgeTool::call 是同步方法，但 rmcp 的 ServerHandler::call_tool（async）
+        //    从 tokio runtime 内调用 call_tool_internal → call()。
+        //    CacheManager 内部用 runtime().block_on() 调 oxcache async API，
+        //    在 runtime context 中会 panic。std::thread::scope + spawn 创建无
+        //    runtime context 的线程，block_on 安全（与 HTTP spawn_blocking 同理）。
+        let result = std::thread::scope(|s| {
+            s.spawn(move || {
+                let cache: &'static CacheManager = shared_cache();
+                evaluate(&expr, &ctx, precision, cache)
+            })
+            .join()
+        });
+
+        // 5. 处理结果（显性化所有失败路径，规则 12）
+        match result {
+            // evaluate 成功
+            Ok(Ok((eval_result, domain, cache_hit, fmt_prec))) => {
+                let resp = EvaluateResponse::from_eval(eval_result, domain, cache_hit, fmt_prec);
+                let json = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
+                Ok(CallToolResult::success(vec![ContentBlock::text(json)]))
+            }
+            // evaluate 返回计算错误（Parse/Eval/Overflow/DivisionByZero 等）
+            Ok(Err(e)) => {
+                let resp = ErrorResponse::from(&e);
+                let json = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
+                Ok(CallToolResult::error(vec![ContentBlock::text(json)]))
+            }
+            // spawn 线程 panic（不应发生，但必须显性化处理，规则 12）
+            Err(join_err) => {
+                let resp = ErrorResponse {
+                    error: ErrorDetail {
+                        kind: "Internal".to_string(),
+                        message: format!("evaluate thread panicked: {:?}", join_err),
+                        exit_code: 1,
+                    },
+                };
+                let json = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
+                Ok(CallToolResult::error(vec![ContentBlock::text(json)]))
+            }
+        }
+    }
+}
+
+/// 创建 EvaluateTool 实例（inventory 注册用 fn 指针）。
+fn create_evaluate_tool() -> Arc<dyn SdForgeTool> {
+    Arc::new(EvaluateTool)
+}
+
+/// 创建 evaluate tool 的 ApiMetadata（inventory 注册用 fn 指针）。
+fn evaluate_tool_metadata() -> ApiMetadata {
+    ApiMetadata::new(
+        "calnexus".to_string(),
+        "v1".to_string(),
+        "CalNexus math expression evaluator".to_string(),
+        None,
+        false,
+    )
+}
+
+// 注册 MCP tool 到 sdforge inventory。
+// sdforge::mcp::build() 会自动收集此注册并构建 SdForgeMcpServer。
+sdforge::inventory::submit!(McpToolRegistration::new(
+    "evaluate",
+    "v1",
+    create_evaluate_tool,
+    evaluate_tool_metadata,
+));
+
+/// 防止链接器优化掉 CalNexus 的 MCP inventory 注册。
+///
+/// inventory crate 的 static 项在某些链接器配置下可能被优化掉，
+/// 导致 `sdforge::mcp::build()` 无法收集到本 crate 注册的 tool。
+/// 此函数通过引用计数强制链接器保留这些符号（与 HTTP 模块同理）。
+#[inline(never)]
+pub(crate) fn preserve_mcp_inventory() {
+    let _count = sdforge::inventory::iter::<McpToolRegistration>().count();
+    let _ = _count;
+}
+
+/// 构建 CalNexus MCP server：保留 inventory 注册 + `sdforge::mcp::build()`。
+///
+/// **必须使用此函数**而非直接调用 `sdforge::mcp::build()`，否则链接器可能
+/// 优化掉 CalNexus 的 `inventory::submit!` 注册，导致 `evaluate` tool 丢失
+/// （与 HTTP `build_router()` 同理的链接器优化问题）。
+pub fn build_mcp_server() -> SdForgeMcpServer {
+    preserve_mcp_inventory();
+    sdforge::mcp::build()
+}
 
 /// MCP server 配置。
 #[derive(Debug, Clone)]
@@ -47,7 +224,7 @@ impl McpServer {
     }
 
     /// 同步入口：创建 tokio runtime 阻塞运行 `start()`。
-    /// 供 CLI `--serve-mcp` flag 调用。T018 实现 ServerAdapter 后启用。
+    /// 供 CLI `--serve-mcp` flag 调用。
     pub fn run(&self) -> Result<(), ServerError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -56,9 +233,26 @@ impl McpServer {
         runtime.block_on(async move { self.start_inner().await })
     }
 
-    /// 内部 async 启动逻辑（T018 实现）。
+    /// 内部 async 启动逻辑：构建 server + serve_stdio。
+    ///
+    /// 使用 `SdForgeMcpServer::with_server_info` 传入配置的 server 名称。
+    /// 注意：sdforge 在有已注册 tool 时会从首个 tool 的 metadata 派生
+    /// server_name（即 "calnexus"），`self.server_name` 仅在无 tool 时作 fallback。
     async fn start_inner(&self) -> Result<(), ServerError> {
-        // T018 将实现：SdForgeTool trait + inventory 注册 + sdforge::mcp::serve_stdio
-        Err(ServerError::Mcp("not yet implemented (T018)".into()))
+        preserve_mcp_inventory();
+        let server = SdForgeMcpServer::with_server_info(
+            self.server_name.clone(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
+        sdforge::mcp::serve_stdio(server)
+            .await
+            .map_err(|e| ServerError::Mcp(format!("stdio serve error: {}", e)))?;
+        Ok(())
+    }
+}
+
+impl super::ServerAdapter for McpServer {
+    fn start(&self) -> impl Future<Output = Result<(), ServerError>> + Send {
+        self.start_inner()
     }
 }

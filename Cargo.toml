@@ -130,3 +130,7 @@ required-features = ["cli"]
 [[test]]
 name = "server_http_integration"
 required-features = ["server"]
+
+[[test]]
+name = "server_mcp_integration"
+required-features = ["server"]

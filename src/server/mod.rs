@@ -25,7 +25,7 @@ pub use types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse, S
 #[cfg(feature = "http")]
 pub use http::{build_router, HttpServer};
 #[cfg(feature = "mcp")]
-pub use mcp::McpServer;
+pub use mcp::{build_mcp_server, McpServer};
 
 /// Server 适配器 trait：统一 HTTP/MCP server 的启动接口。
 ///
