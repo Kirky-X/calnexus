@@ -422,9 +422,11 @@ impl CalcError {
     }
     pub fn depth_exceeded() -> Self {
         Self::new(ErrorKind::Depth, "AST depth exceeded limit")
+            .with_hint("simplify nested expressions (max 256)")
     }
     pub fn division_by_zero() -> Self {
         Self::new(ErrorKind::DivisionByZero, "division by zero")
+            .with_hint("check divisor before division")
     }
     pub fn undefined_symbol(name: &str) -> Self {
         Self::new(
@@ -435,6 +437,7 @@ impl CalcError {
     }
     pub fn timeout() -> Self {
         Self::new(ErrorKind::Timeout, "evaluation timed out")
+            .with_hint("increase --timeout or simplify expression")
     }
     pub fn usage(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::Usage, msg)
@@ -791,10 +794,12 @@ mod tests {
         let e = CalcError::depth_exceeded();
         assert_eq!(e.kind, ErrorKind::Depth);
         assert_eq!(e.message, "AST depth exceeded limit");
+        assert_eq!(e.hint.as_deref(), Some("simplify nested expressions (max 256)"));
 
         let e = CalcError::division_by_zero();
         assert_eq!(e.kind, ErrorKind::DivisionByZero);
         assert_eq!(e.message, "division by zero");
+        assert_eq!(e.hint.as_deref(), Some("check divisor before division"));
 
         let e = CalcError::undefined_symbol("foo");
         assert_eq!(e.kind, ErrorKind::UndefinedSymbol);
@@ -805,6 +810,7 @@ mod tests {
         let e = CalcError::timeout();
         assert_eq!(e.kind, ErrorKind::Timeout);
         assert_eq!(e.message, "evaluation timed out");
+        assert_eq!(e.hint.as_deref(), Some("increase --timeout or simplify expression"));
 
         let e = CalcError::usage("invalid flag");
         assert_eq!(e.kind, ErrorKind::Usage);

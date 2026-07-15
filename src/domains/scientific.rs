@@ -189,7 +189,8 @@ impl ScientificDomain {
                     return Err(CalcError::domain(format!(
                         "asin requires argument in [-1, 1], got {}",
                         x
-                    )));
+                    ))
+                    .with_hint("asin domain is [-1, 1]"));
                 }
                 self.check_finite(x.asin(), name)
             }
@@ -199,7 +200,8 @@ impl ScientificDomain {
                     return Err(CalcError::domain(format!(
                         "acos requires argument in [-1, 1], got {}",
                         x
-                    )));
+                    ))
+                    .with_hint("acos domain is [-1, 1]"));
                 }
                 self.check_finite(x.acos(), name)
             }
@@ -459,11 +461,9 @@ mod tests {
         // asin(2) → DomainError (Req 3 Scen 1)
         let result = eval("asin(2)");
         assert!(result.is_err());
-        assert!(
-            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
-            "expected DomainError, got {:?}",
-            result
-        );
+        let err = result.as_ref().unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Domain);
+        assert_eq!(err.hint.as_deref(), Some("asin domain is [-1, 1]"));
     }
 
     #[test]
@@ -471,11 +471,9 @@ mod tests {
         // acos(-1.5) → DomainError (Req 3 Scen 2)
         let result = eval("acos(-1.5)");
         assert!(result.is_err());
-        assert!(
-            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
-            "expected DomainError, got {:?}",
-            result
-        );
+        let err = result.as_ref().unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Domain);
+        assert_eq!(err.hint.as_deref(), Some("acos domain is [-1, 1]"));
     }
 
     // ===== Requirement 4: Logarithmic Functions =====
