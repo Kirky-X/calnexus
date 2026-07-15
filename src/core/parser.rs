@@ -79,8 +79,11 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
 
     // mathexpr 解析
     let expr = mathexpr::parse(&after_implicit).map_err(|e| {
-        // Span 用字符偏移（design.md D1）：after_implicit.chars().count() 而非 .len()
-        CalcError::parse(format!("{}", e)).with_span(Span::new(0, after_implicit.chars().count()))
+        // T005: Span 指向原始 trimmed 输入而非预处理后的 after_implicit。
+        // 用户看到的是原始输入，错误位置应帮助定位原始输入中的问题；
+        // after_implicit 经过隐式乘法等预处理，长度可能与原始输入不同（如 2x → 2*x）。
+        // Span 用字符偏移（design.md D1）。
+        CalcError::parse(format!("{}", e)).with_span(Span::new(0, trimmed.chars().count()))
     })?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
@@ -1667,6 +1670,21 @@ mod tests {
         let err = parse("@").unwrap_err();
         assert_eq!(err.kind, ErrorKind::Parse);
         assert_span(&err, Span::new(0, 1));
+    }
+
+    /// T005 Red: 隐式乘法预处理后错误位置仍指向原始输入
+    ///
+    /// `"2x@"` 经过隐式乘法预处理变成 `"2*x@"`（4 字符），mathexpr 解析失败。
+    /// Span 应为 (0, 3)（原始 trimmed 输入长度）而非 (0, 4)（after_implicit 长度）。
+    ///
+    /// 用户看到的是原始输入 `"2x@"`，错误位置应帮助用户定位原始输入中的问题，
+    /// 而不是预处理后字符串的位置（用户不知道预处理的存在）。
+    #[test]
+    fn test_span_mathexpr_failure_points_to_original_input() {
+        let err = parse("2x@").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        // 期望 Span 指向原始输入 "2x@"（3 字符），而非 after_implicit "2*x@"（4 字符）
+        assert_span(&err, Span::new(0, 3));
     }
 
     #[test]
