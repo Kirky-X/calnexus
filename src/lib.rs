@@ -38,7 +38,7 @@ pub use symbolic::SymbolicDomain;
 
 #[cfg(feature = "cli")]
 pub use cli::run;
-#[cfg(feature = "cli")]
+#[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
 pub use domains::format_bigrational;
 #[cfg(any(feature = "http", feature = "mcp"))]
 pub use server::*;

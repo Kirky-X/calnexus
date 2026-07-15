@@ -17,9 +17,7 @@ pub use complex::ComplexDomain;
 pub use matrix::MatrixDomain;
 pub use number_theory::NumberTheoryDomain;
 pub use polynomial::PolynomialDomain;
-#[cfg(feature = "cli")]
-pub use precision::format_bigrational;
-pub use precision::PrecisionDomain;
+pub use precision::{format_bigrational, PrecisionDomain};
 pub use scientific::ScientificDomain;
 pub use statistics::StatisticsDomain;
 pub use vector::VectorDomain;

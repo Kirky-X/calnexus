@@ -8,6 +8,7 @@
 //! - Error: `{"error":{"kind":"Parse","message":"...","exit_code":1}}`
 
 use crate::core::{CalcError, EvalContext, EvalResult};
+use crate::domains::format_bigrational;
 use std::collections::HashMap;
 
 /// HTTP/MCP 求值请求。
@@ -71,18 +72,65 @@ pub enum ServerError {
 impl EvaluateRequest {
     /// 将请求转换为 EvalContext（供 evaluate 函数使用）。
     pub fn to_eval_context(&self) -> EvalContext {
-        let mut ctx = EvalContext::default();
-        ctx.vars = self.vars.clone();
-        ctx.precision = self.precision;
-        ctx
+        EvalContext {
+            vars: self.vars.clone(),
+            precision: self.precision,
+            ..Default::default()
+        }
+    }
+
+    /// 校验请求安全约束。
+    ///
+    /// - `vars` 键数 ≤ `MAX_VARS`（1024）：防止内存耗尽攻击
+    /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
+    ///
+    /// 返回 `Err(ServerError::Http)` 当违反约束时（T016 安全前置任务）。
+    pub fn validate(&self) -> Result<(), ServerError> {
+        if self.vars.len() > MAX_VARS {
+            return Err(ServerError::Http(format!(
+                "vars size {} exceeds limit {}",
+                self.vars.len(),
+                MAX_VARS
+            )));
+        }
+        if let Some(p) = self.precision {
+            if p > MAX_PRECISION {
+                return Err(ServerError::Http(format!(
+                    "precision {} exceeds limit {}",
+                    p, MAX_PRECISION
+                )));
+            }
+        }
+        Ok(())
     }
 }
 
+/// `vars` 最大键数（T016 安全前置任务：防止内存耗尽攻击）。
+const MAX_VARS: usize = 1024;
+/// `precision` 最大值（T016 安全前置任务：防止计算资源耗尽）。
+const MAX_PRECISION: usize = 10_000;
+
 impl EvaluateResponse {
     /// 从 evaluate 返回值构造响应。
-    pub fn from_eval(result: EvalResult, domain: String, cache_hit: bool) -> Self {
+    ///
+    /// `fmt_prec` 为 evaluate 返回的格式化精度（precision 模式下是输入 precision；
+    /// 常规模式下是 `precision(N, expr)` 调用中的 N）。当结果为 `BigRational` 且
+    /// `fmt_prec.is_some()` 时，按 spec.md R-sdforge-002 格式化为十进制字符串
+    /// （如 `1/3` 精度 5 → `"0.33333"`）；否则按 `eval_result_to_json` 默认映射。
+    pub fn from_eval(
+        result: EvalResult,
+        domain: String,
+        cache_hit: bool,
+        fmt_prec: Option<usize>,
+    ) -> Self {
+        let result_json = match (&result, fmt_prec) {
+            (EvalResult::BigRational(r), Some(p)) => {
+                serde_json::Value::from(format_bigrational(r, Some(p)))
+            }
+            _ => eval_result_to_json(&result),
+        };
         Self {
-            result: eval_result_to_json(&result),
+            result: result_json,
             domain,
             cache: if cache_hit { "hit".to_string() } else { "miss".to_string() },
         }
@@ -96,6 +144,19 @@ impl From<&CalcError> for ErrorResponse {
                 kind: format!("{:?}", e.kind),
                 message: e.message.clone(),
                 exit_code: e.kind.exit_code(),
+            },
+        }
+    }
+}
+
+impl ErrorResponse {
+    /// 构造 501 Not Implemented 错误响应（骨架阶段用）。
+    pub fn not_implemented() -> Self {
+        Self {
+            error: ErrorDetail {
+                kind: "NotImplemented".to_string(),
+                message: "evaluate handler not yet implemented".to_string(),
+                exit_code: 1,
             },
         }
     }
@@ -120,11 +181,16 @@ fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
     match result {
         EvalResult::Scalar(v) => {
             if v.is_finite() {
-                // 有限浮点数：序列化为 JSON Number
-                Value::from(serde_json::Number::from_f64(*v).unwrap_or_else(|| {
-                    // from_f64 返回 None 仅当 NaN/Infinity，但前面已过滤 is_finite
-                    serde_json::Number::from(0)
-                }))
+                // 整数值 f64 转 i64，使 `5.0` 序列化为 `5` 而非 `5.0`，
+                // 匹配 spec.md 示例与 JSON 整数字面量断言（`body["result"] == 5`）。
+                if v.fract() == 0.0 && v.abs() < i64::MAX as f64 {
+                    Value::from(*v as i64)
+                } else {
+                    Value::from(serde_json::Number::from_f64(*v).unwrap_or_else(|| {
+                        // from_f64 返回 None 仅当 NaN/Infinity，但前面已过滤 is_finite
+                        serde_json::Number::from(0)
+                    }))
+                }
             } else {
                 // NaN/Infinity：JSON 无对应类型，用 String 表示
                 Value::from(v.to_string())
@@ -221,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_response_scalar() {
-        let resp = EvaluateResponse::from_eval(EvalResult::Scalar(5.0), "arithmetic".into(), false);
+        let resp = EvaluateResponse::from_eval(EvalResult::Scalar(5.0), "arithmetic".into(), false, None);
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""result":5"#));
         assert!(json.contains(r#""domain":"arithmetic""#));
@@ -230,7 +296,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_response_cache_hit() {
-        let resp = EvaluateResponse::from_eval(EvalResult::Scalar(42.0), "arithmetic".into(), true);
+        let resp = EvaluateResponse::from_eval(EvalResult::Scalar(42.0), "arithmetic".into(), true, None);
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""cache":"hit""#));
     }
@@ -241,6 +307,7 @@ mod tests {
             EvalResult::Complex(1.0, 2.0),
             "complex".into(),
             false,
+            None,
         );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""re":1.0"#));
@@ -253,6 +320,7 @@ mod tests {
             EvalResult::Matrix(vec![vec![1.0, 2.0], vec![3.0, 4.0]]),
             "matrix".into(),
             false,
+            None,
         );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""result":[[1.0,2.0],[3.0,4.0]]"#));
@@ -264,6 +332,7 @@ mod tests {
             EvalResult::BigInt(BigInt::from(123456789)),
             "number_theory".into(),
             false,
+            None,
         );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""result":"123456789""#));
@@ -272,7 +341,7 @@ mod tests {
     #[test]
     fn test_evaluate_response_bigrational() {
         let r = BigRational::new(BigInt::from(1), BigInt::from(3));
-        let resp = EvaluateResponse::from_eval(EvalResult::BigRational(r), "precision".into(), false);
+        let resp = EvaluateResponse::from_eval(EvalResult::BigRational(r), "precision".into(), false, None);
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""num":"1""#));
         assert!(json.contains(r#""den":"3""#));
@@ -284,6 +353,7 @@ mod tests {
             EvalResult::Vector(vec![1.0, 2.0, 3.0]),
             "vector".into(),
             false,
+            None,
         );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""result":[1.0,2.0,3.0]"#));
@@ -295,6 +365,7 @@ mod tests {
             EvalResult::Symbolic("2*x".into()),
             "symbolic".into(),
             false,
+            None,
         );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""result":"2*x""#));
@@ -306,6 +377,7 @@ mod tests {
             EvalResult::Steps(vec!["2+9=11".into(), "11*7=77".into()]),
             "arithmetic".into(),
             false,
+            None,
         );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""result":["2+9=11","11*7=77"]"#));

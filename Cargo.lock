@@ -337,10 +337,12 @@ name = "calnexus"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "axum",
  "blake3",
  "clap",
  "criterion",
  "expectrl",
+ "http-body-util",
  "icu",
  "insta",
  "mathexpr",
@@ -362,6 +364,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tower",
 ]
 
 [[package]]

@@ -23,7 +23,7 @@ mod mcp;
 pub use types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse, ServerError};
 
 #[cfg(feature = "http")]
-pub use http::HttpServer;
+pub use http::{build_router, HttpServer};
 #[cfg(feature = "mcp")]
 pub use mcp::McpServer;
 

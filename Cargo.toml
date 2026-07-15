@@ -18,7 +18,7 @@ cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
-http = ["dep:sdforge", "sdforge/http", "dep:serde_json", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time"]
+http = ["dep:sdforge", "sdforge/http", "dep:axum", "dep:serde_json", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:sdforge", "sdforge/mcp", "dep:serde_json", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # FX: 汇率换算（P2 实现）
@@ -58,6 +58,8 @@ rayon = { version = "1", default-features = false, optional = true }
 icu = { version = "2", default-features = false, features = ["compiled_data"], optional = true }
 # sdforge: HTTP/MCP 接口封装层（禁用默认特性，按需启用 http/mcp）
 sdforge = { version = "0.4", default-features = false, optional = true }
+# axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
+axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（server 模块用，http/mcp feature 启用）
 serde_json = { version = "1", default-features = false, features = ["std"], optional = true }
 
@@ -70,6 +72,10 @@ serde_json = { version = "1", default-features = false, features = ["std"] }
 insta = { version = "1", default-features = false }
 criterion = { version = "0.8", default-features = false, features = ["plotters"] }
 expectrl = { version = "0.9", default-features = false }
+# tower: HTTP 集成测试用（ServiceExt::oneshot 测试 axum Router）
+tower = { version = "0.5", default-features = false, features = ["util"] }
+# http-body-util: 读取 HTTP response body（集成测试用）
+http-body-util = { version = "0.1", default-features = false }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
@@ -120,3 +126,7 @@ required-features = ["cli"]
 [[test]]
 name = "integration"
 required-features = ["cli"]
+
+[[test]]
+name = "server_http_integration"
+required-features = ["server"]
