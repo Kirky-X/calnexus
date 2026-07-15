@@ -9,7 +9,7 @@
 //!
 //! 设计依据：design.md D2（mathexpr 集成）、D7（TDD）、expression-parsing spec
 
-use crate::core::types::{AstNode, BinaryOp, CalcError, UnaryOp};
+use crate::core::types::{AstNode, BinaryOp, CalcError, Span, UnaryOp};
 use regex::Regex;
 
 /// 最大 AST 深度（spec: AST 深度限制 ≤ 256）。
@@ -36,14 +36,16 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
             "expression length {} exceeds maximum of {} characters",
             input.len(),
             MAX_EXPR_LEN
-        )));
+        ))
+        .with_span(Span::new(0, input.len())));
     }
 
     let trimmed = input.trim();
 
     // 空字符串检查
     if trimmed.is_empty() {
-        return Err(CalcError::parse("expression is empty".to_string()));
+        return Err(CalcError::parse("expression is empty".to_string())
+            .with_span(Span::new(0, 0)));
     }
 
     // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
@@ -74,7 +76,8 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     let after_implicit = insert_implicit_multiplication(&after_factorial);
 
     // mathexpr 解析
-    let expr = mathexpr::parse(&after_implicit).map_err(|e| CalcError::parse(format!("{}", e)))?;
+    let expr = mathexpr::parse(&after_implicit)
+        .map_err(|e| CalcError::parse(format!("{}", e)).with_span(Span::new(0, after_implicit.len())))?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
     let mut ast = convert_with_depth(&expr, 1)?;
@@ -139,7 +142,8 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
         Err(CalcError::parse(format!(
             "expected bracket literal, got: {}",
             trimmed
-        )))
+        ))
+        .with_span(Span::new(0, trimmed.len())))
     }
 }
 
@@ -173,7 +177,8 @@ fn preprocess_brackets(
                 i += 1;
             }
             if depth != 0 {
-                return Err(CalcError::parse("unmatched '[' in expression".to_string()));
+                return Err(CalcError::parse("unmatched '[' in expression".to_string())
+                    .with_span(Span::new(start, i)));
             }
             // 提取子串并解析为 AST
             let literal: String = chars[start..i].iter().collect();
@@ -300,7 +305,8 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
         return Err(CalcError::parse(format!(
             "invalid matrix literal: {}",
             trimmed
-        )));
+        ))
+        .with_span(Span::new(0, trimmed.len())));
     }
     // 去掉外层 `[[` 和 `]]`，得到 `row1],[row2],[...`
     let inner = &trimmed[2..trimmed.len() - 2];
@@ -317,12 +323,14 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
                 return Err(CalcError::parse(format!(
                     "expected list row in matrix, got: {:?}",
                     row_node
-                )))
+                ))
+                .with_span(Span::new(0, trimmed.len())))
             }
         }
     }
     if rows.is_empty() {
-        return Err(CalcError::parse("empty matrix literal".to_string()));
+        return Err(CalcError::parse("empty matrix literal".to_string())
+            .with_span(Span::new(0, trimmed.len())));
     }
     Ok(AstNode::Matrix(rows))
 }
@@ -337,7 +345,8 @@ fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
         return Err(CalcError::parse(format!(
             "invalid list literal: {}",
             trimmed
-        )));
+        ))
+        .with_span(Span::new(0, trimmed.len())));
     }
     // 去掉 `[` 和 `]`
     let inner = &trimmed[1..trimmed.len() - 1];
@@ -403,12 +412,27 @@ fn split_top_level_commas(input: &str) -> Vec<String> {
 ///
 /// mathexpr 依赖 `nom::number::complete::double`，该解析器接受 `+3` 作为数字字面量，
 /// 导致 `2++3` 被静默接受为 `2 + 3.0`。此函数在解析前显式拒绝 `++` 模式。
+///
+/// Span：从第一个 `+` 到第二个 `+`（含），基于原始输入的字符位置。
 fn validate_no_consecutive_plus(input: &str) -> Result<(), CalcError> {
-    let stripped: String = input.chars().filter(|c| !c.is_whitespace()).collect();
-    if stripped.contains("++") {
-        return Err(CalcError::parse(
-            "illegal consecutive operators '++'".to_string(),
-        ));
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '+' {
+            let start = i;
+            // 跳过空格查找下一个 `+`
+            let mut j = i + 1;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == '+' {
+                return Err(CalcError::parse(
+                    "illegal consecutive operators '++'".to_string(),
+                )
+                .with_span(Span::new(start, j + 1)));
+            }
+        }
+        i += 1;
     }
     Ok(())
 }
@@ -428,7 +452,8 @@ fn preprocess_factorial(input: &str) -> Result<String, CalcError> {
 
     while i < chars.len() {
         if chars[i] == '!' {
-            let operand_start = find_operand_start(&result)?;
+            let operand_start = find_operand_start(&result)
+                .map_err(|e| e.with_span(Span::point(i)))?;
             let operand: String = result[operand_start..].iter().collect();
             result.truncate(operand_start);
             result.extend("factorial(".chars());
@@ -1593,5 +1618,121 @@ mod tests {
                     "depth {} should fail, got {:?}", n, result);
             }
         }
+    }
+
+    // ===== T0.4.5: Span 精确性测试 =====
+
+    /// 辅助：断言错误带有 span 且等于期望值。
+    fn assert_span(err: &CalcError, expected: Span) {
+        assert_eq!(
+            err.span,
+            Some(expected),
+            "span mismatch: got {:?}, expected {:?}, message: {}",
+            err.span,
+            expected,
+            err.message
+        );
+    }
+
+    #[test]
+    fn test_span_empty_expression() {
+        // parse("") → 空表达式错误，span = (0, 0)
+        let err = parse("").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, 0));
+    }
+
+    #[test]
+    fn test_span_whitespace_only_expression() {
+        // parse("   ") → trim 后为空，span = (0, 0)
+        let err = parse("   ").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, 0));
+    }
+
+    #[test]
+    fn test_span_length_exceeded() {
+        // 超长表达式，span 覆盖整个输入
+        let expr = "a".repeat(MAX_EXPR_LEN + 1);
+        let err = parse(&expr).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, expr.len()));
+    }
+
+    #[test]
+    fn test_span_mathexpr_parse_failure() {
+        // `@` 不是合法字符，mathexpr 解析失败
+        // 预处理后 after_implicit = "@"，span = (0, 1)
+        let err = parse("@").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, 1));
+    }
+
+    #[test]
+    fn test_span_unmatched_open_bracket() {
+        // `[[1,2]` — 未匹配 `[`，span 从 `[` 开始到扫描结束
+        // 输入: [[1,2]  (6 字符)
+        // chars = ['[','[','1',',','2',']']
+        // i=0 遇 `[`，start=0，扫描到 i=6 时 depth=1≠0
+        let err = parse("[[1,2]").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, 6));
+    }
+
+    #[test]
+    fn test_span_invalid_bracket_literal() {
+        // parse_bracket_literal("abc") → 非括号字面量，span = (0, 3)
+        let err = parse_bracket_literal("abc").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, 3));
+    }
+
+    #[test]
+    fn test_span_invalid_matrix_literal() {
+        // parse_matrix_literal("[1,2]") → 不以 `[[` 开头，span = (0, 5)
+        let err = parse_matrix_literal("[1,2]").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, 5));
+    }
+
+    #[test]
+    fn test_span_invalid_list_literal() {
+        // parse_list_literal("1,2") → 不以 `[` 开头，span = (0, 3)
+        let err = parse_list_literal("1,2").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(0, 3));
+    }
+
+    #[test]
+    fn test_span_consecutive_plus() {
+        // `2++3` → `++` 从位置 1 开始，span = (1, 3)
+        let err = parse("2++3").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(1, 3));
+    }
+
+    #[test]
+    fn test_span_consecutive_plus_with_spaces() {
+        // `2 + + 3` → 去空格后 `2++3`，但 span 应基于原始输入
+        // 原始输入中第一个 `+` 在位置 2，第二个 `+` 在位置 4
+        let err = parse("2 + + 3").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::new(2, 5));
+    }
+
+    #[test]
+    fn test_span_factorial_no_operand() {
+        // `!5` → `!` 在位置 0，无操作数，span = point(0) = (0, 1)
+        let err = parse("!5").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::point(0));
+    }
+
+    #[test]
+    fn test_span_factorial_unmatched_paren() {
+        // `1+2)!` → `!` 在位置 4，`!` 前有未匹配的 `)`
+        let err = parse("1+2)!").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_span(&err, Span::point(4));
     }
 }
