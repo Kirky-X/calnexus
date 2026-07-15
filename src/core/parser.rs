@@ -44,8 +44,7 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
 
     // 空字符串检查
     if trimmed.is_empty() {
-        return Err(CalcError::parse("expression is empty".to_string())
-            .with_span(Span::new(0, 0)));
+        return Err(CalcError::parse("expression is empty".to_string()).with_span(Span::new(0, 0)));
     }
 
     // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
@@ -76,8 +75,9 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     let after_implicit = insert_implicit_multiplication(&after_factorial);
 
     // mathexpr 解析
-    let expr = mathexpr::parse(&after_implicit)
-        .map_err(|e| CalcError::parse(format!("{}", e)).with_span(Span::new(0, after_implicit.len())))?;
+    let expr = mathexpr::parse(&after_implicit).map_err(|e| {
+        CalcError::parse(format!("{}", e)).with_span(Span::new(0, after_implicit.len()))
+    })?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
     let mut ast = convert_with_depth(&expr, 1)?;
@@ -139,11 +139,10 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
     } else if trimmed.starts_with('[') {
         parse_list_literal(trimmed)
     } else {
-        Err(CalcError::parse(format!(
-            "expected bracket literal, got: {}",
-            trimmed
-        ))
-        .with_span(Span::new(0, trimmed.len())))
+        Err(
+            CalcError::parse(format!("expected bracket literal, got: {}", trimmed))
+                .with_span(Span::new(0, trimmed.len())),
+        )
     }
 }
 
@@ -302,11 +301,10 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
     let trimmed = input.trim();
     // 必须以 `[[` 开头、`]]` 结尾
     if !trimmed.starts_with("[[") || !trimmed.ends_with("]]") {
-        return Err(CalcError::parse(format!(
-            "invalid matrix literal: {}",
-            trimmed
-        ))
-        .with_span(Span::new(0, trimmed.len())));
+        return Err(
+            CalcError::parse(format!("invalid matrix literal: {}", trimmed))
+                .with_span(Span::new(0, trimmed.len())),
+        );
     }
     // 去掉外层 `[[` 和 `]]`，得到 `row1],[row2],[...`
     let inner = &trimmed[2..trimmed.len() - 2];
@@ -342,11 +340,10 @@ fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
     let trimmed = input.trim();
     // 必须以 `[` 开头、`]` 结尾
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
-        return Err(CalcError::parse(format!(
-            "invalid list literal: {}",
-            trimmed
-        ))
-        .with_span(Span::new(0, trimmed.len())));
+        return Err(
+            CalcError::parse(format!("invalid list literal: {}", trimmed))
+                .with_span(Span::new(0, trimmed.len())),
+        );
     }
     // 去掉 `[` 和 `]`
     let inner = &trimmed[1..trimmed.len() - 1];
@@ -426,10 +423,10 @@ fn validate_no_consecutive_plus(input: &str) -> Result<(), CalcError> {
                 j += 1;
             }
             if j < chars.len() && chars[j] == '+' {
-                return Err(CalcError::parse(
-                    "illegal consecutive operators '++'".to_string(),
-                )
-                .with_span(Span::new(start, j + 1)));
+                return Err(
+                    CalcError::parse("illegal consecutive operators '++'".to_string())
+                        .with_span(Span::new(start, j + 1)),
+                );
             }
         }
         i += 1;
@@ -452,8 +449,8 @@ fn preprocess_factorial(input: &str) -> Result<String, CalcError> {
 
     while i < chars.len() {
         if chars[i] == '!' {
-            let operand_start = find_operand_start(&result)
-                .map_err(|e| e.with_span(Span::point(i)))?;
+            let operand_start =
+                find_operand_start(&result).map_err(|e| e.with_span(Span::point(i)))?;
             let operand: String = result[operand_start..].iter().collect();
             result.truncate(operand_start);
             result.extend("factorial(".chars());
