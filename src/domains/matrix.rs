@@ -9,8 +9,8 @@
 //! 路由策略：AST 含 `Matrix` 节点或 `det()`/`transpose()`/`inverse()`/`identity()` 函数调用时路由至本域。
 //! `EvalResult::Matrix(Vec<Vec<f64>>)` 保持 types.rs 无外部依赖（与 Complex 同策略）。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use nalgebra::DMatrix;
 
 /// Matrix 计算域。
@@ -337,6 +337,13 @@ impl MatrixDomain {
                                 n
                             )));
                         }
+                        const MAX_MATRIX_DIM: usize = 1000;
+                        if n as usize > MAX_MATRIX_DIM {
+                            return Err(CalcError::DomainError(format!(
+                                "identity() dimension {} exceeds maximum of {}",
+                                n, MAX_MATRIX_DIM
+                            )));
+                        }
                         let n = n as usize;
                         Ok(MatrixValue::Matrix(DMatrix::identity(n, n)))
                     }
@@ -384,7 +391,7 @@ fn contains_matrix(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     fn assert_approx(actual: f64, expected: f64) {
         assert!(

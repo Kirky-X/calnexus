@@ -2,7 +2,7 @@
 
 #[cfg(feature = "cli")]
 fn main() {
-    let exit_code = calnexus::cli::run();
+    let exit_code = calnexus::run();
     std::process::exit(exit_code);
 }
 

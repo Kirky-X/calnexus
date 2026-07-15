@@ -18,7 +18,7 @@
 //! - ADD §3.4：`CalcResult::LaTeX(String)` 变体
 //! - design.md D3：LaTeX 由 SymbolicDomain 直接产出（domain 拥有 AST 上下文）
 
-use crate::core::types::{AstNode, EvalResult};
+use crate::core::{AstNode, EvalResult};
 use num_traits::Signed;
 
 /// 格式化标量为 LaTeX。
@@ -262,21 +262,21 @@ fn ast_to_latex_expr(node: &AstNode) -> Option<String> {
             let l = ast_to_latex_expr(lhs)?;
             let r = ast_to_latex_expr(rhs)?;
             let op_str = match op {
-                crate::core::types::BinaryOp::Add => format!("{} + {}", l, r),
-                crate::core::types::BinaryOp::Sub => format!("{} - {}", l, r),
-                crate::core::types::BinaryOp::Mul => format!("{} \\cdot {}", l, r),
-                crate::core::types::BinaryOp::Div => format!("\\frac{{{}}}{{{}}}", l, r),
-                crate::core::types::BinaryOp::Pow => format!("{}^{{{}}}", l, r),
-                crate::core::types::BinaryOp::Mod => format!("{} \\bmod {}", l, r),
+                crate::core::BinaryOp::Add => format!("{} + {}", l, r),
+                crate::core::BinaryOp::Sub => format!("{} - {}", l, r),
+                crate::core::BinaryOp::Mul => format!("{} \\cdot {}", l, r),
+                crate::core::BinaryOp::Div => format!("\\frac{{{}}}{{{}}}", l, r),
+                crate::core::BinaryOp::Pow => format!("{}^{{{}}}", l, r),
+                crate::core::BinaryOp::Mod => format!("{} \\bmod {}", l, r),
             };
             Some(op_str)
         }
         AstNode::UnaryOp(op, expr) => {
             let e = ast_to_latex_expr(expr)?;
             Some(match op {
-                crate::core::types::UnaryOp::Neg => format!("-{}", e),
-                crate::core::types::UnaryOp::Factorial => format!("{}!", e),
-                crate::core::types::UnaryOp::Abs => format!("\\left|{}\\right|", e),
+                crate::core::UnaryOp::Neg => format!("-{}", e),
+                crate::core::UnaryOp::Factorial => format!("{}!", e),
+                crate::core::UnaryOp::Abs => format!("\\left|{}\\right|", e),
             })
         }
         AstNode::FunctionCall(name, args) => {
@@ -334,7 +334,7 @@ pub fn format_latex(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::{BinaryOp, UnaryOp};
+    use crate::core::{BinaryOp, UnaryOp};
 
     #[test]
     fn latex_scalar_integer() {

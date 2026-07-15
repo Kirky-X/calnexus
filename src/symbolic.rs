@@ -12,8 +12,8 @@
 //! 核心数据结构 [`SymbolicExpr`] 与 [`AstNode`] 双向转换，符号变换后格式化为
 //! 字符串返回 [`EvalResult::Symbolic`]。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use std::collections::HashMap;
 
 /// 符号函数白名单。
@@ -986,7 +986,7 @@ fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     // ----- TG3.1 转换测试 -----
 

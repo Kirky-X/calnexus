@@ -57,7 +57,7 @@ fn evaluate_full(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcError>
 /// 全链路求值（直接使用 PrecisionDomain，绕过路由器）。
 /// 用于 --precision N 模式与 precision(N, expr) 函数路径的对照验证。
 fn evaluate_precision(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-    use calnexus::core::domain::CalculationDomain;
+    use calnexus::CalculationDomain;
     let ast = parse(expr)?;
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
 
@@ -730,7 +730,7 @@ fn test_precision_pipeline_bigrational_division() {
     match &result {
         EvalResult::BigRational(r) => {
             // 格式化到 5 位小数应输出 0.33333（验证精度保留）
-            let formatted = calnexus::domains::precision::format_bigrational(r, Some(5));
+            let formatted = calnexus::format_bigrational(r, Some(5));
             assert_eq!(formatted, "0.33333");
         }
         other => panic!("expected BigRational, got {:?}", other),

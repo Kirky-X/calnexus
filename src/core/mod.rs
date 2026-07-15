@@ -8,14 +8,16 @@
 //! L1 缓存管理器在 [`cache`] 模块中，基于 Moka + BLAKE3。
 //! 计算域接口与路由器在 [`domain`] 模块中。
 
-pub mod cache;
-pub mod canonicalizer;
-pub mod domain;
-pub mod parser;
-pub mod types;
+mod cache;
+mod canonicalizer;
+mod domain;
+mod parser;
+mod types;
 
 pub use cache::{CacheKeyGen, CacheManager};
 pub use canonicalizer::AstCanonicalizer;
 pub use domain::{CalculationDomain, DomainRouter};
 pub use parser::parse;
+#[cfg(feature = "cli")]
+pub(crate) use parser::MAX_EXPR_LEN;
 pub use types::{AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp};

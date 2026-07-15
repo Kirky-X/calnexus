@@ -8,7 +8,7 @@
 //!
 //! 设计依据：design.md D4 — 薄包装，复用 `AstCanonicalizer::canonicalize`。
 
-use crate::core::types::CanonicalForm;
+use crate::core::CanonicalForm;
 
 /// 格式化 `CanonicalForm` 为字符串。
 ///

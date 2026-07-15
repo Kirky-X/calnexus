@@ -643,24 +643,24 @@ mod tests {
 
     // ===== v0.8 新增域路由测试（TG6）=====
 
-    use crate::domains::arithmetic::ArithmeticDomain;
-    use crate::domains::combinatorics::CombinatoricsDomain;
-    use crate::domains::number_theory::NumberTheoryDomain;
-    use crate::domains::polynomial::PolynomialDomain;
-    use crate::domains::statistics::StatisticsDomain;
-    use crate::domains::vector::VectorDomain;
+    use crate::domains::ArithmeticDomain;
+    use crate::domains::CombinatoricsDomain;
+    use crate::domains::NumberTheoryDomain;
+    use crate::domains::PolynomialDomain;
+    use crate::domains::StatisticsDomain;
+    use crate::domains::VectorDomain;
 
     /// v0.8 全域路由器：注册全部 10 个域。
     fn v08_full_router() -> DomainRouter {
         let mut router = DomainRouter::new();
-        router.register(Box::new(crate::domains::complex::ComplexDomain));
-        router.register(Box::new(crate::domains::matrix::MatrixDomain));
-        router.register(Box::new(crate::domains::precision::PrecisionDomain));
+        router.register(Box::new(crate::domains::ComplexDomain));
+        router.register(Box::new(crate::domains::MatrixDomain));
+        router.register(Box::new(crate::domains::PrecisionDomain));
         router.register(Box::new(VectorDomain));
         router.register(Box::new(NumberTheoryDomain));
         router.register(Box::new(CombinatoricsDomain));
         router.register(Box::new(PolynomialDomain));
-        router.register(Box::new(crate::domains::scientific::ScientificDomain));
+        router.register(Box::new(crate::domains::ScientificDomain));
         router.register(Box::new(StatisticsDomain));
         router.register(Box::new(ArithmeticDomain));
         router

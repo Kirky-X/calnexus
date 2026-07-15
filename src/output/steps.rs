@@ -12,7 +12,7 @@
 //! - design.md Risks：复用 256 深度限制防止栈溢出
 //! - tasks.md 3.1：post-order 遍历 + 256 深度上限
 
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, UnaryOp};
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, UnaryOp};
 
 /// 最大 AST 深度（与 parser 保持一致）。
 const MAX_DEPTH: usize = 256;
@@ -303,7 +303,7 @@ fn format_value(v: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::BinaryOp;
+    use crate::core::BinaryOp;
 
     #[test]
     fn steps_basic_arithmetic_2plus3() {

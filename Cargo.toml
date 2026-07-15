@@ -17,7 +17,7 @@ cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
 
 [dependencies]
 # 解析器
-mathexpr = "0.1"
+mathexpr = { version = "0.1", default-features = false }
 # 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
 oxcache = { version = "0.2", features = ["core"], default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
@@ -38,17 +38,17 @@ num-traits = { version = "0.2", default-features = false, features = ["std"] }
 # CLI 依赖（仅启用必要特性，禁用默认的 color/env 等）
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
 rustyline = { version = "14", default-features = false, features = ["derive"], optional = true }
-rayon = { version = "1", optional = true }
+rayon = { version = "1", default-features = false, optional = true }
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }
-assert_cmd = "2"
-predicates = "3"
-tempfile = "3"
+assert_cmd = { version = "2", default-features = false }
+predicates = { version = "3", default-features = false }
+tempfile = { version = "3", default-features = false }
 serde_json = { version = "1", default-features = false, features = ["std"] }
 insta = { version = "1", default-features = false }
 criterion = { version = "0.5", default-features = false, features = ["plotters"] }
-expectrl = "0.8"
+expectrl = { version = "0.8", default-features = false }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
@@ -60,11 +60,42 @@ exclude-files = ["src/main.rs"]
 [[bench]]
 name = "parser_bench"
 harness = false
+required-features = ["cli"]
 
 [[bench]]
 name = "cache_bench"
 harness = false
+required-features = ["cli"]
 
 [[bench]]
 name = "domain_bench"
 harness = false
+required-features = ["cli"]
+
+[[test]]
+name = "cli_integration"
+required-features = ["cli"]
+
+[[test]]
+name = "repl_integration"
+required-features = ["cli"]
+
+[[test]]
+name = "property_tests"
+required-features = ["cli"]
+
+[[test]]
+name = "security_tests"
+required-features = ["cli"]
+
+[[test]]
+name = "snapshot_tests"
+required-features = ["cli"]
+
+[[test]]
+name = "performance_tests"
+required-features = ["cli"]
+
+[[test]]
+name = "integration"
+required-features = ["cli"]

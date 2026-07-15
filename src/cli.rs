@@ -9,9 +9,9 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：系统错误（无效参数）
 
-use crate::core::domain::CalculationDomain;
-use crate::domains::precision::format_bigrational;
-use crate::output::{canonical::format_canonical, latex::format_latex, steps::generate_steps};
+use crate::core::CalculationDomain;
+use crate::domains::format_bigrational;
+use crate::output::{format_canonical, format_latex, generate_steps};
 use crate::{
     parse, AstCanonicalizer, CacheManager, CalcError, DomainRouter, EvalContext, EvalResult,
 };
@@ -496,7 +496,7 @@ fn format_complex_list(c: &[(f64, f64)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::BinaryOp;
+    use crate::core::BinaryOp;
 
     // 覆盖 extract_format_precision lines 213-214：
     // 当 precision(N, expr) 中 N 为 Number 但非正整数（如浮点数）时，
@@ -738,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_format_canonical_wrapper() {
-        use crate::output::canonical::format_canonical;
+        use crate::output::format_canonical;
         use crate::CanonicalForm;
         let cf = CanonicalForm::new("(+ 2 3)");
         assert_eq!(format_canonical(&cf), "(+ 2 3)");
@@ -746,7 +746,7 @@ mod tests {
 
     #[test]
     fn test_format_latex_dispatch_scalar() {
-        use crate::output::latex::format_latex;
+        use crate::output::format_latex;
         let r = EvalResult::Scalar(42.0);
         let ast = AstNode::Number(42.0);
         assert_eq!(format_latex(&r, &ast, "42", None), "42");
@@ -754,7 +754,7 @@ mod tests {
 
     #[test]
     fn test_format_latex_dispatch_matrix() {
-        use crate::output::latex::format_latex;
+        use crate::output::format_latex;
         let r = EvalResult::Matrix(vec![vec![1.0, 2.0], vec![3.0, 4.0]]);
         let ast = AstNode::Number(0.0);
         assert_eq!(
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn test_format_latex_dispatch_symbolic_diff() {
-        use crate::output::latex::format_latex;
+        use crate::output::format_latex;
         let r = EvalResult::Symbolic("2*x".to_string());
         let ast = AstNode::FunctionCall(
             "diff".to_string(),
@@ -784,7 +784,7 @@ mod tests {
 
     #[test]
     fn test_generate_steps_basic() {
-        use crate::output::steps::generate_steps;
+        use crate::output::generate_steps;
         // 步骤必须基于原始 AST（未折叠），否则常量折叠后无步骤可显示
         let ast = parse("(2+9)*7-6").unwrap();
         let ctx = EvalContext::new();

@@ -11,8 +11,8 @@
 //! 内部使用 BigInt 精确整数运算，支持 `is_prime(10^18+9)` 等大数场景（f64 无法精确表示）。
 //! 结果按值大小返回 Scalar（fit i64）或 BigInt。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use num_bigint::BigInt;
 use num_integer::Integer as _;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -598,7 +598,7 @@ fn contains_number_theory_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

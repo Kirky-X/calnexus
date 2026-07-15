@@ -29,7 +29,7 @@ fuzz_target!(|data: &str| {
         }
         if let Ok(ast) = parse(&expr) {
             // 求值应不 panic（可能返回 Ok 或 Err）
-            let _ = calnexus::cli::evaluate(&expr, &ctx, None, &cache);
+            let _ = calnexus::evaluate(&expr, &ctx, None, &cache);
             let _ = ast; // 抑制未使用警告
         }
     }

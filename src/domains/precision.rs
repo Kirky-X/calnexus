@@ -13,8 +13,8 @@
 //!
 //! 内部求值统一使用 `BigRational`，结果根据分母是否为 1 转换为 `BigInt` 或 `BigRational`。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Signed, Zero};
@@ -397,7 +397,7 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     /// 创建默认上下文。
     fn default_ctx() -> EvalContext {

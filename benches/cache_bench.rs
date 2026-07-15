@@ -20,12 +20,12 @@ fn bench_cache_hit(c: &mut Criterion) {
         let ast = parse(expr).expect("parse failed");
         let (_canonical_ast, _) = AstCanonicalizer::canonicalize(&ast).expect("canon failed");
         // 调用 evaluate 写入缓存
-        let _ = calnexus::cli::evaluate(expr, &ctx, None, &cache);
+        let _ = calnexus::evaluate(expr, &ctx, None, &cache);
 
         group.bench_with_input(BenchmarkId::from_parameter(expr), expr, |b, e| {
             b.iter(|| {
                 // 第二次求值应命中缓存
-                let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
+                let _ = black_box(calnexus::evaluate(black_box(e), &ctx, None, &cache));
             });
         });
     }
@@ -49,7 +49,7 @@ fn bench_cache_miss(c: &mut Criterion) {
             b.iter_batched(
                 CacheManager::new,
                 |cache| {
-                    let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
+                    let _ = black_box(calnexus::evaluate(black_box(e), &ctx, None, &cache));
                 },
                 criterion::BatchSize::SmallInput,
             );

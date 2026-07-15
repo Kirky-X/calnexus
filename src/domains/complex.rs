@@ -9,8 +9,8 @@
 //! 路由策略：AST 含 `Complex` 节点或 `complex()`/`conj()`/`arg()` 函数调用时路由至本域。
 //! `abs()`/`exp()`/`ln()` 仅当参数含 `Complex` 节点时路由至本域。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use num_complex::Complex64;
 
 /// Complex 计算域。
@@ -276,7 +276,7 @@ fn contains_complex(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     /// 测试浮点近似相等（默认容差 1e-10）。
     fn assert_approx(actual: f64, expected: f64) {

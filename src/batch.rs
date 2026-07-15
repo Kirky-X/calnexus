@@ -10,8 +10,8 @@
 //! 流程：读取 → 解析验证 → 预规范化（串行）→ 并行求值（rayon）→ 按序输出 + 缓存统计。
 
 use crate::cli::{evaluate, format_result};
-use crate::core::parser::MAX_EXPR_LEN;
-use crate::core::types::{EvalContext, EvalResult};
+use crate::core::MAX_EXPR_LEN;
+use crate::core::{EvalContext, EvalResult};
 use rayon::prelude::*;
 use std::io::{self, BufRead, Read};
 use std::time::Instant;

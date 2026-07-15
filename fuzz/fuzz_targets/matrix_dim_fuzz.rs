@@ -38,6 +38,6 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(_) = parse(&expr) {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
-        let _ = calnexus::cli::evaluate(&expr, &ctx, None, &cache);
+        let _ = calnexus::evaluate(&expr, &ctx, None, &cache);
     }
 });

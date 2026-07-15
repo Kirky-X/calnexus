@@ -22,8 +22,8 @@ proptest! {
         let ctx = EvalContext::new();
         let left = format!("{}+{}", a, b);
         let right = format!("{}+{}", b, a);
-        let (r1, _, _, _) = calnexus::cli::evaluate(&left, &ctx, None, &cache).unwrap();
-        let (r2, _, _, _) = calnexus::cli::evaluate(&right, &ctx, None, &cache).unwrap();
+        let (r1, _, _, _) = calnexus::evaluate(&left, &ctx, None, &cache).unwrap();
+        let (r2, _, _, _) = calnexus::evaluate(&right, &ctx, None, &cache).unwrap();
         prop_assert_eq!(r1, r2);
     }
 
@@ -34,8 +34,8 @@ proptest! {
         let ctx = EvalContext::new();
         let left = format!("{}*{}", a, b);
         let right = format!("{}*{}", b, a);
-        let (r1, _, _, _) = calnexus::cli::evaluate(&left, &ctx, None, &cache).unwrap();
-        let (r2, _, _, _) = calnexus::cli::evaluate(&right, &ctx, None, &cache).unwrap();
+        let (r1, _, _, _) = calnexus::evaluate(&left, &ctx, None, &cache).unwrap();
+        let (r2, _, _, _) = calnexus::evaluate(&right, &ctx, None, &cache).unwrap();
         prop_assert_eq!(r1, r2);
     }
 
@@ -46,8 +46,8 @@ proptest! {
         let ctx = EvalContext::new();
         let left = format!("({}+{})+{}", a, b, c);
         let right = format!("{}+({}+{})", a, b, c);
-        let (r1, _, _, _) = calnexus::cli::evaluate(&left, &ctx, None, &cache).unwrap();
-        let (r2, _, _, _) = calnexus::cli::evaluate(&right, &ctx, None, &cache).unwrap();
+        let (r1, _, _, _) = calnexus::evaluate(&left, &ctx, None, &cache).unwrap();
+        let (r2, _, _, _) = calnexus::evaluate(&right, &ctx, None, &cache).unwrap();
         prop_assert_eq!(r1, r2);
     }
 
@@ -58,8 +58,8 @@ proptest! {
         let ctx = EvalContext::new();
         let left = format!("({}*{})*{}", a, b, c);
         let right = format!("{}*({}*{})", a, b, c);
-        let (r1, _, _, _) = calnexus::cli::evaluate(&left, &ctx, None, &cache).unwrap();
-        let (r2, _, _, _) = calnexus::cli::evaluate(&right, &ctx, None, &cache).unwrap();
+        let (r1, _, _, _) = calnexus::evaluate(&left, &ctx, None, &cache).unwrap();
+        let (r2, _, _, _) = calnexus::evaluate(&right, &ctx, None, &cache).unwrap();
         prop_assert_eq!(r1, r2);
     }
 
@@ -70,8 +70,8 @@ proptest! {
         let ctx = EvalContext::new();
         let left = format!("{}*({}+{})", a, b, c);
         let right = format!("{}*{}+{}*{}", a, b, a, c);
-        let (r1, _, _, _) = calnexus::cli::evaluate(&left, &ctx, None, &cache).unwrap();
-        let (r2, _, _, _) = calnexus::cli::evaluate(&right, &ctx, None, &cache).unwrap();
+        let (r1, _, _, _) = calnexus::evaluate(&left, &ctx, None, &cache).unwrap();
+        let (r2, _, _, _) = calnexus::evaluate(&right, &ctx, None, &cache).unwrap();
         prop_assert_eq!(r1, r2);
     }
 
@@ -81,7 +81,7 @@ proptest! {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
         let folded = format!("{}*{}+{}", a, b, c);
-        let (r, _, _, _) = calnexus::cli::evaluate(&folded, &ctx, None, &cache).unwrap();
+        let (r, _, _, _) = calnexus::evaluate(&folded, &ctx, None, &cache).unwrap();
         let expected = (a as f64) * (b as f64) + (c as f64);
         prop_assert_eq!(r, EvalResult::Scalar(expected));
     }
@@ -112,8 +112,8 @@ proptest! {
         let ctx = EvalContext::new();
         let left = format!("{}-{}", a, b);
         let right = format!("{}+(-{})", a, b);
-        let (r1, _, _, _) = calnexus::cli::evaluate(&left, &ctx, None, &cache).unwrap();
-        let (r2, _, _, _) = calnexus::cli::evaluate(&right, &ctx, None, &cache).unwrap();
+        let (r1, _, _, _) = calnexus::evaluate(&left, &ctx, None, &cache).unwrap();
+        let (r2, _, _, _) = calnexus::evaluate(&right, &ctx, None, &cache).unwrap();
         // f64 比较使用近似相等（避免 -0 vs 0）
         if let (EvalResult::Scalar(v1), EvalResult::Scalar(v2)) = (r1, r2) {
             prop_assert!((v1 - v2).abs() < 1e-10, "v1={}, v2={}", v1, v2);
@@ -128,7 +128,7 @@ proptest! {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
         let expr = format!("({}/{}){}", a, b, b);
-        let (r, _, _, _) = calnexus::cli::evaluate(&expr, &ctx, None, &cache).unwrap();
+        let (r, _, _, _) = calnexus::evaluate(&expr, &ctx, None, &cache).unwrap();
         if let EvalResult::Scalar(v) = r {
             prop_assert!((v - a).abs() < 1e-6, "v={}, a={}", v, a);
         } else {
@@ -142,8 +142,8 @@ proptest! {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
         let expr = format!("{}+{}", a, b);
-        let _ = calnexus::cli::evaluate(&expr, &ctx, None, &cache).unwrap();
-        let (_, _, cache_hit, _) = calnexus::cli::evaluate(&expr, &ctx, None, &cache).unwrap();
+        let _ = calnexus::evaluate(&expr, &ctx, None, &cache).unwrap();
+        let (_, _, cache_hit, _) = calnexus::evaluate(&expr, &ctx, None, &cache).unwrap();
         prop_assert!(cache_hit, "second eval should hit cache");
     }
 
@@ -153,7 +153,7 @@ proptest! {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
         let expr = format!("sin({})^2+cos({})^2", x, x);
-        let (r, _, _, _) = calnexus::cli::evaluate(&expr, &ctx, None, &cache).unwrap();
+        let (r, _, _, _) = calnexus::evaluate(&expr, &ctx, None, &cache).unwrap();
         if let EvalResult::Scalar(v) = r {
             prop_assert!((v - 1.0).abs() < 1e-10, "v={}, expected 1.0", v);
         } else {

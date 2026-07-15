@@ -9,6 +9,13 @@
 //!
 //! 设计依据：design.md D1 — 独立模块避免 `src/cli.rs` 进一步膨胀。
 
-pub mod canonical;
-pub mod latex;
-pub mod steps;
+mod canonical;
+mod latex;
+mod steps;
+
+#[cfg(feature = "cli")]
+pub(crate) use canonical::format_canonical;
+#[cfg(feature = "cli")]
+pub(crate) use latex::format_latex;
+#[cfg(feature = "cli")]
+pub(crate) use steps::generate_steps;

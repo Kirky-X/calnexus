@@ -7,31 +7,27 @@
 #![cfg_attr(test, allow(clippy::approx_constant, non_snake_case))]
 
 #[cfg(feature = "cli")]
-pub mod batch;
+mod batch;
 #[cfg(feature = "cli")]
-pub mod cli;
-pub mod core;
-pub mod domains;
-pub mod output;
+mod cli;
+mod core;
+mod domains;
+mod output;
 #[cfg(feature = "cli")]
-pub mod repl;
-pub mod symbolic;
+mod repl;
+mod symbolic;
 
-pub use core::cache::{CacheKeyGen, CacheManager};
-pub use core::canonicalizer::AstCanonicalizer;
-pub use core::domain::{CalculationDomain, DomainRouter};
-pub use core::parser::parse;
-pub use core::types::{
-    AstNode, BinaryOp, CalcError, CanonicalForm, EvalContext, EvalResult, UnaryOp,
+pub use core::{
+    parse, AstCanonicalizer, AstNode, BinaryOp, CacheKeyGen, CacheManager, CalcError,
+    CalculationDomain, CanonicalForm, DomainRouter, EvalContext, EvalResult, UnaryOp,
 };
-pub use domains::arithmetic::ArithmeticDomain;
-pub use domains::combinatorics::CombinatoricsDomain;
-pub use domains::complex::ComplexDomain;
-pub use domains::matrix::MatrixDomain;
-pub use domains::number_theory::NumberTheoryDomain;
-pub use domains::polynomial::PolynomialDomain;
-pub use domains::precision::PrecisionDomain;
-pub use domains::scientific::ScientificDomain;
-pub use domains::statistics::StatisticsDomain;
-pub use domains::vector::VectorDomain;
+pub use domains::{
+    ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
+    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain,
+};
 pub use symbolic::SymbolicDomain;
+
+#[cfg(feature = "cli")]
+pub use cli::{evaluate, run};
+#[cfg(feature = "cli")]
+pub use domains::format_bigrational;

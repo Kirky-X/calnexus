@@ -19,7 +19,7 @@ fn bench_arithmetic(c: &mut Criterion) {
             b.iter_batched(
                 CacheManager::new,
                 |cache| {
-                    let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
+                    let _ = black_box(calnexus::evaluate(black_box(e), &ctx, None, &cache));
                 },
                 criterion::BatchSize::SmallInput,
             );
@@ -46,7 +46,7 @@ fn bench_scientific(c: &mut Criterion) {
             b.iter_batched(
                 CacheManager::new,
                 |cache| {
-                    let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
+                    let _ = black_box(calnexus::evaluate(black_box(e), &ctx, None, &cache));
                 },
                 criterion::BatchSize::SmallInput,
             );
@@ -80,7 +80,7 @@ fn bench_matrix_100x100(c: &mut Criterion) {
         b.iter_batched(
             CacheManager::new,
             |cache| {
-                let _ = black_box(calnexus::cli::evaluate(&expr, &ctx, None, &cache));
+                let _ = black_box(calnexus::evaluate(&expr, &ctx, None, &cache));
             },
             criterion::BatchSize::SmallInput,
         );
@@ -104,7 +104,7 @@ fn bench_symbolic_diff(c: &mut Criterion) {
             b.iter_batched(
                 CacheManager::new,
                 |cache| {
-                    let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
+                    let _ = black_box(calnexus::evaluate(black_box(e), &ctx, None, &cache));
                 },
                 criterion::BatchSize::SmallInput,
             );
@@ -124,7 +124,7 @@ fn bench_batch_1000(c: &mut Criterion) {
             let ctx = EvalContext::new();
             let cache = CacheManager::new();
             for expr in &expressions {
-                let _ = black_box(calnexus::cli::evaluate(black_box(expr), &ctx, None, &cache));
+                let _ = black_box(calnexus::evaluate(black_box(expr), &ctx, None, &cache));
             }
         });
     });
@@ -147,7 +147,7 @@ fn bench_is_prime(c: &mut Criterion) {
             b.iter_batched(
                 CacheManager::new,
                 |cache| {
-                    let _ = black_box(calnexus::cli::evaluate(black_box(e), &ctx, None, &cache));
+                    let _ = black_box(calnexus::evaluate(black_box(e), &ctx, None, &cache));
                 },
                 criterion::BatchSize::SmallInput,
             );

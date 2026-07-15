@@ -9,8 +9,8 @@
 //! 路由策略：AST 含组合函数调用（P/C/catalan/stirling）时路由至本域。
 //! 内部用 u128 累积，溢出时自动升级为 BigInt，返回 Scalar（fit i64）或 BigInt。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 
@@ -211,7 +211,7 @@ impl CombinatoricsDomain {
                 if k > n {
                     return Ok(EvalResult::Scalar(0.0));
                 }
-                let result = permutation(&n, &k);
+                let result = permutation(&n, &k)?;
                 Ok(bigint_to_result(result))
             }
             "C" => {
@@ -231,7 +231,7 @@ impl CombinatoricsDomain {
                 if k > n {
                     return Ok(EvalResult::Scalar(0.0));
                 }
-                let result = combination(&n, &k);
+                let result = combination(&n, &k)?;
                 Ok(bigint_to_result(result))
             }
             "catalan" => {
@@ -247,7 +247,7 @@ impl CombinatoricsDomain {
                         "catalan() requires non-negative argument".to_string(),
                     ));
                 }
-                let result = catalan(&n);
+                let result = catalan(&n)?;
                 Ok(bigint_to_result(result))
             }
             "stirling" => {
@@ -264,7 +264,7 @@ impl CombinatoricsDomain {
                         "stirling() requires non-negative arguments".to_string(),
                     ));
                 }
-                let result = stirling_second(&n, &k);
+                let result = stirling_second(&n, &k)?;
                 Ok(bigint_to_result(result))
             }
             _ => unreachable!(),
@@ -282,34 +282,44 @@ fn bigint_to_result(b: BigInt) -> EvalResult {
 }
 
 /// 排列数 P(n, k) = n!/(n-k)! = n*(n-1)*...*(n-k+1)。
-fn permutation(n: &BigInt, k: &BigInt) -> BigInt {
+/// DoS 防护：k 上界 10000，超限返回 Overflow。
+fn permutation(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     if k.is_zero() {
-        return BigInt::one();
+        return Ok(BigInt::one());
     }
     if k > n {
-        return BigInt::zero();
+        return Ok(BigInt::zero());
+    }
+    const MAX_PERMUTATION_K: u64 = 10000;
+    let k_u64 = k.to_u64().ok_or(CalcError::Overflow)?;
+    if k_u64 > MAX_PERMUTATION_K {
+        return Err(CalcError::Overflow);
     }
     let mut result = BigInt::one();
     let mut current = n.clone();
-    let k_u64 = k.to_u64().unwrap_or(0);
     for _ in 0..k_u64 {
         result *= &current;
         current -= 1;
     }
-    result
+    Ok(result)
 }
 
 /// 组合数 C(n, k) = n!/(k!(n-k)!) = P(n,k)/k!。
-fn combination(n: &BigInt, k: &BigInt) -> BigInt {
+/// DoS 防护：k 上界 10000，超限返回 Overflow。
+fn combination(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     if k.is_zero() || k == n {
-        return BigInt::one();
+        return Ok(BigInt::one());
     }
     if k > n {
-        return BigInt::zero();
+        return Ok(BigInt::zero());
     }
     // C(n,k) = C(n, n-k)，取较小的 k 提高效率
     let k_opt = if k < &(n - k) { k.clone() } else { n - k };
-    let k_u64 = k_opt.to_u64().unwrap_or(0);
+    const MAX_COMBINATION_K: u64 = 10000;
+    let k_u64 = k_opt.to_u64().ok_or(CalcError::Overflow)?;
+    if k_u64 > MAX_COMBINATION_K {
+        return Err(CalcError::Overflow);
+    }
     let mut result = BigInt::one();
     let mut current = n.clone();
     for i in 0..k_u64 {
@@ -317,34 +327,45 @@ fn combination(n: &BigInt, k: &BigInt) -> BigInt {
         result /= BigInt::from(i + 1);
         current -= 1;
     }
-    result
+    Ok(result)
 }
 
 /// Catalan 数 C(n) = C(2n,n)/(n+1)。
-fn catalan(n: &BigInt) -> BigInt {
+/// DoS 防护：n 上界 5000，超限返回 Overflow。
+fn catalan(n: &BigInt) -> Result<BigInt, CalcError> {
     if n.is_zero() {
-        return BigInt::one();
+        return Ok(BigInt::one());
+    }
+    const MAX_CATALAN_N: u64 = 5000;
+    let n_u64 = n.to_u64().ok_or(CalcError::Overflow)?;
+    if n_u64 > MAX_CATALAN_N {
+        return Err(CalcError::Overflow);
     }
     let two_n = n * 2;
-    let c_2n_n = combination(&two_n, n);
-    c_2n_n / (n + 1)
+    let c_2n_n = combination(&two_n, n)?;
+    Ok(c_2n_n / (n + 1))
 }
 
 /// 第二类 Stirling 数 S(n, k)：将 n 个元素划分为 k 个非空子集的方式数。
 /// 递推：S(n,k) = k*S(n-1,k) + S(n-1,k-1)
 /// 边界：S(0,0)=1, S(n,0)=0 (n>0), S(0,k)=0 (k>0), S(n,k)=0 (k>n)
-fn stirling_second(n: &BigInt, k: &BigInt) -> BigInt {
+/// DoS 防护：n、k 上界 5000，超限返回 Overflow。
+fn stirling_second(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     if n.is_zero() && k.is_zero() {
-        return BigInt::one();
+        return Ok(BigInt::one());
     }
     if n.is_zero() || k.is_zero() {
-        return BigInt::zero();
+        return Ok(BigInt::zero());
     }
     if k > n {
-        return BigInt::zero();
+        return Ok(BigInt::zero());
     }
-    let n_u64 = n.to_u64().unwrap_or(0);
-    let k_u64 = k.to_u64().unwrap_or(0);
+    const MAX_STIRLING_N: u64 = 5000;
+    let n_u64 = n.to_u64().ok_or(CalcError::Overflow)?;
+    let k_u64 = k.to_u64().ok_or(CalcError::Overflow)?;
+    if n_u64 > MAX_STIRLING_N || k_u64 > MAX_STIRLING_N {
+        return Err(CalcError::Overflow);
+    }
     // DP 表
     let mut dp: Vec<Vec<BigInt>> =
         vec![vec![BigInt::zero(); k_u64 as usize + 1]; n_u64 as usize + 1];
@@ -357,7 +378,7 @@ fn stirling_second(n: &BigInt, k: &BigInt) -> BigInt {
             dp[i][j] = &dp[i - 1][j - 1] + &dp[i - 1][j] * BigInt::from(j);
         }
     }
-    dp[n_u64 as usize][k_u64 as usize].clone()
+    Ok(dp[n_u64 as usize][k_u64 as usize].clone())
 }
 
 /// 递归检查 AST 是否含组合函数调用。
@@ -381,7 +402,7 @@ fn contains_combinatorics_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();
@@ -763,15 +784,15 @@ mod tests {
     #[test]
     fn test_permutation_known() {
         assert_eq!(
-            permutation(&BigInt::from(5), &BigInt::from(2)),
+            permutation(&BigInt::from(5), &BigInt::from(2)).unwrap(),
             BigInt::from(20)
         );
         assert_eq!(
-            permutation(&BigInt::from(5), &BigInt::from(0)),
+            permutation(&BigInt::from(5), &BigInt::from(0)).unwrap(),
             BigInt::from(1)
         );
         assert_eq!(
-            permutation(&BigInt::from(3), &BigInt::from(5)),
+            permutation(&BigInt::from(3), &BigInt::from(5)).unwrap(),
             BigInt::from(0)
         );
     }
@@ -779,42 +800,42 @@ mod tests {
     #[test]
     fn test_combination_known() {
         assert_eq!(
-            combination(&BigInt::from(10), &BigInt::from(3)),
+            combination(&BigInt::from(10), &BigInt::from(3)).unwrap(),
             BigInt::from(120)
         );
         assert_eq!(
-            combination(&BigInt::from(5), &BigInt::from(0)),
+            combination(&BigInt::from(5), &BigInt::from(0)).unwrap(),
             BigInt::from(1)
         );
         assert_eq!(
-            combination(&BigInt::from(5), &BigInt::from(5)),
+            combination(&BigInt::from(5), &BigInt::from(5)).unwrap(),
             BigInt::from(1)
         );
         assert_eq!(
-            combination(&BigInt::from(3), &BigInt::from(5)),
+            combination(&BigInt::from(3), &BigInt::from(5)).unwrap(),
             BigInt::from(0)
         );
     }
 
     #[test]
     fn test_catalan_known() {
-        assert_eq!(catalan(&BigInt::from(0)), BigInt::from(1));
-        assert_eq!(catalan(&BigInt::from(1)), BigInt::from(1));
-        assert_eq!(catalan(&BigInt::from(5)), BigInt::from(42));
+        assert_eq!(catalan(&BigInt::from(0)).unwrap(), BigInt::from(1));
+        assert_eq!(catalan(&BigInt::from(1)).unwrap(), BigInt::from(1));
+        assert_eq!(catalan(&BigInt::from(5)).unwrap(), BigInt::from(42));
     }
 
     #[test]
     fn test_stirling_known() {
         assert_eq!(
-            stirling_second(&BigInt::from(0), &BigInt::from(0)),
+            stirling_second(&BigInt::from(0), &BigInt::from(0)).unwrap(),
             BigInt::from(1)
         );
         assert_eq!(
-            stirling_second(&BigInt::from(5), &BigInt::from(2)),
+            stirling_second(&BigInt::from(5), &BigInt::from(2)).unwrap(),
             BigInt::from(15)
         );
         assert_eq!(
-            stirling_second(&BigInt::from(3), &BigInt::from(2)),
+            stirling_second(&BigInt::from(3), &BigInt::from(2)).unwrap(),
             BigInt::from(3)
         );
     }
@@ -1097,8 +1118,8 @@ mod tests {
         #[test]
         fn prop_combination_symmetry(n in 0u64..50, k in 0u64..50) {
             if k <= n {
-                let c1 = combination(&BigInt::from(n), &BigInt::from(k));
-                let c2 = combination(&BigInt::from(n), &BigInt::from(n - k));
+                let c1 = combination(&BigInt::from(n), &BigInt::from(k)).unwrap();
+                let c2 = combination(&BigInt::from(n), &BigInt::from(n - k)).unwrap();
                 prop_assert_eq!(c1, c2);
             }
         }
@@ -1106,13 +1127,13 @@ mod tests {
         /// 属性：C(n,0) == 1
         #[test]
         fn prop_combination_zero_k(n in 0u64..100) {
-            prop_assert_eq!(combination(&BigInt::from(n), &BigInt::from(0)), BigInt::from(1));
+            prop_assert_eq!(combination(&BigInt::from(n), &BigInt::from(0)).unwrap(), BigInt::from(1));
         }
 
         /// 属性：P(n,n) == n!
         #[test]
         fn prop_permutation_n_n_is_factorial(n in 0u64..20) {
-            let p = permutation(&BigInt::from(n), &BigInt::from(n));
+            let p = permutation(&BigInt::from(n), &BigInt::from(n)).unwrap();
             let mut factorial = BigInt::from(1);
             for i in 1..=n {
                 factorial *= BigInt::from(i);
@@ -1124,8 +1145,8 @@ mod tests {
         #[test]
         fn prop_combination_le_permutation(n in 0u64..50, k in 0u64..50) {
             if k <= n {
-                let c = combination(&BigInt::from(n), &BigInt::from(k));
-                let p = permutation(&BigInt::from(n), &BigInt::from(k));
+                let c = combination(&BigInt::from(n), &BigInt::from(k)).unwrap();
+                let p = permutation(&BigInt::from(n), &BigInt::from(k)).unwrap();
                 prop_assert!(c <= p);
             }
         }

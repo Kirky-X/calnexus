@@ -13,8 +13,8 @@
 //! 输入：AstNode::List 节点，元素必须为标量数值。
 //! 输出：EvalResult::Vector 或 EvalResult::Scalar。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use nalgebra::DVector;
 
 /// 向量函数白名单。
@@ -442,7 +442,7 @@ fn contains_vector_arithmetic(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

@@ -12,8 +12,8 @@
 //! 多项式表示：系数向量 Vec<f64>，升幂存储（coef[i] = x^i 的系数）。
 //! 输入语法：直接表达式 `poly_add(x^2+2x+1, x+1)`，域内 `expr_to_coeffs()` 转换。
 
-use crate::core::domain::CalculationDomain;
-use crate::core::types::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
 /// 多项式函数白名单。
 const POLYNOMIAL_FUNCTIONS: &[&str] = &[
@@ -311,7 +311,12 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
                                 "polynomial exponent must be non-negative integer".to_string(),
                             ));
                         }
+                        // DoS 防护：指数上界 1000，防止 OOM
+                        const MAX_POLY_DEGREE: usize = 1000;
                         let exp = *n as usize;
+                        if exp > MAX_POLY_DEGREE {
+                            return Err(CalcError::Overflow);
+                        }
                         let mut coeffs = vec![0.0; exp + 1];
                         coeffs[exp] = 1.0;
                         // 如果变量在 ctx 中有值，求值为常数
@@ -852,7 +857,7 @@ fn contains_polynomial_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

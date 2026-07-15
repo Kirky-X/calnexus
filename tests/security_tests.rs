@@ -142,6 +142,47 @@ fn sec_004_matrix_dimension_dos_rejected() {
     );
 }
 
+/// SEC-004b: 大参数 stirling/catalan/P/C 应被 DoS 上界拒绝（返回错误，不 OOM）。
+/// `stirling(100000, 50000)` 和 `catalan(100000)` 应触发上界检查返回 Overflow。
+#[test]
+fn sec_004b_combinatorics_dos_rejected() {
+    // stirling(100000, 50000) — 超过 MAX_STIRLING_N=5000
+    let output = calnexus_cli()
+        .arg("stirling(100000, 50000)")
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !output.status.success(),
+        "stirling(100000, 50000) should be rejected by DoS limit"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+    assert!(
+        stderr.contains("overflow") || stderr.contains("error"),
+        "stderr should mention overflow/error, got: {}",
+        stderr
+    );
+
+    // catalan(100000) — 超过 MAX_CATALAN_N=5000
+    let output = calnexus_cli()
+        .arg("catalan(100000)")
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !output.status.success(),
+        "catalan(100000) should be rejected by DoS limit"
+    );
+
+    // P(100000, 50000) — 超过 MAX_PERMUTATION_K=10000
+    let output = calnexus_cli()
+        .arg("P(100000, 50000)")
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !output.status.success(),
+        "P(100000, 50000) should be rejected by DoS limit"
+    );
+}
+
 /// SEC-005: `i64::MAX + 1` 不应 panic（使用 checked_* 或升级 BigInt）。
 #[test]
 fn sec_005_integer_overflow_no_panic() {
