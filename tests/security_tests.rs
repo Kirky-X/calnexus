@@ -247,26 +247,51 @@ fn sec_006_nan_inf_explicit_errors() {
     );
 }
 
-/// SEC-007: 复杂符号计算应在 5 秒内超时返回 `CalcError::Timeout`。
+/// SEC-007: 超时应触发 `CalcError::Timeout`（退出码 3），且复杂符号计算不会无限阻塞。
 ///
-/// 注：当前未实现显式 Timeout 变体；此测试验证长时间符号计算不会无限阻塞，
-/// 5s 内必有结果（Ok 或 Err）。`#[ignore]` 标记以避免 CI 长时阻塞。
+/// design.md §6.3：P0 阶段不实现基于 elapsed 的自动超时（留 P3），
+/// 但通过 `EvalContext { timeout: Duration::ZERO }` 显式触发 Timeout 错误路径。
+/// 同时验证 `integrate(exp(x^2),x)` 不会无限阻塞（有界运行）。
 #[test]
-#[ignore = "timeout not yet implemented; run with --ignored to verify bounded runtime"]
 fn sec_007_symbolic_timeout_bounded() {
+    // 1. 显式触发 Timeout：ctx.timeout == 0 → 立即返回 CalcError::timeout()
+    use calnexus::evaluate;
+    use calnexus::CalcError;
+    use std::time::Duration;
+
+    let ctx = EvalContext {
+        timeout: Duration::ZERO,
+        ..Default::default()
+    };
+    let cache = CacheManager::new();
+    let result = evaluate("2+3", &ctx, None, &cache);
+    assert!(
+        matches!(result, Err(ref e) if e.kind == calnexus::ErrorKind::Timeout),
+        "expected CalcError::Timeout, got {:?}",
+        result
+    );
+
+    // 2. Timeout 错误退出码契约：exit_code == 3
+    let err = CalcError::timeout();
+    assert_eq!(err.kind, calnexus::ErrorKind::Timeout);
+    assert_eq!(
+        calnexus::ErrorKind::Timeout.exit_code(),
+        3,
+        "Timeout exit code must be 3"
+    );
+
+    // 3. 有界运行：复杂符号计算不会无限阻塞（<10s）
     let start = Instant::now();
     let output = calnexus_cli()
         .arg("integrate(exp(x^2),x)")
         .output()
         .expect("failed to execute");
     let elapsed = start.elapsed();
-    // 应在 5s 内完成（即使返回错误）
     assert!(
         elapsed.as_secs() < 10,
         "symbolic computation should be bounded (<10s), took {:?}",
         elapsed
     );
-    // 进程不应被信号杀死
     assert!(
         output.status.code().is_some(),
         "process must not be killed by signal"

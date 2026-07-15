@@ -329,6 +329,12 @@ pub fn evaluate(
     precision: Option<usize>,
     cache: &CacheManager,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
+    // 0. 超时检查：ctx.timeout == 0 触发立即超时（design.md §6.3：P0 不实现真正时间追踪，
+    //    仅支持显式配置驱动的超时触发；P3 会添加基于 elapsed 的自动超时）
+    if ctx.timeout.is_zero() {
+        return Err(CalcError::timeout());
+    }
+
     // 1. 解析
     let ast = parse(expr)?;
 
