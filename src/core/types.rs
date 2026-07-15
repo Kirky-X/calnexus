@@ -682,6 +682,296 @@ mod tests {
         assert_eq!(CalcError::parse("e1"), CalcError::parse("e1"));
     }
 
+    // ===== Span 测试 =====
+
+    #[test]
+    fn span_new_and_accessors() {
+        let s = Span::new(3, 7);
+        assert_eq!(s.start, 3);
+        assert_eq!(s.end, 7);
+        assert!(!s.is_empty());
+
+        let empty = Span::new(5, 5);
+        assert!(empty.is_empty());
+
+        let empty2 = Span::new(5, 3);
+        assert!(empty2.is_empty());
+    }
+
+    #[test]
+    fn span_point() {
+        let p = Span::point(10);
+        assert_eq!(p.start, 10);
+        assert_eq!(p.end, 11);
+        assert!(!p.is_empty());
+    }
+
+    #[test]
+    fn span_display() {
+        assert_eq!(Span::new(3, 7).to_string(), "3:7");
+        assert_eq!(Span::point(0).to_string(), "0:1");
+    }
+
+    #[test]
+    fn span_default() {
+        let s = Span::default();
+        assert_eq!(s.start, 0);
+        assert_eq!(s.end, 0);
+        assert!(s.is_empty());
+    }
+
+    // ===== ErrorKind 测试 =====
+
+    #[test]
+    fn error_kind_exit_code_all_variants() {
+        assert_eq!(ErrorKind::Parse.exit_code(), 1);
+        assert_eq!(ErrorKind::Eval.exit_code(), 1);
+        assert_eq!(ErrorKind::Overflow.exit_code(), 1);
+        assert_eq!(ErrorKind::DivisionByZero.exit_code(), 1);
+        assert_eq!(ErrorKind::Domain.exit_code(), 1);
+        assert_eq!(ErrorKind::Depth.exit_code(), 1);
+        assert_eq!(ErrorKind::NaNOrInf.exit_code(), 1);
+        assert_eq!(ErrorKind::UndefinedSymbol.exit_code(), 1);
+        assert_eq!(ErrorKind::Usage.exit_code(), 2);
+        assert_eq!(ErrorKind::Timeout.exit_code(), 3);
+    }
+
+    #[test]
+    fn error_kind_i18n_key_all_variants() {
+        assert_eq!(ErrorKind::Parse.i18n_key(), "error.parse");
+        assert_eq!(ErrorKind::Eval.i18n_key(), "error.eval");
+        assert_eq!(ErrorKind::Overflow.i18n_key(), "error.overflow");
+        assert_eq!(
+            ErrorKind::DivisionByZero.i18n_key(),
+            "error.division_by_zero"
+        );
+        assert_eq!(ErrorKind::Domain.i18n_key(), "error.domain");
+        assert_eq!(ErrorKind::Depth.i18n_key(), "error.depth");
+        assert_eq!(ErrorKind::NaNOrInf.i18n_key(), "error.nan_or_inf");
+        assert_eq!(
+            ErrorKind::UndefinedSymbol.i18n_key(),
+            "error.undefined_symbol"
+        );
+        assert_eq!(ErrorKind::Timeout.i18n_key(), "error.timeout");
+        assert_eq!(ErrorKind::Usage.i18n_key(), "error.usage");
+    }
+
+    #[test]
+    fn error_kind_display() {
+        assert_eq!(ErrorKind::Parse.to_string(), "error.parse");
+        assert_eq!(ErrorKind::Timeout.to_string(), "error.timeout");
+    }
+
+    // ===== CalcError 构造器测试 =====
+
+    #[test]
+    fn calc_error_all_constructors() {
+        let e = CalcError::parse("bad syntax");
+        assert_eq!(e.kind, ErrorKind::Parse);
+        assert_eq!(e.message, "bad syntax");
+        assert!(e.span.is_none());
+        assert!(e.hint.is_none());
+
+        let e = CalcError::eval("runtime issue");
+        assert_eq!(e.kind, ErrorKind::Eval);
+        assert_eq!(e.message, "runtime issue");
+
+        let e = CalcError::overflow();
+        assert_eq!(e.kind, ErrorKind::Overflow);
+        assert_eq!(e.message, "integer overflow");
+
+        let e = CalcError::nan_or_inf();
+        assert_eq!(e.kind, ErrorKind::NaNOrInf);
+        assert_eq!(e.message, "result is NaN or infinity");
+
+        let e = CalcError::domain("asin(2)");
+        assert_eq!(e.kind, ErrorKind::Domain);
+        assert_eq!(e.message, "asin(2)");
+
+        let e = CalcError::depth_exceeded();
+        assert_eq!(e.kind, ErrorKind::Depth);
+        assert_eq!(e.message, "AST depth exceeded limit");
+
+        let e = CalcError::division_by_zero();
+        assert_eq!(e.kind, ErrorKind::DivisionByZero);
+        assert_eq!(e.message, "division by zero");
+
+        let e = CalcError::undefined_symbol("foo");
+        assert_eq!(e.kind, ErrorKind::UndefinedSymbol);
+        assert_eq!(e.message, "undefined symbol: foo");
+        assert!(e.hint.is_some());
+        assert!(e.hint.as_ref().unwrap().contains("foo"));
+
+        let e = CalcError::timeout();
+        assert_eq!(e.kind, ErrorKind::Timeout);
+        assert_eq!(e.message, "evaluation timed out");
+
+        let e = CalcError::usage("invalid flag");
+        assert_eq!(e.kind, ErrorKind::Usage);
+        assert_eq!(e.message, "invalid flag");
+    }
+
+    #[test]
+    fn calc_error_with_span_chaining() {
+        let e = CalcError::parse("unexpected token").with_span(Span::new(5, 7));
+        assert_eq!(e.kind, ErrorKind::Parse);
+        assert_eq!(e.span, Some(Span::new(5, 7)));
+    }
+
+    #[test]
+    fn calc_error_with_hint_chaining() {
+        let e = CalcError::division_by_zero().with_hint("check divisor");
+        assert_eq!(e.kind, ErrorKind::DivisionByZero);
+        assert_eq!(e.hint.as_deref(), Some("check divisor"));
+    }
+
+    #[test]
+    fn calc_error_with_span_and_hint_chaining() {
+        let e = CalcError::domain("asin(2)")
+            .with_span(Span::point(0))
+            .with_hint("asin domain is [-1, 1]");
+        assert_eq!(e.span, Some(Span::point(0)));
+        assert_eq!(e.hint.as_deref(), Some("asin domain is [-1, 1]"));
+    }
+
+    #[test]
+    fn calc_error_display_all_kinds() {
+        assert_eq!(CalcError::parse("msg").to_string(), "parse error: msg");
+        assert_eq!(CalcError::eval("msg").to_string(), "evaluation error: msg");
+        assert_eq!(CalcError::overflow().to_string(), "integer overflow");
+        assert_eq!(
+            CalcError::nan_or_inf().to_string(),
+            "result is NaN or infinity"
+        );
+        assert_eq!(CalcError::domain("msg").to_string(), "domain error: msg");
+        assert_eq!(
+            CalcError::depth_exceeded().to_string(),
+            "AST depth exceeded limit"
+        );
+        assert_eq!(
+            CalcError::division_by_zero().to_string(),
+            "division by zero"
+        );
+        assert_eq!(
+            CalcError::undefined_symbol("foo").to_string(),
+            "undefined symbol: foo"
+        );
+        assert_eq!(CalcError::timeout().to_string(), "evaluation timed out");
+        assert_eq!(CalcError::usage("bad flag").to_string(), "bad flag");
+    }
+
+    // ===== 三态呈现测试 =====
+
+    #[test]
+    fn calc_error_friendly_en_without_span_hint() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let e = CalcError::parse("unexpected token");
+        let friendly = e.friendly(&i18n);
+        assert!(friendly.contains("Parse error"));
+        assert!(friendly.contains("unexpected token"));
+    }
+
+    #[test]
+    fn calc_error_friendly_zh_with_span_and_hint() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+        let e = CalcError::domain("asin(2)")
+            .with_span(Span::new(0, 6))
+            .with_hint("asin domain is [-1, 1]");
+        let friendly = e.friendly(&i18n);
+        assert!(friendly.contains("定义域错误"));
+        assert!(friendly.contains("位置 0:6"));
+        assert!(friendly.contains("asin(2)"));
+        assert!(friendly.contains("提示"));
+        assert!(friendly.contains("asin domain is [-1, 1]"));
+    }
+
+    #[test]
+    fn calc_error_to_json_without_span_hint() {
+        let e = CalcError::parse("bad token");
+        let json = e.to_json();
+        assert!(json.contains(r#""kind":"Parse""#));
+        assert!(json.contains(r#""message":"bad token""#));
+        assert!(json.contains(r#""exit_code":1"#));
+        assert!(!json.contains(r#""span""#));
+        assert!(!json.contains(r#""hint""#));
+    }
+
+    #[test]
+    fn calc_error_to_json_with_span_and_hint() {
+        let e = CalcError::domain("asin(2)")
+            .with_span(Span::new(0, 6))
+            .with_hint("check domain");
+        let json = e.to_json();
+        assert!(json.contains(r#""kind":"Domain""#));
+        assert!(json.contains(r#""message":"asin(2)""#));
+        assert!(json.contains(r#""span":{"start":0,"end":6}"#));
+        assert!(json.contains(r#""hint":"check domain""#));
+        assert!(json.contains(r#""exit_code":1"#));
+    }
+
+    #[test]
+    fn calc_error_to_json_escapes_quotes() {
+        let e = CalcError::parse(r#"bad "token""#);
+        let json = e.to_json();
+        assert!(json.contains(r#"\"token\""#));
+    }
+
+    #[test]
+    fn calc_error_to_json_timeout_exit_code() {
+        let e = CalcError::timeout();
+        let json = e.to_json();
+        assert!(json.contains(r#""exit_code":3"#));
+    }
+
+    #[test]
+    fn calc_error_to_json_usage_exit_code() {
+        let e = CalcError::usage("bad flag");
+        let json = e.to_json();
+        assert!(json.contains(r#""exit_code":2"#));
+    }
+
+    #[test]
+    fn calc_error_to_explain_en() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let e = CalcError::division_by_zero().with_hint("check divisor");
+        let explain = e.to_explain(&i18n);
+        assert!(explain.contains("Division by zero"));
+        assert!(explain.contains("错误类别: DivisionByZero"));
+        assert!(explain.contains("退出码: 1"));
+        assert!(explain.contains("建议: check divisor"));
+    }
+
+    #[test]
+    fn calc_error_to_explain_zh() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+        let e = CalcError::timeout();
+        let explain = e.to_explain(&i18n);
+        assert!(explain.contains("求值超时"));
+        assert!(explain.contains("错误类别: Timeout"));
+        assert!(explain.contains("退出码: 3"));
+    }
+
+    // ===== Error trait 测试 =====
+
+    #[test]
+    fn calc_error_error_trait_downcast() {
+        let e = CalcError::parse("test error");
+        let boxed: Box<dyn std::error::Error> = Box::new(e.clone());
+        let downcasted = boxed.downcast_ref::<CalcError>();
+        assert!(downcasted.is_some());
+    }
+
+    #[test]
+    fn calc_error_clone_preserves_all_fields() {
+        let e = CalcError::domain("asin(2)")
+            .with_span(Span::new(0, 6))
+            .with_hint("domain hint");
+        let cloned = e.clone();
+        assert_eq!(e, cloned);
+        assert_eq!(e.span, cloned.span);
+        assert_eq!(e.hint, cloned.hint);
+    }
+
     #[test]
     fn canonical_form_construct_and_access() {
         let cf = CanonicalForm::new("(+ 2 3)");
