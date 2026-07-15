@@ -37,8 +37,7 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
         let char_count = input.chars().count();
         return Err(CalcError::parse(format!(
             "expression length {} exceeds maximum of {} characters",
-            char_count,
-            MAX_EXPR_LEN
+            char_count, MAX_EXPR_LEN
         ))
         .with_span(Span::new(0, char_count)));
     }

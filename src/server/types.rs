@@ -135,7 +135,11 @@ impl EvaluateResponse {
         Self {
             result: result_json,
             domain,
-            cache: if cache_hit { "hit".to_string() } else { "miss".to_string() },
+            cache: if cache_hit {
+                "hit".to_string()
+            } else {
+                "miss".to_string()
+            },
         }
     }
 }
@@ -189,15 +193,11 @@ fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
         EvalResult::Complex(re, im) => {
             json!({"re": re, "im": im})
         }
-        EvalResult::Matrix(m) => {
-            Value::Array(
-                m.iter()
-                    .map(|row| {
-                        Value::Array(row.iter().map(|v| Value::from(*v)).collect())
-                    })
-                    .collect(),
-            )
-        }
+        EvalResult::Matrix(m) => Value::Array(
+            m.iter()
+                .map(|row| Value::Array(row.iter().map(|v| Value::from(*v)).collect()))
+                .collect(),
+        ),
         EvalResult::BigInt(b) => Value::from(b.to_string()),
         EvalResult::BigRational(r) => {
             json!({
@@ -277,7 +277,8 @@ mod tests {
 
     #[test]
     fn test_evaluate_response_scalar() {
-        let resp = EvaluateResponse::from_eval(EvalResult::Scalar(5.0), "arithmetic".into(), false, None);
+        let resp =
+            EvaluateResponse::from_eval(EvalResult::Scalar(5.0), "arithmetic".into(), false, None);
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""result":5"#));
         assert!(json.contains(r#""domain":"arithmetic""#));
@@ -286,7 +287,8 @@ mod tests {
 
     #[test]
     fn test_evaluate_response_cache_hit() {
-        let resp = EvaluateResponse::from_eval(EvalResult::Scalar(42.0), "arithmetic".into(), true, None);
+        let resp =
+            EvaluateResponse::from_eval(EvalResult::Scalar(42.0), "arithmetic".into(), true, None);
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""cache":"hit""#));
     }
@@ -331,7 +333,12 @@ mod tests {
     #[test]
     fn test_evaluate_response_bigrational() {
         let r = BigRational::new(BigInt::from(1), BigInt::from(3));
-        let resp = EvaluateResponse::from_eval(EvalResult::BigRational(r), "precision".into(), false, None);
+        let resp = EvaluateResponse::from_eval(
+            EvalResult::BigRational(r),
+            "precision".into(),
+            false,
+            None,
+        );
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""num":"1""#));
         assert!(json.contains(r#""den":"3""#));

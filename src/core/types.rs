@@ -459,7 +459,12 @@ impl CalcError {
     pub fn friendly(&self, i18n: &crate::i18n::I18n) -> String {
         let mut s = i18n.t(self.kind.i18n_key()).to_string();
         if let Some(span) = self.span {
-            s.push_str(&format!(" ({} {}:{})", i18n.t("label.position"), span.start, span.end));
+            s.push_str(&format!(
+                " ({} {}:{})",
+                i18n.t("label.position"),
+                span.start,
+                span.end
+            ));
         }
         s.push_str(&format!(": {}", self.message));
         if let Some(hint) = &self.hint {
@@ -491,8 +496,16 @@ impl CalcError {
     /// 教育模式（--explain）。design.md §5.5。
     pub fn to_explain(&self, i18n: &crate::i18n::I18n) -> String {
         let mut s = self.friendly(i18n);
-        s.push_str(&format!("\n\n  {}: {:?}", i18n.t("label.error_kind"), self.kind));
-        s.push_str(&format!("\n  {}: {}", i18n.t("label.exit_code"), self.kind.exit_code()));
+        s.push_str(&format!(
+            "\n\n  {}: {:?}",
+            i18n.t("label.error_kind"),
+            self.kind
+        ));
+        s.push_str(&format!(
+            "\n  {}: {}",
+            i18n.t("label.exit_code"),
+            self.kind.exit_code()
+        ));
         if let Some(hint) = &self.hint {
             s.push_str(&format!("\n  {}: {}", i18n.t("label.suggestion"), hint));
         }

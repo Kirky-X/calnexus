@@ -248,8 +248,7 @@ mod tests {
 
         let ctx = EvalContext::new();
         // precision 模式不应命中常规模式缓存，应重新计算返回 BigRational/BigInt
-        let (result, domain, cache_hit, fmt_prec) =
-            evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+        let (result, domain, cache_hit, fmt_prec) = evaluate("2+3", &ctx, Some(5), &cache).unwrap();
         assert_ne!(result, EvalResult::Scalar(5.0));
         assert_eq!(result, EvalResult::BigInt(num_bigint::BigInt::from(5)));
         assert_eq!(domain, "precision");
@@ -268,7 +267,10 @@ mod tests {
         let huge_n = MAX_PRECISION + 1;
         let expr = format!("precision({}, 1/3)", huge_n);
         let result = evaluate(&expr, &ctx, None, &cache);
-        assert!(result.is_err(), "precision N > MAX_PRECISION must be rejected");
+        assert!(
+            result.is_err(),
+            "precision N > MAX_PRECISION must be rejected"
+        );
     }
 
     // precision 参数本身 DoS 防护回归测试（安全审查 HIGH-1）。
@@ -279,7 +281,10 @@ mod tests {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
         let result = evaluate("1/3", &ctx, Some(MAX_PRECISION + 1), &cache);
-        assert!(result.is_err(), "precision param > MAX_PRECISION must be rejected");
+        assert!(
+            result.is_err(),
+            "precision param > MAX_PRECISION must be rejected"
+        );
     }
 
     // 常规模式缓存命中路径：预填充缓存后，evaluate 应直接返回缓存值

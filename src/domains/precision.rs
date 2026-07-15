@@ -14,7 +14,7 @@
 //! 内部求值统一使用 `BigRational`，结果根据分母是否为 1 转换为 `BigInt` 或 `BigRational`。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, MAX_PRECISION, UnaryOp};
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_PRECISION};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Signed, Zero};

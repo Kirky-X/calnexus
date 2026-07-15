@@ -243,7 +243,11 @@ mod tests {
     #[test]
     fn test_from_str_zhongwen_falls_back_to_en() {
         let i18n = I18n::from_str("zhongwen");
-        assert_eq!(i18n.lang(), Lang::En, "zhongwen should fall back to En, not Zh");
+        assert_eq!(
+            i18n.lang(),
+            Lang::En,
+            "zhongwen should fall back to En, not Zh"
+        );
     }
 
     // ===== I18n::from_str — 大小写不敏感 =====

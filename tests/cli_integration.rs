@@ -1375,11 +1375,7 @@ fn test_json_mode_var_error_output_format() {
 #[test]
 fn test_json_mode_empty_stdin_error_output_format() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    let assert = cmd
-        .arg("--json")
-        .write_stdin("")
-        .assert()
-        .failure();
+    let assert = cmd.arg("--json").write_stdin("").assert().failure();
     let output = assert.get_output();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1437,10 +1433,7 @@ fn test_serve_http_flag_conflicts_repl() {
 #[test]
 fn test_serve_mcp_flag_conflicts_batch() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    let assert = cmd
-        .args(["--serve-mcp", "--batch", "-"])
-        .assert()
-        .failure();
+    let assert = cmd.args(["--serve-mcp", "--batch", "-"]).assert().failure();
     let output = assert.get_output();
     assert_eq!(
         output.status.code(),

@@ -14,11 +14,11 @@
 
 use super::types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse};
 use super::ServerError;
+use crate::evaluate;
+use crate::CacheManager;
 use axum::extract::DefaultBodyLimit;
 use axum::response::Response;
 use axum::Router;
-use crate::evaluate;
-use crate::CacheManager;
 use sdforge::axum::extract::Json;
 use sdforge::axum::http::status::StatusCode;
 use sdforge::axum::routing::post;
@@ -88,15 +88,16 @@ async fn evaluate_handler(Json(req): Json<EvaluateRequest>) -> Response {
         // evaluate 成功
         Ok(Ok((eval_result, domain, cache_hit, fmt_prec))) => (
             StatusCode::OK,
-            Json(EvaluateResponse::from_eval(eval_result, domain, cache_hit, fmt_prec)),
+            Json(EvaluateResponse::from_eval(
+                eval_result,
+                domain,
+                cache_hit,
+                fmt_prec,
+            )),
         )
             .into_response(),
         // evaluate 返回计算错误（Parse/Eval/Overflow/DivisionByZero 等）
-        Ok(Err(e)) => (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse::from(&e)),
-        )
-            .into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(ErrorResponse::from(&e))).into_response(),
         // spawn_blocking panic（不应发生，但必须显性化处理，规则 12）
         Err(join_err) => (
             StatusCode::INTERNAL_SERVER_ERROR,

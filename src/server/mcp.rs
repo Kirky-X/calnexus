@@ -78,9 +78,8 @@ impl SdForgeTool for EvaluateTool {
     fn call(&self, input: Option<serde_json::Value>) -> Result<CallToolResult, ErrorData> {
         // 1. 解析输入参数（None / Null → invalid_params）
         let input = input.unwrap_or(serde_json::Value::Null);
-        let req: EvaluateRequest = serde_json::from_value(input).map_err(|e| {
-            ErrorData::invalid_params(format!("invalid arguments: {}", e), None)
-        })?;
+        let req: EvaluateRequest = serde_json::from_value(input)
+            .map_err(|e| ErrorData::invalid_params(format!("invalid arguments: {}", e), None))?;
 
         // 2. 安全校验（vars ≤1024 键，precision ≤10000），与 HTTP handler 同理
         if let Err(e) = req.validate() {

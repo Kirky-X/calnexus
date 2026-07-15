@@ -326,9 +326,9 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
                 v
             )));
         }
-        let value: f64 = parts[1].parse().map_err(|e| {
-            CalcError::usage(format!("invalid --var value '{}': {}", parts[1], e))
-        })?;
+        let value: f64 = parts[1]
+            .parse()
+            .map_err(|e| CalcError::usage(format!("invalid --var value '{}': {}", parts[1], e)))?;
         ctx = ctx.with_var(parts[0], value);
     }
     Ok(ctx)

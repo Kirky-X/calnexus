@@ -89,9 +89,16 @@ fn test_mcp_tool_evaluate_error() {
         .call_tool_internal("evaluate", Some(json!({"expr": "2++3"})))
         .expect("evaluate tool should be registered");
 
-    assert_eq!(result.is_error, Some(true), "parse error should set is_error");
+    assert_eq!(
+        result.is_error,
+        Some(true),
+        "parse error should set is_error"
+    );
     let body = extract_result_json(&result);
-    assert!(body.get("error").is_some(), "error response should contain 'error'");
+    assert!(
+        body.get("error").is_some(),
+        "error response should contain 'error'"
+    );
     assert!(body["error"]["kind"].as_str().is_some());
     assert!(body["error"]["message"].as_str().is_some());
 }
@@ -103,10 +110,7 @@ fn test_mcp_tool_evaluate_error() {
 fn test_mcp_tool_evaluate_precision() {
     let server = build_mcp_server();
     let result = server
-        .call_tool_internal(
-            "evaluate",
-            Some(json!({"expr": "1/3", "precision": 2})),
-        )
+        .call_tool_internal("evaluate", Some(json!({"expr": "1/3", "precision": 2})))
         .expect("evaluate tool should be registered");
 
     assert_ne!(result.is_error, Some(true));

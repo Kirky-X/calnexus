@@ -161,8 +161,14 @@ fn snap_insta_dependency_compiles() {
 /// T003 Red 阶段：此测试应失败（当前代码用 after_implicit.len() 返回字节偏移 8）。
 #[test]
 fn test_span_multibyte_char_position() {
-    let output = calnexus().arg("你好+1").output().expect("failed to execute");
-    assert!(!output.status.success(), "expected non-zero exit for invalid expr");
+    let output = calnexus()
+        .arg("你好+1")
+        .output()
+        .expect("failed to execute");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit for invalid expr"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     // 期望字符偏移：(0, 4) — "你好+1" 是 4 个字符
     assert!(
