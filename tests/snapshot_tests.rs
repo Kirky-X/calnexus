@@ -151,3 +151,29 @@ fn snap_insta_dependency_compiles() {
     let _ = insta::Settings::new();
     assert!(Path::new("tests/snapshot_tests.rs").exists());
 }
+
+/// T003 Red: 多字节 UTF-8 字符的 Span 位置应为字符偏移（kueiku HIGH-1）
+///
+/// "你好+1" 是 4 个字符（你/好/+/1）= 8 字节（中文每字 3 字节 + ASCII 2 字节）。
+/// mathexpr 不支持中文变量名，会触发解析失败。
+/// Span 应为 (0, 4)（字符偏移）而非 (0, 8)（字节偏移）。
+///
+/// T003 Red 阶段：此测试应失败（当前代码用 after_implicit.len() 返回字节偏移 8）。
+#[test]
+fn test_span_multibyte_char_position() {
+    let output = calnexus().arg("你好+1").output().expect("failed to execute");
+    assert!(!output.status.success(), "expected non-zero exit for invalid expr");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // 期望字符偏移：(0, 4) — "你好+1" 是 4 个字符
+    assert!(
+        stderr.contains("Position 0:4"),
+        "expected char offset (0:4), got stderr: {}",
+        stderr
+    );
+    // 反向断言：不应使用字节偏移 (0, 8)
+    assert!(
+        !stderr.contains("Position 0:8"),
+        "should not use byte offset (0:8), got stderr: {}",
+        stderr
+    );
+}

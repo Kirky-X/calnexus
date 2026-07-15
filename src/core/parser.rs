@@ -31,13 +31,16 @@ pub(crate) const MAX_EXPR_LEN: usize = 4096;
 ///    d. 转换为 CalNexus AstNode（`complex()` → `Complex`，`%` → `mod()`，`pi`/`e` → Variable）
 pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 长度检查（spec: 超长输入不进入词法分析）
+    // 注意：input.len() 是字节长度（O(1)），用于快速失败；
+    // Span 用字符偏移（design.md D1），故 chars().count()（O(n)）仅在错误分支计算
     if input.len() > MAX_EXPR_LEN {
+        let char_count = input.chars().count();
         return Err(CalcError::parse(format!(
             "expression length {} exceeds maximum of {} characters",
-            input.len(),
+            char_count,
             MAX_EXPR_LEN
         ))
-        .with_span(Span::new(0, input.len())));
+        .with_span(Span::new(0, char_count)));
     }
 
     let trimmed = input.trim();
@@ -76,7 +79,8 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
 
     // mathexpr 解析
     let expr = mathexpr::parse(&after_implicit).map_err(|e| {
-        CalcError::parse(format!("{}", e)).with_span(Span::new(0, after_implicit.len()))
+        // Span 用字符偏移（design.md D1）：after_implicit.chars().count() 而非 .len()
+        CalcError::parse(format!("{}", e)).with_span(Span::new(0, after_implicit.chars().count()))
     })?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
@@ -141,7 +145,7 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
     } else {
         Err(
             CalcError::parse(format!("expected bracket literal, got: {}", trimmed))
-                .with_span(Span::new(0, trimmed.len())),
+                .with_span(Span::new(0, trimmed.chars().count())),
         )
     }
 }
@@ -303,7 +307,7 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
     if !trimmed.starts_with("[[") || !trimmed.ends_with("]]") {
         return Err(
             CalcError::parse(format!("invalid matrix literal: {}", trimmed))
-                .with_span(Span::new(0, trimmed.len())),
+                .with_span(Span::new(0, trimmed.chars().count())),
         );
     }
     // 去掉外层 `[[` 和 `]]`，得到 `row1],[row2],[...`
@@ -322,13 +326,13 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
                     "expected list row in matrix, got: {:?}",
                     row_node
                 ))
-                .with_span(Span::new(0, trimmed.len())))
+                .with_span(Span::new(0, trimmed.chars().count())))
             }
         }
     }
     if rows.is_empty() {
         return Err(CalcError::parse("empty matrix literal".to_string())
-            .with_span(Span::new(0, trimmed.len())));
+            .with_span(Span::new(0, trimmed.chars().count())));
     }
     Ok(AstNode::Matrix(rows))
 }
@@ -342,7 +346,7 @@ fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
         return Err(
             CalcError::parse(format!("invalid list literal: {}", trimmed))
-                .with_span(Span::new(0, trimmed.len())),
+                .with_span(Span::new(0, trimmed.chars().count())),
         );
     }
     // 去掉 `[` 和 `]`
@@ -1649,11 +1653,11 @@ mod tests {
 
     #[test]
     fn test_span_length_exceeded() {
-        // 超长表达式，span 覆盖整个输入
+        // 超长表达式，span 覆盖整个输入（字符偏移，design.md D1）
         let expr = "a".repeat(MAX_EXPR_LEN + 1);
         let err = parse(&expr).unwrap_err();
         assert_eq!(err.kind, ErrorKind::Parse);
-        assert_span(&err, Span::new(0, expr.len()));
+        assert_span(&err, Span::new(0, expr.chars().count()));
     }
 
     #[test]

@@ -277,14 +277,16 @@ impl EvalResult {
     }
 }
 
-/// 源代码跨度（字节偏移）。
+/// 源代码跨度（字符偏移）。
 ///
-/// 用于精确定位错误在输入表达式中的位置。design.md §5.1。
+/// 用于精确定位错误在输入表达式中的位置。design.md §5.1（D1：字符偏移语义）。
+/// 注意：`str::len()` 返回字节长度，`str::chars().count()` 返回字符数量；
+/// 多字节 UTF-8 字符（如中文）的 Span 必须用字符偏移，否则位置错误。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Span {
-    /// 起始字节偏移（含）。
+    /// 起始字符偏移（含）。
     pub start: usize,
-    /// 结束字节偏移（不含）。
+    /// 结束字符偏移（不含）。
     pub end: usize,
 }
 
