@@ -9,9 +9,10 @@
 //! 约束：单条 ≤ 4096 字符、总条数 ≤ 1000；超限返回错误并标明行号。
 //! 流程：读取 → 解析验证 → 预规范化（串行）→ 并行求值（rayon）→ 按序输出 + 缓存统计。
 
-use crate::cli::{evaluate, format_result};
+use crate::cli::format_result;
 use crate::core::MAX_EXPR_LEN;
 use crate::core::{EvalContext, EvalResult};
+use crate::evaluator::evaluate;
 use rayon::prelude::*;
 use std::io::{self, BufRead, Read};
 use std::time::Instant;

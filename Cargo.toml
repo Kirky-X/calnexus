@@ -18,9 +18,9 @@ cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
-http = ["dep:sdforge", "sdforge/http"]
+http = ["dep:sdforge", "sdforge/http", "dep:serde_json", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
-mcp = ["dep:sdforge", "sdforge/mcp"]
+mcp = ["dep:sdforge", "sdforge/mcp", "dep:serde_json", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # FX: 汇率换算（P2 实现）
 fx = []
 # Numerical: 高级数值计算（eig/SVD 等，P3 实现）
@@ -58,6 +58,8 @@ rayon = { version = "1", default-features = false, optional = true }
 icu = { version = "2", default-features = false, features = ["compiled_data"], optional = true }
 # sdforge: HTTP/MCP 接口封装层（禁用默认特性，按需启用 http/mcp）
 sdforge = { version = "0.4", default-features = false, optional = true }
+# serde_json: JSON 序列化（server 模块用，http/mcp feature 启用）
+serde_json = { version = "1", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }

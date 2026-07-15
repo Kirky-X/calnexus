@@ -14,10 +14,13 @@ mod batch;
 mod cli;
 mod core;
 mod domains;
+mod evaluator;
 mod i18n;
 mod output;
 #[cfg(feature = "cli")]
 mod repl;
+#[cfg(any(feature = "http", feature = "mcp"))]
+mod server;
 mod symbolic;
 
 pub use core::{
@@ -29,10 +32,13 @@ pub use domains::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
     PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain,
 };
+pub use evaluator::evaluate;
 pub use i18n::{I18n, Lang};
 pub use symbolic::SymbolicDomain;
 
 #[cfg(feature = "cli")]
-pub use cli::{evaluate, run};
+pub use cli::run;
 #[cfg(feature = "cli")]
 pub use domains::format_bigrational;
+#[cfg(any(feature = "http", feature = "mcp"))]
+pub use server::*;
