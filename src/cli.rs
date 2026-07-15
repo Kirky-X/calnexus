@@ -85,10 +85,7 @@ pub fn run() -> i32 {
     if cli.repl {
         let mut ctx = match parse_vars(&cli.vars) {
             Ok(ctx) => ctx,
-            Err(msg) => {
-                eprintln!("error: {}", msg);
-                return 2;
-            }
+            Err(e) => return handle_error(&e, &cli, &i18n),
         };
         ctx.precision = cli.precision;
         return crate::repl::ReplSession::new(ctx).run();
@@ -98,10 +95,7 @@ pub fn run() -> i32 {
     if let Some(path) = &cli.batch {
         let ctx = match parse_vars(&cli.vars) {
             Ok(ctx) => ctx,
-            Err(msg) => {
-                eprintln!("error: {}", msg);
-                return 2;
-            }
+            Err(e) => return handle_error(&e, &cli, &i18n),
         };
         return crate::batch::BatchProcessor::run(path, &ctx, cli.json);
     }
@@ -109,16 +103,13 @@ pub fn run() -> i32 {
     // 获取表达式（位置参数或 stdin）
     let expr = match get_expression(&cli) {
         Ok(e) => e,
-        Err(code) => return code,
+        Err(e) => return handle_error(&e, &cli, &i18n),
     };
 
     // 解析变量绑定
     let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
-        Err(msg) => {
-            eprintln!("error: {}", msg);
-            return 2;
-        }
+        Err(e) => return handle_error(&e, &cli, &i18n),
     };
     ctx.precision = cli.precision;
 
@@ -275,7 +266,7 @@ fn handle_error(e: &CalcError, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
 }
 
 /// 从位置参数或 stdin 获取表达式。
-fn get_expression(cli: &Cli) -> Result<String, i32> {
+fn get_expression(cli: &Cli) -> Result<String, CalcError> {
     if let Some(expr) = &cli.expression {
         return Ok(expr.clone());
     }
@@ -283,33 +274,34 @@ fn get_expression(cli: &Cli) -> Result<String, i32> {
     if io::stdin().is_terminal() {
         // TTY stdin：显示 help 并退出
         Cli::parse_from(["calnexus", "--help"]);
-        return Err(0); // unreachable：clap 会先退出
+        return Err(CalcError::usage(String::new())); // unreachable：clap 会先退出
     }
     // 管道 stdin：读取表达式
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
-        eprintln!("error: failed to read from stdin");
-        return Err(2);
+        return Err(CalcError::usage("failed to read from stdin"));
     }
     let trimmed = input.trim().to_string();
     if trimmed.is_empty() {
-        eprintln!("error: empty expression on stdin");
-        return Err(1);
+        return Err(CalcError::usage("empty expression on stdin"));
     }
     Ok(trimmed)
 }
 
 /// 解析 --var NAME=VALUE 列表为 EvalContext。
-fn parse_vars(vars: &[String]) -> Result<EvalContext, String> {
+fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
     let mut ctx = EvalContext::new();
     for v in vars {
         let parts: Vec<&str> = v.splitn(2, '=').collect();
         if parts.len() != 2 {
-            return Err(format!("invalid --var '{}', expected NAME=VALUE", v));
+            return Err(CalcError::usage(format!(
+                "invalid --var '{}', expected NAME=VALUE",
+                v
+            )));
         }
-        let value: f64 = parts[1]
-            .parse()
-            .map_err(|e| format!("invalid --var value '{}': {}", parts[1], e))?;
+        let value: f64 = parts[1].parse().map_err(|e| {
+            CalcError::usage(format!("invalid --var value '{}': {}", parts[1], e))
+        })?;
         ctx = ctx.with_var(parts[0], value);
     }
     Ok(ctx)

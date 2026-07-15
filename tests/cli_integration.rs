@@ -488,18 +488,18 @@ fn test_invalid_var_non_numeric_value_exit_code() {
 
 #[test]
 fn test_empty_stdin_exit_code() {
-    // echo "" | calnexus（空 stdin）→ exit 1
-    // 覆盖 cli.rs lines 129-130（empty stdin 错误）+ line 46（get_expression Err 返回）
+    // echo "" | calnexus（空 stdin）→ exit 2（T007: ErrorKind::Usage 用法错误）
+    // 覆盖 cli.rs get_expression empty stdin 错误走 handle_error → exit_code 2
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    cmd.write_stdin("").assert().failure().code(1);
+    cmd.write_stdin("").assert().failure().code(2);
 }
 
 #[test]
 fn test_whitespace_only_stdin_exit_code() {
-    // echo "   " | calnexus（仅空白 stdin）→ exit 1
-    // 覆盖 cli.rs lines 129-130
+    // echo "   " | calnexus（仅空白 stdin）→ exit 2（T007: ErrorKind::Usage 用法错误）
+    // 覆盖 cli.rs get_expression empty stdin 错误走 handle_error → exit_code 2
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    cmd.write_stdin("   \n  ").assert().failure().code(1);
+    cmd.write_stdin("   \n  ").assert().failure().code(2);
 }
 
 // ===== 额外 BigInt 运算覆盖 =====
@@ -1332,6 +1332,68 @@ fn test_explain_lang_en_no_chinese_labels() {
     assert!(
         !has_cjk,
         "stderr with --lang en should not contain CJK characters, got: {}",
+        stderr
+    );
+}
+
+// ===== T007: --json 模式下 parse_vars / get_expression 错误应走 JSON 输出 =====
+// 当前 Bug：parse_vars() 返回 Result<_, String>，get_expression() 返回 Result<_, i32>，
+// 错误时直接 eprintln 文本 + 返回退出码，绕过 handle_error()，
+// 导致 --json/--explain 模式下错误输出格式不一致（总是 eprintln 文本而非 JSON）。
+
+/// `--json --var invalid 2+3` → stdout 应含 `"error"` JSON 字段，stderr 不应含 `error: invalid --var`。
+///
+/// T007 Red 阶段：此测试应失败（当前 parse_vars 错误走 eprintln 文本路径，不走 JSON）。
+#[test]
+fn test_json_mode_var_error_output_format() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd
+        .args(["--json", "--var", "invalid", "2+3"])
+        .assert()
+        .failure();
+    let output = assert.get_output();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // --json 模式错误应走 JSON 输出（stdout 含 "error" 字段）
+    assert!(
+        stdout.contains("\"error\""),
+        "stdout should contain JSON error field, got stdout: {:?}, stderr: {:?}",
+        stdout,
+        stderr
+    );
+    // 不应走 eprintln 文本路径（stderr 不应含 "error: invalid --var"）
+    assert!(
+        !stderr.contains("error: invalid --var"),
+        "stderr should not contain eprintln text path, got stderr: {:?}",
+        stderr
+    );
+}
+
+/// `echo "" | calnexus --json`（空 stdin）→ stdout 应含 `"error"` JSON 字段，stderr 不应含 `error: empty expression`。
+///
+/// T007 Red 阶段：此测试应失败（当前 get_expression 错误走 eprintln 文本路径，不走 JSON）。
+#[test]
+fn test_json_mode_empty_stdin_error_output_format() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd
+        .arg("--json")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let output = assert.get_output();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // --json 模式错误应走 JSON 输出（stdout 含 "error" 字段）
+    assert!(
+        stdout.contains("\"error\""),
+        "stdout should contain JSON error field, got stdout: {:?}, stderr: {:?}",
+        stdout,
+        stderr
+    );
+    // 不应走 eprintln 文本路径（stderr 不应含 "error: empty expression"）
+    assert!(
+        !stderr.contains("error: empty expression"),
+        "stderr should not contain eprintln text path, got stderr: {:?}",
         stderr
     );
 }
