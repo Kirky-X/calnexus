@@ -83,6 +83,21 @@ impl I18n {
             // error.usage
             ("error.usage", Lang::En) => "Usage error",
             ("error.usage", Lang::Zh) => "用法错误",
+            // label.position — friendly()/to_explain() 中 Span 位置标签
+            ("label.position", Lang::En) => "Position",
+            ("label.position", Lang::Zh) => "位置",
+            // label.hint — friendly()/to_explain() 中提示标签
+            ("label.hint", Lang::En) => "Hint",
+            ("label.hint", Lang::Zh) => "提示",
+            // label.error_kind — to_explain() 中错误类别标签
+            ("label.error_kind", Lang::En) => "Error Kind",
+            ("label.error_kind", Lang::Zh) => "错误类别",
+            // label.exit_code — to_explain() 中退出码标签
+            ("label.exit_code", Lang::En) => "Exit Code",
+            ("label.exit_code", Lang::Zh) => "退出码",
+            // label.suggestion — to_explain() 中建议标签
+            ("label.suggestion", Lang::En) => "Suggestion",
+            ("label.suggestion", Lang::Zh) => "建议",
             // 未知键：返回键本身（fail-loud）
             _ => key,
         }
@@ -252,6 +267,11 @@ mod tests {
             "error.undefined_symbol",
             "error.timeout",
             "error.usage",
+            "label.position",
+            "label.hint",
+            "label.error_kind",
+            "label.exit_code",
+            "label.suggestion",
         ];
         for key in &keys {
             let msg = i18n.t(key);
@@ -282,6 +302,11 @@ mod tests {
             "error.undefined_symbol",
             "error.timeout",
             "error.usage",
+            "label.position",
+            "label.hint",
+            "label.error_kind",
+            "label.exit_code",
+            "label.suggestion",
         ];
         for key in &keys {
             let msg = i18n.t(key);
@@ -315,6 +340,11 @@ mod tests {
             "error.undefined_symbol",
             "error.timeout",
             "error.usage",
+            "label.position",
+            "label.hint",
+            "label.error_kind",
+            "label.exit_code",
+            "label.suggestion",
         ];
         for key in &keys {
             assert_ne!(
@@ -358,6 +388,12 @@ mod tests {
         assert_eq!(en.t("error.undefined_symbol"), "Undefined symbol");
         assert_eq!(en.t("error.timeout"), "Evaluation timed out");
         assert_eq!(en.t("error.usage"), "Usage error");
+        // 5 个标签键（T002 diting HIGH-1 修复）
+        assert_eq!(en.t("label.position"), "Position");
+        assert_eq!(en.t("label.hint"), "Hint");
+        assert_eq!(en.t("label.error_kind"), "Error Kind");
+        assert_eq!(en.t("label.exit_code"), "Exit Code");
+        assert_eq!(en.t("label.suggestion"), "Suggestion");
     }
 
     #[test]
@@ -373,5 +409,11 @@ mod tests {
         assert_eq!(zh.t("error.undefined_symbol"), "未定义符号");
         assert_eq!(zh.t("error.timeout"), "求值超时");
         assert_eq!(zh.t("error.usage"), "用法错误");
+        // 5 个标签键（T002 diting HIGH-1 修复）
+        assert_eq!(zh.t("label.position"), "位置");
+        assert_eq!(zh.t("label.hint"), "提示");
+        assert_eq!(zh.t("label.error_kind"), "错误类别");
+        assert_eq!(zh.t("label.exit_code"), "退出码");
+        assert_eq!(zh.t("label.suggestion"), "建议");
     }
 }

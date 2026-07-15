@@ -47,6 +47,9 @@ Desktop.ini
 # =============================================================================
 # openspec workflow directory
 /openspec
+# specmark workflow directory (rule 30: never commit specmark/)
+/specmark
+**/specmark/
 # reference templates
 temp/
 # spec source docs

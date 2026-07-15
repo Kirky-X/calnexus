@@ -1311,3 +1311,27 @@ fn test_explain_domain_hint() {
         .code(1)
         .stderr(predicates::str::contains("asin domain is [-1, 1]"));
 }
+
+/// `--explain --lang en "2++3"` → stderr 不含任何中文字符（diting HIGH-1）
+///
+/// 验证 friendly()/to_explain() 中的 5 个硬编码中文标签（位置/提示/错误类别/退出码/建议）
+/// 在 --lang en 时不出现。T001 Red 阶段：此测试应失败（当前代码含中文标签）。
+#[test]
+fn test_explain_lang_en_no_chinese_labels() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd
+        .args(["--explain", "--lang", "en", "2++3"])
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    // 不含任何 CJK 字符（Unicode 范围 \u4e00-\u9fff）
+    let has_cjk = stderr
+        .chars()
+        .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c));
+    assert!(
+        !has_cjk,
+        "stderr with --lang en should not contain CJK characters, got: {}",
+        stderr
+    );
+}

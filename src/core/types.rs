@@ -447,11 +447,11 @@ impl CalcError {
     pub fn friendly(&self, i18n: &crate::i18n::I18n) -> String {
         let mut s = i18n.t(self.kind.i18n_key()).to_string();
         if let Some(span) = self.span {
-            s.push_str(&format!(" (位置 {}:{})", span.start, span.end));
+            s.push_str(&format!(" ({} {}:{})", i18n.t("label.position"), span.start, span.end));
         }
         s.push_str(&format!(": {}", self.message));
         if let Some(hint) = &self.hint {
-            s.push_str(&format!("\n  提示: {}", hint));
+            s.push_str(&format!("\n  {}: {}", i18n.t("label.hint"), hint));
         }
         s
     }
@@ -479,10 +479,10 @@ impl CalcError {
     /// 教育模式（--explain）。design.md §5.5。
     pub fn to_explain(&self, i18n: &crate::i18n::I18n) -> String {
         let mut s = self.friendly(i18n);
-        s.push_str(&format!("\n\n  错误类别: {:?}", self.kind));
-        s.push_str(&format!("\n  退出码: {}", self.kind.exit_code()));
+        s.push_str(&format!("\n\n  {}: {:?}", i18n.t("label.error_kind"), self.kind));
+        s.push_str(&format!("\n  {}: {}", i18n.t("label.exit_code"), self.kind.exit_code()));
         if let Some(hint) = &self.hint {
-            s.push_str(&format!("\n  建议: {}", hint));
+            s.push_str(&format!("\n  {}: {}", i18n.t("label.suggestion"), hint));
         }
         s
     }
@@ -948,9 +948,14 @@ mod tests {
         let e = CalcError::division_by_zero().with_hint("check divisor");
         let explain = e.to_explain(&i18n);
         assert!(explain.contains("Division by zero"));
-        assert!(explain.contains("错误类别: DivisionByZero"));
-        assert!(explain.contains("退出码: 1"));
-        assert!(explain.contains("建议: check divisor"));
+        // T002 diting HIGH-1 修复：--lang en 时所有标签应为英文，不得混入中文
+        assert!(explain.contains("Error Kind: DivisionByZero"));
+        assert!(explain.contains("Exit Code: 1"));
+        assert!(explain.contains("Suggestion: check divisor"));
+        // 反向断言：不应含任何中文标签
+        assert!(!explain.contains("错误类别"));
+        assert!(!explain.contains("退出码"));
+        assert!(!explain.contains("建议"));
     }
 
     #[test]
