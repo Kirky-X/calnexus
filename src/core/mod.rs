@@ -22,5 +22,7 @@ pub use parser::parse;
 pub(crate) use parser::MAX_EXPR_LEN;
 pub use types::{
     AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext, EvalResult, Span, UnaryOp,
-    escape_json_string,
 };
+// escape_json_string 仅 batch.rs（cli feature）使用，条件导出避免非 cli 下的 unused import
+#[cfg(feature = "cli")]
+pub use types::escape_json_string;
