@@ -228,3 +228,73 @@ impl super::ServerAdapter for HttpServer {
         self.start_inner()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_http_server_new_default_addr() {
+        let server = HttpServer::new();
+        assert_eq!(server.addr(), "127.0.0.1:3000");
+    }
+
+    #[test]
+    fn test_http_server_default_equals_new() {
+        let server = HttpServer::default();
+        assert_eq!(server.addr(), "127.0.0.1:3000");
+    }
+
+    #[test]
+    fn test_http_server_with_addr_custom() {
+        let server = HttpServer::new().with_addr("0.0.0.0:8080");
+        assert_eq!(server.addr(), "0.0.0.0:8080");
+    }
+
+    #[test]
+    fn test_http_server_run_bind_error() {
+        // Port 99999 > 65535, bind will fail immediately
+        let server = HttpServer::new().with_addr("127.0.0.1:99999");
+        let result = server.run();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, ServerError::Http(_)));
+        assert!(err.to_string().contains("failed to bind"));
+    }
+
+    #[tokio::test]
+    async fn test_http_start_inner_bind_error() {
+        let server = HttpServer::new().with_addr("127.0.0.1:99999");
+        let result = server.start_inner().await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ServerError::Http(_)));
+    }
+
+    #[tokio::test]
+    async fn test_http_server_adapter_start_bind_error() {
+        use crate::server::ServerAdapter;
+        let server = HttpServer::new().with_addr("127.0.0.1:99999");
+        let result = server.start().await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evaluate_route_create_path() {
+        let route = evaluate_route_create();
+        assert_eq!(route.path(), "/api/v1/evaluate");
+    }
+
+    #[test]
+    fn test_evaluate_route_metadata() {
+        let meta = evaluate_route_metadata();
+        assert_eq!(meta.name(), "evaluate");
+        assert_eq!(meta.version(), "v1");
+        assert!(meta.description().contains("Evaluate"));
+    }
+
+    #[test]
+    fn test_preserve_http_inventory() {
+        // 仅验证不 panic（链接器保留符号）
+        preserve_http_inventory();
+    }
+}

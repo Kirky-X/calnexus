@@ -116,3 +116,19 @@ async fn test_http_evaluate_cache_miss() {
     assert_eq!(body["cache"], "hit");
     assert_eq!(body["result"], 15);
 }
+
+/// 测试验证错误：POST oversized precision → 400 {"error":{"kind":"Validation",...}}
+///
+/// spec.md R-sdforge-002：precision > MAX_PRECISION(10000) 被安全校验拦截。
+#[tokio::test]
+async fn test_http_evaluate_validation_error_oversized_precision() {
+    let (status, body) = send_request(json!({
+        "expr": "2+3",
+        "precision": 10001
+    }))
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["kind"], "Validation");
+    assert_eq!(body["error"]["exit_code"], 2);
+}

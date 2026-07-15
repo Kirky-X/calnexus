@@ -119,3 +119,28 @@ fn test_mcp_tool_evaluate_precision() {
     // precision 模式下 result 是字符串（BigRational 格式化）
     assert_eq!(body["result"].as_str(), Some("0.33"));
 }
+
+/// 测试验证错误：evaluate oversized precision → is_error Some(true)
+///
+/// spec.md R-sdforge-003：precision > MAX_PRECISION(10000) 被安全校验拦截。
+#[test]
+fn test_mcp_tool_evaluate_validation_error_oversized_precision() {
+    let server = build_mcp_server();
+    let result = server
+        .call_tool_internal("evaluate", Some(json!({"expr": "2+3", "precision": 10001})))
+        .expect("evaluate tool should be registered");
+
+    assert_eq!(result.is_error, Some(true));
+    let body = extract_result_json(&result);
+    assert_eq!(body["error"]["kind"], "Validation");
+}
+
+/// 测试无效输入：evaluate null → Err(ErrorData)
+///
+/// spec.md R-sdforge-003：缺少必填 expr 字段的输入应返回 invalid_params 错误。
+#[test]
+fn test_mcp_tool_evaluate_invalid_input_null() {
+    let server = build_mcp_server();
+    let result = server.call_tool_internal("evaluate", Some(serde_json::Value::Null));
+    assert!(result.is_err(), "null input should return Err(ErrorData)");
+}

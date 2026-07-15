@@ -255,3 +255,90 @@ impl super::ServerAdapter for McpServer {
         self.start_inner()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_server_new_default_name() {
+        let server = McpServer::new();
+        assert_eq!(server.server_name(), "calnexus-mcp");
+    }
+
+    #[test]
+    fn test_mcp_server_default_equals_new() {
+        let server = McpServer::default();
+        assert_eq!(server.server_name(), "calnexus-mcp");
+    }
+
+    #[test]
+    fn test_mcp_server_with_name_custom() {
+        let server = McpServer::new().with_name("custom-mcp");
+        assert_eq!(server.server_name(), "custom-mcp");
+    }
+
+    #[test]
+    fn test_evaluate_tool_name() {
+        let tool = EvaluateTool;
+        assert_eq!(tool.name(), "evaluate");
+    }
+
+    #[test]
+    fn test_evaluate_tool_description() {
+        let tool = EvaluateTool;
+        assert!(tool.description().contains("Evaluate"));
+    }
+
+    #[test]
+    fn test_evaluate_tool_input_schema() {
+        let tool = EvaluateTool;
+        let schema = tool.input_schema();
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"]["expr"].is_object());
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.contains(&serde_json::json!("expr")));
+    }
+
+    #[test]
+    fn test_evaluate_tool_call_invalid_input_null() {
+        let tool = EvaluateTool;
+        // Value::Null 无法反序列化为 EvaluateRequest（缺少必填 expr 字段）
+        let result = tool.call(Some(serde_json::Value::Null));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evaluate_tool_call_validation_error_oversized_precision() {
+        let tool = EvaluateTool;
+        // precision 10001 > MAX_PRECISION 10000，validate() 应拒绝
+        let result = tool.call(Some(serde_json::json!({
+            "expr": "2+3",
+            "precision": 10001
+        })));
+        // 验证错误返回 Ok(CallToolResult::error(...)) 而非 Err(ErrorData)
+        assert!(result.is_ok());
+        let call_result = result.unwrap();
+        assert_eq!(call_result.is_error, Some(true));
+    }
+
+    #[test]
+    fn test_create_evaluate_tool() {
+        let tool = create_evaluate_tool();
+        assert_eq!(tool.name(), "evaluate");
+    }
+
+    #[test]
+    fn test_evaluate_tool_metadata() {
+        let meta = evaluate_tool_metadata();
+        assert_eq!(meta.name(), "calnexus");
+        assert_eq!(meta.version(), "v1");
+        assert!(meta.description().contains("CalNexus"));
+    }
+
+    #[test]
+    fn test_preserve_mcp_inventory() {
+        // 仅验证不 panic（链接器保留符号）
+        preserve_mcp_inventory();
+    }
+}
