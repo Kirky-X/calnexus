@@ -71,7 +71,7 @@ expectrl = { version = "0.9", default-features = false }
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [package.metadata.tarpaulin]
-fail-under = 90
+fail-under = 95
 exclude-files = ["src/main.rs"]
 
 [[bench]]
