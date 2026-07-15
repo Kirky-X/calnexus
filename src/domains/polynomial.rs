@@ -98,7 +98,7 @@ impl PolynomialDomain {
         }
     }
 
-    /// 求值多项式函数调用。
+    /// 求值多项式函数调用：按函数名分发到对应的处理方法。
     fn eval_function(
         &self,
         name: &str,
@@ -112,112 +112,143 @@ impl PolynomialDomain {
             )));
         }
         match name {
-            "poly_add" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "poly_add() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
-                Ok(EvalResult::Polynomial(poly_add_coeffs(&a, &b)))
-            }
-            "poly_sub" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "poly_sub() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
-                let neg_b: Vec<f64> = b.iter().map(|x| -x).collect();
-                Ok(EvalResult::Polynomial(poly_add_coeffs(&a, &neg_b)))
-            }
-            "poly_mul" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "poly_mul() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
-                Ok(EvalResult::Polynomial(poly_mul_coeffs(&a, &b)))
-            }
-            "poly_div" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "poly_div() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
-                if is_zero_poly(&b) {
-                    return Err(CalcError::division_by_zero());
-                }
-                let (quotient, _remainder) = poly_div_coeffs(&a, &b);
-                Ok(EvalResult::Polynomial(quotient))
-            }
-            "poly_eval" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "poly_eval() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                let x = self.eval_scalar(&args[1], ctx)?;
-                let result = poly_eval_horner(&coeffs, x);
-                Ok(EvalResult::Scalar(result))
-            }
-            "roots" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "roots() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                let trimmed = trim_leading_zeros(&coeffs);
-                find_roots(&trimmed)
-            }
-            "poly_diff" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "poly_diff() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                Ok(EvalResult::Polynomial(poly_diff_coeffs(&coeffs)))
-            }
-            "poly_integrate" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "poly_integrate() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                Ok(EvalResult::Polynomial(poly_integrate_coeffs(&coeffs)))
-            }
-            "factor" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "factor() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
-                let trimmed = trim_leading_zeros(&coeffs);
-                let result = factor_polynomial(&trimmed)?;
-                Ok(EvalResult::Symbolic(result))
-            }
+            "poly_add" => self.eval_poly_add(args, ctx),
+            "poly_sub" => self.eval_poly_sub(args, ctx),
+            "poly_mul" => self.eval_poly_mul(args, ctx),
+            "poly_div" => self.eval_poly_div(args, ctx),
+            "poly_eval" => self.eval_poly_eval(args, ctx),
+            "roots" => self.eval_roots(args, ctx),
+            "poly_diff" => self.eval_poly_diff(args, ctx),
+            "poly_integrate" => self.eval_poly_integrate(args, ctx),
+            "factor" => self.eval_factor(args, ctx),
             _ => unreachable!("checked above"),
         }
+    }
+
+    /// poly_add(a, b)：多项式加法。
+    fn eval_poly_add(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "poly_add() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
+        Ok(EvalResult::Polynomial(poly_add_coeffs(&a, &b)))
+    }
+
+    /// poly_sub(a, b)：多项式减法（a + (-b)）。
+    fn eval_poly_sub(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "poly_sub() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
+        let neg_b: Vec<f64> = b.iter().map(|x| -x).collect();
+        Ok(EvalResult::Polynomial(poly_add_coeffs(&a, &neg_b)))
+    }
+
+    /// poly_mul(a, b)：多项式乘法。
+    fn eval_poly_mul(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "poly_mul() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
+        Ok(EvalResult::Polynomial(poly_mul_coeffs(&a, &b)))
+    }
+
+    /// poly_div(a, b)：多项式除法，返回商。b 为零多项式时报错。
+    fn eval_poly_div(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "poly_div() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
+        if is_zero_poly(&b) {
+            return Err(CalcError::division_by_zero());
+        }
+        let (quotient, _remainder) = poly_div_coeffs(&a, &b);
+        Ok(EvalResult::Polynomial(quotient))
+    }
+
+    /// poly_eval(coeffs, x)：Horner 法求多项式在 x 处的值，返回标量。
+    fn eval_poly_eval(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "poly_eval() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        let x = self.eval_scalar(&args[1], ctx)?;
+        let result = poly_eval_horner(&coeffs, x);
+        Ok(EvalResult::Scalar(result))
+    }
+
+    /// roots(coeffs)：求多项式所有根（实根 + 复根）。
+    fn eval_roots(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "roots() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        let trimmed = trim_leading_zeros(&coeffs);
+        find_roots(&trimmed)
+    }
+
+    /// poly_diff(coeffs)：多项式求导。
+    fn eval_poly_diff(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "poly_diff() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        Ok(EvalResult::Polynomial(poly_diff_coeffs(&coeffs)))
+    }
+
+    /// poly_integrate(coeffs)：多项式不定积分（常数项为 0）。
+    fn eval_poly_integrate(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "poly_integrate() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        Ok(EvalResult::Polynomial(poly_integrate_coeffs(&coeffs)))
+    }
+
+    /// factor(coeffs)：多项式因式分解，返回符号表达式。
+    fn eval_factor(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "factor() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
+        let trimmed = trim_leading_zeros(&coeffs);
+        let result = factor_polynomial(&trimmed)?;
+        Ok(EvalResult::Symbolic(result))
     }
 
     /// 将参数转为系数向量。
@@ -287,134 +318,184 @@ impl PolynomialDomain {
 fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String), CalcError> {
     match ast {
         AstNode::Number(n) => Ok((vec![*n], String::new())),
-        AstNode::BigNumber(s) => {
-            let n: f64 = s
-                .parse()
-                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
-            Ok((vec![n], String::new()))
-        }
-        AstNode::Variable(name) => {
-            // 如果变量在 ctx 中有值，视为常数
-            if let Some(v) = ctx.get_var(name) {
-                return Ok((vec![v], String::new()));
-            }
-            Ok((vec![0.0, 1.0], name.clone()))
-        }
-        AstNode::BinaryOp(op, l, r) => {
-            match op {
-                BinaryOp::Pow => {
-                    // Variable ^ Number
-                    if let (AstNode::Variable(name), AstNode::Number(n)) = (l.as_ref(), r.as_ref())
-                    {
-                        if *n < 0.0 || n.fract() != 0.0 {
-                            return Err(CalcError::domain(
-                                "polynomial exponent must be non-negative integer".to_string(),
-                            ));
-                        }
-                        // DoS 防护：指数上界 1000，防止 OOM
-                        const MAX_POLY_DEGREE: usize = 1000;
-                        let exp = *n as usize;
-                        if exp > MAX_POLY_DEGREE {
-                            return Err(CalcError::overflow());
-                        }
-                        let mut coeffs = vec![0.0; exp + 1];
-                        coeffs[exp] = 1.0;
-                        // 如果变量在 ctx 中有值，求值为常数
-                        if let Some(v) = ctx.get_var(name) {
-                            return Ok((vec![v.powi(exp as i32)], String::new()));
-                        }
-                        return Ok((coeffs, name.clone()));
-                    }
-                    // Number ^ Number → 常数
-                    if let (AstNode::Number(a), AstNode::Number(b)) = (l.as_ref(), r.as_ref()) {
-                        return Ok((vec![a.powf(*b)], String::new()));
-                    }
-                    Err(CalcError::domain(
-                        "not a polynomial: unsupported power expression".to_string(),
-                    ))
-                }
-                BinaryOp::Mul => {
-                    // Number * Poly / Poly * Number
-                    if let AstNode::Number(c) = l.as_ref() {
-                        let (mut coeffs, var) = expr_to_coeffs(r, ctx)?;
-                        for c_i in &mut coeffs {
-                            *c_i *= c;
-                        }
-                        return Ok((coeffs, var));
-                    }
-                    if let AstNode::Number(c) = r.as_ref() {
-                        let (mut coeffs, var) = expr_to_coeffs(l, ctx)?;
-                        for c_i in &mut coeffs {
-                            *c_i *= c;
-                        }
-                        return Ok((coeffs, var));
-                    }
-                    // Poly * Poly
-                    let (a, var_a) = expr_to_coeffs(l, ctx)?;
-                    let (b, var_b) = expr_to_coeffs(r, ctx)?;
-                    let var = merge_var(&var_a, &var_b)?;
-                    Ok((poly_mul_coeffs(&a, &b), var))
-                }
-                BinaryOp::Add => {
-                    let (a, var_a) = expr_to_coeffs(l, ctx)?;
-                    let (b, var_b) = expr_to_coeffs(r, ctx)?;
-                    let var = merge_var(&var_a, &var_b)?;
-                    Ok((poly_add_coeffs(&a, &b), var))
-                }
-                BinaryOp::Sub => {
-                    let (a, var_a) = expr_to_coeffs(l, ctx)?;
-                    let (b, var_b) = expr_to_coeffs(r, ctx)?;
-                    let var = merge_var(&var_a, &var_b)?;
-                    let neg_b: Vec<f64> = b.iter().map(|x| -x).collect();
-                    Ok((poly_add_coeffs(&a, &neg_b), var))
-                }
-                BinaryOp::Div => {
-                    // Number / Number → 常数（保留显式路径以返回 DivisionByZero）
-                    if let (AstNode::Number(a), AstNode::Number(b)) = (l.as_ref(), r.as_ref()) {
-                        if *b == 0.0 {
-                            return Err(CalcError::division_by_zero());
-                        }
-                        return Ok((vec![a / b], String::new()));
-                    }
-                    // Poly / Number → 逐系数除法
-                    if let AstNode::Number(c) = r.as_ref() {
-                        if *c == 0.0 {
-                            return Err(CalcError::division_by_zero());
-                        }
-                        let (mut coeffs, var) = expr_to_coeffs(l, ctx)?;
-                        for c_i in &mut coeffs {
-                            *c_i /= c;
-                        }
-                        return Ok((coeffs, var));
-                    }
-                    // Poly / Poly → 多项式长除法（要求整除，余数为零）
-                    let (a, var_a) = expr_to_coeffs(l, ctx)?;
-                    let (b, var_b) = expr_to_coeffs(r, ctx)?;
-                    let var = merge_var(&var_a, &var_b)?;
-                    let (quotient, remainder) = poly_div_coeffs(&a, &b);
-                    if is_zero_poly(&remainder) {
-                        Ok((quotient, var))
-                    } else {
-                        Err(CalcError::domain(
-                            "polynomial division has non-zero remainder".to_string(),
-                        ))
-                    }
-                }
-                BinaryOp::Mod => Err(CalcError::domain(
-                    "modulo in polynomial expression not supported".to_string(),
-                )),
-            }
-        }
-        AstNode::UnaryOp(UnaryOp::Neg, e) => {
-            let (coeffs, var) = expr_to_coeffs(e, ctx)?;
-            let neg: Vec<f64> = coeffs.iter().map(|x| -x).collect();
-            Ok((neg, var))
-        }
+        AstNode::BigNumber(s) => coeffs_from_bignumber(s),
+        AstNode::Variable(name) => Ok(coeffs_from_variable(name, ctx)),
+        AstNode::BinaryOp(op, l, r) => coeffs_from_binary(*op, l, r, ctx),
+        AstNode::UnaryOp(UnaryOp::Neg, e) => coeffs_from_neg(e, ctx),
         _ => Err(CalcError::domain(format!(
             "not a polynomial expression: {:?}",
             ast
         ))),
     }
+}
+
+/// BigNumber → 常数系数。
+fn coeffs_from_bignumber(s: &str) -> Result<(Vec<f64>, String), CalcError> {
+    let n: f64 = s
+        .parse()
+        .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+    Ok((vec![n], String::new()))
+}
+
+/// Variable → 常数（若 ctx 有值）或一次项 (0 + 1x)。
+fn coeffs_from_variable(name: &str, ctx: &EvalContext) -> (Vec<f64>, String) {
+    if let Some(v) = ctx.get_var(name) {
+        return (vec![v], String::new());
+    }
+    (vec![0.0, 1.0], name.to_string())
+}
+
+/// BinaryOp 分发器。
+fn coeffs_from_binary(
+    op: BinaryOp,
+    l: &AstNode,
+    r: &AstNode,
+    ctx: &EvalContext,
+) -> Result<(Vec<f64>, String), CalcError> {
+    match op {
+        BinaryOp::Pow => coeffs_from_pow(l, r, ctx),
+        BinaryOp::Mul => coeffs_from_mul(l, r, ctx),
+        BinaryOp::Add => coeffs_from_add(l, r, ctx),
+        BinaryOp::Sub => coeffs_from_sub(l, r, ctx),
+        BinaryOp::Div => coeffs_from_div(l, r, ctx),
+        BinaryOp::Mod => Err(CalcError::domain(
+            "modulo in polynomial expression not supported".to_string(),
+        )),
+    }
+}
+
+/// Pow 分支：Variable^Number → 单项式；Number^Number → 常数。
+fn coeffs_from_pow(
+    l: &AstNode,
+    r: &AstNode,
+    ctx: &EvalContext,
+) -> Result<(Vec<f64>, String), CalcError> {
+    // Variable ^ Number
+    if let (AstNode::Variable(name), AstNode::Number(n)) = (l, r) {
+        if *n < 0.0 || n.fract() != 0.0 {
+            return Err(CalcError::domain(
+                "polynomial exponent must be non-negative integer".to_string(),
+            ));
+        }
+        // DoS 防护：指数上界 1000，防止 OOM
+        const MAX_POLY_DEGREE: usize = 1000;
+        let exp = *n as usize;
+        if exp > MAX_POLY_DEGREE {
+            return Err(CalcError::overflow());
+        }
+        let mut coeffs = vec![0.0; exp + 1];
+        coeffs[exp] = 1.0;
+        // 如果变量在 ctx 中有值，求值为常数
+        if let Some(v) = ctx.get_var(name) {
+            return Ok((vec![v.powi(exp as i32)], String::new()));
+        }
+        return Ok((coeffs, name.clone()));
+    }
+    // Number ^ Number → 常数
+    if let (AstNode::Number(a), AstNode::Number(b)) = (l, r) {
+        return Ok((vec![a.powf(*b)], String::new()));
+    }
+    Err(CalcError::domain(
+        "not a polynomial: unsupported power expression".to_string(),
+    ))
+}
+
+/// Mul 分支：Number*Poly / Poly*Number / Poly*Poly。
+fn coeffs_from_mul(
+    l: &AstNode,
+    r: &AstNode,
+    ctx: &EvalContext,
+) -> Result<(Vec<f64>, String), CalcError> {
+    // Number * Poly / Poly * Number
+    if let AstNode::Number(c) = l {
+        let (mut coeffs, var) = expr_to_coeffs(r, ctx)?;
+        for c_i in &mut coeffs {
+            *c_i *= c;
+        }
+        return Ok((coeffs, var));
+    }
+    if let AstNode::Number(c) = r {
+        let (mut coeffs, var) = expr_to_coeffs(l, ctx)?;
+        for c_i in &mut coeffs {
+            *c_i *= c;
+        }
+        return Ok((coeffs, var));
+    }
+    // Poly * Poly
+    let (a, var_a) = expr_to_coeffs(l, ctx)?;
+    let (b, var_b) = expr_to_coeffs(r, ctx)?;
+    let var = merge_var(&var_a, &var_b)?;
+    Ok((poly_mul_coeffs(&a, &b), var))
+}
+
+/// Add 分支：Poly + Poly。
+fn coeffs_from_add(
+    l: &AstNode,
+    r: &AstNode,
+    ctx: &EvalContext,
+) -> Result<(Vec<f64>, String), CalcError> {
+    let (a, var_a) = expr_to_coeffs(l, ctx)?;
+    let (b, var_b) = expr_to_coeffs(r, ctx)?;
+    let var = merge_var(&var_a, &var_b)?;
+    Ok((poly_add_coeffs(&a, &b), var))
+}
+
+/// Sub 分支：Poly - Poly。
+fn coeffs_from_sub(
+    l: &AstNode,
+    r: &AstNode,
+    ctx: &EvalContext,
+) -> Result<(Vec<f64>, String), CalcError> {
+    let (a, var_a) = expr_to_coeffs(l, ctx)?;
+    let (b, var_b) = expr_to_coeffs(r, ctx)?;
+    let var = merge_var(&var_a, &var_b)?;
+    let neg_b: Vec<f64> = b.iter().map(|x| -x).collect();
+    Ok((poly_add_coeffs(&a, &neg_b), var))
+}
+
+/// Div 分支：Number/Number / Poly/Number / Poly/Poly（长除法）。
+fn coeffs_from_div(
+    l: &AstNode,
+    r: &AstNode,
+    ctx: &EvalContext,
+) -> Result<(Vec<f64>, String), CalcError> {
+    // Number / Number → 常数（保留显式路径以返回 DivisionByZero）
+    if let (AstNode::Number(a), AstNode::Number(b)) = (l, r) {
+        if *b == 0.0 {
+            return Err(CalcError::division_by_zero());
+        }
+        return Ok((vec![a / b], String::new()));
+    }
+    // Poly / Number → 逐系数除法
+    if let AstNode::Number(c) = r {
+        if *c == 0.0 {
+            return Err(CalcError::division_by_zero());
+        }
+        let (mut coeffs, var) = expr_to_coeffs(l, ctx)?;
+        for c_i in &mut coeffs {
+            *c_i /= c;
+        }
+        return Ok((coeffs, var));
+    }
+    // Poly / Poly → 多项式长除法（要求整除，余数为零）
+    let (a, var_a) = expr_to_coeffs(l, ctx)?;
+    let (b, var_b) = expr_to_coeffs(r, ctx)?;
+    let var = merge_var(&var_a, &var_b)?;
+    let (quotient, remainder) = poly_div_coeffs(&a, &b);
+    if is_zero_poly(&remainder) {
+        Ok((quotient, var))
+    } else {
+        Err(CalcError::domain(
+            "polynomial division has non-zero remainder".to_string(),
+        ))
+    }
+}
+
+/// Neg 分支：-Poly → 逐系数取反。
+fn coeffs_from_neg(e: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String), CalcError> {
+    let (coeffs, var) = expr_to_coeffs(e, ctx)?;
+    let neg: Vec<f64> = coeffs.iter().map(|x| -x).collect();
+    Ok((neg, var))
 }
 
 /// 合并变量名：两个都为空 → 空；一个为空 → 取非空；相同 → 取之；不同 → 错误。

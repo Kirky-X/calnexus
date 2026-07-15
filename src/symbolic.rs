@@ -248,103 +248,167 @@ fn format_number(n: f64) -> String {
 pub fn diff(expr: &SymbolicExpr, var: &str) -> SymbolicExpr {
     match expr {
         SymbolicExpr::Const(_) => SymbolicExpr::Const(0.0),
-        SymbolicExpr::Var(name) => {
-            if name == var {
-                SymbolicExpr::Const(1.0)
-            } else {
-                SymbolicExpr::Const(0.0)
-            }
-        }
-        SymbolicExpr::Add(l, r) => {
-            SymbolicExpr::Add(Box::new(diff(l, var)), Box::new(diff(r, var)))
-        }
-        SymbolicExpr::Sub(l, r) => {
-            SymbolicExpr::Sub(Box::new(diff(l, var)), Box::new(diff(r, var)))
-        }
-        // 乘积法则：(f*g)' = f'*g + f*g'
-        SymbolicExpr::Mul(f, g) => SymbolicExpr::Add(
-            Box::new(SymbolicExpr::Mul(Box::new(diff(f, var)), g.clone())),
-            Box::new(SymbolicExpr::Mul(f.clone(), Box::new(diff(g, var)))),
-        ),
-        // 商法则：(f/g)' = (f'*g - f*g') / g²
-        SymbolicExpr::Div(f, g) => SymbolicExpr::Div(
-            Box::new(SymbolicExpr::Sub(
-                Box::new(SymbolicExpr::Mul(Box::new(diff(f, var)), g.clone())),
-                Box::new(SymbolicExpr::Mul(f.clone(), Box::new(diff(g, var)))),
-            )),
-            Box::new(SymbolicExpr::Pow(
-                g.clone(),
-                Box::new(SymbolicExpr::Const(2.0)),
-            )),
-        ),
-        // 幂法则：f^n → n*f^(n-1)*f'（当指数为常数）
-        // 一般幂法则（指数非常数）：f^g → f^g * (g'*ln(f) + g*f'/f)
-        SymbolicExpr::Pow(f, g) => {
-            if let SymbolicExpr::Const(n) = g.as_ref() {
-                SymbolicExpr::Mul(
-                    Box::new(SymbolicExpr::Mul(
-                        Box::new(SymbolicExpr::Const(*n)),
-                        Box::new(SymbolicExpr::Pow(
-                            f.clone(),
-                            Box::new(SymbolicExpr::Const(n - 1.0)),
-                        )),
-                    )),
-                    Box::new(diff(f, var)),
-                )
-            } else {
-                // f^g = exp(g*ln(f))，导数 = f^g * (g'*ln(f) + g*f'/f)
-                SymbolicExpr::Mul(
-                    Box::new(expr.clone()),
-                    Box::new(SymbolicExpr::Add(
-                        Box::new(SymbolicExpr::Mul(
-                            Box::new(diff(g, var)),
-                            Box::new(SymbolicExpr::Ln(f.clone())),
-                        )),
-                        Box::new(SymbolicExpr::Div(
-                            Box::new(SymbolicExpr::Mul(g.clone(), Box::new(diff(f, var)))),
-                            f.clone(),
-                        )),
-                    )),
-                )
-            }
-        }
-        // 链式法则：-f' → -(f')
-        SymbolicExpr::Neg(f) => SymbolicExpr::Neg(Box::new(diff(f, var))),
-        // sin(f) → cos(f)*f'
-        SymbolicExpr::Sin(f) => SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Cos(f.clone())),
+        SymbolicExpr::Var(name) => diff_var(name, var),
+        SymbolicExpr::Add(l, r) => diff_add(l.as_ref(), r.as_ref(), var),
+        SymbolicExpr::Sub(l, r) => diff_sub(l.as_ref(), r.as_ref(), var),
+        SymbolicExpr::Mul(f, g) => diff_mul(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Div(f, g) => diff_div(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Pow(f, g) => diff_pow(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Neg(f) => diff_neg(f.as_ref(), var),
+        SymbolicExpr::Sin(f) => diff_sin(f.as_ref(), var),
+        SymbolicExpr::Cos(f) => diff_cos(f.as_ref(), var),
+        SymbolicExpr::Tan(f) => diff_tan(f.as_ref(), var),
+        SymbolicExpr::Exp(f) => diff_exp(f.as_ref(), var),
+        SymbolicExpr::Ln(f) => diff_ln(f.as_ref(), var),
+    }
+}
+
+/// d/dx(var) = 1，d/dx(其他) = 0。
+fn diff_var(name: &str, var: &str) -> SymbolicExpr {
+    if name == var {
+        SymbolicExpr::Const(1.0)
+    } else {
+        SymbolicExpr::Const(0.0)
+    }
+}
+
+/// (f + g)' = f' + g'。
+fn diff_add(l: &SymbolicExpr, r: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Add(Box::new(diff(l, var)), Box::new(diff(r, var)))
+}
+
+/// (f - g)' = f' - g'。
+fn diff_sub(l: &SymbolicExpr, r: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Sub(Box::new(diff(l, var)), Box::new(diff(r, var)))
+}
+
+/// 乘积法则：(f*g)' = f'*g + f*g'。
+fn diff_mul(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Add(
+        Box::new(SymbolicExpr::Mul(
             Box::new(diff(f, var)),
-        ),
-        // cos(f) → -sin(f)*f'
-        SymbolicExpr::Cos(f) => SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Neg(Box::new(SymbolicExpr::Sin(f.clone())))),
-            Box::new(diff(f, var)),
-        ),
-        // tan(f) → (1/cos²(f))*f' = sec²(f)*f'
-        SymbolicExpr::Tan(f) => SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Div(
-                Box::new(SymbolicExpr::Const(1.0)),
+            Box::new(g.clone()),
+        )),
+        Box::new(SymbolicExpr::Mul(
+            Box::new(f.clone()),
+            Box::new(diff(g, var)),
+        )),
+    )
+}
+
+/// 商法则：(f/g)' = (f'*g - f*g') / g²。
+fn diff_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Div(
+        Box::new(SymbolicExpr::Sub(
+            Box::new(SymbolicExpr::Mul(
+                Box::new(diff(f, var)),
+                Box::new(g.clone()),
+            )),
+            Box::new(SymbolicExpr::Mul(
+                Box::new(f.clone()),
+                Box::new(diff(g, var)),
+            )),
+        )),
+        Box::new(SymbolicExpr::Pow(
+            Box::new(g.clone()),
+            Box::new(SymbolicExpr::Const(2.0)),
+        )),
+    )
+}
+
+/// 幂法则：f^n → n*f^(n-1)*f'（指数为常数）；
+/// 一般幂法则：f^g → f^g * (g'*ln(f) + g*f'/f)（指数非常数）。
+fn diff_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    if let SymbolicExpr::Const(n) = g {
+        // 幂法则：f^n → n*f^(n-1)*f'
+        SymbolicExpr::Mul(
+            Box::new(SymbolicExpr::Mul(
+                Box::new(SymbolicExpr::Const(*n)),
                 Box::new(SymbolicExpr::Pow(
-                    Box::new(SymbolicExpr::Cos(f.clone())),
-                    Box::new(SymbolicExpr::Const(2.0)),
+                    Box::new(f.clone()),
+                    Box::new(SymbolicExpr::Const(n - 1.0)),
                 )),
             )),
             Box::new(diff(f, var)),
-        ),
-        // exp(f) → exp(f)*f'
-        SymbolicExpr::Exp(f) => SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Exp(f.clone())),
-            Box::new(diff(f, var)),
-        ),
-        // ln(f) → (1/f)*f'
-        SymbolicExpr::Ln(f) => SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Div(
-                Box::new(SymbolicExpr::Const(1.0)),
-                f.clone(),
+        )
+    } else {
+        // f^g = exp(g*ln(f))，导数 = f^g * (g'*ln(f) + g*f'/f)
+        SymbolicExpr::Mul(
+            Box::new(SymbolicExpr::Pow(
+                Box::new(f.clone()),
+                Box::new(g.clone()),
             )),
-            Box::new(diff(f, var)),
-        ),
+            Box::new(SymbolicExpr::Add(
+                Box::new(SymbolicExpr::Mul(
+                    Box::new(diff(g, var)),
+                    Box::new(SymbolicExpr::Ln(Box::new(f.clone()))),
+                )),
+                Box::new(SymbolicExpr::Div(
+                    Box::new(SymbolicExpr::Mul(
+                        Box::new(g.clone()),
+                        Box::new(diff(f, var)),
+                    )),
+                    Box::new(f.clone()),
+                )),
+            )),
+        )
     }
+}
+
+/// (-f)' = -(f')。
+fn diff_neg(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Neg(Box::new(diff(f, var)))
+}
+
+/// sin(f) → cos(f)*f'。
+fn diff_sin(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Mul(
+        Box::new(SymbolicExpr::Cos(Box::new(f.clone()))),
+        Box::new(diff(f, var)),
+    )
+}
+
+/// cos(f) → -sin(f)*f'。
+fn diff_cos(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Mul(
+        Box::new(SymbolicExpr::Neg(Box::new(SymbolicExpr::Sin(Box::new(
+            f.clone(),
+        ))))),
+        Box::new(diff(f, var)),
+    )
+}
+
+/// tan(f) → (1/cos²(f))*f' = sec²(f)*f'。
+fn diff_tan(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Mul(
+        Box::new(SymbolicExpr::Div(
+            Box::new(SymbolicExpr::Const(1.0)),
+            Box::new(SymbolicExpr::Pow(
+                Box::new(SymbolicExpr::Cos(Box::new(f.clone()))),
+                Box::new(SymbolicExpr::Const(2.0)),
+            )),
+        )),
+        Box::new(diff(f, var)),
+    )
+}
+
+/// exp(f) → exp(f)*f'。
+fn diff_exp(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Mul(
+        Box::new(SymbolicExpr::Exp(Box::new(f.clone()))),
+        Box::new(diff(f, var)),
+    )
+}
+
+/// ln(f) → (1/f)*f'。
+fn diff_ln(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
+    SymbolicExpr::Mul(
+        Box::new(SymbolicExpr::Div(
+            Box::new(SymbolicExpr::Const(1.0)),
+            Box::new(f.clone()),
+        )),
+        Box::new(diff(f, var)),
+    )
 }
 
 // ============================ 符号积分 integrate (TG3.3) ============================
@@ -359,133 +423,183 @@ pub fn diff(expr: &SymbolicExpr, var: &str) -> SymbolicExpr {
 /// 不支持的积分返回 DomainError。
 pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
     match expr {
-        // ∫c dx = c*x
-        SymbolicExpr::Const(c) => Ok(SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Const(*c)),
-            Box::new(SymbolicExpr::Var(var.to_string())),
-        )),
-        // ∫x dx = x²/2；∫y dx = y*x（y 为其他变量）
-        SymbolicExpr::Var(name) => {
-            if name == var {
-                Ok(SymbolicExpr::Div(
-                    Box::new(SymbolicExpr::Pow(
-                        Box::new(SymbolicExpr::Var(var.to_string())),
-                        Box::new(SymbolicExpr::Const(2.0)),
-                    )),
-                    Box::new(SymbolicExpr::Const(2.0)),
-                ))
-            } else {
-                Ok(SymbolicExpr::Mul(
-                    Box::new(SymbolicExpr::Var(name.clone())),
-                    Box::new(SymbolicExpr::Var(var.to_string())),
-                ))
-            }
-        }
-        // 线性性
-        SymbolicExpr::Add(f, g) => Ok(SymbolicExpr::Add(
-            Box::new(integrate(f, var)?),
-            Box::new(integrate(g, var)?),
-        )),
-        SymbolicExpr::Sub(f, g) => Ok(SymbolicExpr::Sub(
-            Box::new(integrate(f, var)?),
-            Box::new(integrate(g, var)?),
-        )),
-        // ∫c*f dx = c*∫f dx（常数提取）
-        SymbolicExpr::Mul(f, g) => {
-            if let SymbolicExpr::Const(c) = f.as_ref() {
-                return Ok(SymbolicExpr::Mul(
-                    Box::new(SymbolicExpr::Const(*c)),
-                    Box::new(integrate(g, var)?),
-                ));
-            }
-            if let SymbolicExpr::Const(c) = g.as_ref() {
-                return Ok(SymbolicExpr::Mul(
-                    Box::new(SymbolicExpr::Const(*c)),
-                    Box::new(integrate(f, var)?),
-                ));
-            }
-            Err(CalcError::domain(
-                "integrate() does not support product of two non-constant expressions".to_string(),
-            ))
-        }
-        // ∫x^n dx = x^(n+1)/(n+1)（n ≠ -1）
-        SymbolicExpr::Pow(f, g) => {
-            if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f.as_ref(), g.as_ref()) {
-                if name == var {
-                    if *n == -1.0 {
-                        // ∫1/x dx = ln|x|
-                        return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
-                            var.to_string(),
-                        ))));
-                    }
-                    return Ok(SymbolicExpr::Div(
-                        Box::new(SymbolicExpr::Pow(
-                            Box::new(SymbolicExpr::Var(var.to_string())),
-                            Box::new(SymbolicExpr::Const(n + 1.0)),
-                        )),
-                        Box::new(SymbolicExpr::Const(n + 1.0)),
-                    ));
-                }
-            }
-            Err(CalcError::domain(
-                "integrate() only supports power of the integration variable".to_string(),
-            ))
-        }
-        // ∫sin(x) dx = -cos(x)
-        SymbolicExpr::Sin(f) => {
-            if is_var(f, var) {
-                Ok(SymbolicExpr::Neg(Box::new(SymbolicExpr::Cos(Box::new(
-                    SymbolicExpr::Var(var.to_string()),
-                )))))
-            } else {
-                Err(CalcError::domain(
-                    "integrate() only supports sin(var) form".to_string(),
-                ))
-            }
-        }
-        // ∫cos(x) dx = sin(x)
-        SymbolicExpr::Cos(f) => {
-            if is_var(f, var) {
-                Ok(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(
-                    var.to_string(),
-                ))))
-            } else {
-                Err(CalcError::domain(
-                    "integrate() only supports cos(var) form".to_string(),
-                ))
-            }
-        }
-        // ∫exp(x) dx = exp(x)
-        SymbolicExpr::Exp(f) => {
-            if is_var(f, var) {
-                Ok(SymbolicExpr::Exp(Box::new(SymbolicExpr::Var(
-                    var.to_string(),
-                ))))
-            } else {
-                Err(CalcError::domain(
-                    "integrate() only supports exp(var) form".to_string(),
-                ))
-            }
-        }
-        // ∫1/x dx = ln|x|
-        SymbolicExpr::Div(f, g) => {
-            if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f.as_ref(), g.as_ref()) {
-                if *c == 1.0 && name == var {
-                    return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
-                        var.to_string(),
-                    ))));
-                }
-            }
-            Err(CalcError::domain(
-                "integrate() only supports 1/var form for division".to_string(),
-            ))
-        }
-        // ∫-f dx = -∫f dx
-        SymbolicExpr::Neg(f) => Ok(SymbolicExpr::Neg(Box::new(integrate(f, var)?))),
-        // ln/tan 不支持直接积分
+        SymbolicExpr::Const(c) => integrate_const(*c, var),
+        SymbolicExpr::Var(name) => integrate_var(name, var),
+        SymbolicExpr::Add(f, g) => integrate_add(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Sub(f, g) => integrate_sub(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Mul(f, g) => integrate_mul(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Div(f, g) => integrate_div(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Pow(f, g) => integrate_pow(f.as_ref(), g.as_ref(), var),
+        SymbolicExpr::Neg(f) => integrate_neg(f.as_ref(), var),
+        SymbolicExpr::Sin(f) => integrate_sin(f.as_ref(), var),
+        SymbolicExpr::Cos(f) => integrate_cos(f.as_ref(), var),
+        SymbolicExpr::Exp(f) => integrate_exp(f.as_ref(), var),
         SymbolicExpr::Ln(_) | SymbolicExpr::Tan(_) => Err(CalcError::domain(
             "integrate() does not support ln/tan forms".to_string(),
         )),
+    }
+}
+
+/// ∫c dx = c*x。
+fn integrate_const(c: f64, var: &str) -> Result<SymbolicExpr, CalcError> {
+    Ok(SymbolicExpr::Mul(
+        Box::new(SymbolicExpr::Const(c)),
+        Box::new(SymbolicExpr::Var(var.to_string())),
+    ))
+}
+
+/// ∫x dx = x²/2；∫y dx = y*x（y 为其他变量）。
+fn integrate_var(name: &str, var: &str) -> Result<SymbolicExpr, CalcError> {
+    if name == var {
+        Ok(SymbolicExpr::Div(
+            Box::new(SymbolicExpr::Pow(
+                Box::new(SymbolicExpr::Var(var.to_string())),
+                Box::new(SymbolicExpr::Const(2.0)),
+            )),
+            Box::new(SymbolicExpr::Const(2.0)),
+        ))
+    } else {
+        Ok(SymbolicExpr::Mul(
+            Box::new(SymbolicExpr::Var(name.to_string())),
+            Box::new(SymbolicExpr::Var(var.to_string())),
+        ))
+    }
+}
+
+/// 线性性：∫(f + g) dx = ∫f dx + ∫g dx。
+fn integrate_add(
+    f: &SymbolicExpr,
+    g: &SymbolicExpr,
+    var: &str,
+) -> Result<SymbolicExpr, CalcError> {
+    Ok(SymbolicExpr::Add(
+        Box::new(integrate(f, var)?),
+        Box::new(integrate(g, var)?),
+    ))
+}
+
+/// 线性性：∫(f - g) dx = ∫f dx - ∫g dx。
+fn integrate_sub(
+    f: &SymbolicExpr,
+    g: &SymbolicExpr,
+    var: &str,
+) -> Result<SymbolicExpr, CalcError> {
+    Ok(SymbolicExpr::Sub(
+        Box::new(integrate(f, var)?),
+        Box::new(integrate(g, var)?),
+    ))
+}
+
+/// ∫c*f dx = c*∫f dx（常数提取）；两个非常数之积不支持。
+fn integrate_mul(
+    f: &SymbolicExpr,
+    g: &SymbolicExpr,
+    var: &str,
+) -> Result<SymbolicExpr, CalcError> {
+    if let SymbolicExpr::Const(c) = f {
+        return Ok(SymbolicExpr::Mul(
+            Box::new(SymbolicExpr::Const(*c)),
+            Box::new(integrate(g, var)?),
+        ));
+    }
+    if let SymbolicExpr::Const(c) = g {
+        return Ok(SymbolicExpr::Mul(
+            Box::new(SymbolicExpr::Const(*c)),
+            Box::new(integrate(f, var)?),
+        ));
+    }
+    Err(CalcError::domain(
+        "integrate() does not support product of two non-constant expressions".to_string(),
+    ))
+}
+
+/// ∫x^n dx = x^(n+1)/(n+1)（n ≠ -1）；∫1/x dx = ln|x|。
+fn integrate_pow(
+    f: &SymbolicExpr,
+    g: &SymbolicExpr,
+    var: &str,
+) -> Result<SymbolicExpr, CalcError> {
+    if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f, g) {
+        if name == var {
+            if *n == -1.0 {
+                // ∫1/x dx = ln|x|
+                return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+                    var.to_string(),
+                ))));
+            }
+            return Ok(SymbolicExpr::Div(
+                Box::new(SymbolicExpr::Pow(
+                    Box::new(SymbolicExpr::Var(var.to_string())),
+                    Box::new(SymbolicExpr::Const(n + 1.0)),
+                )),
+                Box::new(SymbolicExpr::Const(n + 1.0)),
+            ));
+        }
+    }
+    Err(CalcError::domain(
+        "integrate() only supports power of the integration variable".to_string(),
+    ))
+}
+
+/// ∫1/x dx = ln|x|（仅支持 Div(Const(1), Var) 形式）。
+fn integrate_div(
+    f: &SymbolicExpr,
+    g: &SymbolicExpr,
+    var: &str,
+) -> Result<SymbolicExpr, CalcError> {
+    if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f, g) {
+        if *c == 1.0 && name == var {
+            return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+                var.to_string(),
+            ))));
+        }
+    }
+    Err(CalcError::domain(
+        "integrate() only supports 1/var form for division".to_string(),
+    ))
+}
+
+/// ∫-f dx = -∫f dx。
+fn integrate_neg(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
+    Ok(SymbolicExpr::Neg(Box::new(integrate(f, var)?)))
+}
+
+/// ∫sin(x) dx = -cos(x)（仅支持 sin(var) 形式）。
+fn integrate_sin(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
+    if is_var(f, var) {
+        Ok(SymbolicExpr::Neg(Box::new(SymbolicExpr::Cos(Box::new(
+            SymbolicExpr::Var(var.to_string()),
+        )))))
+    } else {
+        Err(CalcError::domain(
+            "integrate() only supports sin(var) form".to_string(),
+        ))
+    }
+}
+
+/// ∫cos(x) dx = sin(x)（仅支持 cos(var) 形式）。
+fn integrate_cos(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
+    if is_var(f, var) {
+        Ok(SymbolicExpr::Sin(Box::new(SymbolicExpr::Var(
+            var.to_string(),
+        ))))
+    } else {
+        Err(CalcError::domain(
+            "integrate() only supports cos(var) form".to_string(),
+        ))
+    }
+}
+
+/// ∫exp(x) dx = exp(x)（仅支持 exp(var) 形式）。
+fn integrate_exp(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
+    if is_var(f, var) {
+        Ok(SymbolicExpr::Exp(Box::new(SymbolicExpr::Var(
+            var.to_string(),
+        ))))
+    } else {
+        Err(CalcError::domain(
+            "integrate() only supports exp(var) form".to_string(),
+        ))
     }
 }
 
@@ -864,7 +978,7 @@ impl SymbolicDomain {
         }
     }
 
-    /// 求值符号函数调用。
+    /// 求值符号函数调用：按函数名分发到对应的处理方法。
     fn eval_function(&self, name: &str, args: &[AstNode]) -> Result<EvalResult, CalcError> {
         if !SYMBOLIC_FUNCTIONS.contains(&name) {
             return Err(CalcError::domain(format!(
@@ -873,67 +987,82 @@ impl SymbolicDomain {
             )));
         }
         match name {
-            "diff" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "diff() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let expr = ast_to_symbolic(&args[0])?;
-                let var = extract_var_name(&args[1])?;
-                let result = simplify(&diff(&expr, &var));
-                Ok(EvalResult::Symbolic(symbolic_to_string(&result)))
-            }
-            "integrate" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "integrate() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let expr = ast_to_symbolic(&args[0])?;
-                let var = extract_var_name(&args[1])?;
-                let result = simplify(&integrate(&expr, &var)?);
-                Ok(EvalResult::Symbolic(symbolic_to_string(&result)))
-            }
-            "simplify" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "simplify() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let expr = ast_to_symbolic(&args[0])?;
-                let result = simplify(&expr);
-                Ok(EvalResult::Symbolic(symbolic_to_string(&result)))
-            }
-            "limit" => {
-                if args.len() != 3 {
-                    return Err(CalcError::domain(format!(
-                        "limit() requires exactly 3 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let expr = ast_to_symbolic(&args[0])?;
-                let var = extract_var_name(&args[1])?;
-                let point = extract_number(&args[2])?;
-                limit(&expr, &var, point)
-            }
-            "taylor" => {
-                if args.len() != 3 {
-                    return Err(CalcError::domain(format!(
-                        "taylor() requires exactly 3 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let expr = ast_to_symbolic(&args[0])?;
-                let var = extract_var_name(&args[1])?;
-                let order = extract_number(&args[2])? as u32;
-                taylor(&expr, &var, order)
-            }
+            "diff" => self.eval_diff(args),
+            "integrate" => self.eval_integrate(args),
+            "simplify" => self.eval_simplify(args),
+            "limit" => self.eval_limit(args),
+            "taylor" => self.eval_taylor(args),
             _ => unreachable!("checked above"),
         }
+    }
+
+    /// diff(expr, var)：符号求导。
+    fn eval_diff(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "diff() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let expr = ast_to_symbolic(&args[0])?;
+        let var = extract_var_name(&args[1])?;
+        let result = simplify(&diff(&expr, &var));
+        Ok(EvalResult::Symbolic(symbolic_to_string(&result)))
+    }
+
+    /// integrate(expr, var)：符号不定积分。
+    fn eval_integrate(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "integrate() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let expr = ast_to_symbolic(&args[0])?;
+        let var = extract_var_name(&args[1])?;
+        let result = simplify(&integrate(&expr, &var)?);
+        Ok(EvalResult::Symbolic(symbolic_to_string(&result)))
+    }
+
+    /// simplify(expr)：符号化简。
+    fn eval_simplify(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "simplify() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let expr = ast_to_symbolic(&args[0])?;
+        let result = simplify(&expr);
+        Ok(EvalResult::Symbolic(symbolic_to_string(&result)))
+    }
+
+    /// limit(expr, var, point)：极限计算。
+    fn eval_limit(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 3 {
+            return Err(CalcError::domain(format!(
+                "limit() requires exactly 3 arguments, got {}",
+                args.len()
+            )));
+        }
+        let expr = ast_to_symbolic(&args[0])?;
+        let var = extract_var_name(&args[1])?;
+        let point = extract_number(&args[2])?;
+        limit(&expr, &var, point)
+    }
+
+    /// taylor(expr, var, order)：泰勒级数展开。
+    fn eval_taylor(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 3 {
+            return Err(CalcError::domain(format!(
+                "taylor() requires exactly 3 arguments, got {}",
+                args.len()
+            )));
+        }
+        let expr = ast_to_symbolic(&args[0])?;
+        let var = extract_var_name(&args[1])?;
+        let order = extract_number(&args[2])? as u32;
+        taylor(&expr, &var, order)
     }
 }
 

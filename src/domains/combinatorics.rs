@@ -10,7 +10,10 @@
 //! 内部用 u128 累积，溢出时自动升级为 BigInt，返回 Scalar（fit i64）或 BigInt。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::{
+    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
+    MAX_POW_EXPONENT,
+};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 
@@ -168,7 +171,24 @@ impl CombinatoricsDomain {
                         "negative exponent not supported for integers".to_string(),
                     ));
                 }
-                let exp: u32 = b.to_u32().ok_or(CalcError::overflow())?;
+                // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
+                // 安全审查 CRITICAL 修复：number_theory/combinatorics 域原无防护，
+                // 攻击者可通过 `C(1,1) + 2^4000000000` 绕过 precision.rs 的防护
+                // （24 字节请求触发 ~1.2GB 输出导致 OOM）。
+                let exp_u64 = b.to_u64().ok_or(CalcError::overflow())?;
+                if exp_u64 > MAX_POW_EXPONENT {
+                    return Err(CalcError::domain(format!(
+                        "power exponent must not exceed {} (got {})",
+                        MAX_POW_EXPONENT, exp_u64
+                    )));
+                }
+                // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
+                // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
+                let base_bits = a.bits();
+                check_pow_output_size(base_bits, exp_u64)?;
+                let exp: u32 = exp_u64
+                    .try_into()
+                    .map_err(|_| CalcError::overflow())?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {

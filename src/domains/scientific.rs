@@ -163,140 +163,140 @@ impl ScientificDomain {
         Ok(result)
     }
 
-    /// 求值科学函数调用。
+    /// 求值科学函数调用：按函数名分发到对应的处理方法。
     fn eval_function(
         &self,
         name: &str,
         args: &[AstNode],
         ctx: &EvalContext,
     ) -> Result<f64, CalcError> {
+        if !SCIENTIFIC_FUNCTIONS.contains(&name) {
+            return Err(CalcError::eval(format!("unknown function: {}", name)));
+        }
         match name {
             // ===== 三角函数 =====
-            "sin" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.sin(), name)
-            }
-            "cos" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.cos(), name)
-            }
-            "tan" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.tan(), name)
-            }
+            "sin" => self.eval_unary(name, args, ctx, f64::sin),
+            "cos" => self.eval_unary(name, args, ctx, f64::cos),
+            "tan" => self.eval_unary(name, args, ctx, f64::tan),
             // ===== 反三角函数 =====
-            "asin" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                if !(-1.0..=1.0).contains(&x) {
-                    return Err(CalcError::domain(format!(
-                        "asin requires argument in [-1, 1], got {}",
-                        x
-                    ))
-                    .with_hint("asin domain is [-1, 1]"));
-                }
-                self.check_finite(x.asin(), name)
-            }
-            "acos" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                if !(-1.0..=1.0).contains(&x) {
-                    return Err(CalcError::domain(format!(
-                        "acos requires argument in [-1, 1], got {}",
-                        x
-                    ))
-                    .with_hint("acos domain is [-1, 1]"));
-                }
-                self.check_finite(x.acos(), name)
-            }
-            "atan" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.atan(), name)
-            }
+            "asin" => self.eval_asin(name, args, ctx),
+            "acos" => self.eval_acos(name, args, ctx),
+            "atan" => self.eval_unary(name, args, ctx, f64::atan),
             // ===== 对数函数 =====
-            "ln" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                if x <= 0.0 {
-                    return Err(CalcError::domain(format!(
-                        "ln requires positive argument, got {}",
-                        x
-                    )));
-                }
-                self.check_finite(x.ln(), name)
-            }
-            "log10" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                if x <= 0.0 {
-                    return Err(CalcError::domain(format!(
-                        "log10 requires positive argument, got {}",
-                        x
-                    )));
-                }
-                self.check_finite(x.log10(), name)
-            }
-            "log2" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                if x <= 0.0 {
-                    return Err(CalcError::domain(format!(
-                        "log2 requires positive argument, got {}",
-                        x
-                    )));
-                }
-                self.check_finite(x.log2(), name)
-            }
-            "log" => {
-                // log(value, base) = log_base(value)
-                if args.len() != 2 {
-                    return Err(CalcError::eval(format!(
-                        "log expects 2 arguments (value, base), got {}",
-                        args.len()
-                    )));
-                }
-                let value = self.eval_node(&args[0], ctx)?;
-                let base = self.eval_node(&args[1], ctx)?;
-                if value <= 0.0 {
-                    return Err(CalcError::domain(format!(
-                        "log requires positive value, got {}",
-                        value
-                    )));
-                }
-                if base <= 0.0 || base == 1.0 {
-                    return Err(CalcError::domain(format!(
-                        "log requires positive base != 1, got {}",
-                        base
-                    )));
-                }
-                self.check_finite(value.log(base), name)
-            }
+            "ln" => self.eval_ln(name, args, ctx),
+            "log10" => self.eval_log10(name, args, ctx),
+            "log2" => self.eval_log2(name, args, ctx),
+            "log" => self.eval_log(name, args, ctx),
             // ===== 指数函数 =====
-            "exp" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.exp(), name)
-            }
+            "exp" => self.eval_unary(name, args, ctx, f64::exp),
             // ===== 双曲函数 =====
-            "sinh" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.sinh(), name)
-            }
-            "cosh" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.cosh(), name)
-            }
-            "tanh" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                self.check_finite(x.tanh(), name)
-            }
+            "sinh" => self.eval_unary(name, args, ctx, f64::sinh),
+            "cosh" => self.eval_unary(name, args, ctx, f64::cosh),
+            "tanh" => self.eval_unary(name, args, ctx, f64::tanh),
             // ===== 特殊函数 =====
-            "gamma" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                let result = lanczos_gamma(x);
-                self.check_finite(result, name)
-            }
-            "erf" => {
-                let x = self.eval_one_arg(name, args, ctx)?;
-                let result = erf(x);
-                self.check_finite(result, name)
-            }
+            "gamma" => self.eval_unary(name, args, ctx, lanczos_gamma),
+            "erf" => self.eval_unary(name, args, ctx, erf),
             _ => Err(CalcError::eval(format!("unknown function: {}", name))),
         }
+    }
+
+    /// 单参数函数通用模板：求值参数 → 应用 f → 检查有限性。
+    fn eval_unary(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+        f: impl Fn(f64) -> f64,
+    ) -> Result<f64, CalcError> {
+        let x = self.eval_one_arg(name, args, ctx)?;
+        self.check_finite(f(x), name)
+    }
+
+    /// asin(x)：参数须在 [-1, 1]。
+    fn eval_asin(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        let x = self.eval_one_arg(name, args, ctx)?;
+        if !(-1.0..=1.0).contains(&x) {
+            return Err(CalcError::domain(format!(
+                "asin requires argument in [-1, 1], got {}",
+                x
+            ))
+            .with_hint("asin domain is [-1, 1]"));
+        }
+        self.check_finite(x.asin(), name)
+    }
+
+    /// acos(x)：参数须在 [-1, 1]。
+    fn eval_acos(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        let x = self.eval_one_arg(name, args, ctx)?;
+        if !(-1.0..=1.0).contains(&x) {
+            return Err(CalcError::domain(format!(
+                "acos requires argument in [-1, 1], got {}",
+                x
+            ))
+            .with_hint("acos domain is [-1, 1]"));
+        }
+        self.check_finite(x.acos(), name)
+    }
+
+    /// ln(x)：参数须为正数。
+    fn eval_ln(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        let x = self.eval_one_arg(name, args, ctx)?;
+        if x <= 0.0 {
+            return Err(CalcError::domain(format!(
+                "ln requires positive argument, got {}",
+                x
+            )));
+        }
+        self.check_finite(x.ln(), name)
+    }
+
+    /// log10(x)：参数须为正数。
+    fn eval_log10(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        let x = self.eval_one_arg(name, args, ctx)?;
+        if x <= 0.0 {
+            return Err(CalcError::domain(format!(
+                "log10 requires positive argument, got {}",
+                x
+            )));
+        }
+        self.check_finite(x.log10(), name)
+    }
+
+    /// log2(x)：参数须为正数。
+    fn eval_log2(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        let x = self.eval_one_arg(name, args, ctx)?;
+        if x <= 0.0 {
+            return Err(CalcError::domain(format!(
+                "log2 requires positive argument, got {}",
+                x
+            )));
+        }
+        self.check_finite(x.log2(), name)
+    }
+
+    /// log(value, base)：value 须为正数，base 须为正数且 ≠ 1。
+    fn eval_log(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::eval(format!(
+                "log expects 2 arguments (value, base), got {}",
+                args.len()
+            )));
+        }
+        let value = self.eval_node(&args[0], ctx)?;
+        let base = self.eval_node(&args[1], ctx)?;
+        if value <= 0.0 {
+            return Err(CalcError::domain(format!(
+                "log requires positive value, got {}",
+                value
+            )));
+        }
+        if base <= 0.0 || base == 1.0 {
+            return Err(CalcError::domain(format!(
+                "log requires positive base != 1, got {}",
+                base
+            )));
+        }
+        self.check_finite(value.log(base), name)
     }
 
     /// 求值单参数函数的参数。

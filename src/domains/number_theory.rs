@@ -12,7 +12,10 @@
 //! 结果按值大小返回 Scalar（fit i64）或 BigInt。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::{
+    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
+    MAX_POW_EXPONENT,
+};
 use num_bigint::BigInt;
 use num_integer::Integer as _;
 use num_traits::{One, Signed, ToPrimitive, Zero};
@@ -202,7 +205,24 @@ impl NumberTheoryDomain {
                         "negative exponent not supported for integers".to_string(),
                     ));
                 }
-                let exp: u32 = b.to_u32().ok_or(CalcError::overflow())?;
+                // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
+                // 安全审查 CRITICAL 修复：number_theory/combinatorics 域原无防护，
+                // 攻击者可通过 `gcd(1,1) + 2^4000000000` 绕过 precision.rs 的防护
+                // （24 字节请求触发 ~1.2GB 输出导致 OOM）。
+                let exp_u64 = b.to_u64().ok_or(CalcError::overflow())?;
+                if exp_u64 > MAX_POW_EXPONENT {
+                    return Err(CalcError::domain(format!(
+                        "power exponent must not exceed {} (got {})",
+                        MAX_POW_EXPONENT, exp_u64
+                    )));
+                }
+                // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
+                // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
+                let base_bits = a.bits();
+                check_pow_output_size(base_bits, exp_u64)?;
+                let exp: u32 = exp_u64
+                    .try_into()
+                    .map_err(|_| CalcError::overflow())?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {
@@ -214,7 +234,7 @@ impl NumberTheoryDomain {
         }
     }
 
-    /// 求值数论函数调用。
+    /// 求值数论函数调用：按函数名分发到对应的处理方法。
     fn eval_function(
         &self,
         name: &str,
@@ -228,122 +248,156 @@ impl NumberTheoryDomain {
             )));
         }
         match name {
-            "gcd" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "gcd() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.eval_int(&args[0], ctx)?;
-                let b = self.eval_int(&args[1], ctx)?;
-                let result = a.abs().gcd(&b.abs());
-                Ok(bigint_to_result(result))
-            }
-            "lcm" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "lcm() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.eval_int(&args[0], ctx)?;
-                let b = self.eval_int(&args[1], ctx)?;
-                if a.is_zero() || b.is_zero() {
-                    return Ok(EvalResult::Scalar(0.0));
-                }
-                let result = a.abs().lcm(&b.abs());
-                Ok(bigint_to_result(result))
-            }
-            "is_prime" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "is_prime() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let n = self.eval_int(&args[0], ctx)?;
-                let prime = is_prime_bigint(&n);
-                Ok(EvalResult::Scalar(if prime { 1.0 } else { 0.0 }))
-            }
-            "prime_sieve" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "prime_sieve() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let n = self.eval_int(&args[0], ctx)?;
-                if n.is_negative() {
-                    return Err(CalcError::domain(
-                        "prime_sieve() requires non-negative argument".to_string(),
-                    ));
-                }
-                let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
-                let primes = prime_sieve_u64(n_u64);
-                Ok(EvalResult::Vector(
-                    primes.into_iter().map(|p| p as f64).collect(),
-                ))
-            }
-            "mod_inverse" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "mod_inverse() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.eval_int(&args[0], ctx)?;
-                let m = self.eval_int(&args[1], ctx)?;
-                if m.is_zero() {
-                    return Err(CalcError::division_by_zero());
-                }
-                let m_abs = m.abs();
-                match mod_inverse(&a, &m_abs) {
-                    Some(inv) => Ok(bigint_to_result(inv)),
-                    None => Err(CalcError::domain(format!(
-                        "mod_inverse: {} and {} are not coprime",
-                        a, m
-                    ))),
-                }
-            }
-            "mod_pow" => {
-                if args.len() != 3 {
-                    return Err(CalcError::domain(format!(
-                        "mod_pow() requires exactly 3 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let base = self.eval_int(&args[0], ctx)?;
-                let exp = self.eval_int(&args[1], ctx)?;
-                let m = self.eval_int(&args[2], ctx)?;
-                if m.is_zero() {
-                    return Err(CalcError::division_by_zero());
-                }
-                if exp.is_negative() {
-                    return Err(CalcError::domain(
-                        "mod_pow() requires non-negative exponent".to_string(),
-                    ));
-                }
-                let m_abs = m.abs();
-                let result = mod_pow_bigint(&base, &exp, &m_abs);
-                Ok(bigint_to_result(result))
-            }
-            "euler_phi" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "euler_phi() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let n = self.eval_int(&args[0], ctx)?;
-                if n.is_zero() {
-                    return Ok(EvalResult::Scalar(0.0));
-                }
-                let result = euler_phi(&n.abs());
-                Ok(bigint_to_result(result))
-            }
+            "gcd" => self.eval_gcd(args, ctx),
+            "lcm" => self.eval_lcm(args, ctx),
+            "is_prime" => self.eval_is_prime(args, ctx),
+            "prime_sieve" => self.eval_prime_sieve(args, ctx),
+            "mod_inverse" => self.eval_mod_inverse(args, ctx),
+            "mod_pow" => self.eval_mod_pow(args, ctx),
+            "euler_phi" => self.eval_euler_phi(args, ctx),
             _ => unreachable!(),
         }
+    }
+
+    /// gcd(a, b)：最大公约数。
+    fn eval_gcd(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "gcd() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let a = self.eval_int(&args[0], ctx)?;
+        let b = self.eval_int(&args[1], ctx)?;
+        let result = a.abs().gcd(&b.abs());
+        Ok(bigint_to_result(result))
+    }
+
+    /// lcm(a, b)：最小公倍数。任一为 0 则结果为 0。
+    fn eval_lcm(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "lcm() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let a = self.eval_int(&args[0], ctx)?;
+        let b = self.eval_int(&args[1], ctx)?;
+        if a.is_zero() || b.is_zero() {
+            return Ok(EvalResult::Scalar(0.0));
+        }
+        let result = a.abs().lcm(&b.abs());
+        Ok(bigint_to_result(result))
+    }
+
+    /// is_prime(n)：Miller-Rabin 素数判定，返回 1.0（素数）或 0.0（合数）。
+    fn eval_is_prime(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "is_prime() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let n = self.eval_int(&args[0], ctx)?;
+        let prime = is_prime_bigint(&n);
+        Ok(EvalResult::Scalar(if prime { 1.0 } else { 0.0 }))
+    }
+
+    /// prime_sieve(n)：埃拉托斯特尼筛法，返回 ≤ n 的所有素数列表。
+    fn eval_prime_sieve(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "prime_sieve() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let n = self.eval_int(&args[0], ctx)?;
+        if n.is_negative() {
+            return Err(CalcError::domain(
+                "prime_sieve() requires non-negative argument".to_string(),
+            ));
+        }
+        let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
+        // DoS 防护：筛子数组大小 = n+1 字节，上界 10^7（~10MB）
+        const MAX_SIEVE_N: u64 = 10_000_000;
+        if n_u64 > MAX_SIEVE_N {
+            return Err(CalcError::overflow());
+        }
+        let primes = prime_sieve_u64(n_u64);
+        Ok(EvalResult::Vector(
+            primes.into_iter().map(|p| p as f64).collect(),
+        ))
+    }
+
+    /// mod_inverse(a, m)：模逆元，要求 gcd(a, m) = 1。
+    fn eval_mod_inverse(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "mod_inverse() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let a = self.eval_int(&args[0], ctx)?;
+        let m = self.eval_int(&args[1], ctx)?;
+        if m.is_zero() {
+            return Err(CalcError::division_by_zero());
+        }
+        let m_abs = m.abs();
+        match mod_inverse(&a, &m_abs) {
+            Some(inv) => Ok(bigint_to_result(inv)),
+            None => Err(CalcError::domain(format!(
+                "mod_inverse: {} and {} are not coprime",
+                a, m
+            ))),
+        }
+    }
+
+    /// mod_pow(base, exp, m)：模幂运算 base^exp mod m，要求 exp ≥ 0。
+    fn eval_mod_pow(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 3 {
+            return Err(CalcError::domain(format!(
+                "mod_pow() requires exactly 3 arguments, got {}",
+                args.len()
+            )));
+        }
+        let base = self.eval_int(&args[0], ctx)?;
+        let exp = self.eval_int(&args[1], ctx)?;
+        let m = self.eval_int(&args[2], ctx)?;
+        if m.is_zero() {
+            return Err(CalcError::division_by_zero());
+        }
+        if exp.is_negative() {
+            return Err(CalcError::domain(
+                "mod_pow() requires non-negative exponent".to_string(),
+            ));
+        }
+        let m_abs = m.abs();
+        let result = mod_pow_bigint(&base, &exp, &m_abs);
+        Ok(bigint_to_result(result))
+    }
+
+    /// euler_phi(n)：欧拉函数 φ(n)，n=0 时返回 0。
+    fn eval_euler_phi(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "euler_phi() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let n = self.eval_int(&args[0], ctx)?;
+        if n.is_zero() {
+            return Ok(EvalResult::Scalar(0.0));
+        }
+        let result = euler_phi(&n.abs());
+        Ok(bigint_to_result(result))
     }
 }
 

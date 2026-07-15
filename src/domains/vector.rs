@@ -235,7 +235,7 @@ impl VectorDomain {
         }
     }
 
-    /// 求值向量函数调用。
+    /// 求值向量函数调用：按函数名分发到对应的处理方法。
     fn eval_function(
         &self,
         name: &str,
@@ -249,130 +249,152 @@ impl VectorDomain {
             )));
         }
         match name {
-            "dot" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "dot() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.list_to_vector(&args[0], ctx)?;
-                let b = self.list_to_vector(&args[1], ctx)?;
-                if a.len() != b.len() {
-                    return Err(CalcError::domain(format!(
-                        "dot(): dimension mismatch {} vs {}",
-                        a.len(),
-                        b.len()
-                    )));
-                }
-                let dv_a = DVector::from_vec(a);
-                let dv_b = DVector::from_vec(b);
-                Ok(EvalResult::Scalar(dv_a.dot(&dv_b)))
-            }
-            "cross" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "cross() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.list_to_vector(&args[0], ctx)?;
-                let b = self.list_to_vector(&args[1], ctx)?;
-                if a.len() != 3 || b.len() != 3 {
-                    return Err(CalcError::domain(
-                        "cross() requires 3-dimensional vectors".to_string(),
-                    ));
-                }
-                let cross = vec![
-                    a[1] * b[2] - a[2] * b[1],
-                    a[2] * b[0] - a[0] * b[2],
-                    a[0] * b[1] - a[1] * b[0],
-                ];
-                Ok(EvalResult::Vector(cross))
-            }
-            "norm" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "norm() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let v = self.list_to_vector(&args[0], ctx)?;
-                let dv = DVector::from_vec(v);
-                Ok(EvalResult::Scalar(dv.norm()))
-            }
-            "angle" => {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "angle() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.list_to_vector(&args[0], ctx)?;
-                let b = self.list_to_vector(&args[1], ctx)?;
-                if a.len() != b.len() {
-                    return Err(CalcError::domain(format!(
-                        "angle(): dimension mismatch {} vs {}",
-                        a.len(),
-                        b.len()
-                    )));
-                }
-                let dv_a = DVector::from_vec(a);
-                let dv_b = DVector::from_vec(b);
-                let norm_a = dv_a.norm();
-                let norm_b = dv_b.norm();
-                if norm_a == 0.0 || norm_b == 0.0 {
-                    return Err(CalcError::domain(
-                        "angle(): zero vector has no angle".to_string(),
-                    ));
-                }
-                let cos_theta = dv_a.dot(&dv_b) / (norm_a * norm_b);
-                let cos_clamped = cos_theta.clamp(-1.0, 1.0);
-                Ok(EvalResult::Scalar(cos_clamped.acos()))
-            }
-            "normalize" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "normalize() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let v = self.list_to_vector(&args[0], ctx)?;
-                let dv = DVector::from_vec(v);
-                let norm = dv.norm();
-                if norm == 0.0 {
-                    return Err(CalcError::domain(
-                        "normalize(): cannot normalize zero vector".to_string(),
-                    ));
-                }
-                let normalized = &dv / norm;
-                Ok(EvalResult::Vector(normalized.iter().cloned().collect()))
-            }
-            "scalar_triple" => {
-                if args.len() != 3 {
-                    return Err(CalcError::domain(format!(
-                        "scalar_triple() requires exactly 3 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.list_to_vector(&args[0], ctx)?;
-                let b = self.list_to_vector(&args[1], ctx)?;
-                let c = self.list_to_vector(&args[2], ctx)?;
-                if a.len() != 3 || b.len() != 3 || c.len() != 3 {
-                    return Err(CalcError::domain(
-                        "scalar_triple() requires 3-dimensional vectors".to_string(),
-                    ));
-                }
-                let cross = [
-                    a[1] * b[2] - a[2] * b[1],
-                    a[2] * b[0] - a[0] * b[2],
-                    a[0] * b[1] - a[1] * b[0],
-                ];
-                let result = cross[0] * c[0] + cross[1] * c[1] + cross[2] * c[2];
-                Ok(EvalResult::Scalar(result))
-            }
+            "dot" => self.eval_dot(args, ctx),
+            "cross" => self.eval_cross(args, ctx),
+            "norm" => self.eval_norm(args, ctx),
+            "angle" => self.eval_angle(args, ctx),
+            "normalize" => self.eval_normalize(args, ctx),
+            "scalar_triple" => self.eval_scalar_triple(args, ctx),
             _ => unreachable!(),
         }
+    }
+
+    /// dot(a, b)：向量点积，返回标量。
+    fn eval_dot(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "dot() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        if a.len() != b.len() {
+            return Err(CalcError::domain(format!(
+                "dot(): dimension mismatch {} vs {}",
+                a.len(),
+                b.len()
+            )));
+        }
+        let dv_a = DVector::from_vec(a);
+        let dv_b = DVector::from_vec(b);
+        Ok(EvalResult::Scalar(dv_a.dot(&dv_b)))
+    }
+
+    /// cross(a, b)：三维向量叉积，返回向量。
+    fn eval_cross(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "cross() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        if a.len() != 3 || b.len() != 3 {
+            return Err(CalcError::domain(
+                "cross() requires 3-dimensional vectors".to_string(),
+            ));
+        }
+        let cross = vec![
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ];
+        Ok(EvalResult::Vector(cross))
+    }
+
+    /// norm(v)：向量模长（L2 范数），返回标量。
+    fn eval_norm(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "norm() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let v = self.list_to_vector(&args[0], ctx)?;
+        let dv = DVector::from_vec(v);
+        Ok(EvalResult::Scalar(dv.norm()))
+    }
+
+    /// angle(a, b)：两向量夹角（弧度），返回标量。
+    fn eval_angle(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "angle() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        if a.len() != b.len() {
+            return Err(CalcError::domain(format!(
+                "angle(): dimension mismatch {} vs {}",
+                a.len(),
+                b.len()
+            )));
+        }
+        let dv_a = DVector::from_vec(a);
+        let dv_b = DVector::from_vec(b);
+        let norm_a = dv_a.norm();
+        let norm_b = dv_b.norm();
+        if norm_a == 0.0 || norm_b == 0.0 {
+            return Err(CalcError::domain(
+                "angle(): zero vector has no angle".to_string(),
+            ));
+        }
+        let cos_theta = dv_a.dot(&dv_b) / (norm_a * norm_b);
+        let cos_clamped = cos_theta.clamp(-1.0, 1.0);
+        Ok(EvalResult::Scalar(cos_clamped.acos()))
+    }
+
+    /// normalize(v)：向量归一化为单位向量，返回向量。
+    fn eval_normalize(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "normalize() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let v = self.list_to_vector(&args[0], ctx)?;
+        let dv = DVector::from_vec(v);
+        let norm = dv.norm();
+        if norm == 0.0 {
+            return Err(CalcError::domain(
+                "normalize(): cannot normalize zero vector".to_string(),
+            ));
+        }
+        let normalized = &dv / norm;
+        Ok(EvalResult::Vector(normalized.iter().cloned().collect()))
+    }
+
+    /// scalar_triple(a, b, c)：三维向量混合积 a·(b×c)，返回标量。
+    fn eval_scalar_triple(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 3 {
+            return Err(CalcError::domain(format!(
+                "scalar_triple() requires exactly 3 arguments, got {}",
+                args.len()
+            )));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        let c = self.list_to_vector(&args[2], ctx)?;
+        if a.len() != 3 || b.len() != 3 || c.len() != 3 {
+            return Err(CalcError::domain(
+                "scalar_triple() requires 3-dimensional vectors".to_string(),
+            ));
+        }
+        let cross = [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ];
+        let result = cross[0] * c[0] + cross[1] * c[1] + cross[2] * c[2];
+        Ok(EvalResult::Scalar(result))
     }
 
     /// 将 AstNode::List 转为 Vec<f64>。非数值元素返回 DomainError。

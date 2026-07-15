@@ -13,6 +13,9 @@ use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use nalgebra::DMatrix;
 
+/// 矩阵函数白名单。
+const MATRIX_FUNCTIONS: &[&str] = &["det", "transpose", "inverse", "identity"];
+
 /// Matrix 计算域。
 ///
 /// priority=30，支持矩阵加减乘、标量乘、行列式、转置、逆、单位矩阵。
@@ -40,7 +43,7 @@ impl CalculationDomain for MatrixDomain {
             ctx = ctx.with_var("e", std::f64::consts::E);
         }
 
-        let value = self.eval(ast, &ctx)?;
+        let value = self.eval_node(ast, &ctx)?;
         match value {
             MatrixValue::Scalar(v) => {
                 if !v.is_finite() {
@@ -60,7 +63,7 @@ impl CalculationDomain for MatrixDomain {
 
 impl MatrixDomain {
     /// 递归求值 AST 节点，返回标量或矩阵。
-    fn eval(&self, ast: &AstNode, ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
+    fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(MatrixValue::Scalar(*n)),
             AstNode::Variable(name) => ctx
@@ -69,12 +72,12 @@ impl MatrixDomain {
                 .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
             AstNode::Matrix(rows) => self.eval_matrix_literal(rows, ctx),
             AstNode::BinaryOp(op, l, r) => {
-                let a = self.eval(l, ctx)?;
-                let b = self.eval(r, ctx)?;
+                let a = self.eval_node(l, ctx)?;
+                let b = self.eval_node(r, ctx)?;
                 self.eval_binary(*op, a, b)
             }
             AstNode::UnaryOp(op, e) => {
-                let v = self.eval(e, ctx)?;
+                let v = self.eval_node(e, ctx)?;
                 match op {
                     UnaryOp::Neg => match v {
                         MatrixValue::Scalar(s) => Ok(MatrixValue::Scalar(-s)),
@@ -129,7 +132,7 @@ impl MatrixDomain {
         let mut data = Vec::with_capacity(rows.len() * ncols);
         for row in rows {
             for elem in row {
-                match self.eval(elem, ctx)? {
+                match self.eval_node(elem, ctx)? {
                     MatrixValue::Scalar(s) => data.push(s),
                     MatrixValue::Matrix(_) => {
                         return Err(CalcError::domain(
@@ -241,117 +244,135 @@ impl MatrixDomain {
         }
     }
 
-    /// 求值函数调用。
+    /// 求值函数调用：按函数名分发到对应的处理方法。
     fn eval_function(
         &self,
         name: &str,
         args: &[AstNode],
         ctx: &EvalContext,
     ) -> Result<MatrixValue, CalcError> {
+        if !MATRIX_FUNCTIONS.contains(&name) {
+            return Err(CalcError::domain(format!(
+                "unsupported function in matrix domain: {}",
+                name
+            )));
+        }
         match name {
-            "det" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "det() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let m = self.eval(&args[0], ctx)?;
-                match m {
-                    MatrixValue::Matrix(matrix) => {
-                        if !matrix.is_square() {
-                            return Err(CalcError::domain(format!(
-                                "det() requires a square matrix, got {}x{}",
-                                matrix.nrows(),
-                                matrix.ncols()
-                            )));
-                        }
-                        Ok(MatrixValue::Scalar(matrix.determinant()))
-                    }
-                    _ => Err(CalcError::domain(
-                        "det() requires a matrix argument".to_string(),
-                    )),
-                }
-            }
-            "transpose" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "transpose() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let m = self.eval(&args[0], ctx)?;
-                match m {
-                    MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(matrix.transpose())),
-                    _ => Err(CalcError::domain(
-                        "transpose() requires a matrix argument".to_string(),
-                    )),
-                }
-            }
-            "inverse" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "inverse() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let m = self.eval(&args[0], ctx)?;
-                match m {
-                    MatrixValue::Matrix(matrix) => {
-                        if !matrix.is_square() {
-                            return Err(CalcError::domain(format!(
-                                "inverse() requires a square matrix, got {}x{}",
-                                matrix.nrows(),
-                                matrix.ncols()
-                            )));
-                        }
-                        match matrix.try_inverse() {
-                            Some(inv) => Ok(MatrixValue::Matrix(inv)),
-                            None => Err(CalcError::domain(
-                                "matrix is singular (not invertible)".to_string(),
-                            )),
-                        }
-                    }
-                    _ => Err(CalcError::domain(
-                        "inverse() requires a matrix argument".to_string(),
-                    )),
-                }
-            }
-            "identity" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "identity() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let n_val = self.eval(&args[0], ctx)?;
-                match n_val {
-                    MatrixValue::Scalar(n) => {
-                        if n < 1.0 || n != n.trunc() {
-                            return Err(CalcError::domain(format!(
-                                "identity() requires a positive integer, got {}",
-                                n
-                            )));
-                        }
-                        const MAX_MATRIX_DIM: usize = 1000;
-                        if n as usize > MAX_MATRIX_DIM {
-                            return Err(CalcError::domain(format!(
-                                "identity() dimension {} exceeds maximum of {}",
-                                n, MAX_MATRIX_DIM
-                            )));
-                        }
-                        let n = n as usize;
-                        Ok(MatrixValue::Matrix(DMatrix::identity(n, n)))
-                    }
-                    _ => Err(CalcError::domain(
-                        "identity() requires a scalar argument".to_string(),
-                    )),
-                }
-            }
+            "det" => self.eval_det(args, ctx),
+            "transpose" => self.eval_transpose(args, ctx),
+            "inverse" => self.eval_inverse(args, ctx),
+            "identity" => self.eval_identity(args, ctx),
             _ => Err(CalcError::domain(format!(
                 "unsupported function in matrix domain: {}",
                 name
             ))),
+        }
+    }
+
+    /// det(m)：方阵行列式。
+    fn eval_det(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "det() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let m = self.eval_node(&args[0], ctx)?;
+        match m {
+            MatrixValue::Matrix(matrix) => {
+                if !matrix.is_square() {
+                    return Err(CalcError::domain(format!(
+                        "det() requires a square matrix, got {}x{}",
+                        matrix.nrows(),
+                        matrix.ncols()
+                    )));
+                }
+                Ok(MatrixValue::Scalar(matrix.determinant()))
+            }
+            _ => Err(CalcError::domain(
+                "det() requires a matrix argument".to_string(),
+            )),
+        }
+    }
+
+    /// transpose(m)：矩阵转置。
+    fn eval_transpose(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "transpose() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let m = self.eval_node(&args[0], ctx)?;
+        match m {
+            MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(matrix.transpose())),
+            _ => Err(CalcError::domain(
+                "transpose() requires a matrix argument".to_string(),
+            )),
+        }
+    }
+
+    /// inverse(m)：方阵逆矩阵，奇异矩阵报错。
+    fn eval_inverse(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "inverse() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let m = self.eval_node(&args[0], ctx)?;
+        match m {
+            MatrixValue::Matrix(matrix) => {
+                if !matrix.is_square() {
+                    return Err(CalcError::domain(format!(
+                        "inverse() requires a square matrix, got {}x{}",
+                        matrix.nrows(),
+                        matrix.ncols()
+                    )));
+                }
+                match matrix.try_inverse() {
+                    Some(inv) => Ok(MatrixValue::Matrix(inv)),
+                    None => Err(CalcError::domain(
+                        "matrix is singular (not invertible)".to_string(),
+                    )),
+                }
+            }
+            _ => Err(CalcError::domain(
+                "inverse() requires a matrix argument".to_string(),
+            )),
+        }
+    }
+
+    /// identity(n)：n×n 单位矩阵，n 须为正整数且 ≤ 1000。
+    fn eval_identity(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "identity() requires exactly 1 argument, got {}",
+                args.len()
+            )));
+        }
+        let n_val = self.eval_node(&args[0], ctx)?;
+        match n_val {
+            MatrixValue::Scalar(n) => {
+                if n < 1.0 || n != n.trunc() {
+                    return Err(CalcError::domain(format!(
+                        "identity() requires a positive integer, got {}",
+                        n
+                    )));
+                }
+                const MAX_MATRIX_DIM: usize = 1000;
+                if n as usize > MAX_MATRIX_DIM {
+                    return Err(CalcError::domain(format!(
+                        "identity() dimension {} exceeds maximum of {}",
+                        n, MAX_MATRIX_DIM
+                    )));
+                }
+                let n = n as usize;
+                Ok(MatrixValue::Matrix(DMatrix::identity(n, n)))
+            }
+            _ => Err(CalcError::domain(
+                "identity() requires a scalar argument".to_string(),
+            )),
         }
     }
 }

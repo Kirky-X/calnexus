@@ -34,142 +34,160 @@ impl BatchProcessor {
     pub fn run(path: &str, ctx: &EvalContext, json: bool) -> i32 {
         let start = Instant::now();
 
-        // 1. 读取表达式列表
-        let lines = match read_lines(path) {
-            Ok(lines) => lines,
-            Err(e) => {
-                eprintln!("error: failed to read input: {}", e);
-                return 2;
-            }
+        let entries = match read_and_validate_entries(path) {
+            Ok(e) => e,
+            Err(code) => return code,
         };
 
-        // 2. 解析与验证（TG5.2）
-        let mut entries: Vec<BatchEntry> = Vec::new();
-        for (line_no, raw) in lines.iter() {
-            let trimmed = raw.trim();
-            // 跳过注释与空行
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-            if trimmed.len() > MAX_EXPR_LEN {
-                eprintln!(
-                    "error: line {} exceeds max length {} (got {})",
-                    line_no,
-                    MAX_EXPR_LEN,
-                    trimmed.len()
-                );
-                return 2;
-            }
-            entries.push(BatchEntry {
-                line_no: *line_no,
-                expr: trimmed.to_string(),
-            });
-        }
+        let results = evaluate_entries(&entries, ctx);
 
-        if entries.is_empty() {
-            eprintln!("error: no expressions to evaluate");
-            return 2;
-        }
-        if entries.len() > MAX_BATCH_COUNT {
-            eprintln!(
-                "error: batch count {} exceeds maximum of {}",
-                entries.len(),
-                MAX_BATCH_COUNT
-            );
-            return 2;
-        }
+        output_results(&results, json);
+        print_summary(&results, start.elapsed());
 
-        // 3. 并行求值（TG5.3）：每个表达式独立走全链路
-        let cache = crate::CacheManager::new();
-
-        let results: Vec<BatchResult> = entries
-            .par_iter()
-            .map(|entry| {
-                let result = evaluate(&entry.expr, ctx, None, &cache);
-                BatchResult {
-                    line_no: entry.line_no,
-                    expr: entry.expr.clone(),
-                    result,
-                }
-            })
-            .collect();
-
-        // 4. 输出结果 + 统计（TG5.4）
-        let total = results.len();
-        let ok_count = results.iter().filter(|r| r.result.is_ok()).count();
-        let err_count = total - ok_count;
-        let cache_hits = results
-            .iter()
-            .filter(|r| {
-                r.result
-                    .as_ref()
-                    .map(|(_, _, hit, _)| *hit)
-                    .unwrap_or(false)
-            })
-            .count();
-        let elapsed = start.elapsed();
-
-        if json {
-            println!("[");
-            for (i, r) in results.iter().enumerate() {
-                match &r.result {
-                    Ok((result, domain, hit, fmt_prec)) => {
-                        let value = format_result(result, *fmt_prec);
-                        println!(
-                            r#"  {{"line":{},"expr":"{}","result":"{}","domain":"{}","cache":"{}"}}"{}"#,
-                            r.line_no,
-                            crate::core::escape_json_string(&r.expr),
-                            crate::core::escape_json_string(&value),
-                            domain,
-                            if *hit { "hit" } else { "miss" },
-                            if i + 1 < total { "," } else { "" }
-                        );
-                    }
-                    Err(e) => {
-                        println!(
-                            r#"  {{"line":{},"expr":"{}","error":"{}"}}"{}"#,
-                            r.line_no,
-                            crate::core::escape_json_string(&r.expr),
-                            crate::core::escape_json_string(&e.to_string()),
-                            if i + 1 < total { "," } else { "" }
-                        );
-                    }
-                }
-            }
-            println!("]");
-        } else {
-            for r in &results {
-                match &r.result {
-                    Ok((result, domain, hit, fmt_prec)) => {
-                        let value = format_result(result, *fmt_prec);
-                        println!(
-                            "line {}: {} = {}  [{}{}]",
-                            r.line_no,
-                            r.expr,
-                            value,
-                            domain,
-                            if *hit { " (cached)" } else { "" }
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("line {}: {} → error: {}", r.line_no, r.expr, e);
-                    }
-                }
-            }
-        }
-
-        // Summary
-        eprintln!(
-            "summary: {} total, {} ok, {} errors, {} cache hits, {:?}",
-            total, ok_count, err_count, cache_hits, elapsed
-        );
-
+        let err_count = results.iter().filter(|r| r.result.is_err()).count();
         if err_count > 0 {
             1
         } else {
             0
         }
     }
+}
+
+/// 读取并验证批量条目（TG5.1-TG5.2）：跳过注释/空行，校验长度与数量上限。
+/// 返回 `Err(exit_code)` 表示系统错误（exit_code=2）。
+fn read_and_validate_entries(path: &str) -> Result<Vec<BatchEntry>, i32> {
+    let lines = match read_lines(path) {
+        Ok(lines) => lines,
+        Err(e) => {
+            eprintln!("error: failed to read input: {}", e);
+            return Err(2);
+        }
+    };
+
+    let mut entries: Vec<BatchEntry> = Vec::new();
+    for (line_no, raw) in lines.iter() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.len() > MAX_EXPR_LEN {
+            eprintln!(
+                "error: line {} exceeds max length {} (got {})",
+                line_no,
+                MAX_EXPR_LEN,
+                trimmed.len()
+            );
+            return Err(2);
+        }
+        entries.push(BatchEntry {
+            line_no: *line_no,
+            expr: trimmed.to_string(),
+        });
+    }
+
+    if entries.is_empty() {
+        eprintln!("error: no expressions to evaluate");
+        return Err(2);
+    }
+    if entries.len() > MAX_BATCH_COUNT {
+        eprintln!(
+            "error: batch count {} exceeds maximum of {}",
+            entries.len(),
+            MAX_BATCH_COUNT
+        );
+        return Err(2);
+    }
+
+    Ok(entries)
+}
+
+/// 并行求值所有条目（TG5.3）：每个表达式独立走全链路，结果顺序与输入一致。
+fn evaluate_entries(entries: &[BatchEntry], ctx: &EvalContext) -> Vec<BatchResult> {
+    let cache = crate::CacheManager::new();
+    entries
+        .par_iter()
+        .map(|entry| {
+            let result = evaluate(&entry.expr, ctx, None, &cache);
+            BatchResult {
+                line_no: entry.line_no,
+                expr: entry.expr.clone(),
+                result,
+            }
+        })
+        .collect()
+}
+
+/// 输出结果（TG5.4）：JSON 数组或文本行，保持原始顺序。
+fn output_results(results: &[BatchResult], json: bool) {
+    let total = results.len();
+    if json {
+        println!("[");
+        for (i, r) in results.iter().enumerate() {
+            match &r.result {
+                Ok((result, domain, hit, fmt_prec)) => {
+                    let value = format_result(result, *fmt_prec);
+                    println!(
+                        r#"  {{"line":{},"expr":"{}","result":"{}","domain":"{}","cache":"{}"}}"{}"#,
+                        r.line_no,
+                        crate::core::escape_json_string(&r.expr),
+                        crate::core::escape_json_string(&value),
+                        domain,
+                        if *hit { "hit" } else { "miss" },
+                        if i + 1 < total { "," } else { "" }
+                    );
+                }
+                Err(e) => {
+                    println!(
+                        r#"  {{"line":{},"expr":"{}","error":"{}"}}"{}"#,
+                        r.line_no,
+                        crate::core::escape_json_string(&r.expr),
+                        crate::core::escape_json_string(&e.to_string()),
+                        if i + 1 < total { "," } else { "" }
+                    );
+                }
+            }
+        }
+        println!("]");
+    } else {
+        for r in results {
+            match &r.result {
+                Ok((result, domain, hit, fmt_prec)) => {
+                    let value = format_result(result, *fmt_prec);
+                    println!(
+                        "line {}: {} = {}  [{}{}]",
+                        r.line_no,
+                        r.expr,
+                        value,
+                        domain,
+                        if *hit { " (cached)" } else { "" }
+                    );
+                }
+                Err(e) => {
+                    eprintln!("line {}: {} → error: {}", r.line_no, r.expr, e);
+                }
+            }
+        }
+    }
+}
+
+/// 打印汇总统计到 stderr：总数、成功、错误、缓存命中、耗时。
+fn print_summary(results: &[BatchResult], elapsed: std::time::Duration) {
+    let total = results.len();
+    let ok_count = results.iter().filter(|r| r.result.is_ok()).count();
+    let err_count = total - ok_count;
+    let cache_hits = results
+        .iter()
+        .filter(|r| {
+            r.result
+                .as_ref()
+                .map(|(_, _, hit, _)| *hit)
+                .unwrap_or(false)
+        })
+        .count();
+    eprintln!(
+        "summary: {} total, {} ok, {} errors, {} cache hits, {:?}",
+        total, ok_count, err_count, cache_hits, elapsed
+    );
 }
 
 /// 批量条目：解析后的表达式。

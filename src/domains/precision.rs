@@ -15,8 +15,8 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{
-    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_FACTORIAL_INPUT,
-    MAX_POW_EXPONENT, MAX_PRECISION,
+    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
+    MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION,
 };
 use num_bigint::BigInt;
 use num_rational::BigRational;
@@ -143,7 +143,7 @@ impl PrecisionDomain {
             }
             BinaryOp::Pow => {
                 let exp = rational_to_int(&b, "power exponent")?;
-                // 安全约束：拒绝超大指数（绝对值），防止 DoS。
+                // 安全约束1：拒绝超大指数（绝对值），防止 DoS。
                 // tiangang SAST CRITICAL 修复 + 复审 C-1 修复：
                 // `BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
                 // 即先计算 `a^|exp|`（巨大中间值）再取倒数。故负指数绝对值超限同样会 DoS
@@ -154,6 +154,14 @@ impl PrecisionDomain {
                         MAX_POW_EXPONENT, exp
                     )));
                 }
+                // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
+                // 安全审查 HIGH（C-1 复审发现）：`(10^10000)^99999` 可产生 ~1GB 输出。
+                // 指数已受约束1限制，但底数 `a` 可为任意大小 BigInt，故需复合限制。
+                // 复用 core 层 `check_pow_output_size`，number_theory/combinatorics 域共用同一检查。
+                let abs_exp_u64 = u64::try_from(&exp.abs())
+                    .map_err(|_| CalcError::domain(format!("power exponent too large: {}", exp)))?;
+                let base_bits = std::cmp::max(a.numer().bits(), a.denom().bits()) as u64;
+                check_pow_output_size(base_bits, abs_exp_u64)?;
                 // BigRational::pow 接受 i32 指数
                 let exp_i32 = i32::try_from(&exp)
                     .map_err(|_| CalcError::domain(format!("power exponent too large: {}", exp)))?;
@@ -1375,6 +1383,100 @@ mod tests {
             matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
             "2^({}) should return Domain error (negative exponent DoS), got {:?}",
             oversized_neg,
+            result
+        );
+    }
+
+    // ===== 底数复合限制测试（安全审查 HIGH 修复）=====
+
+    /// `check_pow_output_size` 单元测试：小底数 × 大指数应通过。
+    ///
+    /// `2^100000`：底数 2 的 bits=2（二进制 `10`），2×100000=200000 ≤ 3_320_000，通过。
+    #[test]
+    fn test_check_pow_output_size_small_base_passes() {
+        // 2 的 bits = 2（二进制 `10` 需 2 位）
+        // 2 × 100000 = 200000 ≤ 3_320_000
+        assert!(check_pow_output_size(2, 100_000).is_ok());
+    }
+
+    /// `check_pow_output_size` 单元测试：大底数 × 大指数应拒绝。
+    ///
+    /// `(10^10000)^99999`：底数 bits≈33219，33219×99999≈3.3e9 > 3_320_000，拒绝。
+    #[test]
+    fn test_check_pow_output_size_large_base_rejects() {
+        // 10^10000 的 bits ≈ 33219（log2(10^10000) = 10000 × log2(10) ≈ 33219）
+        // 33219 × 99999 ≈ 3.3e9 > 3_320_000，应拒绝
+        let result = check_pow_output_size(33_219, 99_999);
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
+            "10^10000 ^ 99999 should be rejected (base DoS), got {:?}",
+            result
+        );
+    }
+
+    /// `check_pow_output_size` 边界测试：恰好等于上限应通过。
+    ///
+    /// 构造 base_bits=33，exp=100000：33×100000=3_300_000 ≤ 3_320_000，通过。
+    #[test]
+    fn test_check_pow_output_size_boundary_at_limit_passes() {
+        // 33 × 100000 = 3_300_000 ≤ 3_320_000，通过
+        assert!(check_pow_output_size(33, 100_000).is_ok());
+    }
+
+    /// `check_pow_output_size` 边界测试：刚超过上限应拒绝。
+    ///
+    /// 构造 base_bits=34，exp=100000：34×100000=3_400_000 > 3_320_000，拒绝。
+    #[test]
+    fn test_check_pow_output_size_boundary_over_limit_rejects() {
+        // 34 × 100000 = 3_400_000 > 3_320_000，拒绝
+        let result = check_pow_output_size(34, 100_000);
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
+            "2^33 ^ 100000 should be rejected (over limit), got {:?}",
+            result
+        );
+    }
+
+    /// 端到端测试：安全大小的幂运算应正常通过复合限制检查。
+    ///
+    /// `(2^200)^10`：底数 bits=201，201×10=2010 ≤ 3_320_000，通过。
+    /// 验证复合限制不会误拦合法计算。
+    #[test]
+    fn test_pow_compound_limit_allows_safe_computation() {
+        // 2^200 作为底数（bits=201），指数 10
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::BigNumber(
+                "1606938044258990275541962092341162602522202993782792835301376".to_string(),
+            )), // 2^200
+            Box::new(AstNode::BigNumber("10".to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(
+            result.is_ok(),
+            "2^200 ^ 10 should succeed, got {:?}",
+            result
+        );
+    }
+
+    /// 端到端测试：大底数 × 大指数应被复合限制拦截。
+    ///
+    /// `(2^33)^100000`：底数 bits=34，34×100000=3_400_000 > 3_320_000，拒绝。
+    /// 使用 2^33 作为底数（构造简单），避免实际 DoS。
+    #[test]
+    fn test_pow_compound_limit_rejects_large_base_large_exp() {
+        // 2^33 = 8589934592 作为底数（bits=34），指数 100000
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::BigNumber("8589934592".to_string())), // 2^33
+            Box::new(AstNode::BigNumber("100000".to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
+            "2^33 ^ 100000 should be rejected by compound limit, got {:?}",
             result
         );
     }

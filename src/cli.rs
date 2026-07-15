@@ -79,196 +79,194 @@ struct Cli {
     serve_mcp: bool,
 }
 
-/// CLI 入口：解析参数、求值、输出结果，返回退出码。
+/// CLI 入口：解析参数、分发到对应模式处理函数，返回退出码。
 pub fn run() -> i32 {
     let cli = Cli::parse();
     let i18n = crate::i18n::I18n::from_str(&cli.lang);
 
-    // --serve-http 模式：启动 HTTP server（阻塞运行，内部创建 tokio runtime）
+    // --serve-http / --serve-mcp 模式：启动 server（阻塞运行，内部创建 tokio runtime）
     #[cfg(feature = "server")]
-    if cli.serve_http {
-        return match crate::server::HttpServer::new().run() {
-            Ok(()) => 0,
-            Err(e) => {
-                eprintln!("{}", e);
-                1
-            }
-        };
-    }
-
-    // --serve-mcp 模式：启动 MCP server（阻塞运行，内部创建 tokio runtime）
-    #[cfg(feature = "server")]
-    if cli.serve_mcp {
-        return match crate::server::McpServer::new().run() {
-            Ok(()) => 0,
-            Err(e) => {
-                eprintln!("{}", e);
-                1
-            }
-        };
+    if cli.serve_http || cli.serve_mcp {
+        return run_server_mode(&cli);
     }
 
     // --repl 模式：启动交互式 REPL
     if cli.repl {
-        let mut ctx = match parse_vars(&cli.vars) {
-            Ok(ctx) => ctx,
-            Err(e) => return handle_error(&e, &cli, &i18n),
-        };
-        ctx.precision = cli.precision;
-        return crate::repl::ReplSession::new(ctx).run();
+        return run_repl_mode(&cli, &i18n);
     }
 
     // --batch 模式：批量求值
     if let Some(path) = &cli.batch {
-        let ctx = match parse_vars(&cli.vars) {
-            Ok(ctx) => ctx,
-            Err(e) => return handle_error(&e, &cli, &i18n),
-        };
-        return crate::batch::BatchProcessor::run(path, &ctx, cli.json);
+        return run_batch_mode(path, &cli, &i18n);
     }
 
-    // 获取表达式（位置参数或 stdin）
+    // 以下模式需要表达式（位置参数或 stdin）
     let expr = match get_expression(&cli) {
         Ok(e) => e,
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
 
-    // 解析变量绑定
     let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
     ctx.precision = cli.precision;
 
-    // --canonical 模式：parse → canonicalize_no_fold → print S-expr，跳过求值
     if cli.canonical {
-        let ast = match parse(&expr) {
-            Ok(ast) => ast,
-            Err(e) => return handle_error(&e, &cli, &i18n),
-        };
-        match AstCanonicalizer::canonicalize_no_fold(&ast) {
-            Ok((_canonical_ast, cf)) => {
-                println!("{}", format_canonical(&cf));
-                0
-            }
-            Err(e) => handle_error(&e, &cli, &i18n),
-        }
+        run_canonical_mode(&expr, &cli, &i18n)
     } else if cli.latex || cli.steps {
-        // --latex 和/或 --steps：解析 + 规范化 + 求值 + 格式化输出
-        let ast = match parse(&expr) {
-            Ok(ast) => ast,
-            Err(e) => return handle_error(&e, &cli, &i18n),
-        };
-        let (canonical_ast, _cf) = match AstCanonicalizer::canonicalize(&ast) {
-            Ok(pair) => pair,
-            Err(e) => return handle_error(&e, &cli, &i18n),
-        };
-
-        // --steps 先输出步骤（基于原始 AST，避免常量折叠后无步骤可显示）
-        if cli.steps {
-            match generate_steps(&ast, &ctx) {
-                Ok(step_lines) => {
-                    for line in &step_lines {
-                        println!("{}", line);
-                    }
-                }
-                Err(e) => return handle_error(&e, &cli, &i18n),
-            }
-        }
-
-        // --latex：求值并输出 LaTeX 结果
-        if cli.latex {
-            let cache = CacheManager::new();
-            match evaluate(&expr, &ctx, cli.precision, &cache) {
-                Ok((result, _domain, _cache_hit, fmt_prec)) => {
-                    let latex_str = format_latex(&result, &canonical_ast, &expr, fmt_prec);
-                    println!("{}", latex_str);
-                }
-                Err(e) => return handle_error(&e, &cli, &i18n),
-            }
-        }
-        0
+        run_latex_steps_mode(&expr, &ctx, &cli, &i18n)
     } else {
-        // 默认模式：求值 + 输出（JSON 或文本）
-        let cache = CacheManager::new();
-        match evaluate(&expr, &ctx, cli.precision, &cache) {
-            Ok((result, domain, cache_hit, fmt_prec)) => {
-                if cli.json {
-                    let cache_str = if cache_hit { "hit" } else { "miss" };
-                    match &result {
-                        EvalResult::Scalar(v) => println!(
-                            r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
-                            v, domain, cache_str
-                        ),
-                        EvalResult::Complex(re, im) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            format_complex(*re, *im),
-                            domain,
-                            cache_str
-                        ),
-                        EvalResult::Matrix(m) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            format_matrix(m),
-                            domain,
-                            cache_str
-                        ),
-                        EvalResult::BigInt(b) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            b, domain, cache_str
-                        ),
-                        EvalResult::BigRational(r) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            format_bigrational(r, fmt_prec),
-                            domain,
-                            cache_str
-                        ),
-                        EvalResult::Vector(v) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            format_vector(v),
-                            domain,
-                            cache_str
-                        ),
-                        EvalResult::Polynomial(p) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            format_polynomial(p),
-                            domain,
-                            cache_str
-                        ),
-                        EvalResult::ComplexList(c) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            format_complex_list(c),
-                            domain,
-                            cache_str
-                        ),
-                        EvalResult::Symbolic(s) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            s, domain, cache_str
-                        ),
-                        EvalResult::LaTeX(s) => println!(
-                            r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                            s, domain, cache_str
-                        ),
-                        EvalResult::Steps(v) => {
-                            let arr: Vec<String> = v
-                                .iter()
-                                .map(|s| {
-                                    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
-                                })
-                                .collect();
-                            println!(
-                                r#"{{"result":[{}],"domain":"{}","cache":"{}"}}"#,
-                                arr.join(","),
-                                domain,
-                                cache_str
-                            )
-                        }
-                    }
-                } else {
-                    println!("{}", format_result(&result, fmt_prec));
+        run_default_mode(&expr, &ctx, &cli, &i18n)
+    }
+}
+
+/// 启动 HTTP/MCP server 模式。
+#[cfg(feature = "server")]
+fn run_server_mode(cli: &Cli) -> i32 {
+    let server_result = if cli.serve_http {
+        crate::server::HttpServer::new().run()
+    } else {
+        crate::server::McpServer::new().run()
+    };
+    match server_result {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("{}", e);
+            1
+        }
+    }
+}
+
+/// --repl 模式：解析变量绑定并启动交互式 REPL。
+fn run_repl_mode(cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+    let mut ctx = match parse_vars(&cli.vars) {
+        Ok(ctx) => ctx,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    ctx.precision = cli.precision;
+    crate::repl::ReplSession::new(ctx).run()
+}
+
+/// --batch 模式：解析变量绑定并批量求值。
+fn run_batch_mode(path: &str, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+    let ctx = match parse_vars(&cli.vars) {
+        Ok(ctx) => ctx,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    crate::batch::BatchProcessor::run(path, &ctx, cli.json)
+}
+
+/// --canonical 模式：parse → canonicalize_no_fold → 输出 S-expr，跳过求值。
+fn run_canonical_mode(expr: &str, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+    let ast = match parse(expr) {
+        Ok(ast) => ast,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    match AstCanonicalizer::canonicalize_no_fold(&ast) {
+        Ok((_canonical_ast, cf)) => {
+            println!("{}", format_canonical(&cf));
+            0
+        }
+        Err(e) => handle_error(&e, cli, i18n),
+    }
+}
+
+/// --latex 和/或 --steps 模式：解析 + 规范化 + 求值 + 格式化输出。
+fn run_latex_steps_mode(
+    expr: &str,
+    ctx: &EvalContext,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+) -> i32 {
+    let ast = match parse(expr) {
+        Ok(ast) => ast,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    let (canonical_ast, _cf) = match AstCanonicalizer::canonicalize(&ast) {
+        Ok(pair) => pair,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+
+    // --steps 先输出步骤（基于原始 AST，避免常量折叠后无步骤可显示）
+    if cli.steps {
+        match generate_steps(&ast, ctx) {
+            Ok(step_lines) => {
+                for line in &step_lines {
+                    println!("{}", line);
                 }
-                0
             }
-            Err(e) => handle_error(&e, &cli, &i18n),
+            Err(e) => return handle_error(&e, cli, i18n),
+        }
+    }
+
+    // --latex：求值并输出 LaTeX 结果
+    if cli.latex {
+        let cache = CacheManager::new();
+        match evaluate(expr, ctx, cli.precision, &cache) {
+            Ok((result, _domain, _cache_hit, fmt_prec)) => {
+                let latex_str = format_latex(&result, &canonical_ast, expr, fmt_prec);
+                println!("{}", latex_str);
+            }
+            Err(e) => return handle_error(&e, cli, i18n),
+        }
+    }
+    0
+}
+
+/// 默认模式：求值 + 输出（JSON 或文本）。
+fn run_default_mode(
+    expr: &str,
+    ctx: &EvalContext,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+) -> i32 {
+    let cache = CacheManager::new();
+    match evaluate(expr, ctx, cli.precision, &cache) {
+        Ok((result, domain, cache_hit, fmt_prec)) => {
+            if cli.json {
+                println!("{}", format_json_output(&result, &domain, cache_hit, fmt_prec));
+            } else {
+                println!("{}", format_result(&result, fmt_prec));
+            }
+            0
+        }
+        Err(e) => handle_error(&e, cli, i18n),
+    }
+}
+
+/// 格式化 EvalResult 为 JSON 输出字符串。
+/// Scalar 直接输出数字；Steps 输出数组；其他变体输出字符串。
+fn format_json_output(
+    result: &EvalResult,
+    domain: &str,
+    cache_hit: bool,
+    fmt_prec: Option<usize>,
+) -> String {
+    let cache_str = if cache_hit { "hit" } else { "miss" };
+    match result {
+        EvalResult::Scalar(v) => format!(
+            r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
+            v, domain, cache_str
+        ),
+        EvalResult::Steps(v) => {
+            let arr: Vec<String> = v
+                .iter()
+                .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
+                .collect();
+            format!(
+                r#"{{"result":[{}],"domain":"{}","cache":"{}"}}"#,
+                arr.join(","),
+                domain,
+                cache_str
+            )
+        }
+        _ => {
+            let value = format_result(result, fmt_prec);
+            format!(
+                r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
+                value, domain, cache_str
+            )
         }
     }
 }

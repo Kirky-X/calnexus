@@ -6,6 +6,7 @@
 //! 从 `src/cli.rs` 移出，使 `http`/`mcp` feature 在不启用 `cli` 时也能调用 `evaluate`。
 
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use crate::core::{
     parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CalculationDomain, CanonicalForm,
@@ -25,14 +26,22 @@ use crate::SymbolicDomain;
 /// format_precision 用于 BigRational 输出格式化（--precision N 或 precision(N, expr)）。
 ///
 /// `cache` 参数允许调用方注入预填充的缓存（测试用），生产代码传入空缓存。
+///
+/// 超时策略（安全审查 CRITICAL 修复，原 design.md §6.3 P3 延后已撤销）：
+/// - `ctx.timeout == 0`：立即超时（显式触发）
+/// - `ctx.timeout > 0`：记录起始时间，在关键节点（parse/canonicalize/domain::evaluate 前后）
+///   检查 `elapsed > timeout`，超时返回 `CalcError::timeout()`。
+///   这是第二道防线，已知 DoS 向量（factorial/pow/precision）已有专门常量约束，
+///   elapsed 追踪用于捕获未知的累积慢操作。
 pub fn evaluate(
     expr: &str,
     ctx: &EvalContext,
     precision: Option<usize>,
     cache: &CacheManager,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
-    // 0. 超时检查：ctx.timeout == 0 触发立即超时（design.md §6.3：P0 不实现真正时间追踪，
-    //    仅支持显式配置驱动的超时触发；P3 会添加基于 elapsed 的自动超时）
+    // 0. 超时检查：ctx.timeout == 0 触发立即超时；
+    //    非 0 时记录起始时间，关键节点检查 elapsed
+    let start = Instant::now();
     if ctx.timeout.is_zero() {
         return Err(CalcError::timeout());
     }
@@ -52,11 +61,15 @@ pub fn evaluate(
 
     // 1. 解析
     let ast = parse(expr)?;
+    // 1.1 超时检查点：parse 可能耗时（复杂/超长表达式）
+    check_elapsed(start, ctx.timeout)?;
 
     // 2. 规范化
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
+    // 2.1 超时检查点：canonicalize 可能耗时（深度 AST 遍历）
+    check_elapsed(start, ctx.timeout)?;
 
-    // 2.1 构建精度感知缓存键：precision 模式与常规模式使用不同键前缀，
+    // 2.2 构建精度感知缓存键：precision 模式与常规模式使用不同键前缀，
     //     避免同一表达式的 BigRational 结果与 Scalar 结果相互污染。
     //     （tiangang SAST CRITICAL + kueiku bug 分析发现）
     let cache_cf = if precision.is_some() {
@@ -71,7 +84,11 @@ pub fn evaluate(
             return Ok((cached, "precision".to_string(), true, precision));
         }
         let domain = PrecisionDomain;
+        // 3.1 求值前超时检查点：domain::evaluate 是最耗时的操作，提前检查避免启动已超时的计算
+        check_elapsed(start, ctx.timeout)?;
         let result = domain.evaluate(&canonical_ast, ctx)?;
+        // 3.2 求值后超时检查点：捕获慢操作（如大数幂运算）
+        check_elapsed(start, ctx.timeout)?;
         cache.insert(&cache_cf, &Ok(result.clone()));
         return Ok((result, "precision".to_string(), false, precision));
     }
@@ -88,7 +105,11 @@ pub fn evaluate(
 
     // 6. 路由 + 求值
     let domain = router.route(&canonical_ast)?;
+    // 6.1 求值前超时检查点
+    check_elapsed(start, ctx.timeout)?;
     let result = domain.evaluate(&canonical_ast, ctx)?;
+    // 6.2 求值后超时检查点
+    check_elapsed(start, ctx.timeout)?;
 
     // 7. 写入缓存（仅 Ok 结果）
     cache.insert(&cache_cf, &Ok(result.clone()));
@@ -96,6 +117,17 @@ pub fn evaluate(
     // 8. 提取格式化精度（precision(N, expr) 的 N）
     let fmt_prec = extract_format_precision(&canonical_ast);
     Ok((result, domain.domain_name().to_string(), false, fmt_prec))
+}
+
+/// 检查是否已超时，超时则返回 `CalcError::timeout()`。
+///
+/// 辅助函数，避免在 `evaluate` 中重复 `if start.elapsed() > timeout` 模板。
+/// `Instant::elapsed()` 开销 ~20ns，关键节点检查对性能无显著影响。
+fn check_elapsed(start: Instant, timeout: Duration) -> Result<(), CalcError> {
+    if start.elapsed() > timeout {
+        return Err(CalcError::timeout());
+    }
+    Ok(())
 }
 
 /// 从 AST 顶层提取 precision(N, expr) 调用中的 N，用于输出格式化。
@@ -144,7 +176,7 @@ pub(crate) fn build_default_router() -> &'static DomainRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{BinaryOp, EvalContext};
+    use crate::core::{BinaryOp, ErrorKind, EvalContext};
 
     // 覆盖 extract_format_precision：当 precision(N, expr) 中 N 为 Number 但非正整数（如浮点数）时，
     // 内层 if 条件为 false，返回 None。
@@ -370,5 +402,97 @@ mod tests {
         assert_eq!(result, EvalResult::Scalar(120.0));
         assert_eq!(domain, "combinatorics");
         assert!(cache_hit);
+    }
+
+    // ===== timeout elapsed 追踪测试（安全审查 CRITICAL 修复）=====
+
+    /// timeout=0 应立即超时（显式触发，已有逻辑，回归测试）。
+    #[test]
+    fn test_evaluate_timeout_zero_immediate() {
+        let cache = CacheManager::new();
+        let mut ctx = EvalContext::new();
+        ctx.timeout = Duration::ZERO;
+        let result = evaluate("1+1", &ctx, None, &cache);
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Timeout),
+            "timeout=0 should trigger immediate timeout, got {:?}",
+            result
+        );
+    }
+
+    /// timeout elapsed 追踪：设置极小 timeout（非 zero），关键节点应检测到超时。
+    ///
+    /// 安全审查 CRITICAL：原 `evaluator.rs:36-38` 仅入口检查 `is_zero()`，
+    /// 计算期间不强制超时。本测试验证 elapsed 追踪已实现。
+    ///
+    /// 策略：设置 timeout=1ns，sleep 1ms 确保时间过期，然后调用 evaluate。
+    /// 入口检查 `is_zero()` 不触发（1ns != 0），但关键节点检查 `elapsed > 1ns` 应触发。
+    #[test]
+    fn test_evaluate_timeout_elapsed_triggers() {
+        let cache = CacheManager::new();
+        let mut ctx = EvalContext::new();
+        ctx.timeout = Duration::from_nanos(1);
+        // 确保时间过期（1ms >> 1ns）
+        std::thread::sleep(Duration::from_millis(1));
+        let result = evaluate("1+1", &ctx, None, &cache);
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Timeout),
+            "should timeout (elapsed > 1ns), got {:?}",
+            result
+        );
+    }
+
+    /// 正常 timeout 不应误触发：默认 5s 超时下，简单表达式应成功。
+    ///
+    /// 验证 elapsed 检查不会误拦合法计算。
+    #[test]
+    fn test_evaluate_timeout_normal_succeeds() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new(); // 默认 timeout=5s
+        let result = evaluate("1+1", &ctx, None, &cache);
+        assert!(
+            result.is_ok(),
+            "normal eval should succeed, got {:?}",
+            result
+        );
+    }
+
+    /// precision 模式下的 timeout elapsed 追踪。
+    ///
+    /// 验证 precision 模式也受 elapsed 检查保护。
+    #[test]
+    fn test_evaluate_timeout_elapsed_precision_mode() {
+        let cache = CacheManager::new();
+        let mut ctx = EvalContext::new();
+        ctx.timeout = Duration::from_nanos(1);
+        std::thread::sleep(Duration::from_millis(1));
+        let result = evaluate("1+1", &ctx, Some(5), &cache);
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Timeout),
+            "precision mode should also timeout, got {:?}",
+            result
+        );
+    }
+
+    /// `check_elapsed` 辅助函数单元测试：未超时返回 Ok。
+    #[test]
+    fn test_check_elapsed_ok_when_not_expired() {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(60);
+        assert!(check_elapsed(start, timeout).is_ok());
+    }
+
+    /// `check_elapsed` 辅助函数单元测试：已超时返回 Timeout 错误。
+    #[test]
+    fn test_check_elapsed_err_when_expired() {
+        let start = Instant::now();
+        let timeout = Duration::from_nanos(1);
+        std::thread::sleep(Duration::from_millis(1));
+        let result = check_elapsed(start, timeout);
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Timeout),
+            "expired should return Timeout error, got {:?}",
+            result
+        );
     }
 }

@@ -38,6 +38,40 @@ pub const MAX_FACTORIAL_INPUT: u64 = 10_000;
 /// 再取倒数。`2^(-2000000000)` 会计算 `2^2000000000`（~6 亿位数字）导致内存爆炸。
 pub const MAX_POW_EXPONENT: u64 = 100_000;
 
+/// 幂运算输出上限（bits），防止大底数 × 大指数产生超大输出 DoS。
+///
+/// 安全审查 HIGH（C-1 复审发现）：`(10^10000) ^ 99999` 可产生 ~1GB 输出。
+/// 指数已受 `MAX_POW_EXPONENT` 约束，但底数 `a` 可为任意大小 BigInt。
+/// 此常量限制 `底数bits × |指数|`，对应 ~1_000_000 位十进制数字（~1MB 输出）。
+/// `2^100000` 的底数 2 的 bits=2（二进制 `10`），2×100000=200000 ≤ 3320000，通过。
+/// `(10^10000)^99999` 的底数 bits≈33219，33219×99999≈3.3e9 > 3320000，拒绝。
+pub const MAX_POW_OUTPUT_BITS: u64 = 3_320_000;
+
+/// 检查幂运算输出大小是否在安全范围内（底数复合限制）。
+///
+/// 复合限制公式：`底数bits × |指数| ≤ MAX_POW_OUTPUT_BITS`。
+///
+/// 安全审查 HIGH（C-1 复审发现）：`(10^10000) ^ 99999` 可产生 ~1GB 输出。
+/// 指数已受 `MAX_POW_EXPONENT` 约束（≤ 100_000），但底数 `a` 可为任意大小 BigInt，
+/// 故需对"底数位数 × 指数绝对值"做复合限制。
+///
+/// - `2^100000`：底数 bits=2，2×100000=200000 ≤ 3_320_000，通过。
+/// - `(10^10000)^99999`：底数 bits≈33219，33219×99999≈3.3e9 > 3_320_000，拒绝。
+///
+/// 此函数是全项目共享的安全检查（precision/number_theory/combinatorics 三域共用），
+/// 避免每个域重复实现。提取到 core 层符合 DRY 原则。
+pub fn check_pow_output_size(base_bits: u64, abs_exp: u64) -> Result<(), CalcError> {
+    // 估算输出 bits：底数bits × |指数|（saturating 防止溢出）
+    let estimated_output_bits = base_bits.saturating_mul(abs_exp);
+    if estimated_output_bits > MAX_POW_OUTPUT_BITS {
+        return Err(CalcError::domain(format!(
+            "pow output too large: base_bits {} × exp {} = {} > {} (limit)",
+            base_bits, abs_exp, estimated_output_bits, MAX_POW_OUTPUT_BITS
+        )));
+    }
+    Ok(())
+}
+
 /// 表达式抽象语法树节点。
 ///
 /// v0.1 支持 5 种节点；v0.5 扩展 Complex/Matrix/List（design.md D2）。
