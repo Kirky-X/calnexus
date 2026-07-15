@@ -14,7 +14,6 @@ mod batch;
 mod cli;
 mod core;
 mod domains;
-#[cfg(feature = "icu")]
 mod i18n;
 mod output;
 #[cfg(feature = "cli")]
@@ -25,6 +24,7 @@ pub use core::{
     parse, AstCanonicalizer, AstNode, BinaryOp, CacheKeyGen, CacheManager, CalcError,
     CalculationDomain, CanonicalForm, DomainRouter, EvalContext, EvalResult, UnaryOp,
 };
+pub use i18n::{I18n, Lang};
 pub use domains::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
     PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain,
