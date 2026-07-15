@@ -14,7 +14,7 @@
 //! 内部求值统一使用 `BigRational`，结果根据分母是否为 1 转换为 `BigInt` 或 `BigRational`。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, MAX_PRECISION, UnaryOp};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Signed, Zero};
@@ -304,6 +304,14 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
         return Err(CalcError::domain(
             "precision N must be positive".to_string(),
         ));
+    }
+    // 安全约束：拒绝超大精度值，防止 format_decimal 循环 DoS
+    // （tiangang SAST CRITICAL：precision(N, expr) 表达式语法绕过 server 层校验）
+    if v > MAX_PRECISION {
+        return Err(CalcError::domain(format!(
+            "precision N must not exceed {} (got {})",
+            MAX_PRECISION, v
+        )));
     }
     Ok(v)
 }

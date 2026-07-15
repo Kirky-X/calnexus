@@ -11,6 +11,16 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 
+/// 精度位数上限（防止 `precision(N, expr)` 表达式语法绕过 server 层校验导致 DoS）。
+///
+/// 此常量是全项目共享的安全阈值：
+/// - `server/types.rs::validate()` 校验请求级 `precision` 字段 ≤ 此值
+/// - `evaluator.rs::extract_format_precision()` 校验表达式级 `precision(N, expr)` 的 N ≤ 此值
+/// - `domains/precision.rs::extract_precision_value()` 同上，拒绝超大 N 的求值
+///
+/// 三处校验形成纵深防御：即使绕过 server 层（如直接调用 evaluator），core 层仍拒绝。
+pub const MAX_PRECISION: usize = 10_000;
+
 /// 表达式抽象语法树节点。
 ///
 /// v0.1 支持 5 种节点；v0.5 扩展 Complex/Matrix/List（design.md D2）。

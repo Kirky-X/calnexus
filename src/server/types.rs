@@ -7,7 +7,7 @@
 //! - Response: `{"result":5,"domain":"arithmetic","cache":"miss"}`
 //! - Error: `{"error":{"kind":"Parse","message":"...","exit_code":1}}`
 
-use crate::core::{CalcError, EvalContext, EvalResult};
+use crate::core::{CalcError, EvalContext, EvalResult, MAX_PRECISION};
 use crate::domains::format_bigrational;
 use std::collections::HashMap;
 
@@ -67,6 +67,9 @@ pub enum ServerError {
     /// MCP server 启动/运行错误。
     #[error("MCP server error: {0}")]
     Mcp(String),
+    /// 请求校验错误（协议无关，HTTP/MCP 共用）。
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
 
 impl EvaluateRequest {
@@ -84,10 +87,12 @@ impl EvaluateRequest {
     /// - `vars` 键数 ≤ `MAX_VARS`（1024）：防止内存耗尽攻击
     /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
     ///
-    /// 返回 `Err(ServerError::Http)` 当违反约束时（T016 安全前置任务）。
+    /// 返回 `Err(ServerError::Validation)` 当违反约束时。
+    /// 使用协议无关的 `Validation` 变体而非 `Http`/`Mcp`，避免在 MCP 上下文中
+    /// 泄漏 "HTTP server error" 消息（diting HIGH-1 + kueiku MEDIUM 修复）。
     pub fn validate(&self) -> Result<(), ServerError> {
         if self.vars.len() > MAX_VARS {
-            return Err(ServerError::Http(format!(
+            return Err(ServerError::Validation(format!(
                 "vars size {} exceeds limit {}",
                 self.vars.len(),
                 MAX_VARS
@@ -95,7 +100,7 @@ impl EvaluateRequest {
         }
         if let Some(p) = self.precision {
             if p > MAX_PRECISION {
-                return Err(ServerError::Http(format!(
+                return Err(ServerError::Validation(format!(
                     "precision {} exceeds limit {}",
                     p, MAX_PRECISION
                 )));
@@ -107,8 +112,6 @@ impl EvaluateRequest {
 
 /// `vars` 最大键数（T016 安全前置任务：防止内存耗尽攻击）。
 const MAX_VARS: usize = 1024;
-/// `precision` 最大值（T016 安全前置任务：防止计算资源耗尽）。
-const MAX_PRECISION: usize = 10_000;
 
 impl EvaluateResponse {
     /// 从 evaluate 返回值构造响应。
@@ -144,19 +147,6 @@ impl From<&CalcError> for ErrorResponse {
                 kind: format!("{:?}", e.kind),
                 message: e.message.clone(),
                 exit_code: e.kind.exit_code(),
-            },
-        }
-    }
-}
-
-impl ErrorResponse {
-    /// 构造 501 Not Implemented 错误响应（骨架阶段用）。
-    pub fn not_implemented() -> Self {
-        Self {
-            error: ErrorDetail {
-                kind: "NotImplemented".to_string(),
-                message: "evaluate handler not yet implemented".to_string(),
-                exit_code: 1,
             },
         }
     }
@@ -458,5 +448,64 @@ mod tests {
         assert_eq!(e.to_string(), "HTTP server error: bind failed");
         let e = ServerError::Mcp("stdio closed".into());
         assert_eq!(e.to_string(), "MCP server error: stdio closed");
+        // Validation 变体协议无关，不含 "HTTP"/"MCP" 字样（diting HIGH-1 回归测试）
+        let e = ServerError::Validation("precision too large".into());
+        assert_eq!(e.to_string(), "Validation error: precision too large");
+        assert!(!e.to_string().contains("HTTP"));
+        assert!(!e.to_string().contains("MCP"));
+    }
+
+    // === validate() 安全约束 ===
+    // Phase 4 审查修复 MEDIUM-1：validate() 是核心安全方法，必须有单元测试覆盖。
+
+    #[test]
+    fn test_validate_accepts_valid_request() {
+        let req = EvaluateRequest {
+            expr: "2+3".into(),
+            vars: HashMap::new(),
+            precision: None,
+        };
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_accepts_max_precision() {
+        let req = EvaluateRequest {
+            expr: "1/3".into(),
+            vars: HashMap::new(),
+            precision: Some(MAX_PRECISION),
+        };
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_oversized_precision() {
+        let req = EvaluateRequest {
+            expr: "1/3".into(),
+            vars: HashMap::new(),
+            precision: Some(MAX_PRECISION + 1),
+        };
+        let err = req.validate().unwrap_err();
+        // 必须返回 Validation 变体，不能是 Http/Mcp（diting HIGH-1 回归）
+        assert!(matches!(err, ServerError::Validation(_)));
+        assert!(!err.to_string().contains("HTTP"));
+        assert!(!err.to_string().contains("MCP"));
+    }
+
+    #[test]
+    fn test_validate_rejects_oversized_vars() {
+        let mut vars = HashMap::new();
+        for i in 0..=MAX_VARS {
+            vars.insert(format!("v{}", i), 0.0);
+        }
+        let req = EvaluateRequest {
+            expr: "v1".into(),
+            vars,
+            precision: None,
+        };
+        let err = req.validate().unwrap_err();
+        assert!(matches!(err, ServerError::Validation(_)));
+        assert!(!err.to_string().contains("HTTP"));
+        assert!(!err.to_string().contains("MCP"));
     }
 }

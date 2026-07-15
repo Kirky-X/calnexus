@@ -8,8 +8,8 @@
 use std::sync::OnceLock;
 
 use crate::core::{
-    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CalculationDomain, DomainRouter,
-    EvalContext, EvalResult,
+    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CalculationDomain, CanonicalForm,
+    DomainRouter, EvalContext, EvalResult, MAX_PRECISION,
 };
 use crate::domains::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
@@ -37,20 +37,42 @@ pub fn evaluate(
         return Err(CalcError::timeout());
     }
 
+    // 0.1 precision 参数上界校验：纵深防御第四层。
+    //     server validate() 仅保护 HTTP/MCP 入口，CLI/REPL 直接调用 evaluate 时
+    //     不会经过 validate()，必须在此处拦截超大 precision 防止 format_decimal 循环 DoS。
+    //     （安全审查 HIGH-1：evaluate 是公共入口，参数校验不能依赖调用方自觉）
+    if let Some(p) = precision {
+        if p > MAX_PRECISION {
+            return Err(CalcError::domain(format!(
+                "precision {} exceeds limit {}",
+                p, MAX_PRECISION
+            )));
+        }
+    }
+
     // 1. 解析
     let ast = parse(expr)?;
 
     // 2. 规范化
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
 
+    // 2.1 构建精度感知缓存键：precision 模式与常规模式使用不同键前缀，
+    //     避免同一表达式的 BigRational 结果与 Scalar 结果相互污染。
+    //     （tiangang SAST CRITICAL + kueiku bug 分析发现）
+    let cache_cf = if precision.is_some() {
+        CanonicalForm::new(format!("precision:{}", cf.as_str()))
+    } else {
+        cf.clone()
+    };
+
     // 3. precision 模式：直接使用 PrecisionDomain（绕过路由器）
     if precision.is_some() {
-        if let Some(cached) = cache.get(&cf) {
+        if let Some(cached) = cache.get(&cache_cf) {
             return Ok((cached, "precision".to_string(), true, precision));
         }
         let domain = PrecisionDomain;
         let result = domain.evaluate(&canonical_ast, ctx)?;
-        cache.insert(&cf, &Ok(result.clone()));
+        cache.insert(&cache_cf, &Ok(result.clone()));
         return Ok((result, "precision".to_string(), false, precision));
     }
 
@@ -58,7 +80,7 @@ pub fn evaluate(
     let router = build_default_router();
 
     // 5. 缓存查询
-    if let Some(cached) = cache.get(&cf) {
+    if let Some(cached) = cache.get(&cache_cf) {
         let domain = router.route(&canonical_ast)?;
         let fmt_prec = extract_format_precision(&canonical_ast);
         return Ok((cached, domain.domain_name().to_string(), true, fmt_prec));
@@ -69,7 +91,7 @@ pub fn evaluate(
     let result = domain.evaluate(&canonical_ast, ctx)?;
 
     // 7. 写入缓存（仅 Ok 结果）
-    cache.insert(&cf, &Ok(result.clone()));
+    cache.insert(&cache_cf, &Ok(result.clone()));
 
     // 8. 提取格式化精度（precision(N, expr) 的 N）
     let fmt_prec = extract_format_precision(&canonical_ast);
@@ -77,12 +99,19 @@ pub fn evaluate(
 }
 
 /// 从 AST 顶层提取 precision(N, expr) 调用中的 N，用于输出格式化。
+///
+/// 安全约束：N > MAX_PRECISION 时返回 `None`（降级为分数格式化），
+/// 防止 `format_bigrational` 循环 N 次导致 DoS（tiangang SAST CRITICAL）。
 fn extract_format_precision(ast: &AstNode) -> Option<usize> {
     if let AstNode::FunctionCall(name, args) = ast {
         if name == "precision" && args.len() == 2 {
             if let AstNode::Number(n) = &args[0] {
                 if n.fract() == 0.0 && *n > 0.0 {
-                    return Some(*n as usize);
+                    let n_usize = *n as usize;
+                    // 纵深防御：拒绝超大精度值，防止 format_decimal 循环 DoS
+                    if n_usize <= MAX_PRECISION {
+                        return Some(n_usize);
+                    }
                 }
             }
         }
@@ -180,22 +209,77 @@ mod tests {
         assert_eq!(extract_format_precision(&ast), None);
     }
 
-    // precision 模式缓存命中路径：预填充缓存后，evaluate 应直接返回缓存值
+    // precision 模式缓存命中路径：首次调用 miss→计算并缓存，第二次调用 hit→返回缓存值。
+    // 验证修复后的行为：precision 模式使用 `precision:` 前缀键，与常规模式隔离，
+    // 避免 BigRational 结果与 Scalar 结果相互污染（kueiku CRITICAL）。
     #[test]
     fn test_evaluate_precision_mode_cache_hit() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+
+        // 首次调用：miss → 计算并缓存到 precision: 前缀键
+        let (result1, domain1, cache_hit1, fmt_prec1) =
+            evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+        assert_eq!(result1, EvalResult::BigInt(num_bigint::BigInt::from(5)));
+        assert_eq!(domain1, "precision");
+        assert!(!cache_hit1);
+        assert_eq!(fmt_prec1, Some(5));
+
+        // 第二次调用：hit → 返回缓存值
+        let (result2, domain2, cache_hit2, fmt_prec2) =
+            evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+        assert_eq!(result2, result1);
+        assert_eq!(domain2, "precision");
+        assert!(cache_hit2);
+        assert_eq!(fmt_prec2, Some(5));
+    }
+
+    // 缓存键隔离验证：常规模式预填充 Scalar 后，precision 模式不应命中该缓存。
+    // 防止 `evaluate("2+3", None)` 缓存 Scalar(5.0) 后，
+    // `evaluate("2+3", Some(5))` 错误返回 Scalar 而非 BigRational（kueiku CRITICAL 回归测试）。
+    #[test]
+    fn test_evaluate_precision_mode_does_not_pollute_regular_cache() {
         let cache = CacheManager::new();
         let ast = parse("2+3").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
 
+        // 常规模式预填充 Scalar(5.0)
         cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
 
         let ctx = EvalContext::new();
-        let (result, domain, cache_hit, fmt_prec) = evaluate("2+3", &ctx, Some(5), &cache).unwrap();
-
-        assert_eq!(result, EvalResult::Scalar(5.0));
+        // precision 模式不应命中常规模式缓存，应重新计算返回 BigRational/BigInt
+        let (result, domain, cache_hit, fmt_prec) =
+            evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+        assert_ne!(result, EvalResult::Scalar(5.0));
+        assert_eq!(result, EvalResult::BigInt(num_bigint::BigInt::from(5)));
         assert_eq!(domain, "precision");
-        assert!(cache_hit);
+        assert!(!cache_hit);
         assert_eq!(fmt_prec, Some(5));
+    }
+
+    // precision(N, expr) 表达式语法 DoS 防护回归测试（tiangang CRITICAL）。
+    // 当 N 超过 MAX_PRECISION 时，extract_format_precision 返回 None（降级），
+    // extract_precision_value 返回 Err（拒绝求值），防止 format_decimal 循环 DoS。
+    #[test]
+    fn test_evaluate_precision_bypass_dos_rejected() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        // N = MAX_PRECISION + 1，应被 extract_precision_value 拒绝
+        let huge_n = MAX_PRECISION + 1;
+        let expr = format!("precision({}, 1/3)", huge_n);
+        let result = evaluate(&expr, &ctx, None, &cache);
+        assert!(result.is_err(), "precision N > MAX_PRECISION must be rejected");
+    }
+
+    // precision 参数本身 DoS 防护回归测试（安全审查 HIGH-1）。
+    // evaluate 是公共入口，CLI/REPL 直接调用时不经过 server validate()，
+    // 必须在 evaluate 入口拦截 precision > MAX_PRECISION，防止 format_decimal 循环 DoS。
+    #[test]
+    fn test_evaluate_precision_param_exceeds_limit_rejected() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let result = evaluate("1/3", &ctx, Some(MAX_PRECISION + 1), &cache);
+        assert!(result.is_err(), "precision param > MAX_PRECISION must be rejected");
     }
 
     // 常规模式缓存命中路径：预填充缓存后，evaluate 应直接返回缓存值
