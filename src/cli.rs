@@ -67,12 +67,46 @@ struct Cli {
     /// Print canonical S-expression form (e.g., `(+ 2 3)` for `3+2`), skip evaluation
     #[arg(long, conflicts_with_all = ["json", "latex", "steps", "precision", "repl", "batch"])]
     canonical: bool,
+
+    /// Start HTTP server mode (POST /api/v1/evaluate). Requires `server` feature.
+    #[cfg(feature = "server")]
+    #[arg(long, conflicts_with_all = ["repl", "batch", "canonical", "latex", "steps", "json", "explain", "precision", "serve_mcp"])]
+    serve_http: bool,
+
+    /// Start MCP server mode (evaluate tool, stdio transport). Requires `server` feature.
+    #[cfg(feature = "server")]
+    #[arg(long, conflicts_with_all = ["repl", "batch", "canonical", "latex", "steps", "json", "explain", "precision", "serve_http"])]
+    serve_mcp: bool,
 }
 
 /// CLI 入口：解析参数、求值、输出结果，返回退出码。
 pub fn run() -> i32 {
     let cli = Cli::parse();
     let i18n = crate::i18n::I18n::from_str(&cli.lang);
+
+    // --serve-http 模式：启动 HTTP server（阻塞运行，内部创建 tokio runtime）
+    #[cfg(feature = "server")]
+    if cli.serve_http {
+        return match crate::server::HttpServer::new().run() {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("{}", e);
+                1
+            }
+        };
+    }
+
+    // --serve-mcp 模式：启动 MCP server（阻塞运行，内部创建 tokio runtime）
+    #[cfg(feature = "server")]
+    if cli.serve_mcp {
+        return match crate::server::McpServer::new().run() {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("{}", e);
+                1
+            }
+        };
+    }
 
     // --repl 模式：启动交互式 REPL
     if cli.repl {
