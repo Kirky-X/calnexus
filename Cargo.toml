@@ -13,7 +13,20 @@ readme = "README.md"
 
 [features]
 default = []
+# CLI: 命令行界面 + REPL + 批处理
 cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
+# ICU4X: 国际化错误消息（中英双语）
+icu = ["dep:icu"]
+# HTTP: HTTP API 接口（P1 实现）
+http = []
+# MCP: Model Context Protocol 接口（P1 实现）
+mcp = []
+# FX: 汇率换算（P2 实现）
+fx = []
+# Numerical: 高级数值计算（eig/SVD 等，P3 实现）
+numerical = []
+# Server: HTTP + MCP 聚合
+server = ["http", "mcp"]
 
 [dependencies]
 # 解析器
@@ -41,6 +54,8 @@ num-traits = { version = "0.2", default-features = false, features = ["std"] }
 clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
 rustyline = { version = "18", default-features = false, features = ["derive"], optional = true }
 rayon = { version = "1", default-features = false, optional = true }
+# ICU4X 国际化（仅 compiled_data，禁用默认特性）
+icu = { version = "2", default-features = false, features = ["compiled_data"], optional = true }
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }

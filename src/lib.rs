@@ -5,6 +5,8 @@
 // 测试代码中使用 3.14 / 6.283... 等值作为测试输入，并非数学常量的误用。
 // 测试函数名保留 P/C 大写以对应排列 (Permutation) / 组合 (Combination) 数学记号。
 #![cfg_attr(test, allow(clippy::approx_constant, non_snake_case))]
+// 无 CLI feature 时，output/symbolic 中仅 CLI 调用的函数不构成 dead code
+#![cfg_attr(not(feature = "cli"), allow(dead_code))]
 
 #[cfg(feature = "cli")]
 mod batch;
@@ -12,6 +14,8 @@ mod batch;
 mod cli;
 mod core;
 mod domains;
+#[cfg(feature = "icu")]
+mod i18n;
 mod output;
 #[cfg(feature = "cli")]
 mod repl;
