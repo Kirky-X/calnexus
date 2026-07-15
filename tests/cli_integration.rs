@@ -1414,3 +1414,85 @@ fn test_lang_invalid_value_exit_2() {
         output.status
     );
 }
+
+// ===== T021: --serve-http/--serve-mcp flag 冲突与 feature 门控 =====
+
+/// T021: --serve-http 与 --repl 冲突时 clap 退出码 2（server feature 启用）。
+#[cfg(feature = "server")]
+#[test]
+fn test_serve_http_flag_conflicts_repl() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd.args(["--serve-http", "--repl"]).assert().failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--serve-http --repl should exit with code 2 (conflict), got: {:?}",
+        output.status
+    );
+}
+
+/// T021: --serve-mcp 与 --batch 冲突时 clap 退出码 2（server feature 启用）。
+#[cfg(feature = "server")]
+#[test]
+fn test_serve_mcp_flag_conflicts_batch() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd
+        .args(["--serve-mcp", "--batch", "-"])
+        .assert()
+        .failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--serve-mcp --batch should exit with code 2 (conflict), got: {:?}",
+        output.status
+    );
+}
+
+/// T021: --serve-http 与 --serve-mcp 互相冲突时 clap 退出码 2。
+/// 防止静默吞 flag（规则 12：失败必须显性化）。
+#[cfg(feature = "server")]
+#[test]
+fn test_serve_http_conflicts_serve_mcp() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd.args(["--serve-http", "--serve-mcp"]).assert().failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--serve-http --serve-mcp should exit with code 2 (mutual conflict), got: {:?}",
+        output.status
+    );
+}
+
+/// T021: --serve-http 与 --json 冲突时 clap 退出码 2（server feature 启用）。
+#[cfg(feature = "server")]
+#[test]
+fn test_serve_http_conflicts_json() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd.args(["--serve-http", "--json"]).assert().failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--serve-http --json should exit with code 2 (conflict), got: {:?}",
+        output.status
+    );
+}
+
+/// T021: 无 server feature 时 --serve-http 是 unknown argument，clap 退出码 2。
+/// 验证 feature 门控正确：无 server feature 时 flag 不存在。
+#[cfg(not(feature = "server"))]
+#[test]
+fn test_serve_http_without_server_feature() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd.args(["--serve-http"]).assert().failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--serve-http without server feature should exit with code 2 (unknown arg), got: {:?}",
+        output.status
+    );
+}
