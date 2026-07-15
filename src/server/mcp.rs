@@ -12,6 +12,7 @@
 //! - Result: `{"result":5,"domain":"arithmetic","cache":"miss"}`（JSON 字符串放入 ContentBlock::Text）
 //! - Error: `{"error":{"kind":"Parse","message":"...","exit_code":1}}` + `is_error=true`
 
+use super::shared_cache;
 use super::types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse};
 use super::ServerError;
 use crate::evaluate;
@@ -20,18 +21,7 @@ use sdforge::core::ApiMetadata;
 use sdforge::mcp::{McpToolRegistration, SdForgeMcpServer, SdForgeTool};
 use sdforge::rmcp::model::{CallToolResult, ContentBlock, ErrorData};
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
-
-/// 进程级共享缓存（OnceLock 懒初始化，跨请求共享）。
-///
-/// 与 HTTP 模块同理，使用全局 OnceLock 而非每请求新建 CacheManager，
-/// 确保相同表达式的第二次请求能命中缓存（spec.md R-sdforge-003 缓存语义）。
-static SHARED_CACHE: OnceLock<CacheManager> = OnceLock::new();
-
-/// 获取共享 CacheManager 实例。
-fn shared_cache() -> &'static CacheManager {
-    SHARED_CACHE.get_or_init(CacheManager::new)
-}
+use std::sync::Arc;
 
 /// `evaluate` tool：将 CalNexus 的 `evaluate` 函数暴露为 MCP tool。
 ///

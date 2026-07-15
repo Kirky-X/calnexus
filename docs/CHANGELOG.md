@@ -157,8 +157,9 @@ specmark change: `p1-sdforge-interface`。
 
 #### 测试
 
-- **行覆盖率 98.50%**（cargo-llvm-cov，`--fail-under-lines 95` 通过），`--features "cli server"` 全 feature 组合
-  - server/http.rs 88.75% / server/mcp.rs 80.10% / server/types.rs 98.65%
+- **行覆盖率 98.06%**（cargo-llvm-cov，`--fail-under-lines 95` 通过），`--features "cli server"` 全 feature 组合
+  - server/http.rs 88.54% / server/mcp.rs 79.79% / server/types.rs 98.65% / server/cache.rs 100%
+  - domains/precision.rs 99.09%（factorial/pow 上界检查覆盖）
   - 剩余未覆盖为阻塞 I/O serve 路径（`run()`/`start_inner()` 永久阻塞）和 panic 处理路径
 - `cargo clippy --features "cli server" --all-targets -- -D warnings` 零警告
 - `cargo fmt --check` 通过
@@ -167,11 +168,47 @@ specmark change: `p1-sdforge-interface`。
     call 错误路径/tool metadata/inventory）
   - 3 个 server 集成测试（HTTP oversized precision 验证错误 + MCP oversized precision + MCP null 输入）
   - 5 个 CLI 集成测试（`--serve-http`/`--serve-mcp` flag 冲突 + feature 门控）
+  - 6 个 precision 安全测试（factorial/pow 上界边界值 + 超限错误 + 负指数不受限）
+  - 1 个 CLI 集成测试（`--batch --precision` 冲突退出码 2，BUG-007 修复）
+
+#### P1 审查修复（Phase 7）
+
+Phase 6 完成后并行派遣 3 subagent（安全/架构/性能）审查，发现 3 CRITICAL + 1 HIGH + 4 MEDIUM + 1 MEDIUM bug。
+本阶段修复阻断项，延后项记录于"已知限制"。
+
+- **安全 CRITICAL 修复**（factorial/pow DoS）：
+  - `core/types.rs` 新增 `MAX_FACTORIAL_INPUT=10000` + `MAX_POW_EXPONENT=100000` 常量
+  - `domains/precision.rs` 的 `factorial()` 签名改为 `Result<BigInt, CalcError>` + 上界检查
+  - `domains/precision.rs` 的 `BinaryOp::Pow` 分支添加指数绝对值上界检查（`exp.abs() > MAX_POW_EXPONENT`）
+- **安全 CRITICAL C-1 复审修复**（负指数 DoS 绕过）：
+  - 初版仅检查正指数 `exp > MAX_POW_EXPONENT`，负指数 `-2000000000` 绕过（`BigRational::pow(neg_i32)` 内部计算 `a^|exp|` 再取倒数）
+  - 修复：改为 `exp.abs() > MAX_POW_EXPONENT`，堵住负指数 DoS 路径
+  - 新增测试 `test_pow_oversized_negative_exponent_returns_error`（`2^(-100001)` 应返回 Domain 错误）
+- **Bug HIGH 修复**（BUG-007 `--batch --precision` 静默忽略）：
+  - `cli.rs` 的 `precision` 添加 `"batch"` 到 `conflicts_with_all`，`batch` 添加 `"precision"` 到 `conflicts_with_all`
+  - clap 在参数解析阶段拒绝组合，退出码 2（规则 12：失败显性化）
+- **架构 MEDIUM 修复**（SHARED_CACHE 去重 + 常量单一来源）：
+  - 创建 `server/cache.rs` 统一 `SHARED_CACHE` + `shared_cache()`，`server/mod.rs` re-export
+  - `http.rs`/`mcp.rs` 移除独立定义改用 `super::shared_cache`，HTTP/MCP 现共享同一缓存实例
+  - `arithmetic.rs`/`scientific.rs` 删除本地 `MAX_FACTORIAL_INPUT` const，改用 `crate::core::MAX_FACTORIAL_INPUT`（消除遮蔽）
+  - `scientific.rs` 硬编码 `10_000` 替换为 `MAX_FACTORIAL_INPUT` 常量
+  - `arithmetic.rs` 的 `BinaryOp::Pow` 添加 f64 天然防护注释（说明无需显式上界检查）
 
 #### 已知限制
 
+- [安全 CRITICAL] timeout elapsed 追踪 — `evaluator.rs:36-38` 仅入口检查 `is_zero()`，计算期间不强制超时。
+  **冲突**：design.md §6.3 显式声明 P0→P3 延后，安全审查判定 CRITICAL。需用户决策
+- [安全 HIGH] 底数大小不受限制（C-1 复审发现）— `(10^10000) ^ 99999` 可产生 ~1GB 输出。
+  指数已受 `MAX_POW_EXPONENT` 约束，但底数 `a` 可为任意大小 BigInt。需复合限制（底数位数 × |指数| ≤ 阈值）或全局输出大小限制
+- [安全 HIGH] MCP 无输入大小限制 — `mcp.rs:78-82`，需研究 rmcp 框架限制机制
+- [安全 HIGH] spawn_blocking 池耗尽 — `http.rs:80-84`，需架构调整（连接限制/队列）
 - [性能 HIGH] 缓存命中路径仍执行 `router.route()` + `extract_format_precision()` — 需架构调整，backlog
 - [性能 HIGH] McpServer 每请求创建 OS 线程（`std::thread::scope`）— 已存在代码，后续独立任务
+- [架构 MEDIUM] CLI feature gate 不对称 — `cli.rs:72-79` 用 `server` 而非 `http`/`mcp`
+- [架构 MEDIUM] ServerAdapter trait 未利用 — `server/mod.rs:34`，生产代码直接调用 `run()`
+- [架构 MEDIUM] 测试共享缓存非确定性 — `server/cache.rs` 全局缓存 + 集成测试，需测试隔离机制
+- [Bug MEDIUM] 缓存键前缀碰撞 — `evaluator.rs:62-66`，`precision:` 前缀可能与用户表达式碰撞
+- [Bug LOW] MCP thread::scope 阻塞 tokio worker — `mcp.rs:109-115`
 - [安全 MEDIUM] server 启动失败退出码 1 与文件头定义冲突 — 保持现状
 - [安全 MEDIUM] 缺少 CLI 参数控制 server 绑定地址 — 设计局限性，后续 phase
 - server/mcp.rs `run()`/`start_inner()` 阻塞 stdio 路径无法单元测试 — 需子进程级测试

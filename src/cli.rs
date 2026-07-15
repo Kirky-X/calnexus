@@ -45,7 +45,7 @@ struct Cli {
     lang: String,
 
     /// Arbitrary precision mode: format result to N decimal places using BigRational arithmetic
-    #[arg(long, conflicts_with_all = ["canonical"])]
+    #[arg(long, conflicts_with_all = ["canonical", "batch"])]
     precision: Option<usize>,
 
     /// Start interactive REPL mode (read-eval-print loop)
@@ -53,7 +53,7 @@ struct Cli {
     repl: bool,
 
     /// Batch evaluate expressions from file ('-' for stdin), one expression per line
-    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps"])]
+    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps", "precision"])]
     batch: Option<String>,
 
     /// Render result as LaTeX (e.g., matrices as `\begin{pmatrix}...`)

@@ -10,7 +10,9 @@
 //! 路由至本域。本域内含完整算术求值能力，以处理混合表达式如 `sin(x)+2*3`。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::{
+    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_FACTORIAL_INPUT,
+};
 
 /// 科学函数白名单。
 const SCIENTIFIC_FUNCTIONS: &[&str] = &[
@@ -148,7 +150,7 @@ impl ScientificDomain {
             )));
         }
         let n = n as u64;
-        if n > 10_000 {
+        if n > MAX_FACTORIAL_INPUT {
             return Err(CalcError::overflow());
         }
         let mut result: f64 = 1.0;

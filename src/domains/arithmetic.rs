@@ -12,13 +12,12 @@
 //! `x/0` (x≠0)→`DivisionByZero`（预检查除零，更安全且信息更明确）。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::{
+    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_FACTORIAL_INPUT,
+};
 
 /// 算术函数白名单（parser 预处理后的函数名）。
 const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
-
-/// 阶乘输入上限（spec Req 3：防止资源耗尽）。
-const MAX_FACTORIAL_INPUT: u64 = 10_000;
 
 /// Arithmetic 计算域。
 ///
@@ -99,6 +98,9 @@ impl ArithmeticDomain {
                 if a == 0.0 && b == 0.0 {
                     return Ok(1.0);
                 }
+                // f64 域无需显式指数上界检查（与 precision.rs BigRational 域不同）：
+                // f64::powf 超大正指数返回 inf（被下方 is_finite() 捕获），
+                // 超大负指数下溢为 0.0，均不会产生 DoS（f64 固定 8 字节，无大整数分配）。
                 a.powf(b)
             }
             BinaryOp::Mod => {

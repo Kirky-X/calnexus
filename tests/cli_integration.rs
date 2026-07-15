@@ -1489,3 +1489,34 @@ fn test_serve_http_without_server_feature() {
         output.status
     );
 }
+
+/// BUG-007 修复：`--batch --precision` 组合应显式冲突退出码 2。
+///
+/// 原行为：`batch.rs:88` 硬编码 `None` 忽略 precision，违反规则 12（失败必须显性化）。
+/// 修复：添加 `conflicts_with_all` 互斥，clap 在参数解析阶段拒绝组合。
+///
+/// 使用临时文件（非 stdin）确保 batch 模式实际运行：未修复时退出 0（静默忽略 precision），
+/// 修复后退出 2（冲突）。若用 stdin，空输入也会退出 2，无法区分冲突与空输入。
+#[test]
+fn test_batch_precision_conflict_exit_2() {
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    writeln!(tmp, "2+3").unwrap();
+    tmp.flush().unwrap();
+
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let assert = cmd
+        .arg("--batch")
+        .arg(tmp.path())
+        .arg("--precision")
+        .arg("5")
+        .assert()
+        .failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--batch --precision should exit with code 2 (conflict), got: {:?}",
+        output.status
+    );
+}

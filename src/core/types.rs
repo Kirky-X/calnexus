@@ -21,6 +21,23 @@ use std::time::Duration;
 /// 三处校验形成纵深防御：即使绕过 server 层（如直接调用 evaluator），core 层仍拒绝。
 pub const MAX_PRECISION: usize = 10_000;
 
+/// 阶乘输入上限（防止 `factorial(N)` / `N!` 循环 DoS）。
+///
+/// 安全审查 CRITICAL：`factorial(1000000000)` 可在 24 字节请求内永久挂死服务器。
+/// 此常量限制阶乘输入，`factorial(10000)` 产生 ~35660 位数字（~35KB 字符串），
+/// 兼顾合法重计算场景与 DoS 防护。
+pub const MAX_FACTORIAL_INPUT: u64 = 10_000;
+
+/// 幂运算指数上限（防止 `a^b` 产生超大输出 DoS）。
+///
+/// 安全审查 CRITICAL：`2^2000000000` 可在 17 字节请求内产生 ~6 亿位数字。
+/// 此常量限制指数绝对值，`2^100000` 产生 ~30103 位数字（~30KB 字符串）。
+///
+/// **复审 C-1 修复**：负指数同样受限。`BigRational::pow(neg_i32)` 内部实现为
+/// `Pow::pow(self, (-exp) as u64).reciprocal()`，即先计算 `a^|exp|`（巨大中间值）
+/// 再取倒数。`2^(-2000000000)` 会计算 `2^2000000000`（~6 亿位数字）导致内存爆炸。
+pub const MAX_POW_EXPONENT: u64 = 100_000;
+
 /// 表达式抽象语法树节点。
 ///
 /// v0.1 支持 5 种节点；v0.5 扩展 Complex/Matrix/List（design.md D2）。

@@ -12,6 +12,7 @@
 //! - Response 200: `{"result":5,"domain":"arithmetic","cache":"miss"}`
 //! - Response 400: `{"error":{"kind":"Parse","message":"...","exit_code":1}}`
 
+use super::shared_cache;
 use super::types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse};
 use super::ServerError;
 use crate::evaluate;
@@ -26,21 +27,9 @@ use sdforge::axum::IntoResponse;
 use sdforge::core::ApiMetadata;
 use sdforge::http::{HttpRoute, RouteRegistration};
 use std::future::Future;
-use std::sync::OnceLock;
 
 /// 请求体大小上限（64KB，T016 安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
-
-/// 进程级共享缓存（OnceLock 懒初始化，跨请求共享）。
-///
-/// 使用全局 OnceLock 而非每请求新建 CacheManager，确保相同表达式的
-/// 第二次请求能命中缓存（spec.md R-sdforge-002 缓存语义）。
-static SHARED_CACHE: OnceLock<CacheManager> = OnceLock::new();
-
-/// 获取共享 CacheManager 实例。
-fn shared_cache() -> &'static CacheManager {
-    SHARED_CACHE.get_or_init(CacheManager::new)
-}
 
 /// POST /api/v1/evaluate handler：接收 JSON 请求，调用 evaluate，返回 JSON 响应。
 ///

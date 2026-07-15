@@ -14,7 +14,10 @@
 //! 内部求值统一使用 `BigRational`，结果根据分母是否为 1 转换为 `BigInt` 或 `BigRational`。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_PRECISION};
+use crate::core::{
+    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_FACTORIAL_INPUT,
+    MAX_POW_EXPONENT, MAX_PRECISION,
+};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Signed, Zero};
@@ -107,7 +110,7 @@ impl PrecisionDomain {
                     UnaryOp::Abs => Ok(v.abs()),
                     UnaryOp::Factorial => {
                         let n = rational_to_int(&v, "factorial")?;
-                        Ok(BigRational::from_integer(factorial(&n)))
+                        Ok(BigRational::from_integer(factorial(&n)?))
                     }
                 }
             }
@@ -140,6 +143,17 @@ impl PrecisionDomain {
             }
             BinaryOp::Pow => {
                 let exp = rational_to_int(&b, "power exponent")?;
+                // 安全约束：拒绝超大指数（绝对值），防止 DoS。
+                // tiangang SAST CRITICAL 修复 + 复审 C-1 修复：
+                // `BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
+                // 即先计算 `a^|exp|`（巨大中间值）再取倒数。故负指数绝对值超限同样会 DoS
+                // （`2^(-2000000000)` 计算 `2^2000000000` ~6 亿位数字）。必须用 `abs()` 检查。
+                if exp.abs() > BigInt::from(MAX_POW_EXPONENT) {
+                    return Err(CalcError::domain(format!(
+                        "power exponent absolute value must not exceed {} (got {})",
+                        MAX_POW_EXPONENT, exp
+                    )));
+                }
                 // BigRational::pow 接受 i32 指数
                 let exp_i32 = i32::try_from(&exp)
                     .map_err(|_| CalcError::domain(format!("power exponent too large: {}", exp)))?;
@@ -174,7 +188,7 @@ impl PrecisionDomain {
                 }
                 let v = self.eval(&args[0], ctx)?;
                 let n = rational_to_int(&v, "factorial")?;
-                Ok(BigRational::from_integer(factorial(&n)))
+                Ok(BigRational::from_integer(factorial(&n)?))
             }
             "abs" => {
                 if args.len() != 1 {
@@ -328,6 +342,9 @@ fn rational_to_result(value: BigRational) -> EvalResult {
 }
 
 /// 从 BigRational 提取 BigInt（要求为整数）。
+///
+/// 返回 BigInt 形式的操作数（可为负数，由调用方负责范围检查）。
+/// 例如 pow 的负指数由此返回，再由 `BinaryOp::Pow` 分支的 `abs()` 检查约束。
 fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
     if !r.is_integer() {
         return Err(CalcError::domain(format!(
@@ -335,14 +352,23 @@ fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
             ctx, r
         )));
     }
-    // 检查是否在合理范围内（阶乘/幂指数应为非负）
     Ok(r.numer().clone())
 }
 
 /// 计算大整数阶乘。
-fn factorial(n: &BigInt) -> BigInt {
+///
+/// 安全约束：拒绝超过 `MAX_FACTORIAL_INPUT` 的输入，防止循环 DoS
+/// （tiangang SAST CRITICAL 修复：`factorial(1000000000)` 可在 24 字节请求内永久挂死服务器）。
+/// 负数输入返回 0（保持原有语义）。
+fn factorial(n: &BigInt) -> Result<BigInt, CalcError> {
     if n < &BigInt::zero() {
-        return BigInt::zero();
+        return Ok(BigInt::zero());
+    }
+    if n > &BigInt::from(MAX_FACTORIAL_INPUT) {
+        return Err(CalcError::domain(format!(
+            "factorial input must not exceed {} (got {})",
+            MAX_FACTORIAL_INPUT, n
+        )));
     }
     let mut result = BigInt::one();
     let mut i = BigInt::one();
@@ -351,7 +377,7 @@ fn factorial(n: &BigInt) -> BigInt {
         result *= &i;
         i += &one;
     }
-    result
+    Ok(result)
 }
 
 /// 格式化 BigRational 为输出字符串。
@@ -1217,6 +1243,140 @@ mod tests {
     fn test_assert_bigrational_panics_on_non_bigrational() {
         // 传入 BigInt 而非 BigRational → panic（line 395）
         assert_bigrational(&EvalResult::BigInt(BigInt::from(1)), "1", "2");
+    }
+
+    // ===== 安全审查 CRITICAL 修复：factorial/pow 上界（T025）=====
+
+    /// factorial(MAX_FACTORIAL_INPUT) 应成功（边界值）。
+    #[test]
+    fn test_factorial_at_bound_allowed() {
+        let ast = AstNode::FunctionCall(
+            "factorial".to_string(),
+            vec![AstNode::BigNumber(MAX_FACTORIAL_INPUT.to_string())],
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(result.is_ok(), "factorial at bound should succeed");
+        let EvalResult::BigInt(b) = result.unwrap() else {
+            panic!("expected BigInt")
+        };
+        // 10000! 有约 35660 位数字
+        assert!(b.to_string().len() > 30000);
+    }
+
+    /// factorial(MAX_FACTORIAL_INPUT + 1) 应返回 Domain 错误（DoS 防护）。
+    #[test]
+    fn test_factorial_oversized_function_call_returns_error() {
+        let oversized = MAX_FACTORIAL_INPUT + 1;
+        let ast = AstNode::FunctionCall(
+            "factorial".to_string(),
+            vec![AstNode::BigNumber(oversized.to_string())],
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
+            "factorial({}) should return Domain error, got {:?}",
+            oversized,
+            result
+        );
+    }
+
+    /// `N!` 后缀阶乘运算符超大输入应返回 Domain 错误。
+    #[test]
+    fn test_factorial_oversized_unary_op_returns_error() {
+        let oversized = MAX_FACTORIAL_INPUT + 1;
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Factorial,
+            Box::new(AstNode::BigNumber(oversized.to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
+            "({})! should return Domain error, got {:?}",
+            oversized,
+            result
+        );
+    }
+
+    /// `a^MAX_POW_EXPONENT` 应成功（边界值，base=2）。
+    #[test]
+    fn test_pow_at_bound_allowed() {
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::BigNumber("2".to_string())),
+            Box::new(AstNode::BigNumber(MAX_POW_EXPONENT.to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(result.is_ok(), "pow at bound should succeed");
+        let EvalResult::BigInt(b) = result.unwrap() else {
+            panic!("expected BigInt")
+        };
+        // 2^100000 有约 30103 位数字
+        assert!(b.to_string().len() > 30000);
+    }
+
+    /// `a^(MAX_POW_EXPONENT + 1)` 应返回 Domain 错误（DoS 防护）。
+    #[test]
+    fn test_pow_oversized_exponent_returns_error() {
+        let oversized = MAX_POW_EXPONENT + 1;
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::BigNumber("2".to_string())),
+            Box::new(AstNode::BigNumber(oversized.to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
+            "2^{} should return Domain error, got {:?}",
+            oversized,
+            result
+        );
+    }
+
+    /// 小负指数应成功（产生有理数，如 2^-1 = 1/2）。
+    ///
+    /// 注意：大负指数仍有 DoS 风险（见 `test_pow_oversized_negative_exponent_returns_error`），
+    /// 因为 `BigRational::pow(neg_i32)` 内部计算 `a^|exp|` 再取倒数，
+    /// 中间值 `a^|exp|` 可能巨大。故负指数也受 `MAX_POW_EXPONENT` 的 `abs()` 检查约束。
+    #[test]
+    fn test_pow_negative_exponent_unbounded() {
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::BigNumber("2".to_string())),
+            Box::new(AstNode::BigNumber("-1".to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        assert_bigrational(&result, "1", "2");
+    }
+
+    /// 安全审查 CRITICAL C-1 修复：`a^(-(MAX_POW_EXPONENT+1))` 应返回 Domain 错误。
+    ///
+    /// 漏洞：`BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
+    /// 即先计算 `a^|exp|`（巨大中间值），再取倒数。`2^(-100001)` 会计算 `2^100001`（~30104 位数字），
+    /// 而 `2^(-2000000000)` 会计算 `2^2000000000`（~6 亿位数字，~600MB）导致内存爆炸 + CPU 挂死。
+    ///
+    /// 修复：对指数取 `abs()` 后与 `MAX_POW_EXPONENT` 比较，负指数绝对值超限同样拒绝。
+    #[test]
+    fn test_pow_oversized_negative_exponent_returns_error() {
+        let oversized_neg = -(MAX_POW_EXPONENT as i64 + 1); // -100001
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::BigNumber("2".to_string())),
+            Box::new(AstNode::BigNumber(oversized_neg.to_string())),
+        );
+        let domain = PrecisionDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
+            "2^({}) should return Domain error (negative exponent DoS), got {:?}",
+            oversized_neg,
+            result
+        );
     }
 
     // ===== proptest 属性测试 =====
