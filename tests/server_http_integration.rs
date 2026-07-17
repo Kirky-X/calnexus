@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! HTTP server 集成测试：POST /api/v1/evaluate 端点。
+//! HTTP server 集成测试：`POST /api/v1/evaluate` 端点（`#[forge]` 宏生成）。
 //!
-//! T015（Red 阶段）：测试定义期望行为，evaluate_handler 返回 501，测试失败。
-//! T016（Green 阶段）：实现 evaluate_handler，测试通过。
+//! P3（sdforge-forge-migration）：路由由 `#[forge]` 声明式生成，错误响应遵循
+//! sdforge `ApiError` 标准契约（spec.md R-sdforge-002）：
+//! - 计算错误（Parse/DivisionByZero/...）→ 400 `{"type":"InvalidInput","message":"{Kind}: ...",...}`
+//! - validate vars/precision 超限 → 422 `{"type":"ValidationError","field":"...","constraint":"..."}`
 //!
 //! 测试使用 `tower::ServiceExt::oneshot` 直接测试 Router，无需启动真实 server。
 
@@ -45,7 +47,7 @@ async fn send_request(body: Value) -> (StatusCode, Value) {
     (status, json)
 }
 
-/// 测试标量求值：POST "2+3" → 200 {"result":5,"domain":"arithmetic","cache":"miss"}
+/// 标量求值：POST "2+3" → 200 {"result":5,"domain":"arithmetic","cache":"miss"}
 #[tokio::test]
 async fn test_http_evaluate_scalar() {
     let (status, body) = send_request(json!({"expr": "2+3"})).await;
@@ -56,39 +58,20 @@ async fn test_http_evaluate_scalar() {
     assert_eq!(body["cache"], "miss");
 }
 
-/// 测试带变量求值：POST {"expr":"x+1","vars":{"x":10}} → 200 {"result":11,...}
+/// 带变量求值：POST {"expr":"x+1","vars":{"x":10}} → 200 {"result":11,...}
 #[tokio::test]
 async fn test_http_evaluate_with_vars() {
-    let (status, body) = send_request(json!({
-        "expr": "x+1",
-        "vars": {"x": 10.0}
-    }))
-    .await;
+    let (status, body) = send_request(json!({"expr": "x+1", "vars": {"x": 10.0}})).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["result"], 11);
     assert_eq!(body["domain"], "arithmetic");
 }
 
-/// 测试错误退出码：POST "1/0" → 400 {"error":{"kind":"DivisionByZero","exit_code":1,...}}
-#[tokio::test]
-async fn test_http_evaluate_error_exit_code() {
-    let (status, body) = send_request(json!({"expr": "1/0"})).await;
-
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["error"]["exit_code"], 1);
-    assert!(body["error"]["kind"].as_str().is_some());
-    assert!(body["error"]["message"].as_str().is_some());
-}
-
-/// 测试精度模式：POST {"expr":"1/3","precision":5} → 200 {"result":"0.33333","domain":"precision",...}
+/// 精度模式：POST {"expr":"1/3","precision":5} → 200 {"result":"0.33333","domain":"precision",...}
 #[tokio::test]
 async fn test_http_evaluate_precision() {
-    let (status, body) = send_request(json!({
-        "expr": "1/3",
-        "precision": 5
-    }))
-    .await;
+    let (status, body) = send_request(json!({"expr": "1/3", "precision": 5})).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["domain"], "precision");
@@ -96,10 +79,9 @@ async fn test_http_evaluate_precision() {
     assert!(body["result"].as_str().is_some());
 }
 
-/// 测试缓存行为：首次请求 miss，第二次请求 hit。
+/// 缓存行为：首次请求 miss，第二次请求 hit。
 ///
-/// 使用唯一表达式避免与其他测试共享 `SHARED_CACHE`（进程级 OnceLock）
-/// 导致的非确定性。spec.md R-sdforge-002 缓存语义：相同表达式第二次请求命中缓存。
+/// spec.md R-sdforge-002 缓存语义：相同表达式第二次请求命中缓存。
 #[tokio::test]
 async fn test_http_evaluate_cache_miss() {
     // 首次请求：缓存未命中
@@ -117,18 +99,57 @@ async fn test_http_evaluate_cache_miss() {
     assert_eq!(body["result"], 15);
 }
 
-/// 测试验证错误：POST oversized precision → 400 {"error":{"kind":"Validation",...}}
+/// 计算错误（1/0）→ ApiError::InvalidInput 契约（spec.md R-sdforge-002）。
 ///
-/// spec.md R-sdforge-002：precision > MAX_PRECISION(10000) 被安全校验拦截。
+/// 400 + `{"type":"InvalidInput","message":"DivisionByZero: ...","field":null,"value":null}`
 #[tokio::test]
-async fn test_http_evaluate_validation_error_oversized_precision() {
-    let (status, body) = send_request(json!({
-        "expr": "2+3",
-        "precision": 10001
-    }))
-    .await;
+async fn test_http_evaluate_calc_error_invalid_input() {
+    let (status, body) = send_request(json!({"expr": "1/0"})).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["error"]["kind"], "Validation");
-    assert_eq!(body["error"]["exit_code"], 2);
+    assert_eq!(body["type"], "InvalidInput");
+    // message 含 ErrorKind 前缀（calc_error_to_api_error 注入 "DivisionByZero:"）
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("DivisionByZero")),
+        "message 应含 ErrorKind 前缀: {}",
+        body["message"]
+    );
+}
+
+/// validate precision 超限 → ApiError::ValidationError 契约（spec.md R-sdforge-002）。
+///
+/// 422 + `{"type":"ValidationError","field":"precision","constraint":"10001 exceeds limit 10000"}`
+#[tokio::test]
+async fn test_http_evaluate_validation_error_oversized_precision() {
+    let (status, body) = send_request(json!({"expr": "2+3", "precision": 10001})).await;
+
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["type"], "ValidationError");
+    assert_eq!(body["field"], "precision");
+    assert!(
+        body["constraint"]
+            .as_str()
+            .is_some_and(|c| c.contains("exceeds limit")),
+        "constraint 应描述限额: {}",
+        body["constraint"]
+    );
+}
+
+/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约（spec.md R-sdforge-002）。
+///
+/// 422 + `{"type":"ValidationError","field":"vars","constraint":"size 1025 exceeds limit 1024"}`
+#[tokio::test]
+async fn test_http_evaluate_validation_error_oversized_vars() {
+    // 构造 1025 个 vars（超过 MAX_VARS=1024）
+    let mut vars = serde_json::Map::new();
+    for i in 0..=1024u32 {
+        vars.insert(format!("v{i}"), json!(0.0));
+    }
+    let (status, body) = send_request(json!({"expr": "v1", "vars": vars})).await;
+
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["type"], "ValidationError");
+    assert_eq!(body["field"], "vars");
 }
