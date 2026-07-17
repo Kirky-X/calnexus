@@ -807,6 +807,9 @@ fn limit_recursive(
 }
 
 /// 数值求值 [`SymbolicExpr`]。
+///
+/// T026 重构（cyc=23 → ≤15）：将含条件分支的 `Div`/`Ln` 提取到独立函数，
+/// 主函数变为纯 match 分派（无内嵌条件）。
 fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
     match expr {
         SymbolicExpr::Const(n) => Ok(*n),
@@ -817,27 +820,49 @@ fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64,
         SymbolicExpr::Add(l, r) => Ok(eval_symbolic(l, env)? + eval_symbolic(r, env)?),
         SymbolicExpr::Sub(l, r) => Ok(eval_symbolic(l, env)? - eval_symbolic(r, env)?),
         SymbolicExpr::Mul(l, r) => Ok(eval_symbolic(l, env)? * eval_symbolic(r, env)?),
-        SymbolicExpr::Div(l, r) => {
-            let d = eval_symbolic(r, env)?;
-            if d == 0.0 {
-                return Ok(f64::INFINITY * eval_symbolic(l, env)?.signum());
-            }
-            Ok(eval_symbolic(l, env)? / d)
-        }
+        SymbolicExpr::Div(l, r) => eval_div(l, r, env),
         SymbolicExpr::Pow(l, r) => Ok(eval_symbolic(l, env)?.powf(eval_symbolic(r, env)?)),
         SymbolicExpr::Neg(e) => Ok(-eval_symbolic(e, env)?),
         SymbolicExpr::Sin(e) => Ok(eval_symbolic(e, env)?.sin()),
         SymbolicExpr::Cos(e) => Ok(eval_symbolic(e, env)?.cos()),
         SymbolicExpr::Tan(e) => Ok(eval_symbolic(e, env)?.tan()),
-        SymbolicExpr::Ln(e) => {
-            let v = eval_symbolic(e, env)?;
-            if v <= 0.0 {
-                return Ok(f64::NAN);
-            }
-            Ok(v.ln())
-        }
+        SymbolicExpr::Ln(e) => eval_ln(e, env),
         SymbolicExpr::Exp(e) => Ok(eval_symbolic(e, env)?.exp()),
     }
+}
+
+/// `Div` 求值：除零时返回 ±Inf（保留符号）。
+///
+/// 提取自 `eval_symbolic`：将条件分支 `d == 0.0` 与主分派隔离，
+/// 降低主函数圈复杂度。行为与原实现一致：
+/// - `+x / 0` → `+Inf`
+/// - `-x / 0` → `-Inf`
+/// - `0 / 0` → `NaN`（`0.0.signum() == 0.0`，`Inf * 0 == NaN`）
+fn eval_div(
+    l: &SymbolicExpr,
+    r: &SymbolicExpr,
+    env: &HashMap<String, f64>,
+) -> Result<f64, CalcError> {
+    let d = eval_symbolic(r, env)?;
+    if d == 0.0 {
+        return Ok(f64::INFINITY * eval_symbolic(l, env)?.signum());
+    }
+    Ok(eval_symbolic(l, env)? / d)
+}
+
+/// `Ln` 求值：非正输入返回 `NaN`。
+///
+/// 提取自 `eval_symbolic`：将条件分支 `v <= 0.0` 与主分派隔离，
+/// 降低主函数圈复杂度。行为与原实现一致：
+/// - `ln(正数)` → 正常对数
+/// - `ln(0)` → `NaN`
+/// - `ln(负数)` → `NaN`
+fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
+    let v = eval_symbolic(e, env)?;
+    if v <= 0.0 {
+        return Ok(f64::NAN);
+    }
+    Ok(v.ln())
 }
 
 // ============================ 泰勒级数 taylor (TG3.6) ============================
@@ -2673,5 +2698,164 @@ mod tests {
         );
         // Generic error (lines 979-982)
         assert!(extract_number(&AstNode::Variable("x".to_string())).is_err());
+    }
+
+    // ===== T025: eval_symbolic dispatch 回归测试（Phase 8 Red）=====
+    //
+    // 目的：重构 eval_symbolic（cyc=23 → ≤15）前后行为不变。
+    // 覆盖所有 SymbolicExpr variant：Const/Var/Add/Sub/Mul/Div/Pow/Neg/Sin/Cos/Tan/Ln/Exp
+    // + 边界：Var 未绑定、Div by zero（→ ±Inf）、Ln 非正（→ NaN）。
+    #[test]
+    fn test_eval_symbolic_dispatch() {
+        let mut env = HashMap::new();
+        env.insert("x".to_string(), 2.0);
+        env.insert("y".to_string(), 3.0);
+
+        // ----- 1. Leaf -----
+        assert_eq!(
+            eval_symbolic(&SymbolicExpr::Const(42.0), &env).unwrap(),
+            42.0
+        );
+        assert_eq!(
+            eval_symbolic(&SymbolicExpr::Var("x".to_string()), &env).unwrap(),
+            2.0
+        );
+        // 未绑定变量 → error
+        assert!(eval_symbolic(&SymbolicExpr::Var("z".to_string()), &env).is_err());
+
+        // ----- 2. Binary ops -----
+        let x = SymbolicExpr::Var("x".to_string());
+        let y = SymbolicExpr::Var("y".to_string());
+        // Add: 2+3=5
+        assert_eq!(
+            eval_symbolic(
+                &SymbolicExpr::Add(Box::new(x.clone()), Box::new(y.clone())),
+                &env
+            )
+            .unwrap(),
+            5.0
+        );
+        // Sub: 2-3=-1
+        assert_eq!(
+            eval_symbolic(
+                &SymbolicExpr::Sub(Box::new(x.clone()), Box::new(y.clone())),
+                &env
+            )
+            .unwrap(),
+            -1.0
+        );
+        // Mul: 2*3=6
+        assert_eq!(
+            eval_symbolic(
+                &SymbolicExpr::Mul(Box::new(x.clone()), Box::new(y.clone())),
+                &env
+            )
+            .unwrap(),
+            6.0
+        );
+        // Div: 2/3
+        assert!(
+            (eval_symbolic(
+                &SymbolicExpr::Div(Box::new(x.clone()), Box::new(y.clone())),
+                &env
+            )
+            .unwrap()
+                - 2.0 / 3.0)
+                .abs()
+                < 1e-10
+        );
+        // Pow: 2^3=8
+        assert_eq!(
+            eval_symbolic(
+                &SymbolicExpr::Pow(Box::new(x.clone()), Box::new(y.clone())),
+                &env
+            )
+            .unwrap(),
+            8.0
+        );
+
+        // ----- 3. Div by zero → ±Inf -----
+        let zero = SymbolicExpr::Const(0.0);
+        let pos = SymbolicExpr::Const(5.0);
+        let neg = SymbolicExpr::Const(-5.0);
+        let div_pos = eval_symbolic(
+            &SymbolicExpr::Div(Box::new(pos), Box::new(zero.clone())),
+            &env,
+        )
+        .unwrap();
+        assert!(
+            div_pos.is_infinite() && div_pos > 0.0,
+            "5/0 → +Inf, got {}",
+            div_pos
+        );
+        let div_neg =
+            eval_symbolic(&SymbolicExpr::Div(Box::new(neg), Box::new(zero)), &env).unwrap();
+        assert!(
+            div_neg.is_infinite() && div_neg < 0.0,
+            "-5/0 → -Inf, got {}",
+            div_neg
+        );
+
+        // ----- 4. Unary ops -----
+        // Neg: -2
+        assert_eq!(
+            eval_symbolic(&SymbolicExpr::Neg(Box::new(x.clone())), &env).unwrap(),
+            -2.0
+        );
+        // Sin: sin(2)
+        assert!(
+            (eval_symbolic(&SymbolicExpr::Sin(Box::new(x.clone())), &env).unwrap() - 2.0_f64.sin())
+                .abs()
+                < 1e-10
+        );
+        // Cos: cos(2)
+        assert!(
+            (eval_symbolic(&SymbolicExpr::Cos(Box::new(x.clone())), &env).unwrap() - 2.0_f64.cos())
+                .abs()
+                < 1e-10
+        );
+        // Tan: tan(2)
+        assert!(
+            (eval_symbolic(&SymbolicExpr::Tan(Box::new(x.clone())), &env).unwrap() - 2.0_f64.tan())
+                .abs()
+                < 1e-10
+        );
+        // Exp: e^2
+        assert!(
+            (eval_symbolic(&SymbolicExpr::Exp(Box::new(x.clone())), &env).unwrap() - 2.0_f64.exp())
+                .abs()
+                < 1e-10
+        );
+
+        // ----- 5. Ln 边界 -----
+        // Ln(正数) → 正常
+        let pos_val = SymbolicExpr::Const(1.0);
+        assert!(
+            (eval_symbolic(&SymbolicExpr::Ln(Box::new(pos_val)), &env).unwrap() - 0.0).abs()
+                < 1e-10
+        );
+        // Ln(0) → NaN
+        let zero_val = SymbolicExpr::Const(0.0);
+        assert!(eval_symbolic(&SymbolicExpr::Ln(Box::new(zero_val)), &env)
+            .unwrap()
+            .is_nan());
+        // Ln(负数) → NaN
+        let neg_val = SymbolicExpr::Const(-1.0);
+        assert!(eval_symbolic(&SymbolicExpr::Ln(Box::new(neg_val)), &env)
+            .unwrap()
+            .is_nan());
+
+        // ----- 6. 嵌套表达式 -----
+        // (x + y) * x = (2+3)*2 = 10
+        let add_xy = SymbolicExpr::Add(Box::new(x.clone()), Box::new(y.clone()));
+        let mul = SymbolicExpr::Mul(Box::new(add_xy), Box::new(x.clone()));
+        assert_eq!(eval_symbolic(&mul, &env).unwrap(), 10.0);
+        // sin(x)^2 + cos(x)^2 = 1
+        let sin_x = SymbolicExpr::Sin(Box::new(x.clone()));
+        let cos_x = SymbolicExpr::Cos(Box::new(x.clone()));
+        let sin_sq = SymbolicExpr::Pow(Box::new(sin_x), Box::new(SymbolicExpr::Const(2.0)));
+        let cos_sq = SymbolicExpr::Pow(Box::new(cos_x), Box::new(SymbolicExpr::Const(2.0)));
+        let pythag = SymbolicExpr::Add(Box::new(sin_sq), Box::new(cos_sq));
+        assert!((eval_symbolic(&pythag, &env).unwrap() - 1.0).abs() < 1e-10);
     }
 }
