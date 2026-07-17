@@ -12,9 +12,15 @@
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use nalgebra::DMatrix;
+#[cfg(feature = "numerical")]
+use nalgebra::DVector;
 
-/// 矩阵函数白名单。
+/// 矩阵函数白名单（eval_function 处理，返回 MatrixValue）。
+/// lu/qr/eig/svd/solve 不在此列——走 `evaluate` 顶层的 numerical 短路（见 contains_matrix）。
 const MATRIX_FUNCTIONS: &[&str] = &["det", "transpose", "inverse", "identity"];
+
+/// 矩阵维度上限（防字面量大矩阵 DoS，p4 T008 MEDIUM-1；identity 与 eval_matrix_literal 共用）。
+const MAX_MATRIX_DIM: usize = 1000;
 
 /// Matrix 计算域。
 ///
@@ -41,6 +47,15 @@ impl CalculationDomain for MatrixDomain {
         }
         if ctx.get_var("e").is_none() {
             ctx = ctx.with_var("e", std::f64::consts::E);
+        }
+
+        // numerical 分解函数短路（返回 EvalResult::Json/Vector，绕过 MatrixValue 类型限制）。
+        // lu/qr/eig/svd/solve 在此直接委托 numerical.rs；非 numerical 函数返回 None 回退 eval_node。
+        #[cfg(feature = "numerical")]
+        if let AstNode::FunctionCall(name, args) = ast {
+            if let Some(result) = self.try_numerical(name, args, &ctx)? {
+                return Ok(result);
+            }
         }
 
         let value = self.eval_node(ast, &ctx)?;
@@ -118,6 +133,15 @@ impl MatrixDomain {
         let ncols = rows[0].len();
         if ncols == 0 {
             return Err(CalcError::domain("empty matrix row".to_string()));
+        }
+        if rows.len() > MAX_MATRIX_DIM || ncols > MAX_MATRIX_DIM {
+            return Err(CalcError::domain(format!(
+                "matrix dimension {}x{} exceeds limit {}x{}",
+                rows.len(),
+                ncols,
+                MAX_MATRIX_DIM,
+                MAX_MATRIX_DIM
+            )));
         }
         for (i, row) in rows.iter().enumerate() {
             if row.len() != ncols {
@@ -301,6 +325,123 @@ impl MatrixDomain {
         }
     }
 
+    /// numerical 分解函数委托（feature-gated，p4 T008）。
+    ///
+    /// lu/qr/eig/svd/solve 返回 `EvalResult::Json`/`Vector`，无法走 `eval_function` 的 `MatrixValue`
+    /// 路径，故在 `evaluate` 顶层短路。返回 `Ok(None)` 表示非 numerical 函数，回退 eval_node。
+    ///
+    /// 范围：仅匹配 `evaluate` 顶层 FunctionCall；嵌套调用（如 `det(lu(M))`）中外层 eval_function
+    /// 不分发到 numerical，嵌套需用户先解构。
+    #[cfg(feature = "numerical")]
+    fn try_numerical(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<Option<EvalResult>, CalcError> {
+        use crate::domains::numerical;
+        match name {
+            "lu" | "qr" | "eig" | "svd" => {
+                let m = self.numerical_matrix_arg(name, args, ctx)?;
+                Ok(Some(match name {
+                    "lu" => numerical::lu(m)?,
+                    "qr" => numerical::qr(m)?,
+                    "eig" => numerical::eig(m)?,
+                    "svd" => numerical::svd(m)?,
+                    _ => unreachable!(),
+                }))
+            }
+            "solve" => {
+                let (a, b) = self.numerical_solve_args(args, ctx)?;
+                Ok(Some(numerical::solve(a, b)?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// 提取单矩阵参数（lu/qr/eig/svd）。
+    #[cfg(feature = "numerical")]
+    fn numerical_matrix_arg(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<DMatrix<f64>, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "{}() requires exactly 1 argument, got {}",
+                name,
+                args.len()
+            )));
+        }
+        match self.eval_node(&args[0], ctx)? {
+            MatrixValue::Matrix(m) => Ok(m),
+            MatrixValue::Scalar(_) => Err(CalcError::domain(format!(
+                "{}() requires a matrix argument",
+                name
+            ))),
+        }
+    }
+
+    /// 提取 solve(A, b) 参数：A 方阵，b 向量（List 或单列 Matrix）。
+    #[cfg(feature = "numerical")]
+    fn numerical_solve_args(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<(DMatrix<f64>, DVector<f64>), CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "solve() requires exactly 2 arguments (A, b), got {}",
+                args.len()
+            )));
+        }
+        let a = match self.eval_node(&args[0], ctx)? {
+            MatrixValue::Matrix(m) => m,
+            MatrixValue::Scalar(_) => {
+                return Err(CalcError::domain(
+                    "solve() requires A to be a matrix".to_string(),
+                ))
+            }
+        };
+        // b：List（[1,2,3]）或单列 Matrix（[[1],[2],[3]]），design D5
+        let b = match &args[1] {
+            AstNode::List(elements) => {
+                if elements.len() > MAX_MATRIX_DIM {
+                    return Err(CalcError::domain(format!(
+                        "solve() vector length {} exceeds limit {}",
+                        elements.len(),
+                        MAX_MATRIX_DIM
+                    )));
+                }
+                let data: Vec<f64> = elements
+                    .iter()
+                    .map(|e| match self.eval_node(e, ctx) {
+                        Ok(MatrixValue::Scalar(s)) => Ok(s),
+                        _ => Err(CalcError::domain(
+                            "solve() vector elements must be scalars".to_string(),
+                        )),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                DVector::from_row_slice(&data)
+            }
+            _ => match self.eval_node(&args[1], ctx)? {
+                MatrixValue::Matrix(m) if m.ncols() == 1 => m.column(0).into_owned(),
+                MatrixValue::Matrix(_) => {
+                    return Err(CalcError::domain(
+                        "solve() b matrix must be single-column".to_string(),
+                    ))
+                }
+                MatrixValue::Scalar(_) => {
+                    return Err(CalcError::domain(
+                        "solve() b must be a vector or single-column matrix".to_string(),
+                    ))
+                }
+            },
+        };
+        Ok((a, b))
+    }
+
     /// det(m)：方阵行列式。
     fn eval_det(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
@@ -396,7 +537,6 @@ impl MatrixDomain {
                         n
                     )));
                 }
-                const MAX_MATRIX_DIM: usize = 1000;
                 if n as usize > MAX_MATRIX_DIM {
                     return Err(CalcError::domain(format!(
                         "identity() dimension {} exceeds maximum of {}",
@@ -428,8 +568,22 @@ enum MatrixValue {
 fn contains_matrix(ast: &AstNode) -> bool {
     match ast {
         AstNode::Matrix(_) => true,
+        // 路由认领全集：det/transpose/inverse/identity 走 eval_function（返回 MatrixValue）；
+        // lu/qr/eig/svd/solve 走 evaluate 顶层 numerical 短路（cfg feature="numerical"，返回 EvalResult）。
+        // 与 MATRIX_FUNCTIONS 常量分工：本处是认领全集，MATRIX_FUNCTIONS 是 eval_function 白名单。
         AstNode::FunctionCall(name, _)
-            if matches!(name.as_str(), "det" | "transpose" | "inverse" | "identity") =>
+            if matches!(
+                name.as_str(),
+                "det"
+                    | "transpose"
+                    | "inverse"
+                    | "identity"
+                    | "lu"
+                    | "qr"
+                    | "eig"
+                    | "svd"
+                    | "solve"
+            ) =>
         {
             true
         }
@@ -1530,5 +1684,148 @@ mod tests {
                 m2x2(1.0, 2.0, 3.0, 4.0)
             )
             .is_err());
+    }
+
+    // ===== T008: numerical 分解端到端路由（cfg gate）=====
+    fn assert_json_keys(v: &serde_json::Value, keys: &[&str]) {
+        for k in keys {
+            assert!(v.get(k).is_some(), "numerical JSON missing key `{}`", k);
+        }
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_lu_routes_to_numerical() {
+        let ast = parse("lu([[1,2],[3,4]])").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx()).unwrap();
+        match result {
+            EvalResult::Json(v) => assert_json_keys(&v, &["L", "U", "P"]),
+            other => panic!("expected Json, got {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_qr_routes_to_numerical() {
+        let ast = parse("qr([[1,2],[3,4]])").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx()).unwrap();
+        match result {
+            EvalResult::Json(v) => assert_json_keys(&v, &["Q", "R"]),
+            other => panic!("expected Json, got {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_eig_routes_to_numerical() {
+        // [[2,1],[1,2]] 特征值 = {1, 3}（升序）
+        let ast = parse("eig([[2,1],[1,2]])").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx()).unwrap();
+        match result {
+            EvalResult::Json(v) => {
+                assert_json_keys(&v, &["values", "vectors"]);
+                let vals: Vec<f64> = v["values"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.as_f64().unwrap())
+                    .collect();
+                assert_approx(vals[0], 1.0);
+                assert_approx(vals[1], 3.0);
+            }
+            other => panic!("expected Json, got {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_svd_routes_to_numerical() {
+        let ast = parse("svd([[1,2],[3,4]])").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx()).unwrap();
+        match result {
+            EvalResult::Json(v) => assert_json_keys(&v, &["U", "S", "Vt"]),
+            other => panic!("expected Json, got {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_solve_list_b_routes_to_numerical() {
+        // [[1,2],[3,4]] x = [5,6] → x = [-4, 4.5]
+        let ast = parse("solve([[1,2],[3,4]], [5,6])").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx()).unwrap();
+        match result {
+            EvalResult::Vector(v) => {
+                assert_eq!(v.len(), 2);
+                assert_approx(v[0], -4.0);
+                assert_approx(v[1], 4.5);
+            }
+            other => panic!("expected Vector, got {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_solve_matrix_b_routes_to_numerical() {
+        // b 为单列 Matrix [[5],[6]]（design D5 第二形态）
+        let ast = parse("solve([[1,2],[3,4]], [[5],[6]])").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx()).unwrap();
+        match result {
+            EvalResult::Vector(v) => {
+                assert_eq!(v.len(), 2);
+                assert_approx(v[0], -4.0);
+                assert_approx(v[1], 4.5);
+            }
+            other => panic!("expected Vector, got {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_solve_wrong_arg_count_errors() {
+        let ast = parse("solve([[1,2],[3,4]])").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_lu_non_matrix_arg_errors() {
+        let ast = parse("lu(5)").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(result.is_err());
+    }
+
+    // ===== MEDIUM-1: 字面量大矩阵 DoS 防护（默认 feature）=====
+    #[test]
+    fn evaluate_huge_matrix_literal_rejected() {
+        // 1001×1 矩阵字面量（超 MAX_MATRIX_DIM=1000）→ DomainError
+        let rows: Vec<&str> = vec!["[0]"; 1001];
+        let src = format!("[{}]", rows.join(","));
+        let ast = parse(&src).unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(
+            result.is_err(),
+            "matrix exceeding MAX_MATRIX_DIM must be rejected"
+        );
+    }
+
+    #[test]
+    fn evaluate_identity_dim_limit_rejected() {
+        // identity(1001) → DomainError（与字面量共用 MAX_MATRIX_DIM）
+        let ast = parse("identity(1001)").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_solve_huge_list_b_rejected() {
+        // solve(A, [1001 元素向量]) → DomainError（List b 维度上限，安全 LOW-1）
+        let b: Vec<&str> = vec!["0"; 1001];
+        let src = format!("solve([[1]], [{}])", b.join(","));
+        let ast = parse(&src).unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(result.is_err());
     }
 }

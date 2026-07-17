@@ -390,10 +390,10 @@ mod tests {
         assert!((values[0] - 1.0).abs() < 1e-9);
         assert!((values[1] - 3.0).abs() < 1e-9);
         // M·v_i = λ_i·v_i
-        for i in 0..2 {
+        for (i, &val) in values.iter().enumerate() {
             let v: nalgebra::DVector<f64> = vectors.column(i).into_owned();
             let mv = &m * &v;
-            let lv = values[i] * &v;
+            let lv = val * &v;
             assert!(
                 (mv - lv).norm() < 1e-9,
                 "eigenrelation failed for col {}",
@@ -421,10 +421,10 @@ mod tests {
         assert!(values[0] <= values[1] + 1e-9);
         assert!(values[1] <= values[2] + 1e-9);
         // M·v_i = λ_i·v_i
-        for i in 0..3 {
+        for (i, &val) in values.iter().enumerate() {
             let v: nalgebra::DVector<f64> = vectors.column(i).into_owned();
             let mv = &m * &v;
-            let lv = values[i] * &v;
+            let lv = val * &v;
             assert!(
                 (mv - lv).norm() < 1e-8,
                 "eigenrelation failed for col {}",
