@@ -146,7 +146,10 @@ impl MatrixDomain {
         Ok(MatrixValue::Matrix(matrix))
     }
 
-    /// 求值二元运算。
+    /// 求值二元运算：按运算类型分发到对应处理方法。
+    ///
+    /// 设计依据：T017 重构（cyc=25 → ≤15），按运算类型提取 dispatch 方法，
+    /// 主函数仅负责标量/矩阵分流与运算分发，单一职责。
     fn eval_binary(
         &self,
         op: BinaryOp,
@@ -155,92 +158,121 @@ impl MatrixDomain {
     ) -> Result<MatrixValue, CalcError> {
         // 两个标量 → 标量运算（矩阵元素中的子表达式，如 `1+1`）
         if let (MatrixValue::Scalar(av), MatrixValue::Scalar(bv)) = (&a, &b) {
-            let result = match op {
-                BinaryOp::Add => av + bv,
-                BinaryOp::Sub => av - bv,
-                BinaryOp::Mul => av * bv,
-                BinaryOp::Div => {
-                    if *bv == 0.0 {
-                        if *av == 0.0 {
-                            return Err(CalcError::nan_or_inf());
-                        }
-                        return Err(CalcError::division_by_zero());
-                    }
-                    av / bv
-                }
-                BinaryOp::Pow => {
-                    if *av == 0.0 && *bv == 0.0 {
-                        1.0
-                    } else {
-                        av.powf(*bv)
-                    }
-                }
-                BinaryOp::Mod => {
-                    if *bv == 0.0 {
-                        return Err(CalcError::division_by_zero());
-                    }
-                    av % bv
-                }
-            };
-            if !result.is_finite() {
-                return Err(CalcError::nan_or_inf());
-            }
-            return Ok(MatrixValue::Scalar(result));
+            return self
+                .eval_scalar_binary(op, *av, *bv)
+                .map(MatrixValue::Scalar);
         }
-
+        // 矩阵运算：按 op 分发
         match op {
-            BinaryOp::Add | BinaryOp::Sub => match (a, b) {
-                (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
-                    if am.shape() != bm.shape() {
-                        return Err(CalcError::domain(format!(
-                            "matrix dimension mismatch for add/sub: {}x{} vs {}x{}",
-                            am.nrows(),
-                            am.ncols(),
-                            bm.nrows(),
-                            bm.ncols()
-                        )));
-                    }
-                    let result = if op == BinaryOp::Add {
-                        am + bm
-                    } else {
-                        am - bm
-                    };
-                    Ok(MatrixValue::Matrix(result))
-                }
-                _ => Err(CalcError::domain(
-                    "matrix add/sub requires two matrices of the same dimension".to_string(),
-                )),
-            },
-            BinaryOp::Mul => match (a, b) {
-                (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => Ok(MatrixValue::Matrix(&m * s)),
-                (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => Ok(MatrixValue::Matrix(&m * s)),
-                (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
-                    if am.ncols() != bm.nrows() {
-                        return Err(CalcError::domain(format!(
-                            "matrix multiplication dimension mismatch: {}x{} * {}x{}",
-                            am.nrows(),
-                            am.ncols(),
-                            bm.nrows(),
-                            bm.ncols()
-                        )));
-                    }
-                    Ok(MatrixValue::Matrix(&am * &bm))
-                }
-                (MatrixValue::Scalar(_), MatrixValue::Scalar(_)) => unreachable!(),
-            },
-            BinaryOp::Div => match (a, b) {
-                (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => {
-                    if s == 0.0 {
-                        return Err(CalcError::division_by_zero());
-                    }
-                    Ok(MatrixValue::Matrix(&m / s))
-                }
-                _ => Err(CalcError::domain(
-                    "matrix division only supports matrix / scalar".to_string(),
-                )),
-            },
+            BinaryOp::Add | BinaryOp::Sub => self.eval_matrix_add_sub(op, a, b),
+            BinaryOp::Mul => self.eval_matrix_mul(a, b),
+            BinaryOp::Div => self.eval_matrix_div(a, b),
             BinaryOp::Pow => Err(CalcError::domain("matrix power not supported".to_string())),
             BinaryOp::Mod => Err(CalcError::domain("matrix mod not supported".to_string())),
+        }
+    }
+
+    /// 标量二元运算：6 种 op + 边界处理（div/0、0^0、mod/0、inf 检查）。
+    fn eval_scalar_binary(&self, op: BinaryOp, av: f64, bv: f64) -> Result<f64, CalcError> {
+        let result = match op {
+            BinaryOp::Add => av + bv,
+            BinaryOp::Sub => av - bv,
+            BinaryOp::Mul => av * bv,
+            BinaryOp::Div => {
+                if bv == 0.0 {
+                    return if av == 0.0 {
+                        Err(CalcError::nan_or_inf())
+                    } else {
+                        Err(CalcError::division_by_zero())
+                    };
+                }
+                av / bv
+            }
+            BinaryOp::Pow => {
+                if av == 0.0 && bv == 0.0 {
+                    1.0
+                } else {
+                    av.powf(bv)
+                }
+            }
+            BinaryOp::Mod => {
+                if bv == 0.0 {
+                    return Err(CalcError::division_by_zero());
+                }
+                av % bv
+            }
+        };
+        if !result.is_finite() {
+            return Err(CalcError::nan_or_inf());
+        }
+        Ok(result)
+    }
+
+    /// 矩阵加减：要求两矩阵形状一致，否则维度不匹配错误。
+    fn eval_matrix_add_sub(
+        &self,
+        op: BinaryOp,
+        a: MatrixValue,
+        b: MatrixValue,
+    ) -> Result<MatrixValue, CalcError> {
+        match (a, b) {
+            (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
+                if am.shape() != bm.shape() {
+                    return Err(CalcError::domain(format!(
+                        "matrix dimension mismatch for add/sub: {}x{} vs {}x{}",
+                        am.nrows(),
+                        am.ncols(),
+                        bm.nrows(),
+                        bm.ncols()
+                    )));
+                }
+                let result = if op == BinaryOp::Add {
+                    am + bm
+                } else {
+                    am - bm
+                };
+                Ok(MatrixValue::Matrix(result))
+            }
+            _ => Err(CalcError::domain(
+                "matrix add/sub requires two matrices of the same dimension".to_string(),
+            )),
+        }
+    }
+
+    /// 矩阵乘法：标量×矩阵、矩阵×标量、矩阵×矩阵（需列=行）。
+    fn eval_matrix_mul(&self, a: MatrixValue, b: MatrixValue) -> Result<MatrixValue, CalcError> {
+        match (a, b) {
+            (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => Ok(MatrixValue::Matrix(&m * s)),
+            (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => Ok(MatrixValue::Matrix(&m * s)),
+            (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
+                if am.ncols() != bm.nrows() {
+                    return Err(CalcError::domain(format!(
+                        "matrix multiplication dimension mismatch: {}x{} * {}x{}",
+                        am.nrows(),
+                        am.ncols(),
+                        bm.nrows(),
+                        bm.ncols()
+                    )));
+                }
+                Ok(MatrixValue::Matrix(&am * &bm))
+            }
+            // 标量+标量已在 eval_binary 提前分流，不会到达此处
+            (MatrixValue::Scalar(_), MatrixValue::Scalar(_)) => unreachable!(),
+        }
+    }
+
+    /// 矩阵除法：仅支持 矩阵/标量；标量除零报错。
+    fn eval_matrix_div(&self, a: MatrixValue, b: MatrixValue) -> Result<MatrixValue, CalcError> {
+        match (a, b) {
+            (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => {
+                if s == 0.0 {
+                    return Err(CalcError::division_by_zero());
+                }
+                Ok(MatrixValue::Matrix(&m / s))
+            }
+            _ => Err(CalcError::domain(
+                "matrix division only supports matrix / scalar".to_string(),
+            )),
         }
     }
 
@@ -382,6 +414,7 @@ impl MatrixDomain {
 }
 
 /// 内部求值结果：标量或矩阵。
+#[derive(Clone)]
 enum MatrixValue {
     Scalar(f64),
     Matrix(DMatrix<f64>),
@@ -1321,5 +1354,181 @@ mod tests {
                 _ => panic!("expected Matrix results"),
             }
         }
+    }
+
+    // ===== T016: eval_binary dispatch table 回归测试（Phase 5 Red）=====
+    //
+    // 目的：重构 eval_binary（cyc=25 → ≤15）前后行为不变。
+    // 覆盖：标量+标量（6 op + 边界）、矩阵+矩阵（add/sub + 维度）、
+    //       标量×矩阵/矩阵×标量/矩阵×矩阵（mul + 维度）、矩阵/标量（div + 0）、
+    //       矩阵 pow/mod（不支持）。
+
+    fn m2x2(a: f64, b: f64, c: f64, d: f64) -> MatrixValue {
+        MatrixValue::Matrix(DMatrix::from_row_slice(2, 2, &[a, b, c, d]))
+    }
+
+    #[test]
+    fn test_eval_binary_dispatch() {
+        let dom = MatrixDomain;
+
+        // ----- 1. 标量 + 标量：6 种运算 -----
+        let s = |v: f64| MatrixValue::Scalar(v);
+        assert!(matches!(
+            dom.eval_binary(BinaryOp::Add, s(2.0), s(3.0)),
+            Ok(MatrixValue::Scalar(5.0))
+        ));
+        assert!(matches!(
+            dom.eval_binary(BinaryOp::Sub, s(5.0), s(2.0)),
+            Ok(MatrixValue::Scalar(3.0))
+        ));
+        assert!(matches!(
+            dom.eval_binary(BinaryOp::Mul, s(3.0), s(4.0)),
+            Ok(MatrixValue::Scalar(12.0))
+        ));
+        assert!(matches!(
+            dom.eval_binary(BinaryOp::Div, s(6.0), s(2.0)),
+            Ok(MatrixValue::Scalar(3.0))
+        ));
+        assert!(matches!(
+            dom.eval_binary(BinaryOp::Pow, s(2.0), s(3.0)),
+            Ok(MatrixValue::Scalar(8.0))
+        ));
+        assert!(matches!(
+            dom.eval_binary(BinaryOp::Mod, s(10.0), s(3.0)),
+            Ok(MatrixValue::Scalar(1.0))
+        ));
+
+        // ----- 2. 标量边界：div by zero / 0^0 / mod by zero -----
+        assert!(dom.eval_binary(BinaryOp::Div, s(1.0), s(0.0)).is_err()); // division_by_zero
+        assert!(dom.eval_binary(BinaryOp::Div, s(0.0), s(0.0)).is_err()); // nan_or_inf
+        assert!(matches!(
+            dom.eval_binary(BinaryOp::Pow, s(0.0), s(0.0)),
+            Ok(MatrixValue::Scalar(1.0))
+        ));
+        assert!(dom.eval_binary(BinaryOp::Mod, s(10.0), s(0.0)).is_err()); // division_by_zero
+
+        // ----- 3. 标量 inf 检查 -----
+        assert!(dom.eval_binary(BinaryOp::Div, s(1.0), s(0.0)).is_err());
+
+        // ----- 4. 矩阵 + 矩阵 / 矩阵 - 矩阵 -----
+        let m1 = m2x2(1.0, 2.0, 3.0, 4.0);
+        let m2 = m2x2(5.0, 6.0, 7.0, 8.0);
+        let add_result = dom
+            .eval_binary(BinaryOp::Add, m1.clone(), m2.clone())
+            .unwrap();
+        match add_result {
+            MatrixValue::Matrix(m) => {
+                assert_approx(m[(0, 0)], 6.0);
+                assert_approx(m[(1, 1)], 12.0);
+            }
+            _ => panic!("expected Matrix"),
+        }
+        let sub_result = dom
+            .eval_binary(
+                BinaryOp::Sub,
+                m2x2(5.0, 6.0, 7.0, 8.0),
+                m2x2(1.0, 2.0, 3.0, 4.0),
+            )
+            .unwrap();
+        match sub_result {
+            MatrixValue::Matrix(m) => {
+                assert_approx(m[(0, 0)], 4.0);
+                assert_approx(m[(1, 1)], 4.0);
+            }
+            _ => panic!("expected Matrix"),
+        }
+
+        // ----- 5. 矩阵 add 维度不匹配 -----
+        let m3x2 = MatrixValue::Matrix(DMatrix::from_row_slice(
+            3,
+            2,
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        ));
+        assert!(dom
+            .eval_binary(BinaryOp::Add, m2x2(1.0, 2.0, 3.0, 4.0), m3x2.clone())
+            .is_err());
+
+        // ----- 6. 标量 × 矩阵 / 矩阵 × 标量 -----
+        let sm = dom
+            .eval_binary(BinaryOp::Mul, s(2.0), m2x2(1.0, 2.0, 3.0, 4.0))
+            .unwrap();
+        match sm {
+            MatrixValue::Matrix(m) => assert_approx(m[(0, 0)], 2.0),
+            _ => panic!("expected Matrix"),
+        }
+        let ms = dom
+            .eval_binary(BinaryOp::Mul, m2x2(1.0, 2.0, 3.0, 4.0), s(2.0))
+            .unwrap();
+        match ms {
+            MatrixValue::Matrix(m) => assert_approx(m[(1, 1)], 8.0),
+            _ => panic!("expected Matrix"),
+        }
+
+        // ----- 7. 矩阵 × 矩阵（维度匹配）-----
+        let mm = dom
+            .eval_binary(
+                BinaryOp::Mul,
+                m2x2(1.0, 2.0, 3.0, 4.0),
+                m2x2(5.0, 6.0, 7.0, 8.0),
+            )
+            .unwrap();
+        match mm {
+            MatrixValue::Matrix(m) => {
+                // [[1*5+2*7, 1*6+2*8],[3*5+4*7, 3*6+4*8]] = [[19,22],[43,50]]
+                assert_approx(m[(0, 0)], 19.0);
+                assert_approx(m[(0, 1)], 22.0);
+                assert_approx(m[(1, 0)], 43.0);
+                assert_approx(m[(1, 1)], 50.0);
+            }
+            _ => panic!("expected Matrix"),
+        }
+
+        // ----- 8. 矩阵 × 矩阵（维度不匹配：2x2 * 3x2）-----
+        assert!(dom
+            .eval_binary(BinaryOp::Mul, m2x2(1.0, 2.0, 3.0, 4.0), m3x2.clone())
+            .is_err());
+
+        // ----- 9. 矩阵 / 标量 -----
+        let md = dom
+            .eval_binary(BinaryOp::Div, m2x2(2.0, 4.0, 6.0, 8.0), s(2.0))
+            .unwrap();
+        match md {
+            MatrixValue::Matrix(m) => {
+                assert_approx(m[(0, 0)], 1.0);
+                assert_approx(m[(1, 1)], 4.0);
+            }
+            _ => panic!("expected Matrix"),
+        }
+        assert!(dom
+            .eval_binary(BinaryOp::Div, m2x2(1.0, 2.0, 3.0, 4.0), s(0.0))
+            .is_err());
+
+        // ----- 10. 矩阵 Pow / Mod 不支持 -----
+        assert!(dom
+            .eval_binary(
+                BinaryOp::Pow,
+                m2x2(1.0, 2.0, 3.0, 4.0),
+                m2x2(1.0, 2.0, 3.0, 4.0)
+            )
+            .is_err());
+        assert!(dom
+            .eval_binary(
+                BinaryOp::Mod,
+                m2x2(1.0, 2.0, 3.0, 4.0),
+                m2x2(1.0, 2.0, 3.0, 4.0)
+            )
+            .is_err());
+
+        // ----- 11. 标量 + 矩阵 类型不匹配（add 要求两矩阵）-----
+        assert!(dom
+            .eval_binary(BinaryOp::Add, s(1.0), m2x2(1.0, 2.0, 3.0, 4.0))
+            .is_err());
+        assert!(dom
+            .eval_binary(
+                BinaryOp::Div,
+                m2x2(1.0, 2.0, 3.0, 4.0),
+                m2x2(1.0, 2.0, 3.0, 4.0)
+            )
+            .is_err());
     }
 }
