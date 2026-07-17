@@ -60,9 +60,9 @@ fn sec_002_deep_nesting_no_overflow() {
     );
 }
 
-/// SEC-002b: 257 层嵌套 — 标记 ignore 直到深度强制实现。
+/// SEC-002b: 257 层嵌套括号 — 深度强制已实现（`parser.rs::convert_with_depth` 校验
+/// `MAX_AST_DEPTH=256`），超过即返回 `CalcError::depth_exceeded()`，无栈溢出。默认运行。
 #[test]
-#[ignore = "depth enforcement not yet implemented; run with --ignored to verify"]
 fn sec_002b_257_level_nesting_depth_exceeded() {
     let depth = 257;
     let expr = "(".repeat(depth) + "1" + &")".repeat(depth);
