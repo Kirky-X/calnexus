@@ -55,6 +55,7 @@
 | 11 计算域 | 算术、科学函数、统计、精度、数论、组合、多项式、复数、矩阵、向量、符号演算 |
 | 符号微积分 | `diff`、`integrate`、`simplify`、`limit`、`taylor` |
 | 任意精度 | `precision(N, expr)` 基于 BigRational 的任意精度计算 |
+| 数值线性代数 | `lu`、`qr`、`eig`、`svd`、`solve`（`numerical` feature，nalgebra f64 近似） |
 | 三种模式 | 单表达式、REPL（Tab 补全 + 变量绑定）、批量并行（rayon） |
 | 高性能缓存 | Moka L1 缓存（10000 条目，BLAKE3 哈希，线程安全） |
 | 隐式乘法 | `2x`、`3(x+1)` 等数学惯用写法自动识别 |
@@ -73,7 +74,7 @@
 | **Combinatorics** | 25 | `P`, `C`, `catalan`, `stirling` |
 | **Polynomial** | 25 | `poly_add`, `poly_sub`, `poly_mul`, `poly_div`, `poly_eval`, `poly_diff`, `poly_integrate`, `roots`, `factor` |
 | **Complex** | 30 | `complex(a,b)`, `re`, `im`, `conj`, `magnitude`, `phase` |
-| **Matrix** | 30 | `det`, `transpose`, `inverse`, `trace` |
+| **Matrix** | 30 | `det`, `transpose`, `inverse`, `identity`, `lu`/`qr`/`eig`/`svd`/`solve`（`numerical` feature） |
 | **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple` |
 | **Symbolic** | 30 | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
 
@@ -125,6 +126,7 @@ graph TD
 | Rust | >= 1.70 | 工具链（推荐使用 `rustup` 安装） |
 | Cargo | 随 Rust | 构建与包管理 |
 | `cli` feature | 可选 | 启用 CLI / REPL / batch（含 `clap`、`rustyline`、`rayon`） |
+| `numerical` feature | 可选 | 启用数值线性代数分解（`lu`/`qr`/`eig`/`svd`/`solve`，含 `nalgebra`） |
 
 ### 安装
 
@@ -190,6 +192,23 @@ $ calnexus 'limit(sin(x)/x, x, 0)'
 $ calnexus 'taylor(exp(x), x, 3)'
 1+x+0.5*x^2+0.16666666666666666*x^3
 ```
+
+#### 数值线性代数
+
+需以 `--features numerical` 编译（`cargo build --release --features cli,numerical`）。5 类数值分解返回 JSON（`lu`/`qr`/`eig`/`svd`）或向量（`solve`），结果为 nalgebra f64 近似：
+
+```bash
+$ calnexus 'solve([[2,1],[1,3]],[3,5])'
+[0.8,1.4]
+
+$ calnexus 'lu([[4,3],[6,3]])'
+{"L":[[1.0,0.0],[0.6666666666666666,1.0]],"P":[[0.0,1.0],[1.0,0.0]],"U":[[6.0,3.0],[0.0,1.0]]}
+
+$ calnexus 'eig([[2,1],[1,2]])'
+{"values":[1.0,3.0],"vectors":[[-0.7071067811865475,0.7071067811865475],[0.7071067811865475,0.7071067811865475]]}
+```
+
+> `precision(N, ...)` 不适用于这些函数（返回 f64 近似），包裹会得到明确错误。
 
 #### REPL 模式
 

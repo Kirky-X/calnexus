@@ -5,6 +5,31 @@
 
 ## [Unreleased]
 
+### P4: 数值线性代数分解（lu/qr/eig/svd/solve）
+
+> **新增 feature**：`numerical`（默认关闭）。启用后 Matrix 域支持 5 类数值分解，
+> 复用已有 `nalgebra 0.35`（无新依赖）。
+
+#### 变更
+
+- 新增 `numerical` feature（`src/domains/numerical.rs`）：
+  - `lu(M) → {L,U,P}` / `qr(M) → {Q,R}` / `eig(M) → {values,vectors}`（实对称矩阵）
+  - `svd(M) → {U,S,Vt}` / `solve(A,b) → Vector`
+- 新增 `EvalResult::Json(serde_json::Value)` 复合返回变体（`serde_json` 由 optional 提升为非 optional 核心依赖，承载多矩阵分解结果）
+- Matrix 域 `evaluate` 顶层 numerical 短路（绕过 `MatrixValue`/`EvalResult` 类型空间冲突，5 行新代码 0 行旧代码改动）
+- `MAX_MATRIX_DIM=1000` 维度上限（字面量 / identity / solve List b 三入口统一 DoS 防护）
+- `precision(N, <matrix/numerical 函数>)` 返回专门错误：这些函数返回 f64 近似结果，precision 不适用（规则 12 失败显性化，不静默吞 N 误导用户）
+
+#### 测试
+
+- 5 函数单测（数学还原 L·U=P·M / Q^T·Q=I / M·v=λ·v / U·Σ·Vt=M / A·x=b + NaN/Inf 校验 + 非对称/奇异错误路径）
+- Matrix 域委托 + DoS 防护 + precision×f64 交互测试
+- 端到端集成 6（`tests/numerical_linalg_test.rs`：5 函数 JSON/Vector 契约 + solve A·x≈b 还原 + precision 错误）
+- 全量回归 `cargo test --features numerical` 全绿（lib 1445 + 端到端 6）；默认 feature lib 1410 零退化；clippy 零警告
+- 3-subagent 审查（安全/架构/性能）每 phase 闭环，0 CRITICAL/HIGH
+
+---
+
 ### P3: sdforge `#[forge]` 声明式接口迁移（破坏性）
 
 > **破坏性变更**：HTTP/MCP 错误响应从旧 `ErrorResponse{error:{kind,message,exit_code}}`
