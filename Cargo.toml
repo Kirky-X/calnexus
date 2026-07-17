@@ -20,7 +20,7 @@ icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
 http = ["dep:sdforge", "sdforge/http", "dep:axum", "dep:serde_json", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
-mcp = ["dep:sdforge", "sdforge/mcp", "dep:serde_json", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
+mcp = ["dep:sdforge", "sdforge/mcp", "dep:serde_json", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # FX: 汇率换算（P2 实现）
 fx = []
 # Numerical: 高级数值计算（eig/SVD 等，P3 实现）
@@ -62,6 +62,8 @@ sdforge = { version = "0.4", default-features = false, optional = true }
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（server 模块用，http/mcp feature 启用）
 serde_json = { version = "1", default-features = false, features = ["std"], optional = true }
+# anyhow: 错误上下文（sdforge 0.4.2 #[forge] MCP codegen 硬依赖 anyhow::anyhow!/anyhow::Error；仅 mcp feature 启用）
+anyhow = { version = "1", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }
@@ -78,7 +80,9 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 http-body-util = { version = "0.1", default-features = false }
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+# check-cfg: sdforge 0.4.2 #[forge] 宏总会 emit `#[cfg(feature="openapi")]` gate，
+# 但 CalNexus 不启用 openapi feature。声明该值为合法 cfg 以消除 unexpected_cfgs warning。
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("openapi"))'] }
 
 [package.metadata.tarpaulin]
 fail-under = 95

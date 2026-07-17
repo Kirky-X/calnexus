@@ -9,12 +9,13 @@
 
 use crate::core::{CalcError, EvalContext, EvalResult, MAX_PRECISION};
 use crate::domains::format_bigrational;
+use sdforge::error::ApiError;
 use std::collections::HashMap;
 
 /// HTTP/MCP 求值请求。
 ///
 /// 反序列化 JSON：`{"expr":"2+3","vars":{"x":1.0},"precision":null}`
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct EvaluateRequest {
     /// 表达式字符串（必填）。
     pub expr: String,
@@ -87,23 +88,25 @@ impl EvaluateRequest {
     /// - `vars` 键数 ≤ `MAX_VARS`（1024）：防止内存耗尽攻击
     /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
     ///
-    /// 返回 `Err(ServerError::Validation)` 当违反约束时。
-    /// 使用协议无关的 `Validation` 变体而非 `Http`/`Mcp`，避免在 MCP 上下文中
-    /// 泄漏 "HTTP server error" 消息（diting HIGH-1 + kueiku MEDIUM 修复）。
-    pub fn validate(&self) -> Result<(), ServerError> {
+    /// 违反约束时返回 `Err(ApiError::validation(...))`（HTTP 422 / MCP VALIDATION_ERROR，
+    /// spec.md R-sdforge-002/003 契约）。`field` 标识违规字段（"vars"/"precision"），
+    /// `constraint` 描述约束。
+    // ApiError（sdforge）含丰富错误上下文（type/message/details），168 bytes 为框架设计；
+    // 校验错误路径罕见，Box 化会令所有 `validate()?` 调用点被迫 `map_err` 解包，得不偿失。
+    #[allow(clippy::result_large_err)]
+    pub fn validate(&self) -> Result<(), ApiError> {
         if self.vars.len() > MAX_VARS {
-            return Err(ServerError::Validation(format!(
-                "vars size {} exceeds limit {}",
-                self.vars.len(),
-                MAX_VARS
-            )));
+            return Err(ApiError::validation(
+                "vars",
+                format!("size {} exceeds limit {}", self.vars.len(), MAX_VARS),
+            ));
         }
         if let Some(p) = self.precision {
             if p > MAX_PRECISION {
-                return Err(ServerError::Validation(format!(
-                    "precision {} exceeds limit {}",
-                    p, MAX_PRECISION
-                )));
+                return Err(ApiError::validation(
+                    "precision",
+                    format!("{} exceeds limit {}", p, MAX_PRECISION),
+                ));
             }
         }
         Ok(())
@@ -493,10 +496,8 @@ mod tests {
             precision: Some(MAX_PRECISION + 1),
         };
         let err = req.validate().unwrap_err();
-        // 必须返回 Validation 变体，不能是 Http/Mcp（diting HIGH-1 回归）
-        assert!(matches!(err, ServerError::Validation(_)));
-        assert!(!err.to_string().contains("HTTP"));
-        assert!(!err.to_string().contains("MCP"));
+        // 422 VALIDATION_ERROR，field="precision"（spec.md R-sdforge-002 契约）
+        assert!(matches!(err, ApiError::ValidationError { .. }));
     }
 
     #[test]
@@ -511,8 +512,7 @@ mod tests {
             precision: None,
         };
         let err = req.validate().unwrap_err();
-        assert!(matches!(err, ServerError::Validation(_)));
-        assert!(!err.to_string().contains("HTTP"));
-        assert!(!err.to_string().contains("MCP"));
+        // 422 VALIDATION_ERROR，field="vars"（spec.md R-sdforge-002 契约）
+        assert!(matches!(err, ApiError::ValidationError { .. }));
     }
 }

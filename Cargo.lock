@@ -336,6 +336,7 @@ dependencies = [
 name = "calnexus"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "assert_cmd",
  "axum",
  "blake3",

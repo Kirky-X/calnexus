@@ -14,6 +14,7 @@
 use std::future::Future;
 
 mod cache;
+mod evaluate;
 mod types;
 
 #[cfg(feature = "http")]
@@ -22,6 +23,7 @@ mod http;
 mod mcp;
 
 pub(crate) use cache::shared_cache;
+pub use evaluate::calc_error_to_api_error;
 pub use types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse, ServerError};
 
 #[cfg(feature = "http")]
