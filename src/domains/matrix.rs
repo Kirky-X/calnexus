@@ -19,6 +19,20 @@ use nalgebra::DVector;
 /// lu/qr/eig/svd/solve 不在此列——走 `evaluate` 顶层的 numerical 短路（见 contains_matrix）。
 const MATRIX_FUNCTIONS: &[&str] = &["det", "transpose", "inverse", "identity"];
 
+/// 矩阵/数值函数路由认领全集（`contains_matrix` + precision 错误信息共用，零漂移）。
+/// = `MATRIX_FUNCTIONS`(4) ∪ {lu,qr,eig,svd,solve}（numerical）。新增函数改这一处即可。
+const MATRIX_NUMERICAL_FUNCTIONS: &[&str] = &[
+    "det",
+    "transpose",
+    "inverse",
+    "identity",
+    "lu",
+    "qr",
+    "eig",
+    "svd",
+    "solve",
+];
+
 /// 矩阵维度上限（防字面量大矩阵 DoS，p4 T008 MEDIUM-1；identity 与 eval_matrix_literal 共用）。
 const MAX_MATRIX_DIM: usize = 1000;
 
@@ -55,6 +69,19 @@ impl CalculationDomain for MatrixDomain {
         if let AstNode::FunctionCall(name, args) = ast {
             if let Some(result) = self.try_numerical(name, args, &ctx)? {
                 return Ok(result);
+            }
+        }
+
+        // precision() 包裹 matrix/numerical 子函数时被 Matrix 抢（priority 30 > Precision 25），
+        // 但 Matrix 不处理 precision 外层。这些函数返回 f64 近似结果，precision 不适用——
+        // 给诚实错误（规则12 失败显性化），而非通用 "unsupported function" 迷惑用户（T009）。
+        if let AstNode::FunctionCall(name, _) = ast {
+            if name == "precision" {
+                return Err(CalcError::domain(format!(
+                    "precision() does not apply to matrix/numerical functions ({}): \
+                     they return f64 results",
+                    MATRIX_NUMERICAL_FUNCTIONS.join("/")
+                )));
             }
         }
 
@@ -571,20 +598,8 @@ fn contains_matrix(ast: &AstNode) -> bool {
         // 路由认领全集：det/transpose/inverse/identity 走 eval_function（返回 MatrixValue）；
         // lu/qr/eig/svd/solve 走 evaluate 顶层 numerical 短路（cfg feature="numerical"，返回 EvalResult）。
         // 与 MATRIX_FUNCTIONS 常量分工：本处是认领全集，MATRIX_FUNCTIONS 是 eval_function 白名单。
-        AstNode::FunctionCall(name, _)
-            if matches!(
-                name.as_str(),
-                "det"
-                    | "transpose"
-                    | "inverse"
-                    | "identity"
-                    | "lu"
-                    | "qr"
-                    | "eig"
-                    | "svd"
-                    | "solve"
-            ) =>
-        {
+        // 名单抽为 MATRIX_NUMERICAL_FUNCTIONS 常量，与 precision 错误信息共用零漂移（p4 审查 HIGH 处置）。
+        AstNode::FunctionCall(name, _) if MATRIX_NUMERICAL_FUNCTIONS.contains(&name.as_str()) => {
             true
         }
         AstNode::FunctionCall(_, args) => args.iter().any(contains_matrix),
@@ -1827,5 +1842,45 @@ mod tests {
         let ast = parse(&src).unwrap();
         let result = MatrixDomain.evaluate(&ast, &default_ctx());
         assert!(result.is_err());
+    }
+
+    // ===== T009: precision() × matrix/numerical 交互（f64 函数，precision 不适用）=====
+    #[test]
+    fn evaluate_precision_wrapping_matrix_rejected() {
+        // precision(50, det(M)) → 专门错误（matrix 函数返回 f64，precision 不适用）
+        let ast = parse("precision(50, det([[1,2],[3,4]]))").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("f64"),
+            "should explain precision does not apply to f64 functions"
+        );
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_precision_wrapping_numerical_rejected() {
+        // precision(50, eig(M)) → 专门错误（numerical 函数返回 f64，precision 不适用）
+        let ast = parse("precision(50, eig([[2,1],[1,2]]))").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("f64"),
+            "should explain precision does not apply to f64 functions"
+        );
+    }
+
+    #[cfg(feature = "numerical")]
+    #[test]
+    fn evaluate_precision_wrapping_nested_rejected() {
+        // precision(50, det(lu(M))) 嵌套形态 → 同样专门错误（路由契约对任意嵌套深度成立，
+        // precision 外层在 line 64 短路，根本不进 det(lu(M)) 求值；p4 审查 MEDIUM 补齐）
+        let ast = parse("precision(50, det(lu([[1,2],[3,4]])))").unwrap();
+        let result = MatrixDomain.evaluate(&ast, &default_ctx());
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("f64"),
+            "nested precision wrap should also get the dedicated f64 error"
+        );
     }
 }
