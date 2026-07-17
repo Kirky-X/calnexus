@@ -340,6 +340,7 @@ pub(crate) fn format_result(result: &EvalResult, fmt_prec: Option<usize>) -> Str
         EvalResult::Symbolic(s) => s.clone(),
         EvalResult::LaTeX(s) => s.clone(),
         EvalResult::Steps(v) => v.join("\n"),
+        EvalResult::Json(v) => v.to_string(),
     }
 }
 
