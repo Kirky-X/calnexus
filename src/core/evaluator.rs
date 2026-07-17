@@ -28,23 +28,45 @@ use crate::domains::{build_default_router, build_precision_domain};
 ///   检查 `elapsed > timeout`，超时返回 `CalcError::timeout()`。
 ///   这是第二道防线，已知 DoS 向量（factorial/pow/precision）已有专门常量约束，
 ///   elapsed 追踪用于捕获未知的累积慢操作。
+///
+/// T020 重构（cyc=25 → ≤15）：拆分为 4 个职责单一的函数：
+/// - `validate_inputs`：timeout=0 + precision 上界校验
+/// - `build_cache_key`：精度感知缓存键构建
+/// - `eval_precision_mode`：precision 模式（绕过路由器）
+/// - `eval_regular_mode`：常规模式（路由器分发）
 pub fn evaluate(
     expr: &str,
     ctx: &EvalContext,
     precision: Option<usize>,
     cache: &CacheManager,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
-    // 0. 超时检查：ctx.timeout == 0 触发立即超时；
-    //    非 0 时记录起始时间，关键节点检查 elapsed
     let start = Instant::now();
+    // 阶段 1: 输入校验（timeout=0 + precision 上界）
+    validate_inputs(ctx, precision)?;
+
+    // 阶段 2: parse + canonicalize + 超时检查
+    let ast = parse(expr)?;
+    check_elapsed(start, ctx.timeout)?;
+    let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
+    check_elapsed(start, ctx.timeout)?;
+    let cache_cf = build_cache_key(&cf, precision);
+
+    // 阶段 3: 按 precision 模式分发
+    if precision.is_some() {
+        eval_precision_mode(&canonical_ast, ctx, cache, &cache_cf, precision, start)
+    } else {
+        eval_regular_mode(&canonical_ast, ctx, cache, &cache_cf, start)
+    }
+}
+
+/// 输入校验：timeout=0 立即超时 + precision 参数上界检查。
+///
+/// 安全审查 HIGH-1：evaluate 是公共入口，CLI/REPL 直接调用时不经过 server validate()，
+/// 必须在此处拦截超大 precision 防止 format_decimal 循环 DoS。
+fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), CalcError> {
     if ctx.timeout.is_zero() {
         return Err(CalcError::timeout());
     }
-
-    // 0.1 precision 参数上界校验：纵深防御第四层。
-    //     server validate() 仅保护 HTTP/MCP 入口，CLI/REPL 直接调用 evaluate 时
-    //     不会经过 validate()，必须在此处拦截超大 precision 防止 format_decimal 循环 DoS。
-    //     （安全审查 HIGH-1：evaluate 是公共入口，参数校验不能依赖调用方自觉）
     if let Some(p) = precision {
         if p > MAX_PRECISION {
             return Err(CalcError::domain(format!(
@@ -53,64 +75,67 @@ pub fn evaluate(
             )));
         }
     }
+    Ok(())
+}
 
-    // 1. 解析
-    let ast = parse(expr)?;
-    // 1.1 超时检查点：parse 可能耗时（复杂/超长表达式）
-    check_elapsed(start, ctx.timeout)?;
-
-    // 2. 规范化
-    let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
-    // 2.1 超时检查点：canonicalize 可能耗时（深度 AST 遍历）
-    check_elapsed(start, ctx.timeout)?;
-
-    // 2.2 构建精度感知缓存键：precision 模式与常规模式使用不同键前缀，
-    //     避免同一表达式的 BigRational 结果与 Scalar 结果相互污染。
-    //     （tiangang SAST CRITICAL + kueiku bug 分析发现）
-    let cache_cf = if precision.is_some() {
+/// 构建精度感知缓存键：precision 模式使用 `precision:` 前缀避免 BigRational 与 Scalar 污染。
+///
+/// tiangang SAST CRITICAL + kueiku bug 分析发现：同一表达式的 precision 模式与常规模式
+/// 结果类型不同，必须使用不同缓存键。
+fn build_cache_key(cf: &CanonicalForm, precision: Option<usize>) -> CanonicalForm {
+    if precision.is_some() {
         CanonicalForm::new(format!("precision:{}", cf.as_str()))
     } else {
         cf.clone()
-    };
-
-    // 3. precision 模式：直接使用 PrecisionDomain（绕过路由器）
-    if precision.is_some() {
-        if let Some(cached) = cache.get(&cache_cf) {
-            return Ok((cached, "precision".to_string(), true, precision));
-        }
-        let domain = build_precision_domain();
-        // 3.1 求值前超时检查点：domain::evaluate 是最耗时的操作，提前检查避免启动已超时的计算
-        check_elapsed(start, ctx.timeout)?;
-        let result = domain.evaluate(&canonical_ast, ctx)?;
-        // 3.2 求值后超时检查点：捕获慢操作（如大数幂运算）
-        check_elapsed(start, ctx.timeout)?;
-        cache.insert(&cache_cf, &Ok(result.clone()));
-        return Ok((result, "precision".to_string(), false, precision));
     }
+}
 
-    // 4. 常规模式：路由器分发
+/// precision 模式：直接使用 PrecisionDomain，绕过路由器。
+fn eval_precision_mode(
+    canonical_ast: &AstNode,
+    ctx: &EvalContext,
+    cache: &CacheManager,
+    cache_cf: &CanonicalForm,
+    precision: Option<usize>,
+    start: Instant,
+) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
+    // 缓存命中
+    if let Some(cached) = cache.get(cache_cf) {
+        return Ok((cached, "precision".to_string(), true, precision));
+    }
+    // 缓存未命中：求值 + 超时检查
+    let domain = build_precision_domain();
+    check_elapsed(start, ctx.timeout)?;
+    let result = domain.evaluate(canonical_ast, ctx)?;
+    check_elapsed(start, ctx.timeout)?;
+    cache.insert(cache_cf, &Ok(result.clone()));
+    Ok((result, "precision".to_string(), false, precision))
+}
+
+/// 常规模式：路由器分发 + 缓存查询 + 格式化精度提取。
+fn eval_regular_mode(
+    canonical_ast: &AstNode,
+    ctx: &EvalContext,
+    cache: &CacheManager,
+    cache_cf: &CanonicalForm,
+    start: Instant,
+) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     let router = build_default_router();
 
-    // 5. 缓存查询
-    if let Some(cached) = cache.get(&cache_cf) {
-        let domain = router.route(&canonical_ast)?;
-        let fmt_prec = extract_format_precision(&canonical_ast);
+    // 缓存命中
+    if let Some(cached) = cache.get(cache_cf) {
+        let domain = router.route(canonical_ast)?;
+        let fmt_prec = extract_format_precision(canonical_ast);
         return Ok((cached, domain.domain_name().to_string(), true, fmt_prec));
     }
 
-    // 6. 路由 + 求值
-    let domain = router.route(&canonical_ast)?;
-    // 6.1 求值前超时检查点
+    // 缓存未命中：路由 + 求值 + 超时检查
+    let domain = router.route(canonical_ast)?;
     check_elapsed(start, ctx.timeout)?;
-    let result = domain.evaluate(&canonical_ast, ctx)?;
-    // 6.2 求值后超时检查点
+    let result = domain.evaluate(canonical_ast, ctx)?;
     check_elapsed(start, ctx.timeout)?;
-
-    // 7. 写入缓存（仅 Ok 结果）
-    cache.insert(&cache_cf, &Ok(result.clone()));
-
-    // 8. 提取格式化精度（precision(N, expr) 的 N）
-    let fmt_prec = extract_format_precision(&canonical_ast);
+    cache.insert(cache_cf, &Ok(result.clone()));
+    let fmt_prec = extract_format_precision(canonical_ast);
     Ok((result, domain.domain_name().to_string(), false, fmt_prec))
 }
 
@@ -467,5 +492,126 @@ mod tests {
             "expired should return Timeout error, got {:?}",
             result
         );
+    }
+
+    // ===== T019: evaluate 三阶段分发回归测试（Phase 6 Red）=====
+    //
+    // 目的：重构 evaluate（cyc=25 → ≤15）前后行为不变。
+    // 覆盖三阶段：
+    //   1. 输入校验（timeout=0 / precision > MAX / parse 错误）
+    //   2. 执行分发（precision 模式 miss+hit / 常规模式 miss+hit / 多域路由）
+    //   3. 输出格式化（format_precision 提取 / cache 写入）
+    #[test]
+    fn test_evaluate_three_phases() {
+        // ----- 阶段 1: 输入校验 -----
+        // 1a. timeout=0 → 立即超时
+        {
+            let cache = CacheManager::new();
+            let mut ctx = EvalContext::new();
+            ctx.timeout = Duration::ZERO;
+            let r = evaluate("1+1", &ctx, None, &cache);
+            assert!(matches!(r, Err(ref e) if e.kind == ErrorKind::Timeout));
+        }
+        // 1b. precision > MAX_PRECISION → 拒绝
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let r = evaluate("1/3", &ctx, Some(MAX_PRECISION + 1), &cache);
+            assert!(r.is_err());
+        }
+        // 1c. parse 错误传播
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let r = evaluate("(1+2", &ctx, None, &cache);
+            assert!(r.is_err());
+        }
+
+        // ----- 阶段 2: 执行分发 -----
+        // 2a. precision 模式 miss → 计算并缓存
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let (r, domain, hit, fmt) = evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+            assert_eq!(r, EvalResult::BigInt(num_bigint::BigInt::from(5)));
+            assert_eq!(domain, "precision");
+            assert!(!hit);
+            assert_eq!(fmt, Some(5));
+        }
+        // 2b. precision 模式 hit → 返回缓存
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let _ = evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+            let (r, domain, hit, fmt) = evaluate("2+3", &ctx, Some(5), &cache).unwrap();
+            assert_eq!(r, EvalResult::BigInt(num_bigint::BigInt::from(5)));
+            assert_eq!(domain, "precision");
+            assert!(hit);
+            assert_eq!(fmt, Some(5));
+        }
+        // 2c. 常规模式 miss → 路由到 arithmetic
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let (r, domain, hit, fmt) = evaluate("2+3", &ctx, None, &cache).unwrap();
+            assert_eq!(r, EvalResult::Scalar(5.0));
+            assert_eq!(domain, "arithmetic");
+            assert!(!hit);
+            assert_eq!(fmt, None);
+        }
+        // 2d. 常规模式 hit → 返回缓存
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let _ = evaluate("2+3", &ctx, None, &cache).unwrap();
+            let (r, domain, hit, fmt) = evaluate("2+3", &ctx, None, &cache).unwrap();
+            assert_eq!(r, EvalResult::Scalar(5.0));
+            assert_eq!(domain, "arithmetic");
+            assert!(hit);
+            assert_eq!(fmt, None);
+        }
+        // 2e. 多域路由：number_theory
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let (r, domain, _, _) = evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
+            assert_eq!(r, EvalResult::Scalar(6.0));
+            assert_eq!(domain, "number_theory");
+        }
+        // 2f. 多域路由：combinatorics
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let (r, domain, _, _) = evaluate("C(10,3)", &ctx, None, &cache).unwrap();
+            assert_eq!(r, EvalResult::Scalar(120.0));
+            assert_eq!(domain, "combinatorics");
+        }
+
+        // ----- 阶段 3: 输出格式化 -----
+        // 3a. precision(N, expr) → fmt_prec = Some(N)
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let (r, domain, _, fmt) = evaluate("precision(5, 1/3)", &ctx, None, &cache).unwrap();
+            let _ = r;
+            let _ = domain;
+            assert_eq!(fmt, Some(5));
+        }
+        // 3b. 常规表达式 → fmt_prec = None
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let (_, _, _, fmt) = evaluate("sin(0)", &ctx, None, &cache).unwrap();
+            assert_eq!(fmt, None);
+        }
+        // 3c. 缓存写入验证：miss 后第二次应 hit
+        {
+            let cache = CacheManager::new();
+            let ctx = EvalContext::new();
+            let (_, _, hit1, _) = evaluate("6*7", &ctx, None, &cache).unwrap();
+            assert!(!hit1);
+            let (_, _, hit2, _) = evaluate("6*7", &ctx, None, &cache).unwrap();
+            assert!(hit2);
+        }
     }
 }
