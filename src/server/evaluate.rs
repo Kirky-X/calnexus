@@ -70,7 +70,7 @@ pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
     }
 }
 
-/// `ErrorKind` → 协议层诊断前缀（变体名字面量，与旧 `ErrorResponse.kind` 的 `{:?}` 格式一致）。
+/// `ErrorKind` → 协议层诊断前缀（变体名字面量，作为 `ApiError::InvalidInput` message 前缀保留可诊断性）。
 fn error_kind_prefix(kind: ErrorKind) -> &'static str {
     match kind {
         ErrorKind::Parse => "Parse",

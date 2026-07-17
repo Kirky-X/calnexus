@@ -8,7 +8,6 @@
 use super::ServerError;
 use axum::extract::DefaultBodyLimit;
 use axum::Router;
-use std::future::Future;
 
 /// 请求体大小上限（64KB，T016 安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
@@ -78,12 +77,6 @@ impl HttpServer {
     }
 }
 
-impl super::ServerAdapter for HttpServer {
-    fn start(&self) -> impl Future<Output = Result<(), ServerError>> + Send {
-        self.start_inner()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,13 +116,5 @@ mod tests {
         let result = server.start_inner().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ServerError::Http(_)));
-    }
-
-    #[tokio::test]
-    async fn test_http_server_adapter_start_bind_error() {
-        use crate::server::ServerAdapter;
-        let server = HttpServer::new().with_addr("127.0.0.1:99999");
-        let result = server.start().await;
-        assert!(result.is_err());
     }
 }

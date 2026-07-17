@@ -11,8 +11,6 @@
 //! - `mcp` feature：启用 MCP server（`evaluate` tool，stdio 传输）
 //! - `server` feature：HTTP + MCP 聚合
 
-use std::future::Future;
-
 mod cache;
 mod evaluate;
 mod types;
@@ -24,18 +22,9 @@ mod mcp;
 
 pub(crate) use cache::shared_cache;
 pub use evaluate::calc_error_to_api_error;
-pub use types::{ErrorDetail, ErrorResponse, EvaluateRequest, EvaluateResponse, ServerError};
+pub use types::{EvaluateRequest, EvaluateResponse, ServerError};
 
 #[cfg(feature = "http")]
 pub use http::{build_router, HttpServer};
 #[cfg(feature = "mcp")]
 pub use mcp::{build_mcp_server, McpServer};
-
-/// Server 适配器 trait：统一 HTTP/MCP server 的启动接口。
-///
-/// `start()` 返回 `Send` Future，可在 tokio multi-thread runtime 内 spawn。
-/// 同步入口由 `run()` 方法提供（内部创建 tokio runtime 阻塞运行）。
-pub trait ServerAdapter {
-    /// 启动 server，阻塞直到 server 停止或出错。
-    fn start(&self) -> impl Future<Output = Result<(), ServerError>> + Send;
-}

@@ -7,7 +7,6 @@
 
 use super::ServerError;
 use sdforge::mcp::SdForgeMcpServer;
-use std::future::Future;
 
 /// 构建 CalNexus MCP server：`init_all_plugins()` + `sdforge::mcp::build()`。
 ///
@@ -72,12 +71,6 @@ impl McpServer {
             .await
             .map_err(|e| ServerError::Mcp(format!("stdio serve error: {}", e)))?;
         Ok(())
-    }
-}
-
-impl super::ServerAdapter for McpServer {
-    fn start(&self) -> impl Future<Output = Result<(), ServerError>> + Send {
-        self.start_inner()
     }
 }
 

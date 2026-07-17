@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Server 接口层 DTO：请求/响应类型 + 错误响应 + EvalResult→JSON 转换。
+//! Server 接口层 DTO：请求/响应类型 + EvalResult→JSON 转换。
 //!
 //! spec.md R-sdforge-002/R-sdforge-003 定义了 HTTP/MCP 的请求/响应契约：
 //! - Request: `{"expr":"2+3","vars":{"x":1.0},"precision":null}`
 //! - Response: `{"result":5,"domain":"arithmetic","cache":"miss"}`
-//! - Error: `{"error":{"kind":"Parse","message":"...","exit_code":1}}`
+//! - Error: `ApiError`（InvalidInput→400 / ValidationError→422），映射见 `evaluate::calc_error_to_api_error`
 
-use crate::core::{CalcError, EvalContext, EvalResult, MAX_PRECISION};
+use crate::core::{EvalContext, EvalResult, MAX_PRECISION};
 use crate::domains::format_bigrational;
 use sdforge::error::ApiError;
 use std::collections::HashMap;
@@ -40,25 +40,6 @@ pub struct EvaluateResponse {
     pub cache: String,
 }
 
-/// HTTP 错误响应包装。
-///
-/// 序列化 JSON：`{"error":{"kind":"Parse","message":"...","exit_code":1}}`
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ErrorResponse {
-    pub error: ErrorDetail,
-}
-
-/// 错误详情。
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ErrorDetail {
-    /// 错误类别（"Parse"/"Eval"/"Overflow"/"DivisionByZero"/"Domain"/"Depth"/"NaNOrInf"/"UndefinedSymbol"/"Timeout"/"Usage"）。
-    pub kind: String,
-    /// 错误消息。
-    pub message: String,
-    /// 退出码（0=成功, 1=计算错误, 2=用法错误, 3=超时）。
-    pub exit_code: i32,
-}
-
 /// Server 启动错误。
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -68,9 +49,6 @@ pub enum ServerError {
     /// MCP server 启动/运行错误。
     #[error("MCP server error: {0}")]
     Mcp(String),
-    /// 请求校验错误（协议无关，HTTP/MCP 共用）。
-    #[error("Validation error: {0}")]
-    Validation(String),
 }
 
 impl EvaluateRequest {
@@ -86,6 +64,7 @@ impl EvaluateRequest {
     /// 校验请求安全约束。
     ///
     /// - `vars` 键数 ≤ `MAX_VARS`（1024）：防止内存耗尽攻击
+    /// - `vars` 值必须有限（拒绝 NaN/Infinity）：输入值合法性
     /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
     ///
     /// 违反约束时返回 `Err(ApiError::validation(...))`（HTTP 422 / MCP VALIDATION_ERROR，
@@ -99,6 +78,15 @@ impl EvaluateRequest {
             return Err(ApiError::validation(
                 "vars",
                 format!("size {} exceeds limit {}", self.vars.len(), MAX_VARS),
+            ));
+        }
+        // NaN/Infinity 不被 JSON 标准支持，serde_json 默认在反序列化层拦截；
+        // 此处显式校验确保 validate() 自包含，不依赖反序列化层隐式行为
+        // （防御未来 JSON 库切换 / 测试直接构造 struct 的路径）。
+        if self.vars.values().any(|v| !v.is_finite()) {
+            return Err(ApiError::validation(
+                "vars",
+                "values must be finite (NaN/Infinity not allowed)",
             ));
         }
         if let Some(p) = self.precision {
@@ -142,18 +130,6 @@ impl EvaluateResponse {
                 "hit".to_string()
             } else {
                 "miss".to_string()
-            },
-        }
-    }
-}
-
-impl From<&CalcError> for ErrorResponse {
-    fn from(e: &CalcError) -> Self {
-        Self {
-            error: ErrorDetail {
-                kind: format!("{:?}", e.kind),
-                message: e.message.clone(),
-                exit_code: e.kind.exit_code(),
             },
         }
     }
@@ -383,36 +359,6 @@ mod tests {
         assert!(json.contains(r#""result":["2+9=11","11*7=77"]"#));
     }
 
-    // === ErrorResponse 序列化 ===
-
-    #[test]
-    fn test_error_response_parse_error() {
-        let err = CalcError::parse("unexpected token '@'");
-        let resp = ErrorResponse::from(&err);
-        let json = serde_json::to_string(&resp).unwrap();
-        assert!(json.contains(r#""kind":"Parse""#));
-        assert!(json.contains(r#""message":"unexpected token '@'""#));
-        assert!(json.contains(r#""exit_code":1"#));
-    }
-
-    #[test]
-    fn test_error_response_usage_error() {
-        let err = CalcError::usage("invalid --var");
-        let resp = ErrorResponse::from(&err);
-        let json = serde_json::to_string(&resp).unwrap();
-        assert!(json.contains(r#""kind":"Usage""#));
-        assert!(json.contains(r#""exit_code":2"#));
-    }
-
-    #[test]
-    fn test_error_response_timeout_error() {
-        let err = CalcError::timeout();
-        let resp = ErrorResponse::from(&err);
-        let json = serde_json::to_string(&resp).unwrap();
-        assert!(json.contains(r#""kind":"Timeout""#));
-        assert!(json.contains(r#""exit_code":3"#));
-    }
-
     // === eval_result_to_json 边界情况 ===
 
     #[test]
@@ -458,11 +404,6 @@ mod tests {
         assert_eq!(e.to_string(), "HTTP server error: bind failed");
         let e = ServerError::Mcp("stdio closed".into());
         assert_eq!(e.to_string(), "MCP server error: stdio closed");
-        // Validation 变体协议无关，不含 "HTTP"/"MCP" 字样（diting HIGH-1 回归测试）
-        let e = ServerError::Validation("precision too large".into());
-        assert_eq!(e.to_string(), "Validation error: precision too large");
-        assert!(!e.to_string().contains("HTTP"));
-        assert!(!e.to_string().contains("MCP"));
     }
 
     // === validate() 安全约束 ===
@@ -514,5 +455,26 @@ mod tests {
         let err = req.validate().unwrap_err();
         // 422 VALIDATION_ERROR，field="vars"（spec.md R-sdforge-002 契约）
         assert!(matches!(err, ApiError::ValidationError { .. }));
+    }
+
+    // NaN/Infinity 不被 JSON 标准支持，serde_json 默认在反序列化层拦截；
+    // 此测试直接构造 struct 验证 validate() 自身的有限性校验（不依赖反序列化层）。
+    #[test]
+    fn test_validate_rejects_non_finite_vars() {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut vars = HashMap::new();
+            vars.insert("x".to_string(), bad);
+            let req = EvaluateRequest {
+                expr: "x".into(),
+                vars,
+                precision: None,
+            };
+            let err = req.validate().unwrap_err();
+            // 422 VALIDATION_ERROR，field="vars"（输入值不合法）
+            assert!(
+                matches!(err, ApiError::ValidationError { .. }),
+                "NaN/Infinity vars should be rejected"
+            );
+        }
     }
 }
