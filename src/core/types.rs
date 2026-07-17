@@ -147,6 +147,9 @@ pub enum EvalResult {
     LaTeX(String),
     /// 求值步骤列表（v1.1 新增，ADD §3.4）：每行一步 `lhs op rhs = result`。
     Steps(Vec<String>),
+    /// JSON 复合结果（p4 新增，numerical-linalg）：lu/qr/eig/svd 分解的多矩阵结构化返回。
+    /// 持有 serde_json::Value；eval_result_to_json 直接透传，typed 访问器返回 None。
+    Json(serde_json::Value),
 }
 
 impl EvalResult {
@@ -163,7 +166,8 @@ impl EvalResult {
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -180,7 +184,8 @@ impl EvalResult {
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -197,7 +202,8 @@ impl EvalResult {
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -214,7 +220,8 @@ impl EvalResult {
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -231,7 +238,8 @@ impl EvalResult {
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -248,7 +256,8 @@ impl EvalResult {
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -265,7 +274,8 @@ impl EvalResult {
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -282,7 +292,8 @@ impl EvalResult {
             | EvalResult::Polynomial(_)
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -299,7 +310,8 @@ impl EvalResult {
             | EvalResult::Polynomial(_)
             | EvalResult::ComplexList(_)
             | EvalResult::LaTeX(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -316,7 +328,8 @@ impl EvalResult {
             | EvalResult::Polynomial(_)
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
-            | EvalResult::Steps(_) => None,
+            | EvalResult::Steps(_)
+            | EvalResult::Json(_) => None,
         }
     }
 
@@ -333,7 +346,8 @@ impl EvalResult {
             | EvalResult::Polynomial(_)
             | EvalResult::ComplexList(_)
             | EvalResult::Symbolic(_)
-            | EvalResult::LaTeX(_) => None,
+            | EvalResult::LaTeX(_)
+            | EvalResult::Json(_) => None,
         }
     }
 }
@@ -1635,5 +1649,48 @@ mod tests {
         assert_eq!(steps.as_polynomial(), None);
         assert_eq!(steps.as_complex_list(), None);
         assert_eq!(steps.as_symbolic(), None);
+    }
+
+    // ===== p4 新增 Json 变体测试（numerical-linalg） =====
+
+    #[test]
+    fn eval_result_json_construct_and_match() {
+        let v = serde_json::json!({"values": [1.0, 2.0], "vectors": [[1.0, 0.0], [0.0, 1.0]]});
+        let r = EvalResult::Json(v.clone());
+        let EvalResult::Json(inner) = r else {
+            panic!("expected Json variant")
+        };
+        assert_eq!(inner, v);
+    }
+
+    #[test]
+    fn eval_result_json_clone_and_eq() {
+        let r = EvalResult::Json(serde_json::json!({"a": 1}));
+        assert_eq!(r, r.clone());
+    }
+
+    #[test]
+    fn eval_result_json_serde_roundtrip() {
+        let r = EvalResult::Json(serde_json::json!({"U": [[1.0]], "S": [1.0], "Vt": [[1.0]]}));
+        let s = serde_json::to_string(&r).expect("serialize");
+        let r2: EvalResult = serde_json::from_str(&s).expect("deserialize");
+        assert_eq!(r, r2);
+    }
+
+    #[test]
+    fn eval_result_json_returns_none_from_typed_accessors() {
+        // Json 是复合结果，所有 typed 访问器（as_scalar 等）返回 None
+        let r = EvalResult::Json(serde_json::json!({"a": 1}));
+        assert_eq!(r.as_scalar(), None);
+        assert_eq!(r.as_complex(), None);
+        assert_eq!(r.as_matrix(), None);
+        assert_eq!(r.as_bigint(), None);
+        assert_eq!(r.as_bigrational(), None);
+        assert_eq!(r.as_vector(), None);
+        assert_eq!(r.as_polynomial(), None);
+        assert_eq!(r.as_complex_list(), None);
+        assert_eq!(r.as_symbolic(), None);
+        assert_eq!(r.as_latex(), None);
+        assert_eq!(r.as_steps(), None);
     }
 }

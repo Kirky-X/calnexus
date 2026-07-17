@@ -328,6 +328,9 @@ pub fn format_latex(
         }
         EvalResult::LaTeX(s) => s.clone(),
         EvalResult::Steps(v) => v.join(" \\to "),
+        // Json 是结构化复合结果（lu/qr/eig/svd 分解），LaTeX 无标准矩阵分解表示形式；
+        // 主要走 --json 输出，此处 fallback 输出 JSON 字符串。
+        EvalResult::Json(v) => v.to_string(),
     }
 }
 

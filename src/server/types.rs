@@ -149,6 +149,7 @@ impl EvaluateResponse {
 /// - `Symbolic(s)` → String
 /// - `LaTeX(s)` → String
 /// - `Steps(v)` → `["...",...]`
+/// - `Json(v)` → v（直接透传 serde_json::Value，p4 numerical-linalg 复合返回）
 fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
     use serde_json::{json, Value};
     match result {
@@ -194,6 +195,7 @@ fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
         EvalResult::Symbolic(s) => Value::from(s.as_str()),
         EvalResult::LaTeX(s) => Value::from(s.as_str()),
         EvalResult::Steps(v) => Value::Array(v.iter().map(|s| Value::from(s.as_str())).collect()),
+        EvalResult::Json(v) => v.clone(),
     }
 }
 
