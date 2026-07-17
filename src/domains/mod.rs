@@ -11,6 +11,8 @@ mod complex;
 mod factory;
 mod matrix;
 mod number_theory;
+#[cfg(feature = "numerical")]
+mod numerical;
 mod polynomial;
 mod precision;
 mod scientific;
