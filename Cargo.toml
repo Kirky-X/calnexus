@@ -18,9 +18,9 @@ cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
-http = ["dep:sdforge", "sdforge/http", "dep:axum", "dep:serde_json", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time"]
+http = ["dep:sdforge", "sdforge/http", "dep:axum", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
-mcp = ["dep:sdforge", "sdforge/mcp", "dep:serde_json", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
+mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # FX: 汇率换算（P2 实现）
 fx = []
 # Numerical: 高级数值计算（eig/SVD 等，P3 实现）
@@ -60,8 +60,8 @@ icu = { version = "2", default-features = false, features = ["compiled_data"], o
 sdforge = { version = "0.4", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
-# serde_json: JSON 序列化（server 模块用，http/mcp feature 启用）
-serde_json = { version = "1", default-features = false, features = ["std"], optional = true }
+# serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
+serde_json = { version = "1", default-features = false, features = ["std"] }
 # anyhow: 错误上下文（sdforge 0.4.2 #[forge] MCP codegen 硬依赖 anyhow::anyhow!/anyhow::Error；仅 mcp feature 启用）
 anyhow = { version = "1", default-features = false, features = ["std"], optional = true }
 
