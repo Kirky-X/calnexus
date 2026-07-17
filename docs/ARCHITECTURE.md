@@ -96,7 +96,7 @@ flowchart LR
 - **CLI** (`src/cli.rs`)：clap 命令行入口，`--latex`/`--steps`/`--canonical`/`--json`/`--precision` 等标志
 - **REPL** (`src/repl.rs`)：rustyline 交互式求值
 - **Batch** (`src/batch.rs`)：批处理文件求值
-- **Server** (`src/server/`)：HTTP + MCP 双协议服务（基于 sdforge 0.4）
+- **Server** (`src/server/`)：HTTP + MCP 双协议服务，`#[forge]` 声明式封装（sdforge 0.4.2）——单个 async fn 同时生成 HTTP `POST /api/v1/evaluate` 路由 + MCP `evaluate` tool，错误响应统一 `ApiError` 契约（`InvalidInput`→400 / `ValidationError`→422 / `ServiceUnavailable`→503）
 - **Output** (`src/output/`)：LaTeX / 步骤 / 规范形式三种格式化器
 
 ## 2. 循环依赖修复策略（P2 Phase 1-3）

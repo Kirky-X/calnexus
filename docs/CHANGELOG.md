@@ -5,6 +5,35 @@
 
 ## [Unreleased]
 
+### P3: sdforge `#[forge]` 声明式接口迁移（破坏性）
+
+> **破坏性变更**：HTTP/MCP 错误响应从旧 `ErrorResponse{error:{kind,message,exit_code}}`
+> 改为 sdforge 标准 `ApiError`（`{type:"InvalidInput"|"ValidationError"|...,message,...}`）。
+> 无向后兼容层（用户决策：接受 sdforge 标准格式）。
+
+#### 变更
+
+- `#[forge]` 声明式封装（`src/server/evaluate.rs`）：单个 `#[forge]` async fn 同时生成
+  HTTP `POST /api/v1/evaluate` 路由 + MCP `evaluate` tool，替代 p1 手写
+  `inventory::submit!` + `SdForgeTool` impl + axum handler + `preserve_*` 链接器 hack
+- 移除手写封装：删 `EvaluateTool` / `SdForgeTool` impl / `evaluate_handler` /
+  `evaluate_route_*` / `preserve_http_inventory` / `preserve_mcp_inventory` + 全部单测
+- 移除废弃代码：删 `ErrorResponse` / `ErrorDetail` / `From<&CalcError>` impl + 3 序列化单测
+  （被 `ApiError` 取代）；删 `ServerAdapter` trait（死抽象，0 生产消费方，cli 直接调 `.run()`）
+- 错误契约统一：`calc_error_to_api_error(CalcError) -> ApiError`
+  （计算错误→`InvalidInput` 400 / `Timeout`→`ServiceUnavailable` 503 / validate 超限→`ValidationError` 422）
+- 依赖：`sdforge` / `sdforge-macros` 0.4.2；新增 `anyhow`（mcp feature 门控，
+  `#[forge]` MCP codegen 硬依赖 `anyhow::anyhow!`）；`[lints.rust] unexpected_cfgs`
+  声明 `openapi` 合法值（消除 `#[forge]` 宏 `#[cfg(feature="openapi")]` 警告）
+
+#### 测试
+
+- HTTP 集成 7（4 成功 + 3 错误：calc error / precision 超限 / vars 超限）
+- MCP 集成 8（tool_list + 4 成功 + 3 错误 + null invalid input）
+- 全量回归 `cargo test --features cli,server` 全绿（lib 1493 + integration）+ clippy 零警告
+
+---
+
 v1.1 项目治理收尾：归档 openspec 变更、版权头、依赖瘦身、文档体系、clippy 全目标零告警。
 
 ### 新增
