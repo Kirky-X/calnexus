@@ -13,16 +13,15 @@ mod batch;
 #[cfg(feature = "cli")]
 mod cli;
 mod core;
-mod domains;
-mod evaluator;
+pub mod domains;
 mod i18n;
 mod output;
 #[cfg(feature = "cli")]
 mod repl;
 #[cfg(any(feature = "http", feature = "mcp"))]
 mod server;
-mod symbolic;
 
+pub use core::evaluate;
 pub use core::{
     parse, AstCanonicalizer, AstNode, BinaryOp, CacheKeyGen, CacheManager, CalcError,
     CalculationDomain, CanonicalForm, DomainRouter, ErrorKind, EvalContext, EvalResult, Span,
@@ -30,11 +29,10 @@ pub use core::{
 };
 pub use domains::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
-    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain,
+    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
+    VectorDomain,
 };
-pub use evaluator::evaluate;
 pub use i18n::{I18n, Lang};
-pub use symbolic::SymbolicDomain;
 
 #[cfg(feature = "cli")]
 pub use cli::run;

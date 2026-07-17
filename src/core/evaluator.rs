@@ -5,18 +5,13 @@
 //! 本模块为顶层模块（不受 feature gate），CLI、REPL、batch、HTTP/MCP server 共用。
 //! 从 `src/cli.rs` 移出，使 `http`/`mcp` feature 在不启用 `cli` 时也能调用 `evaluate`。
 
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::core::{
-    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CalculationDomain, CanonicalForm,
-    DomainRouter, EvalContext, EvalResult, MAX_PRECISION,
+    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CanonicalForm, EvalContext,
+    EvalResult, MAX_PRECISION,
 };
-use crate::domains::{
-    ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
-    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, VectorDomain,
-};
-use crate::SymbolicDomain;
+use crate::domains::{build_default_router, build_precision_domain};
 
 /// 全链路求值：parse → canonicalize → cache → route → evaluate。
 ///
@@ -83,7 +78,7 @@ pub fn evaluate(
         if let Some(cached) = cache.get(&cache_cf) {
             return Ok((cached, "precision".to_string(), true, precision));
         }
-        let domain = PrecisionDomain;
+        let domain = build_precision_domain();
         // 3.1 求值前超时检查点：domain::evaluate 是最耗时的操作，提前检查避免启动已超时的计算
         check_elapsed(start, ctx.timeout)?;
         let result = domain.evaluate(&canonical_ast, ctx)?;
@@ -149,28 +144,6 @@ fn extract_format_precision(ast: &AstNode) -> Option<usize> {
         }
     }
     None
-}
-
-/// 构建默认路由器：注册全部 11 个计算域（含 SymbolicDomain）。
-/// 供 `evaluate` 与 REPL 共用。进程级缓存（OnceLock），只构建一次，
-/// 避免每次请求重复分配 11 个 Box。
-pub(crate) fn build_default_router() -> &'static DomainRouter {
-    static DEFAULT_ROUTER: OnceLock<DomainRouter> = OnceLock::new();
-    DEFAULT_ROUTER.get_or_init(|| {
-        let mut router = DomainRouter::new();
-        router.register(Box::new(PrecisionDomain));
-        router.register(Box::new(ComplexDomain));
-        router.register(Box::new(MatrixDomain));
-        router.register(Box::new(VectorDomain));
-        router.register(Box::new(SymbolicDomain));
-        router.register(Box::new(PolynomialDomain));
-        router.register(Box::new(NumberTheoryDomain));
-        router.register(Box::new(CombinatoricsDomain));
-        router.register(Box::new(ScientificDomain));
-        router.register(Box::new(StatisticsDomain));
-        router.register(Box::new(ArithmeticDomain));
-        router
-    })
 }
 
 #[cfg(test)]

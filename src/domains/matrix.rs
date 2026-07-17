@@ -296,7 +296,11 @@ impl MatrixDomain {
     }
 
     /// transpose(m)：矩阵转置。
-    fn eval_transpose(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
+    fn eval_transpose(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
                 "transpose() requires exactly 1 argument, got {}",

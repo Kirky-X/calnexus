@@ -14,8 +14,8 @@
 //! - `:clear` — 清屏
 
 use crate::cli::format_result;
+use crate::core::evaluate;
 use crate::core::{EvalContext, EvalResult};
-use crate::evaluator::evaluate;
 use rustyline::completion::Completer;
 use rustyline::{Editor, Helper, Highlighter, Hinter, Result as RlResult, Validator};
 

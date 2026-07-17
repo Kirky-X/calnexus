@@ -647,29 +647,11 @@ mod tests {
     }
 
     // ===== v0.8 新增域路由测试（TG6）=====
-
-    use crate::domains::ArithmeticDomain;
-    use crate::domains::CombinatoricsDomain;
-    use crate::domains::NumberTheoryDomain;
-    use crate::domains::PolynomialDomain;
-    use crate::domains::StatisticsDomain;
-    use crate::domains::VectorDomain;
-
-    /// v0.8 全域路由器：注册全部 10 个域。
-    fn v08_full_router() -> DomainRouter {
-        let mut router = DomainRouter::new();
-        router.register(Box::new(crate::domains::ComplexDomain));
-        router.register(Box::new(crate::domains::MatrixDomain));
-        router.register(Box::new(crate::domains::PrecisionDomain));
-        router.register(Box::new(VectorDomain));
-        router.register(Box::new(NumberTheoryDomain));
-        router.register(Box::new(CombinatoricsDomain));
-        router.register(Box::new(PolynomialDomain));
-        router.register(Box::new(crate::domains::ScientificDomain));
-        router.register(Box::new(StatisticsDomain));
-        router.register(Box::new(ArithmeticDomain));
-        router
-    }
+    //
+    // H2 修复（架构审查）：删除原 v08_full_router() 本地构造函数，改用
+    // crate::domains::build_default_router()，消除 src/core 测试代码对 11 个
+    // 具体域类型的硬编码引用（霰弹手术风险：新增域需同步改两份注册清单）。
+    // priority 测试改用全路径构造，彻底消除测试模块的 use crate::domains::*。
 
     // ----- 6.1 验证 collect_function_names_recursive 已支持 FunctionCall 递归 -----
     // 已在 test_collect_function_names_unary_op_branch 和既有测试中覆盖，此处不再重复。
@@ -678,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_v08_route_number_theory() {
-        let router = v08_full_router();
+        let router = crate::domains::build_default_router();
         let ast = parse("gcd(12,18)").unwrap();
         let domain = router.route(&ast).unwrap();
         assert_eq!(domain.domain_name(), "number_theory");
@@ -686,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_v08_route_combinatorics() {
-        let router = v08_full_router();
+        let router = crate::domains::build_default_router();
         let ast = parse("P(5,2)").unwrap();
         let domain = router.route(&ast).unwrap();
         assert_eq!(domain.domain_name(), "combinatorics");
@@ -694,7 +676,7 @@ mod tests {
 
     #[test]
     fn test_v08_route_vector() {
-        let router = v08_full_router();
+        let router = crate::domains::build_default_router();
         let ast = parse("dot([1,2],[3,4])").unwrap();
         let domain = router.route(&ast).unwrap();
         assert_eq!(domain.domain_name(), "vector");
@@ -702,7 +684,7 @@ mod tests {
 
     #[test]
     fn test_v08_route_polynomial() {
-        let router = v08_full_router();
+        let router = crate::domains::build_default_router();
         let ast = parse("poly_add(x+1,x-1)").unwrap();
         let domain = router.route(&ast).unwrap();
         assert_eq!(domain.domain_name(), "polynomial");
@@ -713,8 +695,8 @@ mod tests {
     #[test]
     fn test_v08_priority_number_theory_equals_combinatorics() {
         // NumberTheory(25) 与 Combinatorics(25) 同级
-        let nt = NumberTheoryDomain;
-        let cb = CombinatoricsDomain;
+        let nt = crate::domains::NumberTheoryDomain;
+        let cb = crate::domains::CombinatoricsDomain;
         assert_eq!(nt.priority(), 25);
         assert_eq!(cb.priority(), 25);
     }
@@ -722,8 +704,8 @@ mod tests {
     #[test]
     fn test_v08_priority_vector_higher_than_polynomial() {
         // Vector(30) > Polynomial(25)
-        let vec = VectorDomain;
-        let pol = PolynomialDomain;
+        let vec = crate::domains::VectorDomain;
+        let pol = crate::domains::PolynomialDomain;
         assert!(vec.priority() > pol.priority());
         assert_eq!(vec.priority(), 30);
         assert_eq!(pol.priority(), 25);
@@ -734,7 +716,7 @@ mod tests {
     #[test]
     fn test_v08_disambiguate_mod_pow_to_number_theory() {
         // mod_pow 路由至 NumberTheory 而非 Arithmetic
-        let router = v08_full_router();
+        let router = crate::domains::build_default_router();
         let ast = parse("mod_pow(2,10,1000)").unwrap();
         let domain = router.route(&ast).unwrap();
         assert_eq!(domain.domain_name(), "number_theory");
@@ -743,7 +725,7 @@ mod tests {
     #[test]
     fn test_v08_disambiguate_mean_to_statistics() {
         // mean([1,2,3]) 路由至 Statistics 而非 Vector
-        let router = v08_full_router();
+        let router = crate::domains::build_default_router();
         let ast = parse("mean([1,2,3])").unwrap();
         let domain = router.route(&ast).unwrap();
         assert_eq!(domain.domain_name(), "statistics");
@@ -754,7 +736,7 @@ mod tests {
     #[test]
     fn test_v08_unknown_function_error() {
         // unknown_func(1) → DomainError 且消息含函数名
-        let router = v08_full_router();
+        let router = crate::domains::build_default_router();
         let ast = parse("unknown_func(1)").unwrap();
         let result = router.route(&ast);
         let e = result.err().expect("expected error");

@@ -11,12 +11,14 @@
 mod cache;
 mod canonicalizer;
 mod domain;
+mod evaluator;
 mod parser;
 mod types;
 
 pub use cache::{CacheKeyGen, CacheManager};
 pub use canonicalizer::AstCanonicalizer;
 pub use domain::{CalculationDomain, DomainRouter};
+pub use evaluator::evaluate;
 pub use parser::parse;
 #[cfg(feature = "cli")]
 pub(crate) use parser::MAX_EXPR_LEN;

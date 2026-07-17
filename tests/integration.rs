@@ -1402,3 +1402,102 @@ fn test_v10_roots_quartic_repeated() {
     let v = result.unwrap().as_vector().unwrap().clone();
     assert!(!v.is_empty());
 }
+
+// ===== P2: 公开 API 稳定性测试（模块移动后不应破坏） =====
+//
+// T002: 验证 evaluator/symbolic 模块移动到 core/domains 后，
+// calnexus:: 公开 API 导出列表保持不变。编译时验证：若 re-export
+// 断裂，本测试无法编译。
+
+#[test]
+fn test_public_api_unchanged_after_move() {
+    // 验证 core 层导出（evaluator 移入 core 后应通过 calnexus::evaluate 访问）。
+    // clippy::type_complexity：把 evaluate 函数指针类型提取为 type alias，避免内联复杂类型。
+    type EvaluateFn =
+        fn(
+            &str,
+            &calnexus::EvalContext,
+            Option<usize>,
+            &calnexus::CacheManager,
+        )
+            -> Result<(calnexus::EvalResult, String, bool, Option<usize>), calnexus::CalcError>;
+    let _parse: fn(&str) -> Result<calnexus::AstNode, calnexus::CalcError> = calnexus::parse;
+    let _evaluate: EvaluateFn = calnexus::evaluate;
+    let _: calnexus::DomainRouter = calnexus::DomainRouter::new();
+    let _: calnexus::AstCanonicalizer = calnexus::AstCanonicalizer;
+    let _: calnexus::CacheManager = calnexus::CacheManager::new();
+
+    // 验证 domains 层导出（symbolic 移入 domains 后应通过 calnexus::SymbolicDomain 访问）。
+    // clippy::default_constructed_unit_structs：unit struct 直接构造，不调 ::default()。
+    let _: calnexus::SymbolicDomain = calnexus::SymbolicDomain;
+    let _: calnexus::ArithmeticDomain = calnexus::ArithmeticDomain;
+    let _: calnexus::CombinatoricsDomain = calnexus::CombinatoricsDomain;
+    let _: calnexus::ComplexDomain = calnexus::ComplexDomain;
+    let _: calnexus::MatrixDomain = calnexus::MatrixDomain;
+    let _: calnexus::NumberTheoryDomain = calnexus::NumberTheoryDomain;
+    let _: calnexus::PolynomialDomain = calnexus::PolynomialDomain;
+    let _: calnexus::PrecisionDomain = calnexus::PrecisionDomain;
+    let _: calnexus::ScientificDomain = calnexus::ScientificDomain;
+    let _: calnexus::StatisticsDomain = calnexus::StatisticsDomain;
+    let _: calnexus::VectorDomain = calnexus::VectorDomain;
+
+    // 验证 i18n 导出（I18n 非 unit struct，仍用 ::default()）
+    let _: calnexus::I18n = calnexus::I18n::default();
+
+    // 运行时验证：evaluate 函数可正常调用
+    let ctx = calnexus::EvalContext::new();
+    let cache = calnexus::CacheManager::new();
+    let (result, domain, cache_hit, fmt_prec) =
+        calnexus::evaluate("2+3", &ctx, None, &cache).unwrap();
+    assert_eq!(result, calnexus::EvalResult::Scalar(5.0));
+    assert_eq!(domain, "arithmetic");
+    assert!(!cache_hit);
+    assert_eq!(fmt_prec, None);
+}
+
+// ===== P2 T006: SymbolicDomain 通过 domains 命名空间访问测试（Red → Green） =====
+//
+// R-domains-001 验收标准：`calnexus::SymbolicDomain` 和 `calnexus::domains::SymbolicDomain`
+// 都可访问。Red 阶段：当前 `mod domains` 为私有 mod，`calnexus::domains::SymbolicDomain`
+// 不可访问，本测试应编译失败。Green 阶段（T007）：将 `mod domains` 改为 `pub mod domains`，
+// 并在 `src/domains/mod.rs` 添加 `pub mod symbolic;` + `pub use symbolic::SymbolicDomain;`，
+// 本测试编译并通过。
+
+#[test]
+fn test_symbolic_domain_accessible_via_domains() {
+    // 路径 1：通过 crate 根 re-export 访问（当前已可用）
+    let _: calnexus::SymbolicDomain = calnexus::SymbolicDomain;
+
+    // 路径 2：通过 domains 子模块命名空间访问（Red 阶段编译失败，Green 阶段可用）
+    let _: calnexus::domains::SymbolicDomain = calnexus::domains::SymbolicDomain;
+
+    // 两条路径应指向同一类型
+    fn assert_same_type(_: calnexus::SymbolicDomain) {}
+    assert_same_type(calnexus::domains::SymbolicDomain);
+
+    // 运行时验证：SymbolicDomain 可被注册到 DomainRouter 并处理符号表达式
+    // 注：register 签名接受 Box<dyn CalculationDomain>，编译器自动处理 trait bound，无需 use trait
+    let mut router = calnexus::DomainRouter::new();
+    router.register(Box::new(calnexus::domains::SymbolicDomain));
+    let ctx = calnexus::EvalContext::new();
+    let cache = calnexus::CacheManager::new();
+    // simplify(2*x+3*x) → 5*x
+    let (result, domain, _hit, _fmt) =
+        calnexus::evaluate("simplify(2*x+3*x)", &ctx, None, &cache).unwrap();
+    match result {
+        calnexus::EvalResult::Symbolic(s) => {
+            assert!(
+                s.contains("5"),
+                "expected simplified to contain 5, got: {}",
+                s
+            );
+            assert!(
+                s.contains("x"),
+                "expected simplified to contain x, got: {}",
+                s
+            );
+        }
+        other => panic!("expected Symbolic result, got {:?}", other),
+    }
+    assert_eq!(domain, "symbolic");
+}

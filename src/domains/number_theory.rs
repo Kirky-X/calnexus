@@ -220,9 +220,7 @@ impl NumberTheoryDomain {
                 // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
                 let base_bits = a.bits();
                 check_pow_output_size(base_bits, exp_u64)?;
-                let exp: u32 = exp_u64
-                    .try_into()
-                    .map_err(|_| CalcError::overflow())?;
+                let exp: u32 = exp_u64.try_into().map_err(|_| CalcError::overflow())?;
                 Ok(a.pow(exp))
             }
             BinaryOp::Mod => {

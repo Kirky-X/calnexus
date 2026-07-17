@@ -10,8 +10,8 @@
 //! - 2：用法错误
 //! - 3：超时
 
+use crate::core::evaluate;
 use crate::domains::format_bigrational;
-use crate::evaluator::evaluate;
 use crate::output::{format_canonical, format_latex, generate_steps};
 use crate::{parse, AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult};
 use clap::Parser;
@@ -173,12 +173,7 @@ fn run_canonical_mode(expr: &str, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
 }
 
 /// --latex 和/或 --steps 模式：解析 + 规范化 + 求值 + 格式化输出。
-fn run_latex_steps_mode(
-    expr: &str,
-    ctx: &EvalContext,
-    cli: &Cli,
-    i18n: &crate::i18n::I18n,
-) -> i32 {
+fn run_latex_steps_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
     let ast = match parse(expr) {
         Ok(ast) => ast,
         Err(e) => return handle_error(&e, cli, i18n),
@@ -215,17 +210,15 @@ fn run_latex_steps_mode(
 }
 
 /// 默认模式：求值 + 输出（JSON 或文本）。
-fn run_default_mode(
-    expr: &str,
-    ctx: &EvalContext,
-    cli: &Cli,
-    i18n: &crate::i18n::I18n,
-) -> i32 {
+fn run_default_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
     let cache = CacheManager::new();
     match evaluate(expr, ctx, cli.precision, &cache) {
         Ok((result, domain, cache_hit, fmt_prec)) => {
             if cli.json {
-                println!("{}", format_json_output(&result, &domain, cache_hit, fmt_prec));
+                println!(
+                    "{}",
+                    format_json_output(&result, &domain, cache_hit, fmt_prec)
+                );
             } else {
                 println!("{}", format_result(&result, fmt_prec));
             }

@@ -50,6 +50,10 @@ Desktop.ini
 # specmark workflow directory (rule 30: never commit specmark/)
 /specmark
 **/specmark/
+# codenexus knowledge graph DB (runtime artifact, not source)
+.codenexus/
+# runtime logs
+/logs
 # reference templates
 temp/
 # spec source docs

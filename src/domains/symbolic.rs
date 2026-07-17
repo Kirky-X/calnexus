@@ -334,10 +334,7 @@ fn diff_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> SymbolicExpr {
     } else {
         // f^g = exp(g*ln(f))，导数 = f^g * (g'*ln(f) + g*f'/f)
         SymbolicExpr::Mul(
-            Box::new(SymbolicExpr::Pow(
-                Box::new(f.clone()),
-                Box::new(g.clone()),
-            )),
+            Box::new(SymbolicExpr::Pow(Box::new(f.clone()), Box::new(g.clone()))),
             Box::new(SymbolicExpr::Add(
                 Box::new(SymbolicExpr::Mul(
                     Box::new(diff(g, var)),
@@ -467,11 +464,7 @@ fn integrate_var(name: &str, var: &str) -> Result<SymbolicExpr, CalcError> {
 }
 
 /// 线性性：∫(f + g) dx = ∫f dx + ∫g dx。
-fn integrate_add(
-    f: &SymbolicExpr,
-    g: &SymbolicExpr,
-    var: &str,
-) -> Result<SymbolicExpr, CalcError> {
+fn integrate_add(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
     Ok(SymbolicExpr::Add(
         Box::new(integrate(f, var)?),
         Box::new(integrate(g, var)?),
@@ -479,11 +472,7 @@ fn integrate_add(
 }
 
 /// 线性性：∫(f - g) dx = ∫f dx - ∫g dx。
-fn integrate_sub(
-    f: &SymbolicExpr,
-    g: &SymbolicExpr,
-    var: &str,
-) -> Result<SymbolicExpr, CalcError> {
+fn integrate_sub(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
     Ok(SymbolicExpr::Sub(
         Box::new(integrate(f, var)?),
         Box::new(integrate(g, var)?),
@@ -491,11 +480,7 @@ fn integrate_sub(
 }
 
 /// ∫c*f dx = c*∫f dx（常数提取）；两个非常数之积不支持。
-fn integrate_mul(
-    f: &SymbolicExpr,
-    g: &SymbolicExpr,
-    var: &str,
-) -> Result<SymbolicExpr, CalcError> {
+fn integrate_mul(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
     if let SymbolicExpr::Const(c) = f {
         return Ok(SymbolicExpr::Mul(
             Box::new(SymbolicExpr::Const(*c)),
@@ -514,11 +499,7 @@ fn integrate_mul(
 }
 
 /// ∫x^n dx = x^(n+1)/(n+1)（n ≠ -1）；∫1/x dx = ln|x|。
-fn integrate_pow(
-    f: &SymbolicExpr,
-    g: &SymbolicExpr,
-    var: &str,
-) -> Result<SymbolicExpr, CalcError> {
+fn integrate_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
     if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f, g) {
         if name == var {
             if *n == -1.0 {
@@ -542,11 +523,7 @@ fn integrate_pow(
 }
 
 /// ∫1/x dx = ln|x|（仅支持 Div(Const(1), Var) 形式）。
-fn integrate_div(
-    f: &SymbolicExpr,
-    g: &SymbolicExpr,
-    var: &str,
-) -> Result<SymbolicExpr, CalcError> {
+fn integrate_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
     if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f, g) {
         if *c == 1.0 && name == var {
             return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(

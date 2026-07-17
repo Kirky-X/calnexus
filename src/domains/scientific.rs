@@ -216,11 +216,10 @@ impl ScientificDomain {
     fn eval_asin(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
         let x = self.eval_one_arg(name, args, ctx)?;
         if !(-1.0..=1.0).contains(&x) {
-            return Err(CalcError::domain(format!(
-                "asin requires argument in [-1, 1], got {}",
-                x
-            ))
-            .with_hint("asin domain is [-1, 1]"));
+            return Err(
+                CalcError::domain(format!("asin requires argument in [-1, 1], got {}", x))
+                    .with_hint("asin domain is [-1, 1]"),
+            );
         }
         self.check_finite(x.asin(), name)
     }
@@ -229,11 +228,10 @@ impl ScientificDomain {
     fn eval_acos(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
         let x = self.eval_one_arg(name, args, ctx)?;
         if !(-1.0..=1.0).contains(&x) {
-            return Err(CalcError::domain(format!(
-                "acos requires argument in [-1, 1], got {}",
-                x
-            ))
-            .with_hint("acos domain is [-1, 1]"));
+            return Err(
+                CalcError::domain(format!("acos requires argument in [-1, 1], got {}", x))
+                    .with_hint("acos domain is [-1, 1]"),
+            );
         }
         self.check_finite(x.acos(), name)
     }
@@ -251,7 +249,12 @@ impl ScientificDomain {
     }
 
     /// log10(x)：参数须为正数。
-    fn eval_log10(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+    fn eval_log10(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<f64, CalcError> {
         let x = self.eval_one_arg(name, args, ctx)?;
         if x <= 0.0 {
             return Err(CalcError::domain(format!(
