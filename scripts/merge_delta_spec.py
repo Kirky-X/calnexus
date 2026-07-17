@@ -162,8 +162,8 @@ def _capability_from_title(title: str) -> str:
     if not m:
         return "capability"
     rest = m.group(1)
-    if rest.lower().startswith("spec"):
-        rest = re.sub(r"^spec\s*[—\-:]\s*", "", rest, flags=re.IGNORECASE)
+    # 剥离 "delta spec" 或 "spec" 前缀（delta H1 是 "# Delta Spec: <cap>"，main 是 "# Spec — <cap>"）
+    rest = re.sub(r"^(delta\s+)?spec\s*[—\-:]\s*", "", rest, flags=re.IGNORECASE)
     return rest.strip() or "capability"
 
 
@@ -184,8 +184,10 @@ def merge(main: Spec, delta: Spec, main_existed: bool) -> Spec:
         result.title = main.title
         result.intro = list(main.intro)
     else:
-        result.title = delta.title or "# Spec — capability"
-        cap = _capability_from_title(result.title)
+        # main 不存在（全新能力域 ADD）：从 delta title 推 capability 名，
+        # title 规范化为 main spec 格式 "# Spec — <cap>"（剥离 delta 的 "Delta Spec:" 前缀）
+        cap = _capability_from_title(delta.title)
+        result.title = f"# Spec — {cap}"
         result.intro = [f"> Main spec for capability `{cap}`."]
 
     result.section_order = list(main.section_order)
