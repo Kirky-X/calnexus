@@ -837,7 +837,7 @@ fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64,
 /// 降低主函数圈复杂度。行为与原实现一致：
 /// - `+x / 0` → `+Inf`
 /// - `-x / 0` → `-Inf`
-/// - `0 / 0` → `NaN`（`0.0.signum() == 0.0`，`Inf * 0 == NaN`）
+/// - `0 / 0` → `+Inf`（`0.0.signum() == 1.0`，`Inf * 1.0 == +Inf`）
 fn eval_div(
     l: &SymbolicExpr,
     r: &SymbolicExpr,

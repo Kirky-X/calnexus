@@ -48,3 +48,49 @@ pub(crate) fn build_default_router() -> &'static DomainRouter {
 pub(crate) fn build_precision_domain() -> Box<dyn CalculationDomain> {
     Box::new(PrecisionDomain)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ===== 域优先级测试（从 core/domain.rs 迁移，消除 core → domains 类型依赖）=====
+    //
+    // priority 是 domains 层的属性，测试应在 domains 层进行（规则 25 + DIP）。
+    // 原测试位于 core/domain.rs，直接构造具体域类型，违反 ARCHITECTURE.md §2.3
+    // "core → domains 类型依赖 = 0" 声明。
+
+    #[test]
+    fn test_priority_number_theory_equals_combinatorics() {
+        // NumberTheory(25) 与 Combinatorics(25) 同级
+        let nt = NumberTheoryDomain;
+        let cb = CombinatoricsDomain;
+        assert_eq!(nt.priority(), 25);
+        assert_eq!(cb.priority(), 25);
+    }
+
+    #[test]
+    fn test_priority_vector_higher_than_polynomial() {
+        // Vector(30) > Polynomial(25)
+        let vec = VectorDomain;
+        let pol = PolynomialDomain;
+        assert!(vec.priority() > pol.priority());
+        assert_eq!(vec.priority(), 30);
+        assert_eq!(pol.priority(), 25);
+    }
+
+    #[test]
+    fn test_full_priority_table() {
+        // 完整 priority 表回归测试（防止误改 priority 值导致路由顺序错误）
+        assert_eq!(ArithmeticDomain.priority(), 10);
+        assert_eq!(ScientificDomain.priority(), 20);
+        assert_eq!(StatisticsDomain.priority(), 20);
+        assert_eq!(NumberTheoryDomain.priority(), 25);
+        assert_eq!(CombinatoricsDomain.priority(), 25);
+        assert_eq!(PolynomialDomain.priority(), 25);
+        assert_eq!(PrecisionDomain.priority(), 25);
+        assert_eq!(ComplexDomain.priority(), 30);
+        assert_eq!(MatrixDomain.priority(), 30);
+        assert_eq!(VectorDomain.priority(), 30);
+        assert_eq!(SymbolicDomain.priority(), 30);
+    }
+}

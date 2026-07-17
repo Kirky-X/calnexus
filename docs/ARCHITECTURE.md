@@ -56,21 +56,21 @@ flowchart TD
 
 ### 1.2 L2 — 计算域层 (`src/domains/`)
 
-11 个独立计算域，每个域实现 `CalculationDomain` trait，处理特定类别的数学运算：
+11 个独立计算域，每个域实现 `CalculationDomain` trait，处理特定类别的数学运算（按 priority 升序排列，priority 越高越优先匹配）：
 
 | 域 | priority | 覆盖运算 |
 |----|----------|----------|
 | `ArithmeticDomain` | 10 | 基础四则运算 + 幂 + 取模 |
 | `ScientificDomain` | 20 | 三角/双曲/指数/对数/特殊函数 |
+| `StatisticsDomain` | 20 | 统计函数 |
+| `NumberTheoryDomain` | 25 | 数论（素数/GCD/LCM/斐波那契） |
+| `CombinatoricsDomain` | 25 | 排列/组合/Catalan/Stirling |
+| `PolynomialDomain` | 25 | 多项式运算 |
+| `PrecisionDomain` | 25 | BigRational 高精度求值（绕过路由器） |
 | `ComplexDomain` | 30 | 复数运算 |
 | `MatrixDomain` | 30 | 矩阵运算（nalgebra） |
 | `VectorDomain` | 30 | 向量运算 |
-| `PolynomialDomain` | 30 | 多项式运算 |
-| `NumberTheoryDomain` | 30 | 数论（素数/GCD/LCM/斐波那契） |
-| `CombinatoricsDomain` | 30 | 排列/组合/Catalan/Stirling |
-| `StatisticsDomain` | 30 | 统计函数 |
 | `SymbolicDomain` | 30 | 符号微分/积分/化简/极限/泰勒 |
-| `PrecisionDomain` | 40 | BigRational 高精度求值（绕过路由器） |
 
 **工厂函数**位于 `domains/factory.rs`（规则 25 合规：`mod.rs` 仅含声明与 re-export）：
 - `build_default_router()` — 注册 11 个域到 `DomainRouter`
@@ -135,10 +135,13 @@ flowchart LR
 
 | 指标 | 修复前 | 修复后 | 变化 |
 |------|--------|--------|------|
-| `core` → `domains` 类型依赖 | 11 | 0 | **-100%** |
+| `core` → `domains` 类型依赖（生产+测试代码） | 11 | 0 | **-100%** |
 | `core` → `domains` 函数依赖 | 1 | 2 | +1（抽象入口不可避免） |
 | 总依赖数 | 12 | 2 | **-83%** |
 | 循环依赖 | 存在 | 消除 | ✓ |
+
+> **验证方法**：`grep -rn "crate::domains::.*Domain" src/core/` 返回 0 匹配（生产代码与 `#[cfg(test)]` 测试代码均无具体域类型引用）。`core` 仅通过 `build_default_router()` / `build_precision_domain()` 两个工厂函数抽象入口调用 `domains` 层。
+> priority 测试位于 `domains/factory.rs` 测试模块（priority 是 domains 层属性，应由 domains 层自测）。
 
 ## 3. 复杂度治理（P2 Phase 4-8）
 

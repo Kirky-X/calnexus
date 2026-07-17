@@ -651,7 +651,8 @@ mod tests {
     // H2 修复（架构审查）：删除原 v08_full_router() 本地构造函数，改用
     // crate::domains::build_default_router()，消除 src/core 测试代码对 11 个
     // 具体域类型的硬编码引用（霰弹手术风险：新增域需同步改两份注册清单）。
-    // priority 测试改用全路径构造，彻底消除测试模块的 use crate::domains::*。
+    // P2 架构审查 HIGH-1 修复：priority 测试迁移至 domains/factory.rs 测试模块，
+    // 彻底消除 src/core 测试代码对 crate::domains::XxxDomain 的类型依赖。
 
     // ----- 6.1 验证 collect_function_names_recursive 已支持 FunctionCall 递归 -----
     // 已在 test_collect_function_names_unary_op_branch 和既有测试中覆盖，此处不再重复。
@@ -691,25 +692,11 @@ mod tests {
     }
 
     // ----- 6.3 优先级测试 -----
-
-    #[test]
-    fn test_v08_priority_number_theory_equals_combinatorics() {
-        // NumberTheory(25) 与 Combinatorics(25) 同级
-        let nt = crate::domains::NumberTheoryDomain;
-        let cb = crate::domains::CombinatoricsDomain;
-        assert_eq!(nt.priority(), 25);
-        assert_eq!(cb.priority(), 25);
-    }
-
-    #[test]
-    fn test_v08_priority_vector_higher_than_polynomial() {
-        // Vector(30) > Polynomial(25)
-        let vec = crate::domains::VectorDomain;
-        let pol = crate::domains::PolynomialDomain;
-        assert!(vec.priority() > pol.priority());
-        assert_eq!(vec.priority(), 30);
-        assert_eq!(pol.priority(), 25);
-    }
+    //
+    // priority 测试已迁移至 src/domains/factory.rs 测试模块（架构审查 HIGH-1 修复）。
+    // 原因：priority 是 domains 层属性，core 层测试直接构造具体域类型违反
+    // ARCHITECTURE.md §2.3 "core → domains 类型依赖 = 0" 声明。
+    // 迁移后 core/domain.rs 测试模块不再引用任何 crate::domains::XxxDomain 类型。
 
     // ----- 6.4 消歧测试 -----
 
