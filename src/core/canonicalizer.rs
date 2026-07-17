@@ -64,80 +64,118 @@ impl AstCanonicalizer {
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
         match ast {
+            // Leaf 节点：直接克隆（无变换）
             AstNode::Number(_)
             | AstNode::Variable(_)
             | AstNode::Complex(_, _)
             | AstNode::BigNumber(_) => Ok(ast.clone()),
             AstNode::BinaryOp(op, l, r) => {
-                let l = Self::transform_inner(l, fold_constants, fold_unary)?;
-                let r = Self::transform_inner(r, fold_constants, fold_unary)?;
-                // 常量折叠：两操作数均为 Number（仅当 fold_constants = true）
-                if fold_constants {
-                    if let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
-                        return Self::eval_binary(*op, *a, *b).map(AstNode::Number);
-                    }
-                }
-                // 交换律排序：仅 Add 和 Mul
-                let (l, r) = match op {
-                    BinaryOp::Add | BinaryOp::Mul => {
-                        if Self::compare_nodes(&l, &r) == Ordering::Greater {
-                            (r, l)
-                        } else {
-                            (l, r)
-                        }
-                    }
-                    _ => (l, r),
-                };
-                Ok(AstNode::BinaryOp(*op, Box::new(l), Box::new(r)))
+                Self::transform_binary(*op, l, r, fold_constants, fold_unary)
             }
-            AstNode::UnaryOp(op, e) => {
-                let e = Self::transform_inner(e, fold_constants, fold_unary)?;
-                // 双重负号消除：--x → x（结构性归一化，始终执行）
-                if *op == UnaryOp::Neg {
-                    if let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e {
-                        return Ok((**inner).clone());
-                    }
-                }
-                // 一元常量折叠：Neg(Number(n)) → Number(-n)（仅当 fold_unary = true）
-                if fold_unary {
-                    if let AstNode::Number(n) = &e {
-                        if *op == UnaryOp::Neg {
-                            return Ok(AstNode::Number(-*n));
-                        }
-                    }
-                }
-                Ok(AstNode::UnaryOp(*op, Box::new(e)))
-            }
+            AstNode::UnaryOp(op, e) => Self::transform_unary(*op, e, fold_constants, fold_unary),
             AstNode::FunctionCall(name, args) => {
-                let mut transformed_args = Vec::with_capacity(args.len());
-                for arg in args {
-                    transformed_args.push(Self::transform_inner(arg, fold_constants, fold_unary)?);
-                }
-                Ok(AstNode::FunctionCall(name.clone(), transformed_args))
+                Self::transform_function(name, args, fold_constants, fold_unary)
             }
-            AstNode::Matrix(rows) => {
-                let mut transformed_rows = Vec::with_capacity(rows.len());
-                for row in rows {
-                    let mut transformed_row = Vec::with_capacity(row.len());
-                    for elem in row {
-                        transformed_row.push(Self::transform_inner(
-                            elem,
-                            fold_constants,
-                            fold_unary,
-                        )?);
-                    }
-                    transformed_rows.push(transformed_row);
-                }
-                Ok(AstNode::Matrix(transformed_rows))
-            }
-            AstNode::List(elements) => {
-                let mut transformed = Vec::with_capacity(elements.len());
-                for elem in elements {
-                    transformed.push(Self::transform_inner(elem, fold_constants, fold_unary)?);
-                }
-                Ok(AstNode::List(transformed))
+            AstNode::Matrix(rows) => Self::transform_matrix(rows, fold_constants, fold_unary),
+            AstNode::List(elements) => Self::transform_list(elements, fold_constants, fold_unary),
+        }
+    }
+
+    /// 变换 BinaryOp：递归变换子节点 + 常量折叠 + 交换律排序。
+    fn transform_binary(
+        op: BinaryOp,
+        l: &AstNode,
+        r: &AstNode,
+        fold_constants: bool,
+        fold_unary: bool,
+    ) -> Result<AstNode, CalcError> {
+        let l = Self::transform_inner(l, fold_constants, fold_unary)?;
+        let r = Self::transform_inner(r, fold_constants, fold_unary)?;
+        // 常量折叠：两操作数均为 Number（仅当 fold_constants = true）
+        if fold_constants {
+            if let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
+                return Self::eval_binary(op, *a, *b).map(AstNode::Number);
             }
         }
+        // 交换律排序：仅 Add 和 Mul
+        let (l, r) = match op {
+            BinaryOp::Add | BinaryOp::Mul => {
+                if Self::compare_nodes(&l, &r) == Ordering::Greater {
+                    (r, l)
+                } else {
+                    (l, r)
+                }
+            }
+            _ => (l, r),
+        };
+        Ok(AstNode::BinaryOp(op, Box::new(l), Box::new(r)))
+    }
+
+    /// 变换 UnaryOp：递归变换子节点 + 双重负号消除 + 一元常量折叠。
+    fn transform_unary(
+        op: UnaryOp,
+        e: &AstNode,
+        fold_constants: bool,
+        fold_unary: bool,
+    ) -> Result<AstNode, CalcError> {
+        let e = Self::transform_inner(e, fold_constants, fold_unary)?;
+        // 双重负号消除：--x → x（结构性归一化，始终执行）
+        if op == UnaryOp::Neg {
+            if let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e {
+                return Ok((**inner).clone());
+            }
+        }
+        // 一元常量折叠：Neg(Number(n)) → Number(-n)（仅当 fold_unary = true）
+        if fold_unary && op == UnaryOp::Neg {
+            if let AstNode::Number(n) = &e {
+                return Ok(AstNode::Number(-*n));
+            }
+        }
+        Ok(AstNode::UnaryOp(op, Box::new(e)))
+    }
+
+    /// 变换 FunctionCall：递归变换所有参数。
+    fn transform_function(
+        name: &str,
+        args: &[AstNode],
+        fold_constants: bool,
+        fold_unary: bool,
+    ) -> Result<AstNode, CalcError> {
+        let mut transformed_args = Vec::with_capacity(args.len());
+        for arg in args {
+            transformed_args.push(Self::transform_inner(arg, fold_constants, fold_unary)?);
+        }
+        Ok(AstNode::FunctionCall(name.to_string(), transformed_args))
+    }
+
+    /// 变换 Matrix：递归变换所有元素（双重循环）。
+    fn transform_matrix(
+        rows: &[Vec<AstNode>],
+        fold_constants: bool,
+        fold_unary: bool,
+    ) -> Result<AstNode, CalcError> {
+        let mut transformed_rows = Vec::with_capacity(rows.len());
+        for row in rows {
+            let mut transformed_row = Vec::with_capacity(row.len());
+            for elem in row {
+                transformed_row.push(Self::transform_inner(elem, fold_constants, fold_unary)?);
+            }
+            transformed_rows.push(transformed_row);
+        }
+        Ok(AstNode::Matrix(transformed_rows))
+    }
+
+    /// 变换 List：递归变换所有元素。
+    fn transform_list(
+        elements: &[AstNode],
+        fold_constants: bool,
+        fold_unary: bool,
+    ) -> Result<AstNode, CalcError> {
+        let mut transformed = Vec::with_capacity(elements.len());
+        for elem in elements {
+            transformed.push(Self::transform_inner(elem, fold_constants, fold_unary)?);
+        }
+        Ok(AstNode::List(transformed))
     }
 
     /// 递归变换 AST（排序 + 折叠 + 一元归一化）。
@@ -860,6 +898,122 @@ mod tests {
             let (canon_ast, cf1) = AstCanonicalizer::canonicalize(&ast).unwrap();
             let (_, cf2) = AstCanonicalizer::canonicalize(&canon_ast).unwrap();
             prop_assert_eq!(cf1, cf2);
+        }
+    }
+
+    // ===== T022: transform_inner per-variant 回归测试（Phase 7 Red）=====
+    //
+    // 目的：重构 transform_inner（cyc=24 → ≤15）前后行为不变。
+    // 覆盖所有 AstNode variant：Leaf（Number/Variable/Complex/BigNumber）、
+    // BinaryOp（Add/Sub/Mul/Div/Pow/Mod + fold + sort）、
+    // UnaryOp（Neg 双重消除/Neg fold/Factorial/Abs）、
+    // FunctionCall（有参/空参）、Matrix（嵌套表达式）、List（嵌套表达式）。
+    // 同时覆盖 fold=true 和 fold=false 两条路径。
+    #[test]
+    fn test_transform_inner_per_variant() {
+        // ----- 1. Leaf 节点（不变）-----
+        assert_eq!(canon("42").unwrap(), "42");
+        assert_eq!(canon("x").unwrap(), "x");
+        assert_eq!(canon("3+4i").unwrap(), "(complex 3 4)");
+        assert_eq!(canon("1234567890123456").unwrap(), "1234567890123456");
+
+        // ----- 2. BinaryOp -----
+        // 2a. Add: fold + sort（3+2 → 5）
+        assert_eq!(canon("3+2").unwrap(), "5");
+        // 2b. Add: sort only（y+x → (+ x y)）
+        assert_eq!(canon("y+x").unwrap(), "(+ x y)");
+        // 2c. Sub: no sort（x-2 → (- x 2)）
+        assert_eq!(canon("x-2").unwrap(), "(- x 2)");
+        // 2d. Mul: fold + sort（2*3 → 6）
+        assert_eq!(canon("2*3").unwrap(), "6");
+        // 2e. Mul: sort only（x*5 → (* 5 x)）
+        assert_eq!(canon("x*5").unwrap(), "(* 5 x)");
+        // 2f. Div: fold（6/3 → 2）
+        assert_eq!(canon("6/3").unwrap(), "2");
+        // 2g. Pow: fold（2^3 → 8）
+        assert_eq!(canon("2^3").unwrap(), "8");
+        // 2h. Mod: fold（10%3 → 1）— 用手动 AST 避免 parser 限制
+        {
+            let ast = AstNode::BinaryOp(
+                BinaryOp::Mod,
+                Box::new(AstNode::Number(10.0)),
+                Box::new(AstNode::Number(3.0)),
+            );
+            let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+            assert_eq!(cf.as_str(), "1");
+        }
+        // 2i. BinaryOp div by zero → error
+        assert!(canon("1/0").is_err());
+
+        // ----- 3. UnaryOp -----
+        // 3a. Neg: double neg elimination（--x → x）
+        assert_eq!(canon("-(-x)").unwrap(), "x");
+        // 3b. Neg: fold（-(5) → -5）
+        assert_eq!(canon("-(5)").unwrap(), "-5");
+        // 3c. Neg: double neg + fold（--5 → 5）
+        assert_eq!(canon("--5").unwrap(), "5");
+        // 3d. Factorial: no fold（5! → (factorial 5)）
+        {
+            let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
+            let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+            assert_eq!(cf.as_str(), "(factorial 5)");
+        }
+        // 3e. Abs: no fold（abs(x) → (abs x)）— 通过 FunctionCall 而非 UnaryOp
+        //     UnaryOp::Abs 手动构造
+        {
+            let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Variable("x".to_string())));
+            let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+            assert_eq!(cf.as_str(), "(abs x)");
+        }
+
+        // ----- 4. FunctionCall -----
+        // 4a. 有参函数（sin(x) → (sin x)）
+        assert_eq!(canon("sin(x)").unwrap(), "(sin x)");
+        // 4b. 空参函数（foo() → (foo)）
+        {
+            let ast = AstNode::FunctionCall("foo".to_string(), vec![]);
+            let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+            assert_eq!(cf.as_str(), "(foo)");
+        }
+        // 4c. 嵌套表达式参数（sin(2+3) → (sin 5)）
+        assert_eq!(canon("sin(2+3)").unwrap(), "(sin 5)");
+
+        // ----- 5. Matrix -----
+        // 5a. 简单矩阵
+        assert_eq!(canon("[[1,2],[3,4]]").unwrap(), "(matrix (1 2) (3 4))");
+        // 5b. 嵌套表达式矩阵
+        assert_eq!(canon("[[2+3, x]]").unwrap(), "(matrix (5 x))");
+
+        // ----- 6. List -----
+        // 6a. 简单列表
+        assert_eq!(canon("[1,2,3]").unwrap(), "(list 1 2 3)");
+        // 6b. 嵌套表达式列表
+        assert_eq!(canon("[2+3, x]").unwrap(), "(list 5 x)");
+
+        // ----- 7. fold=false 路径（canonicalize_no_fold）-----
+        // 7a. 不折叠常量：3+2 → (+ 2 3)（仅排序）
+        {
+            let ast = parse("3+2").unwrap();
+            let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+            assert_eq!(cf.as_str(), "(+ 2 3)");
+        }
+        // 7b. 双重负号仍消除（--x → x，结构性归一化不受 fold 影响）
+        {
+            let ast = parse("-(-x)").unwrap();
+            let (canon_ast, _) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+            assert_eq!(canon_ast, AstNode::Variable("x".to_string()));
+        }
+        // 7c. 一元常量不折叠：-(5) → (- 5)（fold_unary=false）
+        {
+            let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
+            let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+            assert_eq!(cf.as_str(), "(- 5)");
+        }
+        // 7d. Matrix/List 在 no_fold 下仍递归变换
+        {
+            let ast = parse("[[1,2],[3,4]]").unwrap();
+            let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
+            assert_eq!(cf.as_str(), "(matrix (1 2) (3 4))");
         }
     }
 }
