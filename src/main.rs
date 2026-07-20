@@ -8,6 +8,8 @@ fn main() {
 
 #[cfg(not(feature = "cli"))]
 fn main() {
-    eprintln!("calnexus was compiled without the 'cli' feature. Rebuild with --features cli.");
+    // i18n 模块始终编译（无 cfg gate），可在此使用默认语言（en）输出错误。
+    let i18n = calnexus::I18n::default();
+    eprintln!("{}", i18n.t("main.feature_missing"));
     std::process::exit(2);
 }

@@ -86,7 +86,13 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
         AstNode::BigNumber(s) => {
             let n: f64 = s
                 .parse()
-                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+                .map_err(|_| {
+                    CalcError::domain(format!("invalid big number: {}", s))
+                        .with_i18n(
+                            "msg.invalid_bignumber",
+                            vec![("value".to_string(), s.to_string())],
+                        )
+                })?;
             Ok(SymbolicExpr::Const(n))
         }
         AstNode::Variable(name) => {
@@ -109,7 +115,8 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 BinaryOp::Mod => {
                     return Err(CalcError::domain(
                         "modulo not supported in symbolic expressions".to_string(),
-                    ));
+                    )
+                    .with_i18n("msg.symbolic.modulo_not_supported", vec![]));
                 }
             })
         }
@@ -118,7 +125,11 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
             Err(CalcError::domain(format!(
                 "unary op not supported in symbolic expressions: {:?}",
                 ast
-            )))
+            ))
+            .with_i18n(
+                "msg.symbolic.unary_not_supported",
+                vec![("op".to_string(), format!("{:?}", ast))],
+            ))
         }
         AstNode::FunctionCall(name, args) => {
             let unary = unary_symbolic_arg(name, args)?;
@@ -131,12 +142,20 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 _ => Err(CalcError::domain(format!(
                     "function not supported in symbolic expressions: {}",
                     name
-                ))),
+                ))
+                .with_i18n(
+                    "msg.symbolic.function_not_supported",
+                    vec![("name".to_string(), name.to_string())],
+                )),
             }
         }
         AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
-        format!("node type not supported in symbolic expressions: {:?}", ast),
-    )),
+            format!("node type not supported in symbolic expressions: {:?}", ast),
+        )
+        .with_i18n(
+            "msg.symbolic.node_not_supported",
+            vec![("node".to_string(), format!("{:?}", ast))],
+        )),
     }
 }
 
@@ -152,7 +171,14 @@ fn unary_symbolic_arg(
             "{}() requires exactly 1 argument, got {}",
             name,
             args.len()
-        )));
+        ))
+        .with_i18n(
+            "msg.symbolic.arg_count_1",
+            vec![
+                ("name".to_string(), name.to_string()),
+                ("actual".to_string(), args.len().to_string()),
+            ],
+        ));
     }
     Ok(Box::new(ast_to_symbolic(&args[0])?))
 }
@@ -441,7 +467,8 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
         SymbolicExpr::Exp(f) => integrate_exp(f.as_ref(), var),
         SymbolicExpr::Ln(_) | SymbolicExpr::Tan(_) => Err(CalcError::domain(
             "integrate() does not support ln/tan forms".to_string(),
-        )),
+        )
+        .with_i18n("msg.symbolic.integrate_no_ln_tan", vec![])),
     }
 }
 
@@ -503,7 +530,8 @@ fn integrate_mul(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
     }
     Err(CalcError::domain(
         "integrate() does not support product of two non-constant expressions".to_string(),
-    ))
+    )
+    .with_i18n("msg.symbolic.integrate_no_product", vec![]))
 }
 
 /// ∫x^n dx = x^(n+1)/(n+1)（n ≠ -1）；∫1/x dx = ln|x|。
@@ -527,7 +555,8 @@ fn integrate_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
     }
     Err(CalcError::domain(
         "integrate() only supports power of the integration variable".to_string(),
-    ))
+    )
+    .with_i18n("msg.symbolic.integrate_only_power", vec![]))
 }
 
 /// ∫1/x dx = ln|x|（仅支持 Div(Const(1), Var) 形式）。
@@ -541,7 +570,8 @@ fn integrate_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
     }
     Err(CalcError::domain(
         "integrate() only supports 1/var form for division".to_string(),
-    ))
+    )
+    .with_i18n("msg.symbolic.integrate_only_div", vec![]))
 }
 
 /// ∫-f dx = -∫f dx。
@@ -558,7 +588,8 @@ fn integrate_sin(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
     } else {
         Err(CalcError::domain(
             "integrate() only supports sin(var) form".to_string(),
-        ))
+        )
+        .with_i18n("msg.symbolic.integrate_only_sin", vec![]))
     }
 }
 
@@ -571,7 +602,8 @@ fn integrate_cos(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
     } else {
         Err(CalcError::domain(
             "integrate() only supports cos(var) form".to_string(),
-        ))
+        )
+        .with_i18n("msg.symbolic.integrate_only_cos", vec![]))
     }
 }
 
@@ -584,7 +616,8 @@ fn integrate_exp(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
     } else {
         Err(CalcError::domain(
             "integrate() only supports exp(var) form".to_string(),
-        ))
+        )
+        .with_i18n("msg.symbolic.integrate_only_exp", vec![]))
     }
 }
 
@@ -797,7 +830,8 @@ fn limit_recursive(
             if d_den.is_zero() {
                 return Err(CalcError::domain(
                     "limit(): denominator derivative is zero, cannot apply L'Hôpital".to_string(),
-                ));
+                )
+                .with_i18n("msg.symbolic.limit_denom_zero", vec![]));
             }
             return limit_recursive(
                 &SymbolicExpr::Div(Box::new(d_num), Box::new(d_den)),
@@ -811,7 +845,11 @@ fn limit_recursive(
     Err(CalcError::domain(format!(
         "limit() could not resolve indeterminate form (depth {})",
         depth
-    )))
+    ))
+    .with_i18n(
+        "msg.symbolic.limit_indeterminate",
+        vec![("depth".to_string(), depth.to_string())],
+    ))
 }
 
 /// 数值求值 [`SymbolicExpr`]。
@@ -824,7 +862,12 @@ fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64,
         SymbolicExpr::Var(name) => env
             .get(name)
             .copied()
-            .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+            .ok_or_else(|| {
+                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                    "msg.unbound_variable",
+                    vec![("name".to_string(), name.to_string())],
+                )
+            }),
         SymbolicExpr::Add(l, r) => Ok(eval_symbolic(l, env)? + eval_symbolic(r, env)?),
         SymbolicExpr::Sub(l, r) => Ok(eval_symbolic(l, env)? - eval_symbolic(r, env)?),
         SymbolicExpr::Mul(l, r) => Ok(eval_symbolic(l, env)? * eval_symbolic(r, env)?),
@@ -884,7 +927,11 @@ pub fn taylor(expr: &SymbolicExpr, var: &str, order: u32) -> Result<EvalResult, 
         return Err(CalcError::domain(format!(
             "taylor() order {} exceeds maximum of 20",
             order
-        )));
+        ))
+        .with_i18n(
+            "msg.symbolic.taylor_order_exceeds",
+            vec![("order".to_string(), order.to_string())],
+        ));
     }
 
     let mut terms: Vec<String> = Vec::new();
@@ -984,7 +1031,11 @@ impl SymbolicDomain {
             _ => Err(CalcError::domain(format!(
                 "symbolic domain expects function call, got: {:?}",
                 ast
-            ))),
+            ))
+            .with_i18n(
+                "msg.symbolic.expects_function_call",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            )),
         }
     }
 
@@ -994,7 +1045,11 @@ impl SymbolicDomain {
             return Err(CalcError::domain(format!(
                 "unsupported function in symbolic domain: {}",
                 name
-            )));
+            ))
+            .with_i18n(
+                "msg.symbolic.unsupported_function",
+                vec![("name".to_string(), name.to_string())],
+            ));
         }
         match name {
             "diff" => self.eval_diff(args),
@@ -1012,7 +1067,11 @@ impl SymbolicDomain {
             return Err(CalcError::domain(format!(
                 "diff() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.symbolic.diff_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let expr = ast_to_symbolic(&args[0])?;
         let var = extract_var_name(&args[1])?;
@@ -1026,7 +1085,11 @@ impl SymbolicDomain {
             return Err(CalcError::domain(format!(
                 "integrate() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.symbolic.integrate_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let expr = ast_to_symbolic(&args[0])?;
         let var = extract_var_name(&args[1])?;
@@ -1040,7 +1103,11 @@ impl SymbolicDomain {
             return Err(CalcError::domain(format!(
                 "simplify() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.symbolic.simplify_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let expr = ast_to_symbolic(&args[0])?;
         let result = simplify(&expr);
@@ -1053,7 +1120,11 @@ impl SymbolicDomain {
             return Err(CalcError::domain(format!(
                 "limit() requires exactly 3 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.symbolic.limit_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let expr = ast_to_symbolic(&args[0])?;
         let var = extract_var_name(&args[1])?;
@@ -1067,7 +1138,11 @@ impl SymbolicDomain {
             return Err(CalcError::domain(format!(
                 "taylor() requires exactly 3 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.symbolic.taylor_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let expr = ast_to_symbolic(&args[0])?;
         let var = extract_var_name(&args[1])?;
@@ -1098,7 +1173,11 @@ fn extract_var_name(ast: &AstNode) -> Result<String, CalcError> {
         _ => Err(CalcError::domain(format!(
             "expected variable name, got: {:?}",
             ast
-        ))),
+        ))
+        .with_i18n(
+            "msg.symbolic.expected_variable_name",
+            vec![("node".to_string(), format!("{:?}", ast))],
+        )),
     }
 }
 
@@ -1106,14 +1185,21 @@ fn extract_var_name(ast: &AstNode) -> Result<String, CalcError> {
 fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
     match ast {
         AstNode::Number(n) => Ok(*n),
-        AstNode::BigNumber(s) => s
-            .parse::<f64>()
-            .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
+        AstNode::BigNumber(s) => s.parse::<f64>().map_err(|_| {
+            CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                "msg.invalid_bignumber",
+                vec![("value".to_string(), s.to_string())],
+            )
+        }),
         AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(-extract_number(e)?),
         _ => Err(CalcError::domain(format!(
             "expected number, got: {:?}",
             ast
-        ))),
+        ))
+        .with_i18n(
+            "msg.symbolic.expected_number",
+            vec![("node".to_string(), format!("{:?}", ast))],
+        )),
     }
 }
 

@@ -66,7 +66,12 @@ impl PolynomialDomain {
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::BinaryOp(_, _, _) => {
                 // 尝试作为多项式表达式求值
                 let (coeffs, _var) = expr_to_coeffs(ast, ctx)?;
@@ -78,23 +83,34 @@ impl PolynomialDomain {
                 Ok(EvalResult::Polynomial(neg))
             }
             AstNode::BigNumber(s) => {
-                let n: f64 = s
-                    .parse()
-                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+                let n: f64 = s.parse().map_err(|_| {
+                    CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                        "msg.invalid_bignumber",
+                        vec![("value".to_string(), s.to_string())],
+                    )
+                })?;
                 Ok(EvalResult::Scalar(n))
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-                Err(CalcError::domain(format!(
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(
+                CalcError::domain(format!(
                     "polynomial domain does not support this node type: {:?}",
                     ast
-                )))
-            }
-            AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
-                Err(CalcError::domain(format!(
+                ))
+                .with_i18n(
+                    "msg.polynomial.unsupported_node",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ),
+            ),
+            AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => Err(
+                CalcError::domain(format!(
                     "polynomial domain does not support this unary op: {:?}",
                     ast
-                )))
-            }
+                ))
+                .with_i18n(
+                    "msg.polynomial.unsupported_unary",
+                    vec![("op".to_string(), format!("{:?}", ast))],
+                ),
+            ),
         }
     }
 
@@ -106,10 +122,16 @@ impl PolynomialDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !POLYNOMIAL_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in polynomial domain: {}",
-                name
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "unsupported function in polynomial domain: {}",
+                    name
+                ))
+                .with_i18n(
+                    "msg.polynomial.unsupported_function",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            );
         }
         match name {
             "poly_add" => self.eval_poly_add(args, ctx),
@@ -128,10 +150,16 @@ impl PolynomialDomain {
     /// poly_add(a, b)：多项式加法。
     fn eval_poly_add(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "poly_add() requires exactly 2 arguments, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "poly_add() requires exactly 2 arguments, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.poly_add_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
@@ -155,10 +183,16 @@ impl PolynomialDomain {
     /// poly_mul(a, b)：多项式乘法。
     fn eval_poly_mul(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "poly_mul() requires exactly 2 arguments, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "poly_mul() requires exactly 2 arguments, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.poly_mul_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
@@ -168,10 +202,16 @@ impl PolynomialDomain {
     /// poly_div(a, b)：多项式除法，返回商。b 为零多项式时报错。
     fn eval_poly_div(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "poly_div() requires exactly 2 arguments, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "poly_div() requires exactly 2 arguments, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.poly_div_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
@@ -185,10 +225,16 @@ impl PolynomialDomain {
     /// poly_eval(coeffs, x)：Horner 法求多项式在 x 处的值，返回标量。
     fn eval_poly_eval(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "poly_eval() requires exactly 2 arguments, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "poly_eval() requires exactly 2 arguments, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.poly_eval_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let x = self.eval_scalar(&args[1], ctx)?;
@@ -199,10 +245,16 @@ impl PolynomialDomain {
     /// roots(coeffs)：求多项式所有根（实根 + 复根）。
     fn eval_roots(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!(
-                "roots() requires exactly 1 argument, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "roots() requires exactly 1 argument, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.roots_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let trimmed = trim_leading_zeros(&coeffs);
@@ -212,10 +264,16 @@ impl PolynomialDomain {
     /// poly_diff(coeffs)：多项式求导。
     fn eval_poly_diff(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!(
-                "poly_diff() requires exactly 1 argument, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "poly_diff() requires exactly 1 argument, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.poly_diff_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
         Ok(EvalResult::Polynomial(poly_diff_coeffs(&coeffs)))
@@ -228,10 +286,16 @@ impl PolynomialDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!(
-                "poly_integrate() requires exactly 1 argument, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "poly_integrate() requires exactly 1 argument, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.poly_integrate_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
         Ok(EvalResult::Polynomial(poly_integrate_coeffs(&coeffs)))
@@ -240,10 +304,16 @@ impl PolynomialDomain {
     /// factor(coeffs)：多项式因式分解，返回符号表达式。
     fn eval_factor(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!(
-                "factor() requires exactly 1 argument, got {}",
-                args.len()
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "factor() requires exactly 1 argument, got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.polynomial.factor_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ),
+            );
         }
         let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let trimmed = trim_leading_zeros(&coeffs);
@@ -263,10 +333,16 @@ impl PolynomialDomain {
             let result = self.eval_node(ast, ctx)?;
             return match result {
                 EvalResult::Polynomial(coeffs) => Ok((coeffs, String::new())),
-                _ => Err(CalcError::domain(format!(
-                    "expected polynomial result from nested call, got {:?}",
-                    ast
-                ))),
+                _ => Err(
+                    CalcError::domain(format!(
+                        "expected polynomial result from nested call, got {:?}",
+                        ast
+                    ))
+                    .with_i18n(
+                        "msg.polynomial.expected_poly_result",
+                        vec![("node".to_string(), format!("{:?}", ast))],
+                    ),
+                ),
             };
         }
         expr_to_coeffs(ast, ctx)
@@ -276,12 +352,20 @@ impl PolynomialDomain {
     fn eval_scalar(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(*n),
-            AstNode::BigNumber(s) => s
-                .parse::<f64>()
-                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
+            AstNode::BigNumber(s) => s.parse::<f64>().map_err(|_| {
+                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                    "msg.invalid_bignumber",
+                    vec![("value".to_string(), s.to_string())],
+                )
+            }),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(-self.eval_scalar(e, ctx)?),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_scalar(l, ctx)?;
@@ -305,10 +389,16 @@ impl PolynomialDomain {
                     }
                 }
             }
-            _ => Err(CalcError::domain(format!(
-                "polynomial domain cannot evaluate scalar from: {:?}",
-                ast
-            ))),
+            _ => Err(
+                CalcError::domain(format!(
+                    "polynomial domain cannot evaluate scalar from: {:?}",
+                    ast
+                ))
+                .with_i18n(
+                    "msg.polynomial.cannot_eval_scalar",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ),
+            ),
         }
     }
 }
@@ -322,18 +412,23 @@ fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String)
         AstNode::Variable(name) => Ok(coeffs_from_variable(name, ctx)),
         AstNode::BinaryOp(op, l, r) => coeffs_from_binary(*op, l, r, ctx),
         AstNode::UnaryOp(UnaryOp::Neg, e) => coeffs_from_neg(e, ctx),
-        _ => Err(CalcError::domain(format!(
-            "not a polynomial expression: {:?}",
-            ast
-        ))),
+        _ => Err(
+            CalcError::domain(format!("not a polynomial expression: {:?}", ast)).with_i18n(
+                "msg.polynomial.not_poly_expression",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            ),
+        ),
     }
 }
 
 /// BigNumber → 常数系数。
 fn coeffs_from_bignumber(s: &str) -> Result<(Vec<f64>, String), CalcError> {
-    let n: f64 = s
-        .parse()
-        .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+    let n: f64 = s.parse().map_err(|_| {
+        CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+            "msg.invalid_bignumber",
+            vec![("value".to_string(), s.to_string())],
+        )
+    })?;
     Ok((vec![n], String::new()))
 }
 
@@ -358,9 +453,10 @@ fn coeffs_from_binary(
         BinaryOp::Add => coeffs_from_add(l, r, ctx),
         BinaryOp::Sub => coeffs_from_sub(l, r, ctx),
         BinaryOp::Div => coeffs_from_div(l, r, ctx),
-        BinaryOp::Mod => Err(CalcError::domain(
-            "modulo in polynomial expression not supported".to_string(),
-        )),
+        BinaryOp::Mod => Err(
+            CalcError::domain("modulo in polynomial expression not supported".to_string())
+                .with_i18n("msg.polynomial.modulo_not_supported", vec![]),
+        ),
     }
 }
 
@@ -373,9 +469,12 @@ fn coeffs_from_pow(
     // Variable ^ Number
     if let (AstNode::Variable(name), AstNode::Number(n)) = (l, r) {
         if *n < 0.0 || n.fract() != 0.0 {
-            return Err(CalcError::domain(
-                "polynomial exponent must be non-negative integer".to_string(),
-            ));
+            return Err(
+                CalcError::domain(
+                    "polynomial exponent must be non-negative integer".to_string(),
+                )
+                .with_i18n("msg.polynomial.exponent_non_negative", vec![]),
+            );
         }
         // DoS 防护：指数上界 1000，防止 OOM
         const MAX_POLY_DEGREE: usize = 1000;
@@ -395,9 +494,10 @@ fn coeffs_from_pow(
     if let (AstNode::Number(a), AstNode::Number(b)) = (l, r) {
         return Ok((vec![a.powf(*b)], String::new()));
     }
-    Err(CalcError::domain(
-        "not a polynomial: unsupported power expression".to_string(),
-    ))
+    Err(
+        CalcError::domain("not a polynomial: unsupported power expression".to_string())
+            .with_i18n("msg.polynomial.unsupported_power", vec![]),
+    )
 }
 
 /// Mul 分支：Number*Poly / Poly*Number / Poly*Poly。
@@ -485,9 +585,10 @@ fn coeffs_from_div(
     if is_zero_poly(&remainder) {
         Ok((quotient, var))
     } else {
-        Err(CalcError::domain(
-            "polynomial division has non-zero remainder".to_string(),
-        ))
+        Err(
+            CalcError::domain("polynomial division has non-zero remainder".to_string())
+                .with_i18n("msg.polynomial.non_zero_remainder", vec![]),
+        )
     }
 }
 
@@ -509,10 +610,16 @@ fn merge_var(a: &str, b: &str) -> Result<String, CalcError> {
     if a == b {
         return Ok(a.to_string());
     }
-    Err(CalcError::domain(format!(
-        "polynomial in multiple variables: {} and {}",
-        a, b
-    )))
+    Err(
+        CalcError::domain(format!("polynomial in multiple variables: {} and {}", a, b))
+            .with_i18n(
+                "msg.polynomial.multiple_variables",
+                vec![
+                    ("var1".to_string(), a.to_string()),
+                    ("var2".to_string(), b.to_string()),
+                ],
+            ),
+    )
 }
 
 /// 多项式加法（系数向量）。
@@ -620,9 +727,10 @@ fn find_roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
     let c = trim_leading_zeros(coeffs);
     if c.len() == 1 {
         if c[0] == 0.0 {
-            return Err(CalcError::domain(
-                "roots(): zero polynomial has infinite roots".to_string(),
-            ));
+            return Err(
+                CalcError::domain("roots(): zero polynomial has infinite roots".to_string())
+                    .with_i18n("msg.polynomial.roots_infinite", vec![]),
+            );
         }
         return Ok(EvalResult::Vector(vec![])); // 非零常数无根
     }
@@ -661,10 +769,16 @@ fn find_roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
             let roots = solve_quartic(c[4], c[3], c[2], c[1], c[0]);
             Ok(roots_to_eval_result(roots))
         }
-        _ => Err(CalcError::domain(format!(
-            "roots(): polynomial degree {} not supported (max degree 4)",
-            c.len() - 1
-        ))),
+        _ => Err(
+            CalcError::domain(format!(
+                "roots(): polynomial degree {} not supported (max degree 4)",
+                c.len() - 1
+            ))
+            .with_i18n(
+                "msg.polynomial.roots_degree_not_supported",
+                vec![("degree".to_string(), (c.len() - 1).to_string())],
+            ),
+        ),
     }
 }
 
@@ -857,19 +971,28 @@ fn factor_polynomial(coeffs: &[f64]) -> Result<String, CalcError> {
             let cc = c[0];
             let discriminant = b * b - 4.0 * a * cc;
             if discriminant < 0.0 {
-                return Err(CalcError::domain(
-                    "factor(): complex roots cannot be factored over reals".to_string(),
-                ));
+                return Err(
+                    CalcError::domain(
+                        "factor(): complex roots cannot be factored over reals".to_string(),
+                    )
+                    .with_i18n("msg.polynomial.factor_complex_roots", vec![]),
+                );
             }
             let sqrt_d = discriminant.sqrt();
             let r1 = (-b + sqrt_d) / (2.0 * a);
             let r2 = (-b - sqrt_d) / (2.0 * a);
             Ok(format_factor_quadratic(a, r1, r2))
         }
-        _ => Err(CalcError::domain(format!(
-            "factor(): polynomial degree {} not supported (max degree 2 in v0.8)",
-            c.len() - 1
-        ))),
+        _ => Err(
+            CalcError::domain(format!(
+                "factor(): polynomial degree {} not supported (max degree 2 in v0.8)",
+                c.len() - 1
+            ))
+            .with_i18n(
+                "msg.polynomial.factor_degree_not_supported",
+                vec![("degree".to_string(), (c.len() - 1).to_string())],
+            ),
+        ),
     }
 }
 

@@ -35,7 +35,14 @@ pub fn lu(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
             "lu() requires a square matrix, got {}x{}",
             matrix.nrows(),
             matrix.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.lu_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
     }
     let n = matrix.nrows();
     let decomp = LU::new(matrix);
@@ -78,7 +85,14 @@ pub fn eig(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
             "eig() requires a square matrix, got {}x{}",
             matrix.nrows(),
             matrix.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.eig_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
     }
     const SYMMETRY_TOL: f64 = 1e-10; // 相对容差系数（避免大数值对称矩阵被绝对容差误判）
     let n = matrix.nrows();
@@ -88,7 +102,8 @@ pub fn eig(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
             if (matrix[(i, j)] - matrix[(j, i)]).abs() > SYMMETRY_TOL * scale {
                 return Err(CalcError::domain(
                     "eig() requires a real symmetric matrix".to_string(),
-                ));
+                )
+                .with_i18n("msg.numerical.eig_requires_symmetric", vec![]));
             }
         }
     }
@@ -138,7 +153,14 @@ pub fn solve(matrix: DMatrix<f64>, b: DVector<f64>) -> Result<EvalResult, CalcEr
             "solve() requires a square coefficient matrix, got {}x{}",
             matrix.nrows(),
             matrix.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.solve_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
     }
     if b.len() != matrix.nrows() {
         return Err(CalcError::domain(format!(
@@ -146,12 +168,21 @@ pub fn solve(matrix: DMatrix<f64>, b: DVector<f64>) -> Result<EvalResult, CalcEr
             matrix.nrows(),
             matrix.ncols(),
             b.len()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.solve_dim_mismatch",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+                ("len".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     let lu = LU::new(matrix);
-    let x = lu
-        .solve(&b)
-        .ok_or_else(|| CalcError::domain("solve(): coefficient matrix is singular".to_string()))?;
+    let x = lu.solve(&b).ok_or_else(|| {
+        CalcError::domain("solve(): coefficient matrix is singular".to_string())
+            .with_i18n("msg.numerical.solve_singular", vec![])
+    })?;
     Ok(EvalResult::Vector(x.iter().copied().collect()))
 }
 

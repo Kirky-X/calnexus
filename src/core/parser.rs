@@ -39,14 +39,23 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
             "expression length {} exceeds maximum of {} characters",
             char_count, MAX_EXPR_LEN
         ))
-        .with_span(Span::new(0, char_count)));
+        .with_span(Span::new(0, char_count))
+        .with_i18n(
+            "msg.core.parse_length_exceeds",
+            vec![
+                ("len".to_string(), char_count.to_string()),
+                ("max".to_string(), MAX_EXPR_LEN.to_string()),
+            ],
+        ));
     }
 
     let trimmed = input.trim();
 
     // 空字符串检查
     if trimmed.is_empty() {
-        return Err(CalcError::parse("expression is empty".to_string()).with_span(Span::new(0, 0)));
+        return Err(CalcError::parse("expression is empty".to_string())
+            .with_span(Span::new(0, 0))
+            .with_i18n("msg.core.parse_empty", vec![]));
     }
 
     // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
@@ -82,7 +91,12 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
         // 用户看到的是原始输入，错误位置应帮助定位原始输入中的问题；
         // after_implicit 经过隐式乘法等预处理，长度可能与原始输入不同（如 2x → 2*x）。
         // Span 用字符偏移（design.md D1）。
-        CalcError::parse(format!("{}", e)).with_span(Span::new(0, trimmed.chars().count()))
+        CalcError::parse(format!("{}", e))
+            .with_span(Span::new(0, trimmed.chars().count()))
+            .with_i18n(
+                "msg.core.parse_mathexpr_error",
+                vec![("error".to_string(), e.to_string())],
+            )
     })?;
 
     // 转换为 CalNexus AstNode（含深度检查，防止递归栈溢出）
@@ -147,7 +161,11 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
     } else {
         Err(
             CalcError::parse(format!("expected bracket literal, got: {}", trimmed))
-                .with_span(Span::new(0, trimmed.chars().count())),
+                .with_span(Span::new(0, trimmed.chars().count()))
+                .with_i18n(
+                    "msg.core.parse_expected_bracket",
+                    vec![("token".to_string(), trimmed.to_string())],
+                ),
         )
     }
 }
@@ -183,7 +201,8 @@ fn preprocess_brackets(
             }
             if depth != 0 {
                 return Err(CalcError::parse("unmatched '[' in expression".to_string())
-                    .with_span(Span::new(start, i)));
+                    .with_span(Span::new(start, i))
+                    .with_i18n("msg.core.parse_unmatched_bracket", vec![]));
             }
             // 提取子串并解析为 AST
             let literal: String = chars[start..i].iter().collect();
@@ -309,7 +328,11 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
     if !trimmed.starts_with("[[") || !trimmed.ends_with("]]") {
         return Err(
             CalcError::parse(format!("invalid matrix literal: {}", trimmed))
-                .with_span(Span::new(0, trimmed.chars().count())),
+                .with_span(Span::new(0, trimmed.chars().count()))
+                .with_i18n(
+                    "msg.core.parse_invalid_matrix_literal",
+                    vec![("detail".to_string(), trimmed.to_string())],
+                ),
         );
     }
     // 去掉外层 `[[` 和 `]]`，得到 `row1],[row2],[...`
@@ -324,17 +347,25 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
         match row_node {
             AstNode::List(elements) => rows.push(elements),
             _ => {
+                // 限制 Debug 输出长度防止大型 AST 递归 Debug 导致性能问题（性能审查 MEDIUM-1）
+                let node_debug: String =
+                    format!("{:?}", row_node).chars().take(100).collect();
                 return Err(CalcError::parse(format!(
-                    "expected list row in matrix, got: {:?}",
-                    row_node
+                    "expected list row in matrix, got: {}",
+                    node_debug
                 ))
-                .with_span(Span::new(0, trimmed.chars().count())))
+                .with_span(Span::new(0, trimmed.chars().count()))
+                .with_i18n(
+                    "msg.core.parse_expected_list_row",
+                    vec![("node".to_string(), node_debug)],
+                ))
             }
         }
     }
     if rows.is_empty() {
         return Err(CalcError::parse("empty matrix literal".to_string())
-            .with_span(Span::new(0, trimmed.chars().count())));
+            .with_span(Span::new(0, trimmed.chars().count()))
+            .with_i18n("msg.core.parse_empty_matrix_literal", vec![]));
     }
     Ok(AstNode::Matrix(rows))
 }
@@ -348,7 +379,11 @@ fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
         return Err(
             CalcError::parse(format!("invalid list literal: {}", trimmed))
-                .with_span(Span::new(0, trimmed.chars().count())),
+                .with_span(Span::new(0, trimmed.chars().count()))
+                .with_i18n(
+                    "msg.core.parse_invalid_list_literal",
+                    vec![("detail".to_string(), trimmed.to_string())],
+                ),
         );
     }
     // 去掉 `[` 和 `]`
@@ -431,7 +466,8 @@ fn validate_no_consecutive_plus(input: &str) -> Result<(), CalcError> {
             if j < chars.len() && chars[j] == '+' {
                 return Err(
                     CalcError::parse("illegal consecutive operators '++'".to_string())
-                        .with_span(Span::new(start, j + 1)),
+                        .with_span(Span::new(start, j + 1))
+                        .with_i18n("msg.core.parse_illegal_consecutive_ops", vec![]),
                 );
             }
         }
@@ -487,7 +523,8 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
     if pos == 0 {
         return Err(CalcError::parse(
             "factorial operator '!' has no operand".to_string(),
-        ));
+        )
+        .with_i18n("msg.core.parse_factorial_no_operand", vec![]));
     }
 
     // 如果最后一个字符是 ')'，向左匹配括号
@@ -528,7 +565,8 @@ fn match_paren_backward(chars: &[char], close_idx: usize) -> Result<usize, CalcE
     if depth != 0 {
         return Err(CalcError::parse(
             "unmatched parenthesis in factorial operand".to_string(),
-        ));
+        )
+        .with_i18n("msg.core.parse_unmatched_paren_factorial", vec![]));
     }
     Ok(pos)
 }

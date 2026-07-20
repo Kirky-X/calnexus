@@ -46,7 +46,12 @@ fn walk(
         AstNode::Number(n) => Ok(*n),
         AstNode::BigNumber(s) => s
             .parse::<f64>()
-            .map_err(|_| CalcError::eval(format!("invalid BigNumber: {}", s))),
+            .map_err(|_| {
+                CalcError::eval(format!("invalid BigNumber: {}", s)).with_i18n(
+                    "msg.output.invalid_bignumber",
+                    vec![("value".to_string(), s.to_string())],
+                )
+            }),
         AstNode::Complex(re, _im) => Ok(*re),
         AstNode::Variable(name) => Ok(ctx.get_var(name).unwrap_or(0.0)),
         AstNode::BinaryOp(op, lhs, rhs) => {
@@ -141,7 +146,11 @@ fn eval_unary(op: UnaryOp, v: f64) -> Result<f64, CalcError> {
                 return Err(CalcError::domain(format!(
                     "factorial requires non-negative integer, got {}",
                     v
-                )));
+                ))
+                .with_i18n(
+                    "msg.core.factorial_negative",
+                    vec![("value".to_string(), v.to_string())],
+                ));
             }
             if v > 170.0 {
                 return Err(CalcError::overflow());
@@ -222,7 +231,14 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
                 "unknown function '{}' with {} args in steps",
                 name,
                 args.len()
-            )))
+            ))
+            .with_i18n(
+                "msg.output.unknown_function",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ))
         }
     };
     if result.is_nan() || result.is_infinite() {
@@ -237,7 +253,14 @@ fn check_unit_range(name: &str, x: f64) -> Result<(), CalcError> {
         return Err(CalcError::domain(format!(
             "{} domain [-1,1], got {}",
             name, x
-        )));
+        ))
+        .with_i18n(
+            "msg.output.domain_range",
+            vec![
+                ("name".to_string(), name.to_string()),
+                ("value".to_string(), x.to_string()),
+            ],
+        ));
     }
     Ok(())
 }
@@ -248,7 +271,14 @@ fn check_non_negative(name: &str, x: f64) -> Result<(), CalcError> {
         return Err(CalcError::domain(format!(
             "{} requires non-negative, got {}",
             name, x
-        )));
+        ))
+        .with_i18n(
+            "msg.output.requires_non_negative",
+            vec![
+                ("name".to_string(), name.to_string()),
+                ("value".to_string(), x.to_string()),
+            ],
+        ));
     }
     Ok(())
 }
@@ -259,7 +289,14 @@ fn check_positive(name: &str, x: f64) -> Result<(), CalcError> {
         return Err(CalcError::domain(format!(
             "{} requires positive, got {}",
             name, x
-        )));
+        ))
+        .with_i18n(
+            "msg.output.requires_positive",
+            vec![
+                ("name".to_string(), name.to_string()),
+                ("value".to_string(), x.to_string()),
+            ],
+        ));
     }
     Ok(())
 }

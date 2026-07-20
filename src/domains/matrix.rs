@@ -81,7 +81,11 @@ impl CalculationDomain for MatrixDomain {
                     "precision() does not apply to matrix/numerical functions ({}): \
                      they return f64 results",
                     MATRIX_NUMERICAL_FUNCTIONS.join("/")
-                )));
+                ))
+                .with_i18n(
+                    "msg.matrix.precision_not_applied",
+                    vec![("name".to_string(), MATRIX_NUMERICAL_FUNCTIONS.join("/"))],
+                ));
             }
         }
 
@@ -111,7 +115,12 @@ impl MatrixDomain {
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(MatrixValue::Scalar)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::Matrix(rows) => self.eval_matrix_literal(rows, ctx),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
@@ -129,11 +138,13 @@ impl MatrixDomain {
                         MatrixValue::Scalar(s) => Ok(MatrixValue::Scalar(s.abs())),
                         MatrixValue::Matrix(_) => Err(CalcError::domain(
                             "abs() not supported for matrices".to_string(),
-                        )),
+                        )
+                        .with_i18n("msg.matrix.abs_not_supported", vec![])),
                     },
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in matrix domain".to_string(),
-                    )),
+                    )
+                    .with_i18n("msg.matrix.factorial_not_supported", vec![])),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
@@ -141,7 +152,11 @@ impl MatrixDomain {
                 Err(CalcError::domain(format!(
                     "matrix domain does not support this node type: {:?}",
                     ast
-                )))
+                ))
+                .with_i18n(
+                    "msg.matrix.unsupported_node",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ))
             }
         }
     }
@@ -164,7 +179,8 @@ impl MatrixDomain {
                     MatrixValue::Matrix(_) => {
                         return Err(CalcError::domain(
                             "matrix elements must be scalars".to_string(),
-                        ))
+                        )
+                        .with_i18n("msg.matrix.elements_must_be_scalars", vec![]))
                     }
                 }
             }
@@ -194,8 +210,10 @@ impl MatrixDomain {
             BinaryOp::Add | BinaryOp::Sub => self.eval_matrix_add_sub(op, a, b),
             BinaryOp::Mul => self.eval_matrix_mul(a, b),
             BinaryOp::Div => self.eval_matrix_div(a, b),
-            BinaryOp::Pow => Err(CalcError::domain("matrix power not supported".to_string())),
-            BinaryOp::Mod => Err(CalcError::domain("matrix mod not supported".to_string())),
+            BinaryOp::Pow => Err(CalcError::domain("matrix power not supported".to_string())
+                .with_i18n("msg.matrix.power_not_supported", vec![])),
+            BinaryOp::Mod => Err(CalcError::domain("matrix mod not supported".to_string())
+                .with_i18n("msg.matrix.mod_not_supported", vec![])),
         }
     }
 
@@ -251,7 +269,16 @@ impl MatrixDomain {
                         am.ncols(),
                         bm.nrows(),
                         bm.ncols()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.dim_mismatch_addsub",
+                        vec![
+                            ("r1".to_string(), am.nrows().to_string()),
+                            ("c1".to_string(), am.ncols().to_string()),
+                            ("r2".to_string(), bm.nrows().to_string()),
+                            ("c2".to_string(), bm.ncols().to_string()),
+                        ],
+                    ));
                 }
                 let result = if op == BinaryOp::Add {
                     am + bm
@@ -262,7 +289,8 @@ impl MatrixDomain {
             }
             _ => Err(CalcError::domain(
                 "matrix add/sub requires two matrices of the same dimension".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.addsub_same_dim", vec![])),
         }
     }
 
@@ -279,7 +307,16 @@ impl MatrixDomain {
                         am.ncols(),
                         bm.nrows(),
                         bm.ncols()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.mul_dim_mismatch",
+                        vec![
+                            ("r1".to_string(), am.nrows().to_string()),
+                            ("c1".to_string(), am.ncols().to_string()),
+                            ("r2".to_string(), bm.nrows().to_string()),
+                            ("c2".to_string(), bm.ncols().to_string()),
+                        ],
+                    ));
                 }
                 Ok(MatrixValue::Matrix(&am * &bm))
             }
@@ -299,7 +336,8 @@ impl MatrixDomain {
             }
             _ => Err(CalcError::domain(
                 "matrix division only supports matrix / scalar".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.division_only_scalar", vec![])),
         }
     }
 
@@ -314,7 +352,11 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "unsupported function in matrix domain: {}",
                 name
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.unsupported_function",
+                vec![("name".to_string(), name.to_string())],
+            ));
         }
         match name {
             "det" => self.eval_det(args, ctx),
@@ -324,7 +366,11 @@ impl MatrixDomain {
             _ => Err(CalcError::domain(format!(
                 "unsupported function in matrix domain: {}",
                 name
-            ))),
+            ))
+            .with_i18n(
+                "msg.matrix.unsupported_function",
+                vec![("name".to_string(), name.to_string())],
+            )),
         }
     }
 
@@ -375,14 +421,25 @@ impl MatrixDomain {
                 "{}() requires exactly 1 argument, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.arg_count_1",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         match self.eval_node(&args[0], ctx)? {
             MatrixValue::Matrix(m) => Ok(m),
             MatrixValue::Scalar(_) => Err(CalcError::domain(format!(
                 "{}() requires a matrix argument",
                 name
-            ))),
+            ))
+            .with_i18n(
+                "msg.matrix.requires_matrix_arg",
+                vec![("name".to_string(), name.to_string())],
+            )),
         }
     }
 
@@ -397,14 +454,19 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "solve() requires exactly 2 arguments (A, b), got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.solve_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = match self.eval_node(&args[0], ctx)? {
             MatrixValue::Matrix(m) => m,
             MatrixValue::Scalar(_) => {
                 return Err(CalcError::domain(
                     "solve() requires A to be a matrix".to_string(),
-                ))
+                )
+                .with_i18n("msg.matrix.solve_requires_matrix", vec![]))
             }
         };
         // b：List（[1,2,3]）或单列 Matrix（[[1],[2],[3]]），design D5
@@ -415,7 +477,14 @@ impl MatrixDomain {
                         "solve() vector length {} exceeds limit {}",
                         elements.len(),
                         MAX_MATRIX_DIM
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.solve_vector_length",
+                        vec![
+                            ("len".to_string(), elements.len().to_string()),
+                            ("max".to_string(), MAX_MATRIX_DIM.to_string()),
+                        ],
+                    ));
                 }
                 let data: Vec<f64> = elements
                     .iter()
@@ -423,7 +492,8 @@ impl MatrixDomain {
                         Ok(MatrixValue::Scalar(s)) => Ok(s),
                         _ => Err(CalcError::domain(
                             "solve() vector elements must be scalars".to_string(),
-                        )),
+                        )
+                        .with_i18n("msg.matrix.solve_vector_scalars", vec![])),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 DVector::from_row_slice(&data)
@@ -433,12 +503,14 @@ impl MatrixDomain {
                 MatrixValue::Matrix(_) => {
                     return Err(CalcError::domain(
                         "solve() b matrix must be single-column".to_string(),
-                    ))
+                    )
+                    .with_i18n("msg.matrix.solve_b_single_column", vec![]))
                 }
                 MatrixValue::Scalar(_) => {
                     return Err(CalcError::domain(
                         "solve() b must be a vector or single-column matrix".to_string(),
-                    ))
+                    )
+                    .with_i18n("msg.matrix.solve_b_vector_or_column", vec![]))
                 }
             },
         };
@@ -451,7 +523,11 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "det() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.det_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
@@ -461,13 +537,21 @@ impl MatrixDomain {
                         "det() requires a square matrix, got {}x{}",
                         matrix.nrows(),
                         matrix.ncols()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.det_square",
+                        vec![
+                            ("rows".to_string(), matrix.nrows().to_string()),
+                            ("cols".to_string(), matrix.ncols().to_string()),
+                        ],
+                    ));
                 }
                 Ok(MatrixValue::Scalar(matrix.determinant()))
             }
             _ => Err(CalcError::domain(
                 "det() requires a matrix argument".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.det_matrix_arg", vec![])),
         }
     }
 
@@ -481,14 +565,19 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "transpose() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.transpose_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
             MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(matrix.transpose())),
             _ => Err(CalcError::domain(
                 "transpose() requires a matrix argument".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.transpose_matrix_arg", vec![])),
         }
     }
 
@@ -498,7 +587,11 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "inverse() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.inverse_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
@@ -508,18 +601,27 @@ impl MatrixDomain {
                         "inverse() requires a square matrix, got {}x{}",
                         matrix.nrows(),
                         matrix.ncols()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.inverse_square",
+                        vec![
+                            ("rows".to_string(), matrix.nrows().to_string()),
+                            ("cols".to_string(), matrix.ncols().to_string()),
+                        ],
+                    ));
                 }
                 match matrix.try_inverse() {
                     Some(inv) => Ok(MatrixValue::Matrix(inv)),
                     None => Err(CalcError::domain(
                         "matrix is singular (not invertible)".to_string(),
-                    )),
+                    )
+                    .with_i18n("msg.matrix.singular", vec![])),
                 }
             }
             _ => Err(CalcError::domain(
                 "inverse() requires a matrix argument".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.inverse_matrix_arg", vec![])),
         }
     }
 
@@ -529,7 +631,11 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "identity() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.identity_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let n_val = self.eval_node(&args[0], ctx)?;
         match n_val {
@@ -538,20 +644,32 @@ impl MatrixDomain {
                     return Err(CalcError::domain(format!(
                         "identity() requires a positive integer, got {}",
                         n
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.identity_positive",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 if n as usize > MAX_MATRIX_DIM {
                     return Err(CalcError::domain(format!(
                         "identity() dimension {} exceeds maximum of {}",
                         n, MAX_MATRIX_DIM
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.identity_dim_exceeds",
+                        vec![
+                            ("dim".to_string(), n.to_string()),
+                            ("max".to_string(), MAX_MATRIX_DIM.to_string()),
+                        ],
+                    ));
                 }
                 let n = n as usize;
                 Ok(MatrixValue::Matrix(DMatrix::identity(n, n)))
             }
             _ => Err(CalcError::domain(
                 "identity() requires a scalar argument".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.identity_scalar", vec![])),
         }
     }
 }
@@ -568,11 +686,13 @@ enum MatrixValue {
 /// 返回列数（ncols），失败时返回 `CalcError`。
 fn validate_matrix_dimensions(rows: &[Vec<AstNode>]) -> Result<usize, CalcError> {
     if rows.is_empty() {
-        return Err(CalcError::domain("empty matrix literal".to_string()));
+        return Err(CalcError::domain("empty matrix literal".to_string())
+            .with_i18n("msg.matrix.empty_literal", vec![]));
     }
     let ncols = rows[0].len();
     if ncols == 0 {
-        return Err(CalcError::domain("empty matrix row".to_string()));
+        return Err(CalcError::domain("empty matrix row".to_string())
+            .with_i18n("msg.matrix.empty_row", vec![]));
     }
     if rows.len() > MAX_MATRIX_DIM || ncols > MAX_MATRIX_DIM {
         return Err(CalcError::domain(format!(
@@ -581,7 +701,16 @@ fn validate_matrix_dimensions(rows: &[Vec<AstNode>]) -> Result<usize, CalcError>
             ncols,
             MAX_MATRIX_DIM,
             MAX_MATRIX_DIM
-        )));
+        ))
+        .with_i18n(
+            "msg.matrix.dim_exceeds_limit",
+            vec![
+                ("rows".to_string(), rows.len().to_string()),
+                ("cols".to_string(), ncols.to_string()),
+                ("max_rows".to_string(), MAX_MATRIX_DIM.to_string()),
+                ("max_cols".to_string(), MAX_MATRIX_DIM.to_string()),
+            ],
+        ));
     }
     for (i, row) in rows.iter().enumerate() {
         if row.len() != ncols {
@@ -590,7 +719,15 @@ fn validate_matrix_dimensions(rows: &[Vec<AstNode>]) -> Result<usize, CalcError>
                 i,
                 row.len(),
                 ncols
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.row_element_count",
+                vec![
+                    ("row".to_string(), i.to_string()),
+                    ("actual".to_string(), row.len().to_string()),
+                    ("expected".to_string(), ncols.to_string()),
+                ],
+            ));
         }
     }
     Ok(ncols)

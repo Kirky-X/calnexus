@@ -67,7 +67,16 @@ pub fn check_pow_output_size(base_bits: u64, abs_exp: u64) -> Result<(), CalcErr
         return Err(CalcError::domain(format!(
             "pow output too large: base_bits {} × exp {} = {} > {} (limit)",
             base_bits, abs_exp, estimated_output_bits, MAX_POW_OUTPUT_BITS
-        )));
+        ))
+        .with_i18n(
+            "msg.pow_output_too_large",
+            vec![
+                ("base_bits".to_string(), base_bits.to_string()),
+                ("exp".to_string(), abs_exp.to_string()),
+                ("output".to_string(), estimated_output_bits.to_string()),
+                ("limit".to_string(), MAX_POW_OUTPUT_BITS.to_string()),
+            ],
+        ));
     }
     Ok(())
 }
@@ -434,16 +443,25 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-/// 计算错误。结构化设计：kind + message + span + hint。design.md §5.3。
+/// 计算错误。结构化设计：kind + message + span + hint + i18n。design.md §5.3。
 ///
 /// 覆盖解析、求值、溢出、除零、定义域、深度、NaN/Inf 等所有错误路径。
 /// design.md D7 要求错误必须显性化（Rule 12: Fail Loud）。
+///
+/// i18n 字段（Phase 4.3 新增，方案 B 最小侵入）：
+/// - `i18n_key`: 参数化消息键（如 `"msg.unbound_variable"`），指向 `locales/{en,zh}.json`
+/// - `i18n_args`: 占位符参数（如 `[("name", "x")]`），用于 `I18n::tf()` 替换 `{name}`
+///
+/// 当 `i18n_key` 为 `None` 时，`friendly()` 回退到 `message`（英文硬编码）。
+/// `Display` impl 和 `to_json()` 始终用 `message`，保证机器可读契约不变（DP-1/DP-4）。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub struct CalcError {
     pub kind: ErrorKind,
     pub message: String,
     pub span: Option<Span>,
     pub hint: Option<String>,
+    pub i18n_key: Option<&'static str>,
+    pub i18n_args: Vec<(String, String)>,
 }
 
 impl fmt::Display for CalcError {
@@ -470,6 +488,8 @@ impl CalcError {
             message: message.into(),
             span: None,
             hint: None,
+            i18n_key: None,
+            i18n_args: Vec::new(),
         }
     }
     pub fn with_span(mut self, span: Span) -> Self {
@@ -478,6 +498,27 @@ impl CalcError {
     }
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
+        self
+    }
+
+    /// 附加国际化消息键 + 参数（链式）。
+    ///
+    /// 设置后，`friendly()` 和 `to_explain()` 会用 `I18n::tf(key, args)` 替换 `message`
+    /// 部分（kind 前缀保留）。`Display` impl 和 `to_json()` 始终用 `message`，保证
+    /// 机器可读契约不变（DP-1/DP-4）。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// CalcError::eval(format!("unbound variable: {}", name))
+    ///     .with_i18n("msg.unbound_variable", vec![("name".to_string(), name.to_string())])
+    /// ```
+    pub fn with_i18n(
+        mut self,
+        key: &'static str,
+        args: Vec<(String, String)>,
+    ) -> Self {
+        self.i18n_key = Some(key);
+        self.i18n_args = args;
         self
     }
 
@@ -490,9 +531,11 @@ impl CalcError {
     }
     pub fn overflow() -> Self {
         Self::new(ErrorKind::Overflow, "integer overflow")
+            .with_i18n("detail.overflow", vec![])
     }
     pub fn nan_or_inf() -> Self {
         Self::new(ErrorKind::NaNOrInf, "result is NaN or infinity")
+            .with_i18n("detail.nan_or_inf", vec![])
     }
     pub fn domain(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::Domain, msg)
@@ -500,10 +543,12 @@ impl CalcError {
     pub fn depth_exceeded() -> Self {
         Self::new(ErrorKind::Depth, "AST depth exceeded limit")
             .with_hint("simplify nested expressions (max 256)")
+            .with_i18n("detail.depth_exceeded", vec![])
     }
     pub fn division_by_zero() -> Self {
         Self::new(ErrorKind::DivisionByZero, "division by zero")
             .with_hint("check divisor before division")
+            .with_i18n("detail.division_by_zero", vec![])
     }
     pub fn undefined_symbol(name: &str) -> Self {
         Self::new(
@@ -511,16 +556,25 @@ impl CalcError {
             format!("undefined symbol: {}", name),
         )
         .with_hint(format!("try defining it first: :let {} = <value>", name))
+        .with_i18n(
+            "msg.undefined_symbol",
+            vec![("name".to_string(), name.to_string())],
+        )
     }
     pub fn timeout() -> Self {
         Self::new(ErrorKind::Timeout, "evaluation timed out")
             .with_hint("increase --timeout or simplify expression")
+            .with_i18n("detail.timeout", vec![])
     }
     pub fn usage(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::Usage, msg)
     }
 
     /// 中文友好文本（终端默认）。design.md §5.5。
+    ///
+    /// Phase 4.3: 当 `i18n_key` 存在时，detail 部分用 `I18n::tf(key, args)` 替换
+    /// `message`，实现参数化消息国际化。kind 前缀始终用 `ErrorKind::i18n_key()`。
+    /// `Display` impl 和 `to_json()` 不受影响（始终用 `message`，机器可读契约不变）。
     pub fn friendly(&self, i18n: &crate::i18n::I18n) -> String {
         let mut s = i18n.t(self.kind.i18n_key()).to_string();
         if let Some(span) = self.span {
@@ -531,7 +585,18 @@ impl CalcError {
                 span.end
             ));
         }
-        s.push_str(&format!(": {}", self.message));
+        // 优先用 i18n_key + i18n_args（参数化消息），fallback 到 message（英文硬编码）
+        let detail = if let Some(key) = self.i18n_key {
+            let args_ref: Vec<(&str, &str)> = self
+                .i18n_args
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            i18n.tf(key, &args_ref)
+        } else {
+            self.message.clone()
+        };
+        s.push_str(&format!(": {}", detail));
         if let Some(hint) = &self.hint {
             s.push_str(&format!("\n  {}: {}", i18n.t("label.hint"), hint));
         }
@@ -1056,6 +1121,133 @@ mod tests {
         assert!(explain.contains("求值超时"));
         assert!(explain.contains("错误类别: Timeout"));
         assert!(explain.contains("退出码: 3"));
+    }
+
+    // ===== Phase 4.3: i18n_key + i18n_args 字段测试 =====
+
+    #[test]
+    fn calc_error_new_has_no_i18n_key() {
+        let e = CalcError::parse("test");
+        assert!(e.i18n_key.is_none());
+        assert!(e.i18n_args.is_empty());
+    }
+
+    #[test]
+    fn calc_error_with_i18n_sets_key_and_args() {
+        let e = CalcError::eval("unbound variable: x")
+            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        assert_eq!(e.i18n_key, Some("msg.unbound_variable"));
+        assert_eq!(e.i18n_args, vec![("name".to_string(), "x".to_string())]);
+    }
+
+    #[test]
+    fn calc_error_with_i18n_chains_with_span_and_hint() {
+        let e = CalcError::domain("test")
+            .with_span(Span::new(0, 4))
+            .with_hint("hint")
+            .with_i18n("msg.unknown_function", vec![("name".to_string(), "sin".to_string())]);
+        assert_eq!(e.span, Some(Span::new(0, 4)));
+        assert_eq!(e.hint.as_deref(), Some("hint"));
+        assert_eq!(e.i18n_key, Some("msg.unknown_function"));
+        assert_eq!(e.i18n_args, vec![("name".to_string(), "sin".to_string())]);
+    }
+
+    #[test]
+    fn calc_error_friendly_uses_i18n_key_when_set_en() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let e = CalcError::eval("unbound variable: x")
+            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let friendly = e.friendly(&i18n);
+        // kind 前缀（英文）
+        assert!(friendly.contains("Evaluation error"));
+        // 参数化消息（英文，替换占位符）
+        assert!(friendly.contains("Unbound variable: x"));
+        // 不应包含原始英文 message（被 i18n 替换）
+        assert!(!friendly.contains("unbound variable: x"));
+    }
+
+    #[test]
+    fn calc_error_friendly_uses_i18n_key_when_set_zh() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+        let e = CalcError::eval("unbound variable: x")
+            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let friendly = e.friendly(&i18n);
+        // kind 前缀（中文）
+        assert!(friendly.contains("求值错误"));
+        // 参数化消息（中文，替换占位符）
+        assert!(friendly.contains("未绑定变量: x"));
+        // 不应包含原始英文 message
+        assert!(!friendly.contains("unbound variable: x"));
+    }
+
+    #[test]
+    fn calc_error_friendly_falls_back_to_message_when_no_i18n_key() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+        let e = CalcError::domain("asin(2)");
+        let friendly = e.friendly(&i18n);
+        // i18n_key=None 时 fallback 到 message
+        assert!(friendly.contains("asin(2)"));
+    }
+
+    #[test]
+    fn calc_error_friendly_multi_placeholder_i18n_en() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let e = CalcError::domain("matrix dimension mismatch: 3x3 vs 2x2")
+            .with_i18n(
+                "msg.matrix_dim_mismatch",
+                vec![
+                    ("expected".to_string(), "3x3".to_string()),
+                    ("actual".to_string(), "2x2".to_string()),
+                ],
+            );
+        let friendly = e.friendly(&i18n);
+        assert!(friendly.contains("Domain error"));
+        assert!(friendly.contains("Matrix dimension mismatch: expected 3x3, got 2x2"));
+    }
+
+    #[test]
+    fn calc_error_friendly_multi_placeholder_i18n_zh() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+        let e = CalcError::domain("matrix dimension mismatch: 3x3 vs 2x2")
+            .with_i18n(
+                "msg.matrix_dim_mismatch",
+                vec![
+                    ("expected".to_string(), "3x3".to_string()),
+                    ("actual".to_string(), "2x2".to_string()),
+                ],
+            );
+        let friendly = e.friendly(&i18n);
+        assert!(friendly.contains("定义域错误"));
+        assert!(friendly.contains("矩阵维度不匹配: 期望 3x3, 实际 2x2"));
+    }
+
+    #[test]
+    fn calc_error_to_json_ignores_i18n_key_uses_message() {
+        let e = CalcError::eval("unbound variable: x")
+            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let json = e.to_json();
+        // JSON 输出始终用 message（机器可读契约，DP-4）
+        assert!(json.contains(r#""message":"unbound variable: x""#));
+        // JSON 不应包含 i18n 翻译后的文本
+        assert!(!json.contains("Unbound variable"));
+    }
+
+    #[test]
+    fn calc_error_display_ignores_i18n_key_uses_message() {
+        let e = CalcError::eval("unbound variable: x")
+            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let display = e.to_string();
+        // Display 始终用 message（DP-1 机器可读契约）
+        assert_eq!(display, "evaluation error: unbound variable: x");
+    }
+
+    #[test]
+    fn calc_error_clone_preserves_i18n_fields() {
+        let e = CalcError::eval("test")
+            .with_i18n("msg.unknown_function", vec![("name".to_string(), "sin".to_string())]);
+        let cloned = e.clone();
+        assert_eq!(e.i18n_key, cloned.i18n_key);
+        assert_eq!(e.i18n_args, cloned.i18n_args);
     }
 
     // ===== Error trait 测试 =====

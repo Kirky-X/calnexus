@@ -82,7 +82,8 @@ impl ScientificDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))
+                    .with_i18n("msg.unbound_variable", vec![("name".to_string(), name.to_string())])),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -103,7 +104,11 @@ impl ScientificDomain {
             | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
                 "scientific domain does not support this node type: {:?}",
                 ast
-            ))),
+            ))
+            .with_i18n(
+                "msg.scientific.unsupported_node",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            )),
         }
     }
 
@@ -147,7 +152,11 @@ impl ScientificDomain {
             return Err(CalcError::domain(format!(
                 "factorial requires non-negative integer, got {}",
                 n
-            )));
+            ))
+            .with_i18n(
+                "msg.core.factorial_negative",
+                vec![("value".to_string(), n.to_string())],
+            ));
         }
         let n = n as u64;
         if n > MAX_FACTORIAL_INPUT {
@@ -171,7 +180,8 @@ impl ScientificDomain {
         ctx: &EvalContext,
     ) -> Result<f64, CalcError> {
         if !SCIENTIFIC_FUNCTIONS.contains(&name) {
-            return Err(CalcError::eval(format!("unknown function: {}", name)));
+            return Err(CalcError::eval(format!("unknown function: {}", name))
+                .with_i18n("msg.unknown_function", vec![("name".to_string(), name.to_string())]));
         }
         match name {
             // ===== 三角函数 =====
@@ -196,7 +206,8 @@ impl ScientificDomain {
             // ===== 特殊函数 =====
             "gamma" => self.eval_unary(name, args, ctx, lanczos_gamma),
             "erf" => self.eval_unary(name, args, ctx, erf),
-            _ => Err(CalcError::eval(format!("unknown function: {}", name))),
+            _ => Err(CalcError::eval(format!("unknown function: {}", name))
+                .with_i18n("msg.unknown_function", vec![("name".to_string(), name.to_string())])),
         }
     }
 
@@ -218,7 +229,11 @@ impl ScientificDomain {
         if !(-1.0..=1.0).contains(&x) {
             return Err(
                 CalcError::domain(format!("asin requires argument in [-1, 1], got {}", x))
-                    .with_hint("asin domain is [-1, 1]"),
+                    .with_hint("asin domain is [-1, 1]")
+                    .with_i18n(
+                        "msg.scientific.asin_domain",
+                        vec![("value".to_string(), x.to_string())],
+                    ),
             );
         }
         self.check_finite(x.asin(), name)
@@ -230,7 +245,11 @@ impl ScientificDomain {
         if !(-1.0..=1.0).contains(&x) {
             return Err(
                 CalcError::domain(format!("acos requires argument in [-1, 1], got {}", x))
-                    .with_hint("acos domain is [-1, 1]"),
+                    .with_hint("acos domain is [-1, 1]")
+                    .with_i18n(
+                        "msg.scientific.acos_domain",
+                        vec![("value".to_string(), x.to_string())],
+                    ),
             );
         }
         self.check_finite(x.acos(), name)
@@ -243,7 +262,11 @@ impl ScientificDomain {
             return Err(CalcError::domain(format!(
                 "ln requires positive argument, got {}",
                 x
-            )));
+            ))
+            .with_i18n(
+                "msg.scientific.ln_positive",
+                vec![("value".to_string(), x.to_string())],
+            ));
         }
         self.check_finite(x.ln(), name)
     }
@@ -260,7 +283,11 @@ impl ScientificDomain {
             return Err(CalcError::domain(format!(
                 "log10 requires positive argument, got {}",
                 x
-            )));
+            ))
+            .with_i18n(
+                "msg.scientific.log10_positive",
+                vec![("value".to_string(), x.to_string())],
+            ));
         }
         self.check_finite(x.log10(), name)
     }
@@ -272,7 +299,11 @@ impl ScientificDomain {
             return Err(CalcError::domain(format!(
                 "log2 requires positive argument, got {}",
                 x
-            )));
+            ))
+            .with_i18n(
+                "msg.scientific.log2_positive",
+                vec![("value".to_string(), x.to_string())],
+            ));
         }
         self.check_finite(x.log2(), name)
     }
@@ -283,7 +314,11 @@ impl ScientificDomain {
             return Err(CalcError::eval(format!(
                 "log expects 2 arguments (value, base), got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.scientific.log_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let value = self.eval_node(&args[0], ctx)?;
         let base = self.eval_node(&args[1], ctx)?;
@@ -291,13 +326,21 @@ impl ScientificDomain {
             return Err(CalcError::domain(format!(
                 "log requires positive value, got {}",
                 value
-            )));
+            ))
+            .with_i18n(
+                "msg.scientific.log_positive_value",
+                vec![("value".to_string(), value.to_string())],
+            ));
         }
         if base <= 0.0 || base == 1.0 {
             return Err(CalcError::domain(format!(
                 "log requires positive base != 1, got {}",
                 base
-            )));
+            ))
+            .with_i18n(
+                "msg.scientific.log_positive_base",
+                vec![("value".to_string(), base.to_string())],
+            ));
         }
         self.check_finite(value.log(base), name)
     }
@@ -314,7 +357,14 @@ impl ScientificDomain {
                 "{} expects 1 argument, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.scientific.arg_count",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         self.eval_node(&args[0], ctx)
     }

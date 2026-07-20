@@ -13,6 +13,7 @@ use crate::cli::format_result;
 use crate::core::evaluate;
 use crate::core::MAX_EXPR_LEN;
 use crate::core::{EvalContext, EvalResult};
+use crate::i18n::I18n;
 use rayon::prelude::*;
 use std::io::{self, BufRead, Read};
 use std::time::Instant;
@@ -28,21 +29,22 @@ impl BatchProcessor {
     ///
     /// - `path`: 文件路径，`"-"` 表示从 stdin 读取
     /// - `ctx`: 变量上下文
-    /// - `json`: 是否输出 JSON 格式
+    /// - `json`: 是否输出 JSON 格式（JSON 输出键名保留英文，DP-4 机器可读契约）
+    /// - `i18n`: 国际化上下文，用于本地化错误与汇总消息
     ///
     /// 返回退出码：0=全部成功，1=部分失败，2=系统错误。
-    pub fn run(path: &str, ctx: &EvalContext, json: bool) -> i32 {
+    pub fn run(path: &str, ctx: &EvalContext, json: bool, i18n: &I18n) -> i32 {
         let start = Instant::now();
 
-        let entries = match read_and_validate_entries(path) {
+        let entries = match read_and_validate_entries(path, i18n) {
             Ok(e) => e,
             Err(code) => return code,
         };
 
         let results = evaluate_entries(&entries, ctx);
 
-        output_results(&results, json);
-        print_summary(&results, start.elapsed());
+        output_results(&results, json, i18n);
+        print_summary(&results, start.elapsed(), i18n);
 
         let err_count = results.iter().filter(|r| r.result.is_err()).count();
         if err_count > 0 {
@@ -55,11 +57,14 @@ impl BatchProcessor {
 
 /// 读取并验证批量条目（TG5.1-TG5.2）：跳过注释/空行，校验长度与数量上限。
 /// 返回 `Err(exit_code)` 表示系统错误（exit_code=2）。
-fn read_and_validate_entries(path: &str) -> Result<Vec<BatchEntry>, i32> {
+fn read_and_validate_entries(path: &str, i18n: &I18n) -> Result<Vec<BatchEntry>, i32> {
     let lines = match read_lines(path) {
         Ok(lines) => lines,
         Err(e) => {
-            eprintln!("error: failed to read input: {}", e);
+            eprintln!(
+                "{}",
+                i18n.tf("batch.read_failed", &[("error", &e.to_string())])
+            );
             return Err(2);
         }
     };
@@ -72,10 +77,15 @@ fn read_and_validate_entries(path: &str) -> Result<Vec<BatchEntry>, i32> {
         }
         if trimmed.len() > MAX_EXPR_LEN {
             eprintln!(
-                "error: line {} exceeds max length {} (got {})",
-                line_no,
-                MAX_EXPR_LEN,
-                trimmed.len()
+                "{}",
+                i18n.tf(
+                    "batch.line_too_long",
+                    &[
+                        ("line", &line_no.to_string()),
+                        ("max", &MAX_EXPR_LEN.to_string()),
+                        ("actual", &trimmed.len().to_string())
+                    ]
+                )
             );
             return Err(2);
         }
@@ -86,14 +96,19 @@ fn read_and_validate_entries(path: &str) -> Result<Vec<BatchEntry>, i32> {
     }
 
     if entries.is_empty() {
-        eprintln!("error: no expressions to evaluate");
+        eprintln!("{}", i18n.t("batch.no_expressions"));
         return Err(2);
     }
     if entries.len() > MAX_BATCH_COUNT {
         eprintln!(
-            "error: batch count {} exceeds maximum of {}",
-            entries.len(),
-            MAX_BATCH_COUNT
+            "{}",
+            i18n.tf(
+                "batch.count_exceeds",
+                &[
+                    ("count", &entries.len().to_string()),
+                    ("max", &MAX_BATCH_COUNT.to_string())
+                ]
+            )
         );
         return Err(2);
     }
@@ -118,7 +133,9 @@ fn evaluate_entries(entries: &[BatchEntry], ctx: &EvalContext) -> Vec<BatchResul
 }
 
 /// 输出结果（TG5.4）：JSON 数组或文本行，保持原始顺序。
-fn output_results(results: &[BatchResult], json: bool) {
+///
+/// JSON 输出键名保留英文（DP-4 机器可读契约）；文本输出走 i18n。
+fn output_results(results: &[BatchResult], json: bool, i18n: &I18n) {
     let total = results.len();
     if json {
         println!("[");
@@ -153,17 +170,37 @@ fn output_results(results: &[BatchResult], json: bool) {
             match &r.result {
                 Ok((result, domain, hit, fmt_prec)) => {
                     let value = format_result(result, *fmt_prec);
+                    let cached_str = if *hit {
+                        i18n.t("label.cached_suffix").to_string()
+                    } else {
+                        String::new()
+                    };
                     println!(
-                        "line {}: {} = {}  [{}{}]",
-                        r.line_no,
-                        r.expr,
-                        value,
-                        domain,
-                        if *hit { " (cached)" } else { "" }
+                        "{}",
+                        i18n.tf(
+                            "batch.text_result",
+                            &[
+                                ("line", &r.line_no.to_string()),
+                                ("expr", &r.expr),
+                                ("value", &value),
+                                ("domain", domain),
+                                ("cached", &cached_str)
+                            ]
+                        )
                     );
                 }
                 Err(e) => {
-                    eprintln!("line {}: {} → error: {}", r.line_no, r.expr, e);
+                    eprintln!(
+                        "{}",
+                        i18n.tf(
+                            "batch.text_error",
+                            &[
+                                ("line", &r.line_no.to_string()),
+                                ("expr", &r.expr),
+                                ("error", &e.to_string())
+                            ]
+                        )
+                    );
                 }
             }
         }
@@ -171,7 +208,7 @@ fn output_results(results: &[BatchResult], json: bool) {
 }
 
 /// 打印汇总统计到 stderr：总数、成功、错误、缓存命中、耗时。
-fn print_summary(results: &[BatchResult], elapsed: std::time::Duration) {
+fn print_summary(results: &[BatchResult], elapsed: std::time::Duration, i18n: &I18n) {
     let total = results.len();
     let ok_count = results.iter().filter(|r| r.result.is_ok()).count();
     let err_count = total - ok_count;
@@ -185,8 +222,17 @@ fn print_summary(results: &[BatchResult], elapsed: std::time::Duration) {
         })
         .count();
     eprintln!(
-        "summary: {} total, {} ok, {} errors, {} cache hits, {:?}",
-        total, ok_count, err_count, cache_hits, elapsed
+        "{}",
+        i18n.tf(
+            "batch.summary",
+            &[
+                ("total", &total.to_string()),
+                ("ok", &ok_count.to_string()),
+                ("errors", &err_count.to_string()),
+                ("hits", &cache_hits.to_string()),
+                ("elapsed", &format!("{:?}", elapsed))
+            ]
+        )
     );
 }
 
@@ -266,7 +312,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         // 全部成功应返回 0
         assert_eq!(code, 0);
     }
@@ -280,7 +326,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         assert_eq!(code, 0);
     }
 
@@ -291,7 +337,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         assert_eq!(code, 2);
     }
 
@@ -304,7 +350,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         // 部分失败应返回 1
         assert_eq!(code, 1);
     }
@@ -316,7 +362,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, true);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, true, &I18n::default());
         assert_eq!(code, 0);
     }
 
@@ -330,14 +376,14 @@ mod tests {
 
         // 即使并行求值，输出应保持原始顺序
         let ctx = EvalContext::new();
-        let _code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        let _code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         // 验证不 panic 即可（顺序由 par_iter + collect 保证）
     }
 
     #[test]
     fn test_batch_nonexistent_file() {
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run("/nonexistent/path/to/file.txt", &ctx, false);
+        let code = BatchProcessor::run("/nonexistent/path/to/file.txt", &ctx, false, &I18n::default());
         assert_eq!(code, 2);
     }
 
@@ -350,7 +396,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         assert_eq!(code, 2);
     }
 
@@ -364,7 +410,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         assert_eq!(code, 2);
     }
 
@@ -377,7 +423,7 @@ mod tests {
         tmp.flush().unwrap();
 
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, true);
+        let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, true, &I18n::default());
         // 部分失败 → 1
         assert_eq!(code, 1);
     }

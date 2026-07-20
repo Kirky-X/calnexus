@@ -85,7 +85,11 @@ impl DomainRouter {
         Err(CalcError::domain(format!(
             "no registered domain supports this expression ({})",
             detail
-        )))
+        ))
+        .with_i18n(
+            "msg.core.no_registered_domain",
+            vec![("expr".to_string(), detail.to_string())],
+        ))
     }
 
     /// 已注册域数量。

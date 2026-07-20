@@ -60,7 +60,12 @@ impl StatisticsDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -71,9 +76,12 @@ impl StatisticsDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Abs => Ok(v.abs()),
-                    UnaryOp::Factorial => Err(CalcError::domain(
-                        "factorial not supported in statistics domain".to_string(),
-                    )),
+                    UnaryOp::Factorial => Err(
+                        CalcError::domain(
+                            "factorial not supported in statistics domain".to_string(),
+                        )
+                        .with_i18n("msg.statistics.factorial_not_supported", vec![]),
+                    ),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
@@ -83,7 +91,11 @@ impl StatisticsDomain {
             | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
                 "statistics domain does not support this node type: {:?}",
                 ast
-            ))),
+            ))
+            .with_i18n(
+                "msg.statistics.unsupported_node",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            )),
         }
     }
 
@@ -133,14 +145,25 @@ impl StatisticsDomain {
             return Err(CalcError::domain(format!(
                 "unsupported function in statistics domain: {}",
                 name
-            )));
+            ))
+            .with_i18n(
+                "msg.statistics.unsupported_function",
+                vec![("name".to_string(), name.to_string())],
+            ));
         }
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
                 "{}() requires exactly 1 argument, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.statistics.arg_count",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let values = self.extract_list(&args[0], ctx)?;
         // 空列表 → DomainError（spec Req 8）
@@ -148,7 +171,11 @@ impl StatisticsDomain {
             return Err(CalcError::domain(format!(
                 "{}() requires a non-empty list",
                 name
-            )));
+            ))
+            .with_i18n(
+                "msg.statistics.requires_non_empty_list",
+                vec![("name".to_string(), name.to_string())],
+            ));
         }
         match name {
             "mean" => Ok(values.iter().sum::<f64>() / values.len() as f64),
@@ -197,7 +224,11 @@ impl StatisticsDomain {
             _ => Err(CalcError::domain(format!(
                 "statistics functions require a list argument, got: {:?}",
                 ast
-            ))),
+            ))
+            .with_i18n(
+                "msg.statistics.requires_list_arg",
+                vec![("ast".to_string(), format!("{:?}", ast))],
+            )),
         }
     }
 }

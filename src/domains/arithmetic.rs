@@ -51,7 +51,12 @@ impl ArithmeticDomain {
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => ctx
                 .get_var(name)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -69,10 +74,16 @@ impl ArithmeticDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
-                "arithmetic domain does not support this node type: {:?}",
-                ast
-            ))),
+            | AstNode::BigNumber(_) => Err(
+                CalcError::domain(format!(
+                    "arithmetic domain does not support this node type: {:?}",
+                    ast
+                ))
+                .with_i18n(
+                    "msg.arithmetic.unsupported_node",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ),
+            ),
         }
     }
 
@@ -123,10 +134,16 @@ impl ArithmeticDomain {
     /// 超过 f64 表示范围时返回 `Overflow`。
     fn eval_factorial(&self, n: f64) -> Result<f64, CalcError> {
         if n < 0.0 || n.fract() != 0.0 {
-            return Err(CalcError::domain(format!(
-                "factorial requires non-negative integer, got {}",
-                n
-            )));
+            return Err(
+                CalcError::domain(format!(
+                    "factorial requires non-negative integer, got {}",
+                    n
+                ))
+                .with_i18n(
+                    "msg.core.factorial_negative",
+                    vec![("value".to_string(), n.to_string())],
+                ),
+            );
         }
         let n = n as u64;
         if n > MAX_FACTORIAL_INPUT {
@@ -152,20 +169,32 @@ impl ArithmeticDomain {
         match name {
             "factorial" => {
                 if args.len() != 1 {
-                    return Err(CalcError::eval(format!(
-                        "factorial expects 1 argument, got {}",
-                        args.len()
-                    )));
+                    return Err(
+                        CalcError::eval(format!(
+                            "factorial expects 1 argument, got {}",
+                            args.len()
+                        ))
+                        .with_i18n(
+                            "msg.arithmetic.factorial_arg_count",
+                            vec![("actual".to_string(), args.len().to_string())],
+                        ),
+                    );
                 }
                 let n = self.eval_node(&args[0], ctx)?;
                 self.eval_factorial(n)
             }
             "mod" => {
                 if args.len() != 2 {
-                    return Err(CalcError::eval(format!(
-                        "mod expects 2 arguments, got {}",
-                        args.len()
-                    )));
+                    return Err(
+                        CalcError::eval(format!(
+                            "mod expects 2 arguments, got {}",
+                            args.len()
+                        ))
+                        .with_i18n(
+                            "msg.arithmetic.mod_arg_count",
+                            vec![("actual".to_string(), args.len().to_string())],
+                        ),
+                    );
                 }
                 let a = self.eval_node(&args[0], ctx)?;
                 let b = self.eval_node(&args[1], ctx)?;
@@ -173,15 +202,26 @@ impl ArithmeticDomain {
             }
             "abs" => {
                 if args.len() != 1 {
-                    return Err(CalcError::eval(format!(
-                        "abs expects 1 argument, got {}",
-                        args.len()
-                    )));
+                    return Err(
+                        CalcError::eval(format!(
+                            "abs expects 1 argument, got {}",
+                            args.len()
+                        ))
+                        .with_i18n(
+                            "msg.arithmetic.abs_arg_count",
+                            vec![("actual".to_string(), args.len().to_string())],
+                        ),
+                    );
                 }
                 let v = self.eval_node(&args[0], ctx)?;
                 Ok(v.abs())
             }
-            _ => Err(CalcError::eval(format!("unknown function: {}", name))),
+            _ => Err(
+                CalcError::eval(format!("unknown function: {}", name)).with_i18n(
+                    "msg.unknown_function",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            ),
         }
     }
 }

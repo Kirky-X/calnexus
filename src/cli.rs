@@ -18,6 +18,10 @@ use sdforge::clap::{self, Parser};
 use std::io::{self, IsTerminal, Read};
 
 /// CLI 参数定义（通过 sdforge::clap 重导出使用 clap v4 derive）。
+///
+/// 注意：`about` 字段是 clap derive 编译时字面量，无法运行时国际化。
+/// 用户可见的本地化消息通过 `--lang` 切换 `I18n` 实例，由 `friendly()`/`tf()` 渲染。
+/// `about` 保留英文与默认语言（en）一致；`cli.about` 键供其他场景运行时查询。
 #[derive(Parser)]
 #[command(
     name = "calnexus",
@@ -145,7 +149,7 @@ fn run_repl_mode(cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
         Err(e) => return handle_error(&e, cli, i18n),
     };
     ctx.precision = cli.precision;
-    crate::repl::ReplSession::new(ctx).run()
+    crate::repl::ReplSession::new(ctx, i18n.clone()).run()
 }
 
 /// --batch 模式：解析变量绑定并批量求值。
@@ -154,7 +158,7 @@ fn run_batch_mode(path: &str, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
     };
-    crate::batch::BatchProcessor::run(path, &ctx, cli.json)
+    crate::batch::BatchProcessor::run(path, &ctx, cli.json, i18n)
 }
 
 /// --canonical 模式：parse → canonicalize_no_fold → 输出 S-expr，跳过求值。
@@ -278,12 +282,14 @@ fn handle_error(e: &CalcError, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
     } else if cli.explain {
         eprintln!("{}", e.to_explain(i18n));
     } else {
-        eprintln!("error: {}", e.friendly(i18n));
+        eprintln!("{}: {}", i18n.t("cli.error_prefix"), e.friendly(i18n));
     }
     e.kind.exit_code()
 }
 
 /// 从位置参数或 stdin 获取表达式。
+///
+/// i18n_key 通过 `with_i18n` 附加到 CalcError，渲染时由 `handle_error` 传入 i18n 实例。
 fn get_expression(cli: &Cli) -> Result<String, CalcError> {
     if let Some(expr) = &cli.expression {
         return Ok(expr.clone());
@@ -297,16 +303,20 @@ fn get_expression(cli: &Cli) -> Result<String, CalcError> {
     // 管道 stdin：读取表达式
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
-        return Err(CalcError::usage("failed to read from stdin"));
+        return Err(CalcError::usage("failed to read from stdin")
+            .with_i18n("cli.stdin_read_failed", vec![]));
     }
     let trimmed = input.trim().to_string();
     if trimmed.is_empty() {
-        return Err(CalcError::usage("empty expression on stdin"));
+        return Err(CalcError::usage("empty expression on stdin")
+            .with_i18n("cli.empty_stdin", vec![]));
     }
     Ok(trimmed)
 }
 
 /// 解析 --var NAME=VALUE 列表为 EvalContext。
+///
+/// i18n_key 通过 `with_i18n` 附加到 CalcError，渲染时由 `handle_error` 传入 i18n 实例。
 fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
     let mut ctx = EvalContext::new();
     for v in vars {
@@ -315,11 +325,21 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
             return Err(CalcError::usage(format!(
                 "invalid --var '{}', expected NAME=VALUE",
                 v
-            )));
+            ))
+            .with_i18n(
+                "cli.invalid_var",
+                vec![("value".to_string(), v.clone())],
+            ));
         }
-        let value: f64 = parts[1]
-            .parse()
-            .map_err(|e| CalcError::usage(format!("invalid --var value '{}': {}", parts[1], e)))?;
+        let value: f64 = parts[1].parse::<f64>().map_err(|e| {
+            CalcError::usage(format!("invalid --var value '{}': {}", parts[1], e)).with_i18n(
+                "cli.invalid_var_value",
+                vec![
+                    ("value".to_string(), parts[1].to_string()),
+                    ("error".to_string(), e.to_string()),
+                ],
+            )
+        })?;
         ctx = ctx.with_var(parts[0], value);
     }
     Ok(ctx)

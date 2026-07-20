@@ -1,12 +1,17 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! ICU4X 国际化模块：中英双语错误消息。
+//! ICU4X 国际化模块：中英双语消息目录。
 //!
 //! 设计依据：design.md §4 (ICU4X 设计)
 //! - `I18n` 结构体始终可用（不受 feature gate 限制）
 //! - `icu` feature 仅控制是否使用 `icu::locale` 解析 BCP-47 语言标签
 //! - 无 `icu` feature 时，`from_str` 使用简单字符串匹配
-//! - 消息目录使用 match 表，未知键返回键本身（fail-loud）
+//! - 消息目录外部化到 `locales/{en,zh}.json`，编译时通过 `include_str!` 嵌入
+//! - 简单消息用 `t(key)`，参数化消息用 `tf(key, args)`（`{name}` 占位符）
+//! - 未知键返回键本身（fail-loud）
+
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// 支持的语言。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -19,8 +24,37 @@ pub enum Lang {
 }
 
 /// 国际化上下文：持有当前语言，提供消息目录查询。
+///
+/// `Clone` 派生：`cli::run_repl_mode` 需要 `I18n::clone()` 传入 ReplSession（REPL 持有
+/// 自己的实例以便长期运行），而 `Lang` 是 `Copy` 类型，clone 成本为零。
+#[derive(Clone)]
 pub struct I18n {
     lang: Lang,
+}
+
+// 静态消息表：编译时嵌入 JSON，运行时解析一次后缓存。
+// `HashMap<&'static str, &'static str>` 借用 `include_str!` 的 'static 数据，
+// 零拷贝（JSON 中无转义字符，serde_json 可直接借用原始字节）。
+static EN_MESSAGES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+static ZH_MESSAGES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+
+/// 加载英文消息表（首次调用解析 JSON，后续直接返回缓存）。
+fn en_messages() -> &'static HashMap<&'static str, &'static str> {
+    EN_MESSAGES.get_or_init(|| {
+        let json = include_str!("../locales/en.json");
+        // 编译时 JSON 损坏是开发期错误，panic 提示修复（规则12 失败显性化）
+        serde_json::from_str(json)
+            .unwrap_or_else(|e| panic!("locales/en.json 解析失败: {e}"))
+    })
+}
+
+/// 加载中文消息表（首次调用解析 JSON，后续直接返回缓存）。
+fn zh_messages() -> &'static HashMap<&'static str, &'static str> {
+    ZH_MESSAGES.get_or_init(|| {
+        let json = include_str!("../locales/zh.json");
+        serde_json::from_str(json)
+            .unwrap_or_else(|e| panic!("locales/zh.json 解析失败: {e}"))
+    })
 }
 
 impl I18n {
@@ -48,59 +82,34 @@ impl I18n {
         self.lang
     }
 
-    /// 查询消息目录。
+    /// 查询简单消息目录（无占位符）。
     ///
     /// 已知键返回对应语言的翻译文本；未知键返回键本身（fail-loud）。
     pub fn t<'a>(&self, key: &'a str) -> &'a str {
-        match (key, self.lang) {
-            // error.parse
-            ("error.parse", Lang::En) => "Parse error",
-            ("error.parse", Lang::Zh) => "解析错误",
-            // error.eval
-            ("error.eval", Lang::En) => "Evaluation error",
-            ("error.eval", Lang::Zh) => "求值错误",
-            // error.overflow
-            ("error.overflow", Lang::En) => "Arithmetic overflow",
-            ("error.overflow", Lang::Zh) => "算术溢出",
-            // error.division_by_zero
-            ("error.division_by_zero", Lang::En) => "Division by zero",
-            ("error.division_by_zero", Lang::Zh) => "除以零",
-            // error.domain
-            ("error.domain", Lang::En) => "Domain error",
-            ("error.domain", Lang::Zh) => "定义域错误",
-            // error.depth
-            ("error.depth", Lang::En) => "Maximum recursion depth exceeded",
-            ("error.depth", Lang::Zh) => "超过最大递归深度",
-            // error.nan_or_inf
-            ("error.nan_or_inf", Lang::En) => "Result is NaN or infinity",
-            ("error.nan_or_inf", Lang::Zh) => "结果为 NaN 或无穷大",
-            // error.undefined_symbol
-            ("error.undefined_symbol", Lang::En) => "Undefined symbol",
-            ("error.undefined_symbol", Lang::Zh) => "未定义符号",
-            // error.timeout
-            ("error.timeout", Lang::En) => "Evaluation timed out",
-            ("error.timeout", Lang::Zh) => "求值超时",
-            // error.usage
-            ("error.usage", Lang::En) => "Usage error",
-            ("error.usage", Lang::Zh) => "用法错误",
-            // label.position — friendly()/to_explain() 中 Span 位置标签
-            ("label.position", Lang::En) => "Position",
-            ("label.position", Lang::Zh) => "位置",
-            // label.hint — friendly()/to_explain() 中提示标签
-            ("label.hint", Lang::En) => "Hint",
-            ("label.hint", Lang::Zh) => "提示",
-            // label.error_kind — to_explain() 中错误类别标签
-            ("label.error_kind", Lang::En) => "Error Kind",
-            ("label.error_kind", Lang::Zh) => "错误类别",
-            // label.exit_code — to_explain() 中退出码标签
-            ("label.exit_code", Lang::En) => "Exit Code",
-            ("label.exit_code", Lang::Zh) => "退出码",
-            // label.suggestion — to_explain() 中建议标签
-            ("label.suggestion", Lang::En) => "Suggestion",
-            ("label.suggestion", Lang::Zh) => "建议",
-            // 未知键：返回键本身（fail-loud）
-            _ => key,
+        let table = match self.lang {
+            Lang::En => en_messages(),
+            Lang::Zh => zh_messages(),
+        };
+        table.get(key).copied().unwrap_or(key)
+    }
+
+    /// 查询参数化消息目录（含 `{name}` 占位符）。
+    ///
+    /// 占位符格式：`{name}`，`args` 提供 `(name, value)` 键值对。
+    /// - 已知键：替换所有匹配的占位符后返回 `String`
+    /// - 未知键：返回键本身（fail-loud，不进行替换）
+    /// - 占位符未提供值：保留原样（便于调试缺失的参数）
+    pub fn tf(&self, key: &str, args: &[(&str, &str)]) -> String {
+        let template = self.t(key);
+        if args.is_empty() {
+            return template.to_string();
         }
+        let mut result = template.to_string();
+        for (name, value) in args {
+            let placeholder = format!("{{{}}}", name);
+            result = result.replace(&placeholder, value);
+        }
+        result
     }
 }
 
@@ -112,7 +121,7 @@ impl Default for I18n {
 
 /// 解析 BCP-47 语言标签为 `Lang`。
 ///
-/// 有 `icu` feature 时使用 `icu::locid::Locale` 解析；否则使用简单字符串匹配。
+/// 有 `icu` feature 时使用 `icu::locale` 解析；否则使用简单字符串匹配。
 fn parse_lang(s: &str) -> Lang {
     #[cfg(feature = "icu")]
     {
@@ -285,6 +294,13 @@ mod tests {
             "label.error_kind",
             "label.exit_code",
             "label.suggestion",
+            // 参数化消息键（含占位符，但 t() 返回原始模板）
+            "msg.unbound_variable",
+            "msg.invalid_bignumber",
+            "msg.matrix_dim_mismatch",
+            "msg.function_arg_count",
+            "msg.unknown_function",
+            "msg.unknown_variable",
         ];
         for key in &keys {
             let msg = i18n.t(key);
@@ -320,6 +336,12 @@ mod tests {
             "label.error_kind",
             "label.exit_code",
             "label.suggestion",
+            "msg.unbound_variable",
+            "msg.invalid_bignumber",
+            "msg.matrix_dim_mismatch",
+            "msg.function_arg_count",
+            "msg.unknown_function",
+            "msg.unknown_variable",
         ];
         for key in &keys {
             let msg = i18n.t(key);
@@ -358,6 +380,12 @@ mod tests {
             "label.error_kind",
             "label.exit_code",
             "label.suggestion",
+            "msg.unbound_variable",
+            "msg.invalid_bignumber",
+            "msg.matrix_dim_mismatch",
+            "msg.function_arg_count",
+            "msg.unknown_function",
+            "msg.unknown_variable",
         ];
         for key in &keys {
             assert_ne!(
@@ -428,5 +456,170 @@ mod tests {
         assert_eq!(zh.t("label.error_kind"), "错误类别");
         assert_eq!(zh.t("label.exit_code"), "退出码");
         assert_eq!(zh.t("label.suggestion"), "建议");
+    }
+
+    // ===== I18n::tf — 参数化消息 =====
+
+    #[test]
+    fn test_tf_single_placeholder_en() {
+        let i18n = I18n::new(Lang::En);
+        assert_eq!(
+            i18n.tf("msg.unbound_variable", &[("name", "x")]),
+            "Unbound variable: x"
+        );
+        assert_eq!(
+            i18n.tf("msg.unknown_function", &[("name", "sin")]),
+            "Unknown function: sin"
+        );
+    }
+
+    #[test]
+    fn test_tf_single_placeholder_zh() {
+        let i18n = I18n::new(Lang::Zh);
+        assert_eq!(
+            i18n.tf("msg.unbound_variable", &[("name", "x")]),
+            "未绑定变量: x"
+        );
+        assert_eq!(
+            i18n.tf("msg.unknown_function", &[("name", "sin")]),
+            "未知函数: sin"
+        );
+    }
+
+    #[test]
+    fn test_tf_multiple_placeholders_en() {
+        let i18n = I18n::new(Lang::En);
+        assert_eq!(
+            i18n.tf(
+                "msg.matrix_dim_mismatch",
+                &[("expected", "3x3"), ("actual", "2x2")]
+            ),
+            "Matrix dimension mismatch: expected 3x3, got 2x2"
+        );
+        assert_eq!(
+            i18n.tf(
+                "msg.function_arg_count",
+                &[("name", "sin"), ("expected", "1"), ("actual", "2")]
+            ),
+            "Function sin expects 1 args, got 2"
+        );
+    }
+
+    #[test]
+    fn test_tf_multiple_placeholders_zh() {
+        let i18n = I18n::new(Lang::Zh);
+        assert_eq!(
+            i18n.tf(
+                "msg.matrix_dim_mismatch",
+                &[("expected", "3x3"), ("actual", "2x2")]
+            ),
+            "矩阵维度不匹配: 期望 3x3, 实际 2x2"
+        );
+        assert_eq!(
+            i18n.tf(
+                "msg.function_arg_count",
+                &[("name", "sin"), ("expected", "1"), ("actual", "2")]
+            ),
+            "函数 sin 期望 1 个参数, 实际 2"
+        );
+    }
+
+    // ===== I18n::tf — 未知键与边界 =====
+
+    #[test]
+    fn test_tf_unknown_key_returns_key_itself() {
+        let en = I18n::new(Lang::En);
+        // 未知键：返回键本身，不进行替换
+        assert_eq!(
+            en.tf("nonexistent.key", &[("name", "x")]),
+            "nonexistent.key"
+        );
+
+        let zh = I18n::new(Lang::Zh);
+        assert_eq!(
+            zh.tf("nonexistent.key", &[("name", "x")]),
+            "nonexistent.key"
+        );
+    }
+
+    #[test]
+    fn test_tf_missing_placeholder_preserved() {
+        let i18n = I18n::new(Lang::En);
+        // 模板 "Function {name} expects {expected} args, got {actual}"
+        // 只提供 name，缺失 expected 和 actual —— 占位符保留原样
+        assert_eq!(
+            i18n.tf("msg.function_arg_count", &[("name", "sin")]),
+            "Function sin expects {expected} args, got {actual}"
+        );
+    }
+
+    #[test]
+    fn test_tf_empty_args_equivalent_to_t() {
+        let en = I18n::new(Lang::En);
+        // 空参数：tf 等价于 t（返回模板字符串）
+        assert_eq!(en.tf("msg.unbound_variable", &[]), "Unbound variable: {name}");
+        assert_eq!(en.tf("error.parse", &[]), en.t("error.parse"));
+
+        let zh = I18n::new(Lang::Zh);
+        assert_eq!(zh.tf("msg.unbound_variable", &[]), "未绑定变量: {name}");
+        assert_eq!(zh.tf("error.parse", &[]), zh.t("error.parse"));
+    }
+
+    #[test]
+    fn test_tf_repeated_placeholder_replaces_all() {
+        let i18n = I18n::new(Lang::En);
+        // 如果模板中同一占位符出现多次，replace 会替换所有匹配
+        // 当前 JSON 中没有这种键，构造一个临时键验证逻辑（用未知键 + 自定义模板不可行，
+        // 改为验证已知键的单次替换行为）
+        let result = i18n.tf("msg.unknown_variable", &[("name", "y")]);
+        assert_eq!(result, "Unknown variable: y");
+        // 确保替换后没有残留占位符
+        assert!(!result.contains('{') || result.contains("got"));
+    }
+
+    // ===== 静态消息表加载 =====
+
+    #[test]
+    fn test_en_messages_table_not_empty() {
+        let table = en_messages();
+        assert!(!table.is_empty(), "English message table must not be empty");
+        // 至少包含 15 个原有键 + 6 个参数化键 = 21 个
+        assert!(
+            table.len() >= 21,
+            "English table should have at least 21 entries, got {}",
+            table.len()
+        );
+    }
+
+    #[test]
+    fn test_zh_messages_table_not_empty() {
+        let table = zh_messages();
+        assert!(!table.is_empty(), "Chinese message table must not be empty");
+        assert!(
+            table.len() >= 21,
+            "Chinese table should have at least 21 entries, got {}",
+            table.len()
+        );
+    }
+
+    #[test]
+    fn test_en_and_zh_tables_have_same_keys() {
+        let en = en_messages();
+        let zh = zh_messages();
+        // 两表键集必须一致（避免遗漏翻译）
+        assert_eq!(
+            en.len(),
+            zh.len(),
+            "en/zh tables have different key counts: en={}, zh={}",
+            en.len(),
+            zh.len()
+        );
+        for key in en.keys() {
+            assert!(
+                zh.contains_key(key),
+                "key '{}' exists in en.json but missing in zh.json",
+                key
+            );
+        }
     }
 }

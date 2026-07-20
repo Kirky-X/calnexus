@@ -72,7 +72,14 @@ fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), Ca
             return Err(CalcError::domain(format!(
                 "precision {} exceeds limit {}",
                 p, MAX_PRECISION
-            )));
+            ))
+            .with_i18n(
+                "msg.core.precision_exceeds_limit",
+                vec![
+                    ("precision".to_string(), p.to_string()),
+                    ("max".to_string(), MAX_PRECISION.to_string()),
+                ],
+            ));
         }
     }
     Ok(())

@@ -16,6 +16,7 @@
 use crate::cli::format_result;
 use crate::core::evaluate;
 use crate::core::{EvalContext, EvalResult};
+use crate::i18n::I18n;
 use rustyline::completion::Completer;
 use rustyline::{Editor, Helper, Highlighter, Hinter, Result as RlResult, Validator};
 
@@ -92,18 +93,20 @@ const KNOWN_FUNCTIONS: &[&str] = &[
     "precision",
 ];
 
-/// REPL 会话：持有路由器、缓存、变量上下文（TG4.1）。
+/// REPL 会话：持有路由器、缓存、变量上下文、i18n（TG4.1）。
 pub struct ReplSession {
     ctx: EvalContext,
     cache: crate::CacheManager,
+    i18n: I18n,
 }
 
 impl ReplSession {
     /// 创建 REPL 会话，初始化空缓存与给定上下文。
-    pub fn new(ctx: EvalContext) -> Self {
+    pub fn new(ctx: EvalContext, i18n: I18n) -> Self {
         Self {
             ctx,
             cache: crate::CacheManager::new(),
+            i18n,
         }
     }
 
@@ -115,8 +118,9 @@ impl ReplSession {
         let mut rl: Editor<ReplHelper, _> = Editor::new().expect("failed to init rustyline Editor");
         rl.set_helper(Some(ReplHelper));
 
-        println!("CalNexus REPL — type :help for commands, :quit to exit");
+        println!("{}", self.i18n.t("repl.welcome"));
         loop {
+            // "calnexus> " 是数学语法（DP-3），跨语言通用，保留原样
             let readline = rl.readline("calnexus> ");
             match readline {
                 Ok(line) => {
@@ -129,7 +133,7 @@ impl ReplSession {
                         match self.handle_command(trimmed) {
                             CommandResult::Continue => {}
                             CommandResult::Quit => {
-                                println!("bye");
+                                println!("{}", self.i18n.t("repl.bye"));
                                 return 0;
                             }
                         }
@@ -143,11 +147,15 @@ impl ReplSession {
                 }
                 Err(rustyline::error::ReadlineError::Eof) => {
                     // Ctrl+D：退出
-                    println!("bye");
+                    println!("{}", self.i18n.t("repl.bye"));
                     return 0;
                 }
                 Err(e) => {
-                    eprintln!("REPL error: {}", e);
+                    eprintln!(
+                        "{}",
+                        self.i18n
+                            .tf("repl.error", &[("error", &e.to_string())])
+                    );
                     return 1;
                 }
             }
@@ -175,7 +183,7 @@ impl ReplSession {
             }
             ":let" => {
                 if parts.len() < 2 {
-                    eprintln!("usage: :let NAME = VALUE");
+                    eprintln!("{}", self.i18n.t("repl.usage_let"));
                     return CommandResult::Continue;
                 }
                 self.handle_let(parts[1]);
@@ -183,8 +191,9 @@ impl ReplSession {
             }
             _ => {
                 eprintln!(
-                    "unknown command: {} (type :help for available commands)",
-                    cmd
+                    "{}",
+                    self.i18n
+                        .tf("repl.unknown_command", &[("cmd", cmd)])
                 );
                 CommandResult::Continue
             }
@@ -196,18 +205,19 @@ impl ReplSession {
         // 解析 NAME = VALUE
         let eq_parts: Vec<&str> = args.splitn(2, '=').collect();
         if eq_parts.len() != 2 {
-            eprintln!("usage: :let NAME = VALUE (missing '=')");
+            eprintln!("{}", self.i18n.t("repl.let_missing_equals"));
             return;
         }
         let name = eq_parts[0].trim();
         let value_str = eq_parts[1].trim();
         if name.is_empty() {
-            eprintln!("error: variable name is empty");
+            eprintln!("{}", self.i18n.t("repl.empty_var_name"));
             return;
         }
         match value_str.parse::<f64>() {
             Ok(v) => {
                 self.ctx = self.ctx.clone().with_var(name, v);
+                // "name = value" 是数学等式语法（DP-3），跨语言通用
                 println!("{} = {}", name, v);
             }
             Err(e) => {
@@ -218,13 +228,25 @@ impl ReplSession {
                         println!("{} = {}", name, v);
                     }
                     Ok((result, _, _, _)) => {
+                        let formatted = format_result(&result, None);
                         eprintln!(
-                            "error: :let value must be a scalar, got {}",
-                            format_result(&result, None)
+                            "{}",
+                            self.i18n
+                                .tf("repl.let_non_scalar", &[("value", &formatted)])
                         );
                     }
                     Err(e2) => {
-                        eprintln!("error: invalid value '{}': {} / {}", value_str, e, e2);
+                        eprintln!(
+                            "{}",
+                            self.i18n.tf(
+                                "repl.let_invalid_value",
+                                &[
+                                    ("value", value_str),
+                                    ("error1", &e.to_string()),
+                                    ("error2", &e2.to_string())
+                                ]
+                            )
+                        );
                     }
                 }
             }
@@ -234,13 +256,14 @@ impl ReplSession {
     /// 打印所有已绑定变量。
     fn print_vars(&self) {
         if self.ctx.vars.is_empty() {
-            println!("(no variables bound)");
+            println!("{}", self.i18n.t("repl.no_vars"));
             return;
         }
         let mut names: Vec<&String> = self.ctx.vars.keys().collect();
         names.sort();
         for name in names {
             if let Some(v) = self.ctx.vars.get(name) {
+                // "name = value" 是数学等式语法（DP-3）
                 println!("{} = {}", name, v);
             }
         }
@@ -248,15 +271,15 @@ impl ReplSession {
 
     /// 打印帮助信息。
     fn print_help(&self) {
-        println!("CalNexus REPL commands:");
-        println!("  :let NAME = VALUE   Bind a variable (VALUE may be a number or expression)");
-        println!("  :vars               List all bound variables");
-        println!("  :clear              Clear the screen");
-        println!("  :help               Show this help message");
-        println!("  :quit / :q          Exit the REPL");
+        println!("{}", self.i18n.t("repl.help_title"));
+        println!("{}", self.i18n.t("repl.help_let"));
+        println!("{}", self.i18n.t("repl.help_vars"));
+        println!("{}", self.i18n.t("repl.help_clear"));
+        println!("{}", self.i18n.t("repl.help_help"));
+        println!("{}", self.i18n.t("repl.help_quit"));
         println!();
-        println!("Otherwise, type a math expression and press Enter to evaluate.");
-        println!("Examples: 2+3*4, sin(pi/2), diff(x^2, x), gcd(12,18)");
+        println!("{}", self.i18n.t("repl.help_otherwise"));
+        println!("{}", self.i18n.t("repl.help_examples"));
     }
 
     /// 求值一行表达式并打印结果（TG4.4）。
@@ -264,15 +287,29 @@ impl ReplSession {
         match evaluate(expr, &self.ctx, self.ctx.precision, &self.cache) {
             Ok((result, domain, cache_hit, fmt_prec)) => {
                 let output = format_result(&result, fmt_prec);
+                let cached_str = if cache_hit {
+                    self.i18n.t("label.cached_suffix").to_string()
+                } else {
+                    String::new()
+                };
                 println!(
-                    "= {}  [{}{}]",
-                    output,
-                    domain,
-                    if cache_hit { " (cached)" } else { "" }
+                    "{}",
+                    self.i18n.tf(
+                        "repl.result",
+                        &[
+                            ("value", &output),
+                            ("domain", &domain),
+                            ("cached", &cached_str)
+                        ]
+                    )
                 );
             }
             Err(e) => {
-                eprintln!("error: {}", e);
+                eprintln!(
+                    "{}",
+                    self.i18n
+                        .tf("repl.eval_error", &[("error", &e.to_string())])
+                );
             }
         }
     }
@@ -353,27 +390,27 @@ mod tests {
 
     #[test]
     fn test_repl_session_new() {
-        let session = ReplSession::new(EvalContext::new());
+        let session = ReplSession::new(EvalContext::new(), I18n::default());
         assert!(session.ctx.vars.is_empty());
     }
 
     #[test]
     fn test_repl_session_with_vars() {
         let ctx = EvalContext::new().with_var("x", 3.14);
-        let session = ReplSession::new(ctx);
+        let session = ReplSession::new(ctx, I18n::default());
         assert_eq!(session.ctx.get_var("x"), Some(3.14));
     }
 
     #[test]
     fn test_handle_let_numeric() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x = 42");
         assert_eq!(session.ctx.get_var("x"), Some(42.0));
     }
 
     #[test]
     fn test_handle_let_expression() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         // :let y = 2+3*4 → y = 14
         session.handle_let("y = 2+3*4");
         assert_eq!(session.ctx.get_var("y"), Some(14.0));
@@ -381,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_handle_let_missing_equals() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x 42");
         // 应不绑定任何变量
         assert!(session.ctx.vars.is_empty());
@@ -389,35 +426,35 @@ mod tests {
 
     #[test]
     fn test_handle_let_empty_name() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let(" = 42");
         assert!(session.ctx.vars.is_empty());
     }
 
     #[test]
     fn test_command_quit() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":quit");
         assert!(matches!(result, CommandResult::Quit));
     }
 
     #[test]
     fn test_command_q_alias() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":q");
         assert!(matches!(result, CommandResult::Quit));
     }
 
     #[test]
     fn test_command_help() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":help");
         assert!(matches!(result, CommandResult::Continue));
     }
 
     #[test]
     fn test_command_vars_empty() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":vars");
         assert!(matches!(result, CommandResult::Continue));
     }
@@ -425,14 +462,14 @@ mod tests {
     #[test]
     fn test_command_vars_with_bindings() {
         let ctx = EvalContext::new().with_var("x", 1.0).with_var("y", 2.0);
-        let mut session = ReplSession::new(ctx);
+        let mut session = ReplSession::new(ctx, I18n::default());
         let result = session.handle_command(":vars");
         assert!(matches!(result, CommandResult::Continue));
     }
 
     #[test]
     fn test_command_let_then_vars() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_command(":let a = 10");
         session.handle_command(":let b = 20");
         assert_eq!(session.ctx.get_var("a"), Some(10.0));
@@ -441,14 +478,14 @@ mod tests {
 
     #[test]
     fn test_command_unknown() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":unknown");
         assert!(matches!(result, CommandResult::Continue));
     }
 
     #[test]
     fn test_command_let_no_args() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":let");
         assert!(matches!(result, CommandResult::Continue));
         assert!(session.ctx.vars.is_empty());
@@ -456,14 +493,14 @@ mod tests {
 
     #[test]
     fn test_evaluate_line_arithmetic() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         // 不应 panic，错误打印到 stderr
         session.evaluate_line("2+3*4");
     }
 
     #[test]
     fn test_evaluate_line_error_recovery() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         // 语法错误：不应 panic
         session.evaluate_line("2++3");
         // 后续仍可正常求值
@@ -473,13 +510,13 @@ mod tests {
     #[test]
     fn test_evaluate_line_with_var() {
         let ctx = EvalContext::new().with_var("x", 5.0);
-        let mut session = ReplSession::new(ctx);
+        let mut session = ReplSession::new(ctx, I18n::default());
         session.evaluate_line("x*2");
     }
 
     #[test]
     fn test_evaluate_line_symbolic() {
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.evaluate_line("diff(x^2, x)");
     }
 
@@ -514,7 +551,7 @@ mod tests {
     fn test_command_clear() {
         // :clear 命令：打印 ANSI 清屏序列，返回 Continue
         // 覆盖 lines 173-176（:clear 分支）
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":clear");
         assert!(matches!(result, CommandResult::Continue));
     }
@@ -523,7 +560,7 @@ mod tests {
     fn test_handle_let_non_scalar_result() {
         // :let x = 3+4i → evaluate 返回 Complex（非 Scalar）
         // 覆盖 lines 222-226（Ok 分支但结果非 Scalar）
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x = 3+4i");
         // 非标量结果不应绑定变量
         assert!(session.ctx.get_var("x").is_none());
@@ -533,7 +570,7 @@ mod tests {
     fn test_handle_let_eval_error() {
         // :let x = 2++3 → parse 失败 → evaluate 返回 Err
         // 覆盖 lines 228-230（evaluate 错误分支）
-        let mut session = ReplSession::new(EvalContext::new());
+        let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x = 2++3");
         // 求值失败不应绑定变量
         assert!(session.ctx.get_var("x").is_none());
