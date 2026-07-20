@@ -172,54 +172,30 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         ("cos", &[x]) => x.cos(),
         ("tan", &[x]) => x.tan(),
         ("asin", &[x]) => {
-            if !(-1.0..=1.0).contains(&x) {
-                return Err(CalcError::domain(format!("asin domain [-1,1], got {}", x)));
-            }
+            check_unit_range(name, x)?;
             x.asin()
         }
         ("acos", &[x]) => {
-            if !(-1.0..=1.0).contains(&x) {
-                return Err(CalcError::domain(format!("acos domain [-1,1], got {}", x)));
-            }
+            check_unit_range(name, x)?;
             x.acos()
         }
         ("atan", &[x]) => x.atan(),
         ("atan2", &[y, x]) => y.atan2(x),
         ("sqrt", &[x]) => {
-            if x < 0.0 {
-                return Err(CalcError::domain(format!(
-                    "sqrt requires non-negative, got {}",
-                    x
-                )));
-            }
+            check_non_negative(name, x)?;
             x.sqrt()
         }
         ("exp", &[x]) => x.exp(),
         ("ln", &[x]) | ("log", &[x]) => {
-            if x <= 0.0 {
-                return Err(CalcError::domain(format!(
-                    "ln requires positive, got {}",
-                    x
-                )));
-            }
+            check_positive(name, x)?;
             x.ln()
         }
         ("log10", &[x]) => {
-            if x <= 0.0 {
-                return Err(CalcError::domain(format!(
-                    "log10 requires positive, got {}",
-                    x
-                )));
-            }
+            check_positive(name, x)?;
             x.log10()
         }
         ("log2", &[x]) => {
-            if x <= 0.0 {
-                return Err(CalcError::domain(format!(
-                    "log2 requires positive, got {}",
-                    x
-                )));
-            }
+            check_positive(name, x)?;
             x.log2()
         }
         ("abs", &[x]) => x.abs(),
@@ -253,6 +229,39 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         return Err(CalcError::nan_or_inf());
     }
     Ok(result)
+}
+
+/// 验证参数在 `[-1, 1]` 范围内（asin/acos 域约束）。
+fn check_unit_range(name: &str, x: f64) -> Result<(), CalcError> {
+    if !(-1.0..=1.0).contains(&x) {
+        return Err(CalcError::domain(format!(
+            "{} domain [-1,1], got {}",
+            name, x
+        )));
+    }
+    Ok(())
+}
+
+/// 验证参数为非负数（sqrt 域约束）。
+fn check_non_negative(name: &str, x: f64) -> Result<(), CalcError> {
+    if x < 0.0 {
+        return Err(CalcError::domain(format!(
+            "{} requires non-negative, got {}",
+            name, x
+        )));
+    }
+    Ok(())
+}
+
+/// 验证参数为正数（ln/log/log10/log2 域约束）。
+fn check_positive(name: &str, x: f64) -> Result<(), CalcError> {
+    if x <= 0.0 {
+        return Err(CalcError::domain(format!(
+            "{} requires positive, got {}",
+            name, x
+        )));
+    }
+    Ok(())
 }
 
 fn gcd(a: i64, b: i64) -> i64 {

@@ -154,33 +154,9 @@ impl MatrixDomain {
         rows: &[Vec<AstNode>],
         ctx: &EvalContext,
     ) -> Result<MatrixValue, CalcError> {
-        if rows.is_empty() {
-            return Err(CalcError::domain("empty matrix literal".to_string()));
-        }
-        let ncols = rows[0].len();
-        if ncols == 0 {
-            return Err(CalcError::domain("empty matrix row".to_string()));
-        }
-        if rows.len() > MAX_MATRIX_DIM || ncols > MAX_MATRIX_DIM {
-            return Err(CalcError::domain(format!(
-                "matrix dimension {}x{} exceeds limit {}x{}",
-                rows.len(),
-                ncols,
-                MAX_MATRIX_DIM,
-                MAX_MATRIX_DIM
-            )));
-        }
-        for (i, row) in rows.iter().enumerate() {
-            if row.len() != ncols {
-                return Err(CalcError::domain(format!(
-                    "matrix row {} has {} elements, expected {}",
-                    i,
-                    row.len(),
-                    ncols
-                )));
-            }
-        }
-        let mut data = Vec::with_capacity(rows.len() * ncols);
+        let nrows = rows.len();
+        let ncols = validate_matrix_dimensions(rows)?;
+        let mut data = Vec::with_capacity(nrows * ncols);
         for row in rows {
             for elem in row {
                 match self.eval_node(elem, ctx)? {
@@ -193,7 +169,7 @@ impl MatrixDomain {
                 }
             }
         }
-        let matrix = DMatrix::from_row_slice(rows.len(), ncols, &data);
+        let matrix = DMatrix::from_row_slice(nrows, ncols, &data);
         Ok(MatrixValue::Matrix(matrix))
     }
 
@@ -585,6 +561,39 @@ impl MatrixDomain {
 enum MatrixValue {
     Scalar(f64),
     Matrix(DMatrix<f64>),
+}
+
+/// 验证矩阵字面量维度：非空、行非空、行等长、不超 `MAX_MATRIX_DIM`。
+///
+/// 返回列数（ncols），失败时返回 `CalcError`。
+fn validate_matrix_dimensions(rows: &[Vec<AstNode>]) -> Result<usize, CalcError> {
+    if rows.is_empty() {
+        return Err(CalcError::domain("empty matrix literal".to_string()));
+    }
+    let ncols = rows[0].len();
+    if ncols == 0 {
+        return Err(CalcError::domain("empty matrix row".to_string()));
+    }
+    if rows.len() > MAX_MATRIX_DIM || ncols > MAX_MATRIX_DIM {
+        return Err(CalcError::domain(format!(
+            "matrix dimension {}x{} exceeds limit {}x{}",
+            rows.len(),
+            ncols,
+            MAX_MATRIX_DIM,
+            MAX_MATRIX_DIM
+        )));
+    }
+    for (i, row) in rows.iter().enumerate() {
+        if row.len() != ncols {
+            return Err(CalcError::domain(format!(
+                "matrix row {} has {} elements, expected {}",
+                i,
+                row.len(),
+                ncols
+            )));
+        }
+    }
+    Ok(ncols)
 }
 
 /// 递归检查 AST 是否应路由至 MatrixDomain。

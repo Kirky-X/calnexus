@@ -121,22 +121,13 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
             )))
         }
         AstNode::FunctionCall(name, args) => {
-            let unary = |arg: &AstNode| -> Result<Box<SymbolicExpr>, CalcError> {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "{}() requires exactly 1 argument, got {}",
-                        name,
-                        args.len()
-                    )));
-                }
-                Ok(Box::new(ast_to_symbolic(arg)?))
-            };
+            let unary = unary_symbolic_arg(name, args)?;
             match name.as_str() {
-                "sin" => Ok(SymbolicExpr::Sin(unary(&args[0])?)),
-                "cos" => Ok(SymbolicExpr::Cos(unary(&args[0])?)),
-                "tan" => Ok(SymbolicExpr::Tan(unary(&args[0])?)),
-                "ln" | "log" => Ok(SymbolicExpr::Ln(unary(&args[0])?)),
-                "exp" => Ok(SymbolicExpr::Exp(unary(&args[0])?)),
+                "sin" => Ok(SymbolicExpr::Sin(unary)),
+                "cos" => Ok(SymbolicExpr::Cos(unary)),
+                "tan" => Ok(SymbolicExpr::Tan(unary)),
+                "ln" | "log" => Ok(SymbolicExpr::Ln(unary)),
+                "exp" => Ok(SymbolicExpr::Exp(unary)),
                 _ => Err(CalcError::domain(format!(
                     "function not supported in symbolic expressions: {}",
                     name
@@ -144,9 +135,26 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
             }
         }
         AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
-            format!("node type not supported in symbolic expressions: {:?}", ast),
-        )),
+        format!("node type not supported in symbolic expressions: {:?}", ast),
+    )),
     }
+}
+
+/// 提取单参数函数的符号化参数：验证参数数为 1，递归转换并返回 `Box<SymbolicExpr>`。
+///
+/// 复用于 sin/cos/tan/ln/log/exp 等单参符号函数。
+fn unary_symbolic_arg(
+    name: &str,
+    args: &[AstNode],
+) -> Result<Box<SymbolicExpr>, CalcError> {
+    if args.len() != 1 {
+        return Err(CalcError::domain(format!(
+            "{}() requires exactly 1 argument, got {}",
+            name,
+            args.len()
+        )));
+    }
+    Ok(Box::new(ast_to_symbolic(&args[0])?))
 }
 
 /// 将 [`SymbolicExpr`] 格式化为可读字符串（TG3.1）。

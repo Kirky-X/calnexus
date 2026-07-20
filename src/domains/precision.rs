@@ -69,16 +69,7 @@ impl PrecisionDomain {
     /// 递归求值 AST 节点为 `BigRational`。
     fn eval(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigRational, CalcError> {
         match ast {
-            AstNode::Number(n) => {
-                if n.fract() == 0.0 && n.abs() < 9e15 {
-                    Ok(BigRational::from_integer(BigInt::from(*n as i64)))
-                } else {
-                    // 非整数 f64：近似转换（仅用于混合表达式中的小数）
-                    BigRational::from_float(*n).ok_or_else(|| {
-                        CalcError::eval(format!("cannot convert {} to BigRational", n))
-                    })
-                }
-            }
+            AstNode::Number(n) => f64_to_rational(*n),
             AstNode::BigNumber(s) => {
                 let big = BigInt::parse_bytes(s.as_bytes(), 10).ok_or_else(|| {
                     CalcError::parse(format!("invalid big integer literal: {}", s))
@@ -86,17 +77,10 @@ impl PrecisionDomain {
                 Ok(BigRational::from_integer(big))
             }
             AstNode::Variable(name) => {
-                if let Some(v) = ctx.get_var(name) {
-                    if v.fract() == 0.0 && v.abs() < 9e15 {
-                        Ok(BigRational::from_integer(BigInt::from(v as i64)))
-                    } else {
-                        BigRational::from_float(v).ok_or_else(|| {
-                            CalcError::eval(format!("cannot convert {} to BigRational", v))
-                        })
-                    }
-                } else {
-                    Err(CalcError::eval(format!("unbound variable: {}", name)))
-                }
+                let v = ctx.get_var(name).ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name))
+                })?;
+                f64_to_rational(v)
             }
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval(l, ctx)?;
@@ -188,24 +172,12 @@ impl PrecisionDomain {
     ) -> Result<BigRational, CalcError> {
         match name {
             "factorial" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "factorial() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let v = self.eval(&args[0], ctx)?;
+                let v = self.eval_one_arg(name, args, ctx)?;
                 let n = rational_to_int(&v, "factorial")?;
                 Ok(BigRational::from_integer(factorial(&n)?))
             }
             "abs" => {
-                if args.len() != 1 {
-                    return Err(CalcError::domain(format!(
-                        "abs() requires exactly 1 argument, got {}",
-                        args.len()
-                    )));
-                }
-                let v = self.eval(&args[0], ctx)?;
+                let v = self.eval_one_arg(name, args, ctx)?;
                 Ok(v.abs())
             }
             "precision" => {
@@ -216,14 +188,7 @@ impl PrecisionDomain {
             }
             "mod" => {
                 // parser 将 `%` 转换为 mod(a, b) 函数调用
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "mod() requires exactly 2 arguments, got {}",
-                        args.len()
-                    )));
-                }
-                let a = self.eval(&args[0], ctx)?;
-                let b = self.eval(&args[1], ctx)?;
+                let (a, b) = self.eval_two_args(name, args, ctx)?;
                 if b.is_zero() {
                     return Err(CalcError::division_by_zero());
                 }
@@ -236,6 +201,42 @@ impl PrecisionDomain {
                 name
             ))),
         }
+    }
+
+    /// 求值单参数函数：验证参数数为 1，返回求值结果。
+    fn eval_one_arg(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<BigRational, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(format!(
+                "{}() requires exactly 1 argument, got {}",
+                name,
+                args.len()
+            )));
+        }
+        self.eval(&args[0], ctx)
+    }
+
+    /// 求值双参数函数：验证参数数为 2，返回求值结果。
+    fn eval_two_args(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<(BigRational, BigRational), CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "{}() requires exactly 2 arguments, got {}",
+                name,
+                args.len()
+            )));
+        }
+        let a = self.eval(&args[0], ctx)?;
+        let b = self.eval(&args[1], ctx)?;
+        Ok((a, b))
     }
 }
 
@@ -361,6 +362,21 @@ fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
         )));
     }
     Ok(r.numer().clone())
+}
+
+/// 将 f64 转换为 BigRational。
+///
+/// 整数且范围在 i64 内：精确转换为整数 BigRational；
+/// 否则：尝试 `BigRational::from_float`，失败时返回错误。
+/// 复用于 `Number` 和 `Variable` 节点求值，消除重复分支。
+fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
+    if n.fract() == 0.0 && n.abs() < 9e15 {
+        Ok(BigRational::from_integer(BigInt::from(n as i64)))
+    } else {
+        // 非整数 f64：近似转换（仅用于混合表达式中的小数）
+        BigRational::from_float(n)
+            .ok_or_else(|| CalcError::eval(format!("cannot convert {} to BigRational", n)))
+    }
 }
 
 /// 计算大整数阶乘。

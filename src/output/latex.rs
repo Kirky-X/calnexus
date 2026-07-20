@@ -77,37 +77,49 @@ pub fn format_latex_polynomial(p: &[f64]) -> String {
     if p.is_empty() {
         return "0".to_string();
     }
-    let mut terms: Vec<String> = Vec::new();
-    for (i, &coef) in p.iter().enumerate().rev() {
-        if coef == 0.0 {
-            continue;
-        }
-        let term = match i {
-            0 => format_latex_scalar(coef),
-            1 => {
-                if coef == 1.0 {
-                    "x".to_string()
-                } else if coef == -1.0 {
-                    "-x".to_string()
-                } else {
-                    format!("{}x", format_latex_scalar(coef))
-                }
-            }
-            _ => {
-                if coef == 1.0 {
-                    format!("x^{{{}}}", i)
-                } else if coef == -1.0 {
-                    format!("-x^{{{}}}", i)
-                } else {
-                    format!("{}x^{{{}}}", format_latex_scalar(coef), i)
-                }
-            }
-        };
-        terms.push(term);
-    }
+    let terms: Vec<String> = p
+        .iter()
+        .enumerate()
+        .rev()
+        .filter_map(|(i, &coef)| format_latex_polynomial_term(coef, i))
+        .collect();
     if terms.is_empty() {
         return "0".to_string();
     }
+    join_latex_polynomial_terms(&terms)
+}
+
+/// 格式化 LaTeX 多项式单项：零系数返回 None（跳过），其他返回 `Some(term)`。
+fn format_latex_polynomial_term(coef: f64, i: usize) -> Option<String> {
+    if coef == 0.0 {
+        return None;
+    }
+    let term = match i {
+        0 => format_latex_scalar(coef),
+        1 => {
+            if coef == 1.0 {
+                "x".to_string()
+            } else if coef == -1.0 {
+                "-x".to_string()
+            } else {
+                format!("{}x", format_latex_scalar(coef))
+            }
+        }
+        _ => {
+            if coef == 1.0 {
+                format!("x^{{{}}}", i)
+            } else if coef == -1.0 {
+                format!("-x^{{{}}}", i)
+            } else {
+                format!("{}x^{{{}}}", format_latex_scalar(coef), i)
+            }
+        }
+    };
+    Some(term)
+}
+
+/// 合并 LaTeX 多项式单项列表：第一项不加前缀，后续正项加 ` + `，负项直接拼接（已含 `-`）。
+fn join_latex_polynomial_terms(terms: &[String]) -> String {
     let mut result = terms[0].clone();
     for term in &terms[1..] {
         if term.starts_with('-') {

@@ -116,18 +116,7 @@ impl NumberTheoryDomain {
     /// 用于解析数论函数的整数参数，支持 `10^18+9` 等大数表达式。
     fn eval_int(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigInt, CalcError> {
         match ast {
-            AstNode::Number(n) => {
-                if n.fract() != 0.0 {
-                    return Err(CalcError::domain(format!(
-                        "expected integer argument, got {}",
-                        n
-                    )));
-                }
-                if *n > i64::MAX as f64 || *n < i64::MIN as f64 {
-                    return Err(CalcError::overflow());
-                }
-                Ok(BigInt::from(*n as i64))
-            }
+            AstNode::Number(n) => f64_to_bigint(*n, "expected integer argument"),
             AstNode::BigNumber(s) => s
                 .parse::<BigInt>()
                 .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
@@ -161,25 +150,7 @@ impl NumberTheoryDomain {
             AstNode::FunctionCall(_, _) => {
                 // 嵌套函数调用：先求值为 EvalResult，再转为 BigInt
                 let result = self.eval_node(ast, ctx)?;
-                match result {
-                    EvalResult::Scalar(n) => {
-                        if n.fract() != 0.0 {
-                            return Err(CalcError::domain(format!(
-                                "expected integer result, got {}",
-                                n
-                            )));
-                        }
-                        if n > i64::MAX as f64 || n < i64::MIN as f64 {
-                            return Err(CalcError::overflow());
-                        }
-                        Ok(BigInt::from(n as i64))
-                    }
-                    EvalResult::BigInt(b) => Ok(b),
-                    _ => Err(CalcError::domain(format!(
-                        "expected integer result from function call, got {:?}",
-                        ast
-                    ))),
-                }
+                evalresult_to_bigint(result, ast)
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(
                 CalcError::domain(format!("expected integer expression, got: {:?}", ast)),
@@ -405,6 +376,35 @@ fn bigint_to_result(b: BigInt) -> EvalResult {
         EvalResult::Scalar(n as f64)
     } else {
         EvalResult::BigInt(b)
+    }
+}
+
+/// 将 f64 转换为 BigInt：要求为整数且在 i64 范围内。
+///
+/// 复用于 `Number` 字面量求值和 `FunctionCall(Scalar)` 结果求值，消除重复检查。
+fn f64_to_bigint(n: f64, err_msg: &str) -> Result<BigInt, CalcError> {
+    if n.fract() != 0.0 {
+        return Err(CalcError::domain(format!("{}: {}", err_msg, n)));
+    }
+    if n > i64::MAX as f64 || n < i64::MIN as f64 {
+        return Err(CalcError::overflow());
+    }
+    Ok(BigInt::from(n as i64))
+}
+
+/// 将 EvalResult 转换为 BigInt。
+///
+/// - `Scalar(n)`：复用 `f64_to_bigint` 走相同的整数/范围检查
+/// - `BigInt(b)`：直接返回
+/// - 其他：返回错误（非整数结果）
+fn evalresult_to_bigint(result: EvalResult, ast: &AstNode) -> Result<BigInt, CalcError> {
+    match result {
+        EvalResult::Scalar(n) => f64_to_bigint(n, "expected integer result"),
+        EvalResult::BigInt(b) => Ok(b),
+        _ => Err(CalcError::domain(format!(
+            "expected integer result from function call, got {:?}",
+            ast
+        ))),
     }
 }
 

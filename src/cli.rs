@@ -377,38 +377,53 @@ fn format_polynomial(p: &[f64]) -> String {
     if p.is_empty() {
         return "0".to_string();
     }
-    let mut terms: Vec<String> = Vec::new();
-    for (i, &coef) in p.iter().enumerate().rev() {
-        if coef == 0.0 {
-            continue;
-        }
-        let term = match i {
-            0 => format!("{}", coef),
-            1 => {
-                if coef == 1.0 {
-                    "x".to_string()
-                } else if coef == -1.0 {
-                    "-x".to_string()
-                } else {
-                    format!("{}x", coef)
-                }
-            }
-            _ => {
-                if coef == 1.0 {
-                    format!("x^{}", i)
-                } else if coef == -1.0 {
-                    format!("-x^{}", i)
-                } else {
-                    format!("{}x^{}", coef, i)
-                }
-            }
-        };
-        terms.push(term);
-    }
+    let terms: Vec<String> = p
+        .iter()
+        .enumerate()
+        .rev()
+        .filter_map(|(i, &coef)| format_polynomial_term(coef, i))
+        .collect();
     if terms.is_empty() {
         return "0".to_string();
     }
-    // 合并：第一项不加正号前缀，后续正项加 +
+    join_polynomial_terms(&terms)
+}
+
+/// 格式化多项式单项：零系数返回 None（跳过），其他返回 `Some(term)`。
+///
+/// - i=0：纯常数项 `c`
+/// - i=1：一次项 `x` / `-x` / `cx`
+/// - i≥2：高次项 `x^i` / `-x^i` / `cx^i`
+fn format_polynomial_term(coef: f64, i: usize) -> Option<String> {
+    if coef == 0.0 {
+        return None;
+    }
+    let term = match i {
+        0 => format!("{}", coef),
+        1 => {
+            if coef == 1.0 {
+                "x".to_string()
+            } else if coef == -1.0 {
+                "-x".to_string()
+            } else {
+                format!("{}x", coef)
+            }
+        }
+        _ => {
+            if coef == 1.0 {
+                format!("x^{}", i)
+            } else if coef == -1.0 {
+                format!("-x^{}", i)
+            } else {
+                format!("{}x^{}", coef, i)
+            }
+        }
+    };
+    Some(term)
+}
+
+/// 合并多项式单项列表为字符串：第一项不加正号前缀，后续正项加 `+`，负项直接拼接（已含 `-`）。
+fn join_polynomial_terms(terms: &[String]) -> String {
     let mut result = terms[0].clone();
     for term in &terms[1..] {
         if term.starts_with('-') {

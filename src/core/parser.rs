@@ -492,26 +492,10 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
 
     // 如果最后一个字符是 ')'，向左匹配括号
     if chars[pos - 1] == ')' {
-        let mut depth = 1;
-        pos -= 1;
-        while pos > 0 && depth > 0 {
-            pos -= 1;
-            match chars[pos] {
-                ')' => depth += 1,
-                '(' => depth -= 1,
-                _ => {}
-            }
-        }
-        if depth != 0 {
-            return Err(CalcError::parse(
-                "unmatched parenthesis in factorial operand".to_string(),
-            ));
-        }
+        pos = match_paren_backward(chars, pos - 1)?;
         // pos 现在指向 '(' 的位置
         // 继续向左扫描函数名（如果 '(' 前面有字母）
-        while pos > 0 && chars[pos - 1].is_alphabetic() {
-            pos -= 1;
-        }
+        pos = scan_identifier_backward(chars, pos);
     } else {
         // 向左扫描连续的数字、字母、小数点、下划线
         while pos > 0 {
@@ -525,6 +509,36 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
     }
 
     Ok(pos)
+}
+
+/// 从 `close_idx`（指向 `)`）向左匹配括号，返回对应 `(` 的索引。
+///
+/// 失败时返回 `unmatched parenthesis` 错误。
+fn match_paren_backward(chars: &[char], close_idx: usize) -> Result<usize, CalcError> {
+    let mut depth = 1;
+    let mut pos = close_idx;
+    while pos > 0 && depth > 0 {
+        pos -= 1;
+        match chars[pos] {
+            ')' => depth += 1,
+            '(' => depth -= 1,
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return Err(CalcError::parse(
+            "unmatched parenthesis in factorial operand".to_string(),
+        ));
+    }
+    Ok(pos)
+}
+
+/// 从 `pos` 向左扫描连续的字母字符（函数名标识符），返回新的位置。
+fn scan_identifier_backward(chars: &[char], mut pos: usize) -> usize {
+    while pos > 0 && chars[pos - 1].is_alphabetic() {
+        pos -= 1;
+    }
+    pos
 }
 
 /// 隐式乘法预处理：在相邻 token 间插入 `*`。
@@ -663,27 +677,41 @@ fn convert_with_depth(expr: &mathexpr::Expr, depth: usize) -> Result<AstNode, Ca
             // 复数字面量：`complex(re, im)` → `Complex(re, im)`（design.md D3）
             // mathexpr 可能将 `-4` 解析为 `UnaryOp(Neg, Number(4))`，需规范化
             if name == "complex" && converted_args.len() == 2 {
-                let re_val = match &converted_args[0] {
-                    AstNode::Number(n) => Some(*n),
-                    _ => None,
-                };
-                let im_val = match &converted_args[1] {
-                    AstNode::Number(n) => Some(*n),
-                    AstNode::UnaryOp(UnaryOp::Neg, inner) => {
-                        if let AstNode::Number(n) = inner.as_ref() {
-                            Some(-*n)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                };
-                if let (Some(re), Some(im)) = (re_val, im_val) {
-                    return Ok(AstNode::Complex(re, im));
+                if let Some(complex) = try_complex_literal(&converted_args) {
+                    return Ok(complex);
                 }
             }
             Ok(AstNode::FunctionCall(name.clone(), converted_args))
         }
+    }
+}
+
+/// 尝试将 `complex(re, im)` 的两个参数规范化为 `AstNode::Complex(re, im)`。
+///
+/// 规则（design.md D3）：
+/// - re 必须为 `Number(n)`
+/// - im 必须为 `Number(n)` 或 `UnaryOp(Neg, Number(n))`（mathexpr 解析 `-4` 为后者）
+///
+/// 返回 `Some(Complex(re, im))` 当两个参数都符合规则；否则返回 `None`，由调用方回退到普通 FunctionCall。
+fn try_complex_literal(args: &[AstNode]) -> Option<AstNode> {
+    let re_val = match &args[0] {
+        AstNode::Number(n) => Some(*n),
+        _ => None,
+    };
+    let im_val = match &args[1] {
+        AstNode::Number(n) => Some(*n),
+        AstNode::UnaryOp(UnaryOp::Neg, inner) => {
+            if let AstNode::Number(n) = inner.as_ref() {
+                Some(-*n)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    match (re_val, im_val) {
+        (Some(re), Some(im)) => Some(AstNode::Complex(re, im)),
+        _ => None,
     }
 }
 

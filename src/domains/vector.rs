@@ -89,38 +89,41 @@ impl VectorDomain {
                 let b = self.eval_scalar(r, ctx)?;
                 Ok(EvalResult::Scalar(self.eval_scalar_binary(*op, a, b)?))
             }
-            AstNode::UnaryOp(op, e) => {
-                match op {
-                    UnaryOp::Neg => {
-                        if is_list_node(e) {
-                            let v = self.list_to_vector(e, ctx)?;
-                            let neg: Vec<f64> = v.iter().map(|x| -x).collect();
-                            Ok(EvalResult::Vector(neg))
-                        } else {
-                            let v = self.eval_scalar(e, ctx)?;
-                            Ok(EvalResult::Scalar(-v))
-                        }
-                    }
-                    UnaryOp::Abs => {
-                        // norm(list) 的等价
-                        if is_list_node(e) {
-                            let v = self.list_to_vector(e, ctx)?;
-                            let dvec = DVector::from_vec(v);
-                            Ok(EvalResult::Scalar(dvec.norm()))
-                        } else {
-                            let v = self.eval_scalar(e, ctx)?;
-                            Ok(EvalResult::Scalar(v.abs()))
-                        }
-                    }
-                    UnaryOp::Factorial => Err(CalcError::domain(
-                        "factorial not supported in vector domain".to_string(),
-                    )),
-                }
-            }
+            AstNode::UnaryOp(op, e) => match op {
+                UnaryOp::Neg => self.eval_unary_neg(e, ctx),
+                UnaryOp::Abs => self.eval_unary_abs(e, ctx),
+                UnaryOp::Factorial => Err(CalcError::domain(
+                    "factorial not supported in vector domain".to_string(),
+                )),
+            },
             AstNode::Complex(_, _) | AstNode::Matrix(_) => Err(CalcError::domain(format!(
                 "vector domain does not support this node type: {:?}",
                 ast
             ))),
+        }
+    }
+
+    /// 求值一元负号：list 逐元素取负，scalar 取负。
+    fn eval_unary_neg(&self, e: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if is_list_node(e) {
+            let v = self.list_to_vector(e, ctx)?;
+            let neg: Vec<f64> = v.iter().map(|x| -x).collect();
+            Ok(EvalResult::Vector(neg))
+        } else {
+            let v = self.eval_scalar(e, ctx)?;
+            Ok(EvalResult::Scalar(-v))
+        }
+    }
+
+    /// 求值一元绝对值：list 取范数（norm），scalar 取绝对值。
+    fn eval_unary_abs(&self, e: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if is_list_node(e) {
+            let v = self.list_to_vector(e, ctx)?;
+            let dvec = DVector::from_vec(v);
+            Ok(EvalResult::Scalar(dvec.norm()))
+        } else {
+            let v = self.eval_scalar(e, ctx)?;
+            Ok(EvalResult::Scalar(v.abs()))
         }
     }
 
