@@ -14,10 +14,10 @@ use crate::core::evaluate;
 use crate::domains::format_bigrational;
 use crate::output::{format_canonical, format_latex, generate_steps};
 use crate::{parse, AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult};
-use clap::Parser;
+use sdforge::clap::{self, Parser};
 use std::io::{self, IsTerminal, Read};
 
-/// CLI 参数定义（clap v4 derive）。
+/// CLI 参数定义（通过 sdforge::clap 重导出使用 clap v4 derive）。
 #[derive(Parser)]
 #[command(
     name = "calnexus",

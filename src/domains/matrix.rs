@@ -1711,6 +1711,7 @@ mod tests {
     }
 
     // ===== T008: numerical 分解端到端路由（cfg gate）=====
+    #[cfg(feature = "numerical")]
     fn assert_json_keys(v: &serde_json::Value, keys: &[&str]) {
         for k in keys {
             assert!(v.get(k).is_some(), "numerical JSON missing key `{}`", k);

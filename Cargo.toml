@@ -13,8 +13,8 @@ readme = "README.md"
 
 [features]
 default = []
-# CLI: 命令行界面 + REPL + 批处理
-cli = ["dep:clap", "dep:rustyline", "dep:rayon"]
+# CLI: 命令行界面 + REPL + 批处理（clap 通过 sdforge/cli 间接启用）
+cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
@@ -50,13 +50,12 @@ num-bigint = { version = "0.4", default-features = false, features = ["std", "se
 num-rational = { version = "0.4", default-features = false, features = ["std", "serde", "num-bigint"] }
 num-integer = { version = "0.1", default-features = false, features = ["std"] }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
-# CLI 依赖（仅启用必要特性，禁用默认的 color/env 等）
-clap = { version = "4.6", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
+# CLI 依赖（clap 通过 sdforge/cli 间接启用，features 由 sdforge 管理）
 rustyline = { version = "18.0", default-features = false, features = ["derive"], optional = true }
 rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化（仅 compiled_data，禁用默认特性）
 icu = { version = "2.2", default-features = false, features = ["compiled_data"], optional = true }
-# sdforge: HTTP/MCP 接口封装层（禁用默认特性，按需启用 http/mcp）
+# sdforge: CLI/HTTP/MCP 接口封装层（禁用默认特性，按需启用 cli/http/mcp）
 sdforge = { version = "0.4", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
