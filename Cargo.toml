@@ -34,15 +34,15 @@ mathexpr = { version = "0.1", default-features = false }
 # 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
 oxcache = { version = "0.3", features = ["core"], default-features = false }
 # 错误派生（仅 std，禁用默认特性）
-thiserror = { version = "2", default-features = false }
+thiserror = { version = "2.0", default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
-blake3 = { version = "1", default-features = false, features = ["std"] }
+blake3 = { version = "1.8", default-features = false, features = ["std"] }
 # 序列化（仅 std + derive，禁用默认的 unstable 特性）
-serde = { version = "1", default-features = false, features = ["std", "derive"] }
+serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
 # tokio 运行时（仅 rt，禁用默认的 full）
-tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio = { version = "1.0", default-features = false, features = ["rt"] }
 # 正则表达式（仅 std + unicode-perl，禁用默认的 perf-cache/perf-inline 等）
-regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+regex = { version = "1.0", default-features = false, features = ["std", "unicode-perl"] }
 # 数值计算（均禁用默认特性，仅启用 std + serde）
 num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
@@ -51,27 +51,27 @@ num-rational = { version = "0.4", default-features = false, features = ["std", "
 num-integer = { version = "0.1", default-features = false, features = ["std"] }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
 # CLI 依赖（仅启用必要特性，禁用默认的 color/env 等）
-clap = { version = "4", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
-rustyline = { version = "18", default-features = false, features = ["derive"], optional = true }
-rayon = { version = "1", default-features = false, optional = true }
+clap = { version = "4.6", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"], optional = true }
+rustyline = { version = "18.0", default-features = false, features = ["derive"], optional = true }
+rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化（仅 compiled_data，禁用默认特性）
-icu = { version = "2", default-features = false, features = ["compiled_data"], optional = true }
+icu = { version = "2.2", default-features = false, features = ["compiled_data"], optional = true }
 # sdforge: HTTP/MCP 接口封装层（禁用默认特性，按需启用 http/mcp）
 sdforge = { version = "0.4", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
-serde_json = { version = "1", default-features = false, features = ["std"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
 # anyhow: 错误上下文（sdforge 0.4.2 #[forge] MCP codegen 硬依赖 anyhow::anyhow!/anyhow::Error；仅 mcp feature 启用）
-anyhow = { version = "1", default-features = false, features = ["std"], optional = true }
+anyhow = { version = "1.0", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
-proptest = { version = "1", default-features = false, features = ["std"] }
-assert_cmd = { version = "2", default-features = false }
-predicates = { version = "3", default-features = false }
-tempfile = { version = "3", default-features = false }
-serde_json = { version = "1", default-features = false, features = ["std"] }
-insta = { version = "1", default-features = false }
+proptest = { version = "1.11", default-features = false, features = ["std"] }
+assert_cmd = { version = "2.2", default-features = false }
+predicates = { version = "3.1", default-features = false }
+tempfile = { version = "3.27", default-features = false }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+insta = { version = "1.48", default-features = false }
 criterion = { version = "0.8", default-features = false, features = ["plotters"] }
 expectrl = { version = "0.9", default-features = false }
 # tower: HTTP 集成测试用（ServiceExt::oneshot 测试 axum Router）
