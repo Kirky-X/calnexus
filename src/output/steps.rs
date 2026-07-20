@@ -20,12 +20,23 @@ const MAX_DEPTH: usize = 256;
 /// 生成求值步骤列表。
 ///
 /// 遍历 AST 后序（先子节点，后父节点），每个非叶节点输出一行
-/// `lhs op rhs = partial_result`。叶节点（Number/Variable/Complex/Matrix/List）
-/// 不输出步骤，但返回其值用于父节点的步骤。
+/// `lhs op rhs = partial_result`。叶节点（Number/Variable/Matrix）不输出步骤，
+/// 但返回其值用于父节点的步骤。
 ///
-/// `ctx` 提供变量绑定；未绑定的变量视为 0.0（与 ArithmeticDomain 行为一致）。
+/// 顶层 List（如 `calnexus --steps '[1+1, 2+2]'`）特殊处理：递归 walk 每个元素
+/// 以输出子节点步骤，但 List 本身不输出步骤。List 作为子树（如 `[1,2]+1`）会
+/// 返回 Err（steps 模式不支持列表参与运算）。
+///
+/// `ctx` 提供变量绑定；未绑定的变量返回 Err（与 ArithmeticDomain 行为一致）。
 pub fn generate_steps(ast: &AstNode, ctx: &EvalContext) -> Result<Vec<String>, CalcError> {
     let mut steps = Vec::new();
+    // 顶层 List 特殊处理：仅 walk 子元素以输出步骤，List 本身不求值
+    if let AstNode::List(elements) = ast {
+        for e in elements {
+            let _ = walk(e, ctx, &mut steps, 0)?;
+        }
+        return Ok(steps);
+    }
     let _ = walk(ast, ctx, &mut steps, 0)?;
     Ok(steps)
 }
@@ -52,7 +63,10 @@ fn walk(
                     vec![("value".to_string(), s.to_string())],
                 )
             }),
-        AstNode::Complex(re, _im) => Ok(*re),
+        AstNode::Complex(_, _) => Err(CalcError::domain(
+            "steps mode does not support complex numbers",
+        )
+        .with_i18n("msg.output.steps_no_complex", vec![])),
         AstNode::Variable(name) => {
             // 用户绑定的变量优先（与 scientific/statistics/matrix domain 预绑定 pi/e 一致）
             if let Some(v) = ctx.get_var(name) {
@@ -63,7 +77,10 @@ fn walk(
             match name.as_str() {
                 "pi" => Ok(std::f64::consts::PI),
                 "e" => Ok(std::f64::consts::E),
-                _ => Ok(0.0), // 未绑定变量视为 0.0（与 ArithmeticDomain 行为一致）
+                _ => Err(CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                    "msg.unbound_variable",
+                    vec![("name".to_string(), name.to_string())],
+                )),
             }
         }
         AstNode::BinaryOp(op, lhs, rhs) => {
@@ -107,14 +124,10 @@ fn walk(
             let _ = rows;
             Ok(0.0)
         }
-        AstNode::List(elements) => {
-            // 列表：递归求值每个元素但不输出步骤
-            let mut sum = 0.0;
-            for e in elements {
-                sum += walk(e, ctx, steps, depth + 1)?;
-            }
-            Ok(sum)
-        }
+        AstNode::List(_) => Err(CalcError::domain(
+            "steps mode does not support lists as sub-expressions",
+        )
+        .with_i18n("msg.output.steps_no_list", vec![])),
     }
 }
 
@@ -483,16 +496,17 @@ mod tests {
     }
 
     #[test]
-    fn steps_unbound_variable_defaults_zero() {
-        // 未绑定变量视为 0.0
+    fn steps_unbound_variable_returns_error() {
+        // BUG-O-003: 未绑定变量应返回 Err（与 ArithmeticDomain 行为一致）
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Variable("y".to_string())),
             Box::new(AstNode::Number(2.0)),
         );
         let ctx = EvalContext::new();
-        let steps = generate_steps(&ast, &ctx).unwrap();
-        assert_eq!(steps, vec!["0+2=2"]);
+        let err = generate_steps(&ast, &ctx).unwrap_err();
+        assert!(err.kind == ErrorKind::Eval);
+        assert_eq!(err.i18n_key, Some("msg.unbound_variable"));
     }
 
     #[test]
@@ -567,11 +581,23 @@ mod tests {
     }
 
     #[test]
-    fn steps_complex_leaf_node_no_step_emitted() {
-        // Complex 字面量作为叶节点不输出步骤
+    fn steps_complex_leaf_node_returns_error() {
+        // BUG-O-001: Complex 节点不应在 steps 模式返回实部（丢弃虚部）
         let ast = AstNode::Complex(3.0, 4.0);
-        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
-        assert!(steps.is_empty());
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain);
+    }
+
+    #[test]
+    fn steps_complex_in_binary_op_returns_error() {
+        // BUG-O-001: Complex 作为 BinaryOp 子节点必须返回 Err（不再丢弃虚部）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Complex(3.0, 4.0)),
+            Box::new(AstNode::Number(1.0)),
+        );
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain);
     }
 
     #[test]
@@ -583,7 +609,7 @@ mod tests {
 
     #[test]
     fn steps_list_emits_no_step_but_walks_elements() {
-        // [1+1, 2+2] → 1+1=2, 2+2=4 (子节点步骤仍输出)
+        // 顶层 List：[1+1, 2+2] → 1+1=2, 2+2=4 (子节点步骤仍输出)
         let ast = AstNode::List(vec![
             AstNode::BinaryOp(
                 BinaryOp::Add,
@@ -598,6 +624,33 @@ mod tests {
         ]);
         let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
         assert_eq!(steps, vec!["1+1=2", "2+2=4"]);
+    }
+
+    #[test]
+    fn steps_list_in_binary_op_returns_error() {
+        // BUG-O-002: List 作为 BinaryOp 子节点必须返回 Err（不再错误求和）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::List(vec![
+                AstNode::Number(1.0),
+                AstNode::Number(2.0),
+                AstNode::Number(3.0),
+            ])),
+            Box::new(AstNode::Number(1.0)),
+        );
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain);
+    }
+
+    #[test]
+    fn steps_list_in_unary_op_returns_error() {
+        // BUG-O-002: List 作为 UnaryOp 子节点也必须返回 Err
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Neg,
+            Box::new(AstNode::List(vec![AstNode::Number(1.0)])),
+        );
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain);
     }
 
     #[test]
@@ -663,16 +716,17 @@ mod tests {
     }
 
     #[test]
-    fn steps_unbound_variable_still_defaults_zero() {
-        // 未绑定变量（非 pi/e）仍视为 0.0（保持向后兼容）
+    fn steps_unbound_variable_returns_error_repeated() {
+        // BUG-O-003: 未绑定变量（非 pi/e）必须返回 Err（与 ArithmeticDomain 一致，不再默认 0.0）
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Variable("y".to_string())),
             Box::new(AstNode::Number(2.0)),
         );
         let ctx = EvalContext::new();
-        let steps = generate_steps(&ast, &ctx).unwrap();
-        assert_eq!(steps, vec!["0+2=2"]);
+        let err = generate_steps(&ast, &ctx).unwrap_err();
+        assert!(err.kind == ErrorKind::Eval);
+        assert_eq!(err.i18n_key, Some("msg.unbound_variable"));
     }
 
     #[test]

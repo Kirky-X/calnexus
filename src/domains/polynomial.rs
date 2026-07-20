@@ -47,7 +47,15 @@ impl CalculationDomain for PolynomialDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        self.eval_node(ast, ctx)
+        // 预绑定 pi/e（若上下文未提供），避免常量被当作多项式变量
+        let mut ctx = ctx.clone();
+        if ctx.get_var("pi").is_none() {
+            ctx = ctx.with_var("pi", std::f64::consts::PI);
+        }
+        if ctx.get_var("e").is_none() {
+            ctx = ctx.with_var("e", std::f64::consts::E);
+        }
+        self.eval_node(ast, &ctx)
     }
 }
 
@@ -169,10 +177,16 @@ impl PolynomialDomain {
     /// poly_sub(a, b)：多项式减法（a + (-b)）。
     fn eval_poly_sub(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
+            // BUG-E-001: 必须带 i18n key，否则 locales/*.json 中
+            // `msg.polynomial.poly_sub_arg_count` 成为死键，中文用户看到英文错误。
             return Err(CalcError::domain(format!(
                 "poly_sub() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.polynomial.poly_sub_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let (a, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let (b, _) = self.arg_to_coeffs(&args[1], ctx)?;
@@ -1163,6 +1177,20 @@ mod tests {
     #[test]
     fn test_poly_eval() {
         assert_eq!(eval_scalar("poly_eval(x^2+1, 2)").unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_poly_eval_with_pi_e_constants() {
+        // BUG-D-002 修复：pi/e 应被识别为常量而非多项式变量
+        // poly_eval(x^2+pi, 1) = 1 + π ≈ 4.14159
+        let result = eval_scalar("poly_eval(x^2+pi, 1)").unwrap();
+        assert_approx(result, 1.0 + std::f64::consts::PI);
+        // poly_eval(x^2+e, 0) = 0 + e ≈ 2.71828
+        let result = eval_scalar("poly_eval(x^2+e, 0)").unwrap();
+        assert_approx(result, std::f64::consts::E);
+        // poly_eval(pi*x+1, 2) = 2π + 1 ≈ 7.28318
+        let result = eval_scalar("poly_eval(pi*x+1, 2)").unwrap();
+        assert_approx(result, 2.0 * std::f64::consts::PI + 1.0);
     }
 
     // ===== UT-POL-008: 微分 =====
@@ -2183,6 +2211,30 @@ mod tests {
         let ast = AstNode::FunctionCall("poly_sub".to_string(), vec![AstNode::Number(1.0)]);
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    /// BUG-E-001: poly_sub 参数数量错误必须带 i18n key，否则 locales/*.json 中
+    /// `msg.polynomial.poly_sub_arg_count` 成为死键，中文用户看到英文错误。
+    #[test]
+    fn test_poly_sub_wrong_args_has_i18n() {
+        let ast = AstNode::FunctionCall("poly_sub".to_string(), vec![AstNode::Number(1.0)]);
+        let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
+        if let Err(ref e) = result {
+            assert_eq!(
+                e.i18n_key,
+                Some("msg.polynomial.poly_sub_arg_count"),
+                "expected i18n key msg.polynomial.poly_sub_arg_count"
+            );
+            // 参数 actual 应被填充为实际传入参数数
+            assert!(
+                e.i18n_args
+                    .iter()
+                    .any(|(k, v)| k == "actual" && v == "1"),
+                "expected i18n_args containing (actual, 1), got {:?}",
+                e.i18n_args
+            );
+        }
     }
 
     #[test]

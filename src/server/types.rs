@@ -63,17 +63,38 @@ impl EvaluateRequest {
 
     /// 校验请求安全约束。
     ///
+    /// - `expr` 非空 / 长度 ≤ `MAX_EXPR_LEN`（4096）/ 不含 null 字节：防止 DoS 与注入
     /// - `vars` 键数 ≤ `MAX_VARS`（1024）：防止内存耗尽攻击
     /// - `vars` 值必须有限（拒绝 NaN/Infinity）：输入值合法性
     /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
     ///
     /// 违反约束时返回 `Err(ApiError::validation(...))`（HTTP 422 / MCP VALIDATION_ERROR，
-    /// spec.md R-sdforge-002/003 契约）。`field` 标识违规字段（"vars"/"precision"），
+    /// spec.md R-sdforge-002/003 契约）。`field` 标识违规字段（"expr"/"vars"/"precision"），
     /// `constraint` 描述约束。
     // ApiError（sdforge）含丰富错误上下文（type/message/details），168 bytes 为框架设计；
     // 校验错误路径罕见，Box 化会令所有 `validate()?` 调用点被迫 `map_err` 解包，得不偿失。
     #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<(), ApiError> {
+        // BUG-O-004: expr 字段校验（空串 / 超长 / null 字节均为 DoS / 注入向量）
+        if self.expr.is_empty() {
+            return Err(ApiError::validation(
+                "expr",
+                "expression must not be empty",
+            ));
+        }
+        if self.expr.len() > MAX_EXPR_LEN {
+            return Err(ApiError::validation(
+                "expr",
+                format!(
+                    "length {} exceeds limit {}",
+                    self.expr.len(),
+                    MAX_EXPR_LEN
+                ),
+            ));
+        }
+        if self.expr.bytes().any(|b| b == 0) {
+            return Err(ApiError::validation("expr", "null bytes not allowed"));
+        }
         if self.vars.len() > MAX_VARS {
             return Err(ApiError::validation(
                 "vars",
@@ -103,6 +124,9 @@ impl EvaluateRequest {
 
 /// `vars` 最大键数（T016 安全前置任务：防止内存耗尽攻击）。
 const MAX_VARS: usize = 1024;
+
+/// `expr` 最大长度（BUG-O-004：防止超长表达式导致 DoS）。
+const MAX_EXPR_LEN: usize = 4096;
 
 impl EvaluateResponse {
     /// 从 evaluate 返回值构造响应。
@@ -478,5 +502,51 @@ mod tests {
                 "NaN/Infinity vars should be rejected"
             );
         }
+    }
+
+    // === BUG-O-004: expr 字段校验 ===
+    // validate() 此前完全不校验 expr，导致空串、超长串、含 null 字节串全部通过。
+    // 这些都是 DoS / 注入向量，必须在入口拦截。
+
+    #[test]
+    fn test_validate_rejects_empty_expr() {
+        let req = EvaluateRequest {
+            expr: String::new(),
+            vars: HashMap::new(),
+            precision: None,
+        };
+        let err = req.validate().unwrap_err();
+        assert!(
+            matches!(err, ApiError::ValidationError { .. }),
+            "empty expr should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_oversized_expr() {
+        let req = EvaluateRequest {
+            expr: "x".repeat(MAX_EXPR_LEN + 1),
+            vars: HashMap::new(),
+            precision: None,
+        };
+        let err = req.validate().unwrap_err();
+        assert!(
+            matches!(err, ApiError::ValidationError { .. }),
+            "oversized expr should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_null_bytes() {
+        let req = EvaluateRequest {
+            expr: "1+\0+2".to_string(),
+            vars: HashMap::new(),
+            precision: None,
+        };
+        let err = req.validate().unwrap_err();
+        assert!(
+            matches!(err, ApiError::ValidationError { .. }),
+            "expr with null bytes should be rejected"
+        );
     }
 }

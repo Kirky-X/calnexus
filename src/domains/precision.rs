@@ -383,10 +383,17 @@ fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
 ///
 /// 安全约束：拒绝超过 `MAX_FACTORIAL_INPUT` 的输入，防止循环 DoS
 /// （tiangang SAST CRITICAL 修复：`factorial(1000000000)` 可在 24 字节请求内永久挂死服务器）。
-/// 负数输入返回 0（保持原有语义）。
+/// 负数输入返回 DomainError（阶乘定义域为非负整数）。
 fn factorial(n: &BigInt) -> Result<BigInt, CalcError> {
     if n < &BigInt::zero() {
-        return Ok(BigInt::zero());
+        return Err(CalcError::domain(format!(
+            "factorial requires non-negative integer, got {}",
+            n
+        ))
+        .with_i18n(
+            "msg.core.factorial_negative",
+            vec![("value".to_string(), n.to_string())],
+        ));
     }
     if n > &BigInt::from(MAX_FACTORIAL_INPUT) {
         return Err(CalcError::domain(format!(
@@ -823,11 +830,18 @@ mod tests {
 
     #[test]
     fn test_factorial_negative() {
-        // factorial(-1) → 0（负数阶乘返回 0）
+        // factorial(-1) → DomainError（负数阶乘未定义，BUG-D-008 修复）
         let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(-1.0)]);
         let domain = PrecisionDomain;
-        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
-        assert_bigint(&result, "0");
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(matches!(result, Err(ref e) if e.kind == ErrorKind::Domain));
+        if let Err(ref e) = result {
+            assert_eq!(
+                e.i18n_key,
+                Some("msg.core.factorial_negative"),
+                "expected i18n key msg.core.factorial_negative"
+            );
+        }
     }
 
     #[test]

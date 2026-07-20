@@ -177,8 +177,25 @@ impl ComplexDomain {
                         args.len()
                     )));
                 }
-                let re = self.eval(&args[0], ctx)?.to_complex().re;
-                let im = self.eval(&args[1], ctx)?.to_complex().re;
+                // BUG-D-016 修复：re/im 必须为标量，丢弃虚部会掩盖用户错误
+                let re = match self.eval(&args[0], ctx)? {
+                    ComplexValue::Scalar(v) => v,
+                    _ => {
+                        return Err(CalcError::domain(
+                            "complex() requires scalar arguments".to_string(),
+                        )
+                        .with_i18n("msg.output.requires_scalar", vec![]))
+                    }
+                };
+                let im = match self.eval(&args[1], ctx)? {
+                    ComplexValue::Scalar(v) => v,
+                    _ => {
+                        return Err(CalcError::domain(
+                            "complex() requires scalar arguments".to_string(),
+                        )
+                        .with_i18n("msg.output.requires_scalar", vec![]))
+                    }
+                };
                 Ok(ComplexValue::Complex(Complex64::new(re, im)))
             }
             "conj" => {
@@ -859,6 +876,33 @@ mod tests {
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_complex_function_rejects_complex_argument() {
+        // BUG-D-016：complex(1+2i, 3) → DomainError（re 含虚部，禁止丢弃）
+        let ast_re_complex = AstNode::FunctionCall(
+            "complex".to_string(),
+            vec![AstNode::Complex(1.0, 2.0), AstNode::Number(3.0)],
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast_re_complex, &default_ctx());
+        assert!(matches!(result, Err(ref e) if e.kind == ErrorKind::Domain));
+        if let Err(ref e) = result {
+            assert_eq!(
+                e.i18n_key,
+                Some("msg.output.requires_scalar"),
+                "expected i18n key msg.output.requires_scalar"
+            );
+        }
+
+        // complex(1, 3+4i) → DomainError（im 含虚部）
+        let ast_im_complex = AstNode::FunctionCall(
+            "complex".to_string(),
+            vec![AstNode::Number(1.0), AstNode::Complex(3.0, 4.0)],
+        );
+        let result = domain.evaluate(&ast_im_complex, &default_ctx());
+        assert!(matches!(result, Err(ref e) if e.kind == ErrorKind::Domain));
     }
 
     // ===== 额外覆盖：contains_complex 对 UnaryOp/Matrix/List 的路由 =====

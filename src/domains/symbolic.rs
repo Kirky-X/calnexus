@@ -882,13 +882,11 @@ fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64,
     }
 }
 
-/// `Div` 求值：除零时返回 ±Inf（保留符号）。
+/// `Div` 求值：除零时返回 `DivisionByZero` 错误。
 ///
 /// 提取自 `eval_symbolic`：将条件分支 `d == 0.0` 与主分派隔离，
-/// 降低主函数圈复杂度。行为与原实现一致：
-/// - `+x / 0` → `+Inf`
-/// - `-x / 0` → `-Inf`
-/// - `0 / 0` → `+Inf`（`0.0.signum() == 1.0`，`Inf * 1.0 == +Inf`）
+/// 降低主函数圈复杂度。行为（BUG-D-019 修复后）：
+/// - `x / 0` → `DivisionByZero` 错误（不再返回 ±Inf）
 fn eval_div(
     l: &SymbolicExpr,
     r: &SymbolicExpr,
@@ -896,22 +894,30 @@ fn eval_div(
 ) -> Result<f64, CalcError> {
     let d = eval_symbolic(r, env)?;
     if d == 0.0 {
-        return Ok(f64::INFINITY * eval_symbolic(l, env)?.signum());
+        return Err(CalcError::division_by_zero()
+            .with_i18n("msg.core.division_by_zero", vec![]));
     }
     Ok(eval_symbolic(l, env)? / d)
 }
 
-/// `Ln` 求值：非正输入返回 `NaN`。
+/// `Ln` 求值：非正输入返回 `DomainError`。
 ///
 /// 提取自 `eval_symbolic`：将条件分支 `v <= 0.0` 与主分派隔离，
-/// 降低主函数圈复杂度。行为与原实现一致：
+/// 降低主函数圈复杂度。行为（BUG-D-009 修复后）：
 /// - `ln(正数)` → 正常对数
-/// - `ln(0)` → `NaN`
-/// - `ln(负数)` → `NaN`
+/// - `ln(0)` → `DomainError`
+/// - `ln(负数)` → `DomainError`
 fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
     let v = eval_symbolic(e, env)?;
     if v <= 0.0 {
-        return Ok(f64::NAN);
+        return Err(CalcError::domain(format!(
+            "ln requires positive argument, got {}",
+            v
+        ))
+        .with_i18n(
+            "msg.output.requires_positive",
+            vec![("value".to_string(), v.to_string())],
+        ));
     }
     Ok(v.ln())
 }
@@ -1209,6 +1215,7 @@ fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::core::ErrorKind;
 
     // ----- TG3.1 转换测试 -----
 
@@ -2618,11 +2625,16 @@ mod tests {
         let tan_expr = SymbolicExpr::Tan(Box::new(SymbolicExpr::Var("x".to_string())));
         assert_eq!(eval_symbolic(&tan_expr, &env).unwrap(), 0.0);
 
-        // eval_symbolic(Ln(x), {x: -1}) → NaN (v <= 0, 覆盖 lines 745-748)
+        // eval_symbolic(Ln(x), {x: -1}) → Err (BUG-D-009 修复：非正数返回 DomainError)
         env.insert("x".to_string(), -1.0);
         let ln_expr = SymbolicExpr::Ln(Box::new(SymbolicExpr::Var("x".to_string())));
-        let ln_result = eval_symbolic(&ln_expr, &env).unwrap();
-        assert!(ln_result.is_nan());
+        let ln_result = eval_symbolic(&ln_expr, &env);
+        assert!(matches!(ln_result, Err(e) if e.kind == ErrorKind::Domain));
+
+        // eval_symbolic(Ln(x), {x: 0}) → Err (BUG-D-009 修复)
+        env.insert("x".to_string(), 0.0);
+        let ln_zero_result = eval_symbolic(&ln_expr, &env);
+        assert!(matches!(ln_zero_result, Err(e) if e.kind == ErrorKind::Domain));
 
         // eval_symbolic(Ln(x), {x: 1}) → 0.0 (v > 0, 覆盖 line 750)
         env.insert("x".to_string(), 1.0);
@@ -2798,7 +2810,7 @@ mod tests {
     //
     // 目的：重构 eval_symbolic（cyc=23 → ≤15）前后行为不变。
     // 覆盖所有 SymbolicExpr variant：Const/Var/Add/Sub/Mul/Div/Pow/Neg/Sin/Cos/Tan/Ln/Exp
-    // + 边界：Var 未绑定、Div by zero（→ ±Inf）、Ln 非正（→ NaN）。
+    // + 边界：Var 未绑定、Div by zero（→ DivisionByZero error）、Ln 非正（→ Domain error）。
     #[test]
     fn test_eval_symbolic_dispatch() {
         let mut env = HashMap::new();
@@ -2868,25 +2880,23 @@ mod tests {
             8.0
         );
 
-        // ----- 3. Div by zero → ±Inf -----
+        // ----- 3. Div by zero → DivisionByZero error（BUG-D-019 修复） -----
         let zero = SymbolicExpr::Const(0.0);
         let pos = SymbolicExpr::Const(5.0);
         let neg = SymbolicExpr::Const(-5.0);
         let div_pos = eval_symbolic(
             &SymbolicExpr::Div(Box::new(pos), Box::new(zero.clone())),
             &env,
-        )
-        .unwrap();
+        );
         assert!(
-            div_pos.is_infinite() && div_pos > 0.0,
-            "5/0 → +Inf, got {}",
+            matches!(div_pos, Err(ref e) if e.kind == ErrorKind::DivisionByZero),
+            "5/0 → DivisionByZero, got {:?}",
             div_pos
         );
-        let div_neg =
-            eval_symbolic(&SymbolicExpr::Div(Box::new(neg), Box::new(zero)), &env).unwrap();
+        let div_neg = eval_symbolic(&SymbolicExpr::Div(Box::new(neg), Box::new(zero)), &env);
         assert!(
-            div_neg.is_infinite() && div_neg < 0.0,
-            "-5/0 → -Inf, got {}",
+            matches!(div_neg, Err(ref e) if e.kind == ErrorKind::DivisionByZero),
+            "-5/0 → DivisionByZero, got {:?}",
             div_neg
         );
 
@@ -2928,16 +2938,18 @@ mod tests {
             (eval_symbolic(&SymbolicExpr::Ln(Box::new(pos_val)), &env).unwrap() - 0.0).abs()
                 < 1e-10
         );
-        // Ln(0) → NaN
+        // Ln(0) → DomainError（BUG-D-009 修复）
         let zero_val = SymbolicExpr::Const(0.0);
-        assert!(eval_symbolic(&SymbolicExpr::Ln(Box::new(zero_val)), &env)
-            .unwrap()
-            .is_nan());
-        // Ln(负数) → NaN
+        assert!(matches!(
+            eval_symbolic(&SymbolicExpr::Ln(Box::new(zero_val)), &env),
+            Err(ref e) if e.kind == ErrorKind::Domain
+        ));
+        // Ln(负数) → DomainError（BUG-D-009 修复）
         let neg_val = SymbolicExpr::Const(-1.0);
-        assert!(eval_symbolic(&SymbolicExpr::Ln(Box::new(neg_val)), &env)
-            .unwrap()
-            .is_nan());
+        assert!(matches!(
+            eval_symbolic(&SymbolicExpr::Ln(Box::new(neg_val)), &env),
+            Err(ref e) if e.kind == ErrorKind::Domain
+        ));
 
         // ----- 6. 嵌套表达式 -----
         // (x + y) * x = (2+3)*2 = 10

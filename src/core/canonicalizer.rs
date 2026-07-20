@@ -135,15 +135,38 @@ impl AstCanonicalizer {
     }
 
     /// 变换 FunctionCall：递归变换所有参数。
+    ///
+    /// **precision 函数白名单**（BUG-C-002 修复）：
+    /// 当 `name == "precision"` 且 `args.len() == 2` 时，对 `args[1]`（expr）
+    /// 跳过常量折叠，保留 `BinaryOp` 结构交由 Precision 域内部 `BigRational` 求值。
+    ///
+    /// 否则 canonicalizer 会把 `precision(20, 1/3)` 中的 `1/3` 折叠为 f64 的
+    /// `0.333...`，Precision 域收到的是 f64 近似值而非精确分数 `1/3`，
+    /// 导致 `precision(20, 1/3)` 输出 20 位 `0.3333...` 中包含 f64 误差而非精确 `1/3`。
+    ///
+    /// `args[0]`（N）仍按常量折叠处理：N 应为字面量正整数，折叠不影响其语义
+    /// （`extract_precision_value` 接受 `Number`/`BigNumber`，折叠后 `2+3 → 5`
+    /// 仍可被识别为 N=5）。
+    ///
+    /// 仅在 `fold_constants = true` 时启用白名单（即 `transform` 入口生效）；
+    /// `transform_no_fold` 本就不折叠，无需特殊处理。
     fn transform_function(
         name: &str,
         args: &[AstNode],
         fold_constants: bool,
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
+        // precision 函数白名单：args[1] 跳过常量折叠（保留精确分数结构）
+        let precision_whitelist = fold_constants && name == "precision" && args.len() == 2;
+
         let mut transformed_args = Vec::with_capacity(args.len());
-        for arg in args {
-            transformed_args.push(Self::transform_inner(arg, fold_constants, fold_unary)?);
+        for (i, arg) in args.iter().enumerate() {
+            if precision_whitelist && i == 1 {
+                // args[1] 跳过常量折叠，但保留交换律排序与一元归一化
+                transformed_args.push(Self::transform_inner(arg, false, fold_unary)?);
+            } else {
+                transformed_args.push(Self::transform_inner(arg, fold_constants, fold_unary)?);
+            }
         }
         Ok(AstNode::FunctionCall(name.to_string(), transformed_args))
     }

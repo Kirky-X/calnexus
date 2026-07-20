@@ -49,7 +49,7 @@ pub fn evaluate(
     check_elapsed(start, ctx.timeout)?;
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
     check_elapsed(start, ctx.timeout)?;
-    let cache_cf = build_cache_key(&cf, precision);
+    let cache_cf = build_cache_key(&cf, ctx, precision);
 
     // 阶段 3: 按 precision 模式分发
     if precision.is_some() {
@@ -85,16 +85,54 @@ fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), Ca
     Ok(())
 }
 
-/// 构建精度感知缓存键：precision 模式使用 `precision:` 前缀避免 BigRational 与 Scalar 污染。
+/// 构建精度感知 + 上下文感知缓存键。
 ///
-/// tiangang SAST CRITICAL + kueiku bug 分析发现：同一表达式的 precision 模式与常规模式
-/// 结果类型不同，必须使用不同缓存键。
-fn build_cache_key(cf: &CanonicalForm, precision: Option<usize>) -> CanonicalForm {
-    if precision.is_some() {
-        CanonicalForm::new(format!("precision:{}", cf.as_str()))
+/// 缓存键组成部分：
+/// 1. **CanonicalForm**：表达式规范化形式（S-表达式）
+/// 2. **precision 模式前缀**：`precision:` 前缀避免 BigRational 与 Scalar 污染
+///    （tiangang SAST CRITICAL + kueiku bug 分析）
+/// 3. **EvalContext.vars 哈希**：按 key 字典序排序后 BLAKE3 哈希
+///    （BUG-C-001 修复：原实现仅基于 CanonicalForm + precision，
+///    未包含 vars，导致 REPL 中 `:let x=1; x` → 1.0 后再 `:let x=2; x`
+///    仍错误命中缓存返回 1.0）
+/// 4. **EvalContext.timeout**：不同 timeout 应产生不同 cache 键
+///
+/// # 排序与序列化策略
+///
+/// vars 按 key 字典序排序后逐项序列化，每项格式为 `key\0value_bits\0`。
+/// - 用 `\0` 分隔符防止 `("a", 12)` 与 `("a1", 2.0)` 产生相同序列化结果
+/// - 用 `f64::to_bits()` 而非 `to_string()`，避免 `-0.0` 与 `0.0` 在
+///   `to_string()` 中都为 `"0"` 但 bits 不同导致语义不一致
+fn build_cache_key(
+    cf: &CanonicalForm,
+    ctx: &EvalContext,
+    precision: Option<usize>,
+) -> CanonicalForm {
+    let base = if precision.is_some() {
+        format!("precision:{}", cf.as_str())
     } else {
-        cf.clone()
+        cf.as_str().to_string()
+    };
+
+    // 混入 vars 哈希：按 key 字典序排序后 BLAKE3 哈希
+    let mut vars_input: Vec<u8> = Vec::new();
+    let mut sorted_vars: Vec<_> = ctx.vars.iter().collect();
+    sorted_vars.sort_by_key(|(k, _)| *k);
+    for (k, v) in sorted_vars {
+        vars_input.extend_from_slice(k.as_bytes());
+        vars_input.push(0); // key/value 分隔符，防止边界混淆
+        vars_input.extend_from_slice(&v.to_bits().to_le_bytes());
+        vars_input.push(0); // 项分隔符，防止相邻项边界混淆
     }
+    let vars_hash_hex = blake3::hash(&vars_input).to_hex();
+
+    // 混入 timeout（as_nanos 返回 u128，覆盖所有实际 timeout 范围）
+    let timeout_nanos = ctx.timeout.as_nanos();
+
+    CanonicalForm::new(format!(
+        "{}|vars={}|timeout={}",
+        base, vars_hash_hex, timeout_nanos
+    ))
 }
 
 /// precision 模式：直接使用 PrecisionDomain，绕过路由器。
@@ -325,15 +363,19 @@ mod tests {
     }
 
     // 常规模式缓存命中路径：预填充缓存后，evaluate 应直接返回缓存值
+    //
+    // BUG-C-001 修复后，缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout，
+    // 故预填充时也必须用 build_cache_key 构造正确键。
     #[test]
     fn test_evaluate_regular_mode_cache_hit() {
         let cache = CacheManager::new();
         let ast = parse("2+3").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
 
-        cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
-
         let ctx = EvalContext::new();
+        let cache_cf = build_cache_key(&cf, &ctx, None);
+        cache.insert(&cache_cf, &Ok(EvalResult::Scalar(5.0)));
+
         let (result, domain, cache_hit, fmt_prec) = evaluate("2+3", &ctx, None, &cache).unwrap();
 
         assert_eq!(result, EvalResult::Scalar(5.0));
@@ -386,9 +428,12 @@ mod tests {
         let cache = CacheManager::new();
         let ast = parse("gcd(12,18)").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
-        cache.insert(&cf, &Ok(EvalResult::Scalar(6.0)));
 
         let ctx = EvalContext::new();
+        // BUG-C-001: 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout
+        let cache_cf = build_cache_key(&cf, &ctx, None);
+        cache.insert(&cache_cf, &Ok(EvalResult::Scalar(6.0)));
+
         let (result, domain, cache_hit, _) = evaluate("gcd(12,18)", &ctx, None, &cache).unwrap();
         assert_eq!(result, EvalResult::Scalar(6.0));
         assert_eq!(domain, "number_theory");
@@ -400,9 +445,12 @@ mod tests {
         let cache = CacheManager::new();
         let ast = parse("C(10,3)").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
-        cache.insert(&cf, &Ok(EvalResult::Scalar(120.0)));
 
         let ctx = EvalContext::new();
+        // BUG-C-001: 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout
+        let cache_cf = build_cache_key(&cf, &ctx, None);
+        cache.insert(&cache_cf, &Ok(EvalResult::Scalar(120.0)));
+
         let (result, domain, cache_hit, _) = evaluate("C(10,3)", &ctx, None, &cache).unwrap();
         assert_eq!(result, EvalResult::Scalar(120.0));
         assert_eq!(domain, "combinatorics");
@@ -620,5 +668,158 @@ mod tests {
             let (_, _, hit2, _) = evaluate("6*7", &ctx, None, &cache).unwrap();
             assert!(hit2);
         }
+    }
+
+    // ===== BUG-C-001 回归测试：cache 键必须包含 EvalContext.vars 与 timeout =====
+    //
+    // 背景：原 build_cache_key 仅基于 CanonicalForm + precision，未包含 EvalContext.vars。
+    // REPL 中 `:let x=1; x` → 1.0，再 `:let x=2; x` 仍返回 1.0（cache 命中错误结果）。
+    // 修复后 build_cache_key 混入 vars 的 BLAKE3 哈希（按 key 字典序排序）和 timeout。
+    //
+    // 测试 1：相同表达式、不同 vars 值必须产生不同 cache 键，不应互相命中。
+    #[test]
+    fn test_cache_key_includes_vars_different_values_do_not_collide() {
+        let cache = CacheManager::new();
+        let ctx1 = EvalContext::new().with_var("x", 1.0);
+        let ctx2 = EvalContext::new().with_var("x", 2.0);
+
+        // 第一次：x=1 → 计算 1.0，未命中
+        let (r1, _, hit1, _) = evaluate("x", &ctx1, None, &cache).unwrap();
+        assert_eq!(r1, EvalResult::Scalar(1.0));
+        assert!(!hit1, "first call must miss");
+
+        // 第二次：x=2 → 必须重新计算 2.0，不应误命中 x=1 的缓存
+        let (r2, _, hit2, _) = evaluate("x", &ctx2, None, &cache).unwrap();
+        assert_eq!(
+            r2,
+            EvalResult::Scalar(2.0),
+            "different vars must not return cached value from other vars"
+        );
+        assert!(!hit2, "different vars must not hit cache");
+    }
+
+    // 测试 2：相同表达式、相同 vars、不同 timeout 必须产生不同 cache 键。
+    #[test]
+    fn test_cache_key_includes_timeout_different_values_do_not_collide() {
+        let cf = CanonicalForm::new("(+ 2 3)");
+        let ctx1 = EvalContext::new();
+        let mut ctx2 = EvalContext::new();
+        ctx2.timeout = Duration::from_secs(10);
+
+        let key1 = build_cache_key(&cf, &ctx1, None);
+        let key2 = build_cache_key(&cf, &ctx2, None);
+        assert_ne!(
+            key1, key2,
+            "different timeout must produce different cache key"
+        );
+    }
+
+    // 测试 3：相同表达式、不同 vars 必须产生不同 cache 键（直接测试 build_cache_key）。
+    #[test]
+    fn test_build_cache_key_includes_vars() {
+        let cf = CanonicalForm::new("(+ 2 3)");
+        let ctx_empty = EvalContext::new();
+        let ctx_x1 = EvalContext::new().with_var("x", 1.0);
+        let ctx_x2 = EvalContext::new().with_var("x", 2.0);
+        let ctx_y = EvalContext::new().with_var("y", 1.0);
+
+        let key_empty = build_cache_key(&cf, &ctx_empty, None);
+        let key_x1 = build_cache_key(&cf, &ctx_x1, None);
+        let key_x2 = build_cache_key(&cf, &ctx_x2, None);
+        let key_y = build_cache_key(&cf, &ctx_y, None);
+
+        // 任意两个不同 vars 状态必须产生不同 cache 键
+        assert_ne!(key_empty, key_x1, "empty vars vs vars=x:1 must differ");
+        assert_ne!(key_x1, key_x2, "vars x:1 vs x:2 must differ");
+        assert_ne!(key_x1, key_y, "vars x:1 vs y:1 must differ");
+
+        // 相同 ctx 应产生相同 cache 键（确定性）
+        let key_x1_again = build_cache_key(&cf, &ctx_x1, None);
+        assert_eq!(key_x1, key_x1_again, "same ctx must produce same key");
+    }
+
+    // 测试 4：precision 模式前缀仍然生效（与 BUG-C-001 修复共存）。
+    #[test]
+    fn test_build_cache_key_precision_prefix_preserved() {
+        let cf = CanonicalForm::new("(+ 2 3)");
+        let ctx = EvalContext::new();
+        let key_reg = build_cache_key(&cf, &ctx, None);
+        let key_prec = build_cache_key(&cf, &ctx, Some(5));
+        assert_ne!(
+            key_reg, key_prec,
+            "precision mode key must differ from regular mode"
+        );
+        assert!(
+            key_prec.as_str().contains("precision:"),
+            "precision mode key must contain precision: prefix, got {}",
+            key_prec
+        );
+    }
+
+    // ===== BUG-C-002 回归测试：precision(N, 1/3) 必须返回 N 位精确的 1/3 =====
+    //
+    // 背景：canonicalizer.transform_function 对所有函数参数做常量折叠，
+    // 导致 precision(20, 1/3) 的 args[1]=1/3 被折叠为 f64 的 0.333...，
+    // Precision 域收到的是 f64 近似值而非精确分数 1/3。
+    // 修复后 transform_function 对 name=="precision" 的 args[1] 跳过常量折叠，
+    // 保留 BinaryOp 结构交由 Precision 域内部 BigRational 求值。
+    //
+    // 验证：precision(20, 1/3) 应返回 BigRational(1/3)，
+    // 经 format_bigrational(r, Some(20)) 格式化后应输出 20 位精确的 1/3。
+    #[test]
+    fn test_precision_function_preserves_exact_rational() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let (result, domain, _, fmt_prec) =
+            evaluate("precision(20, 1/3)", &ctx, None, &cache).unwrap();
+
+        // 必须路由到 precision 域
+        assert_eq!(domain, "precision");
+        // 顶层 precision(20, expr) 提取 N=20 用于格式化
+        assert_eq!(fmt_prec, Some(20));
+
+        // 结果必须是 BigRational(1/3)，不是 f64 近似的 BigRational
+        let r = match result {
+            EvalResult::BigRational(r) => r,
+            other => panic!("expected BigRational(1/3), got {:?}", other),
+        };
+        let one = num_bigint::BigInt::from(1);
+        let three = num_bigint::BigInt::from(3);
+        let expected = num_rational::BigRational::new(one, three);
+        assert_eq!(
+            r, expected,
+            "precision(20, 1/3) must be exact 1/3, got {}",
+            r
+        );
+
+        // 格式化验证：20 位精确 1/3 应为 0.33333333333333333333
+        let formatted = crate::domains::format_bigrational(&r, Some(20));
+        assert_eq!(
+            formatted, "0.33333333333333333333",
+            "20-digit 1/3 must be exact, got {}",
+            formatted
+        );
+    }
+
+    // BUG-C-002 边界场景：precision 函数嵌套调用时仍需保留精确分数语义。
+    //
+    // 验证：precision(10, 1/6) 应返回 BigRational(1/6)，
+    // 经 10 位格式化为 0.1666666667（10 位小数）。
+    #[test]
+    fn test_precision_function_preserves_exact_rational_other_fraction() {
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let (result, _, _, fmt_prec) = evaluate("precision(10, 1/6)", &ctx, None, &cache).unwrap();
+        assert_eq!(fmt_prec, Some(10));
+
+        let r = result.as_bigrational().expect("expected BigRational");
+        let one = num_bigint::BigInt::from(1);
+        let six = num_bigint::BigInt::from(6);
+        let expected = num_rational::BigRational::new(one, six);
+        assert_eq!(*r, expected, "precision(10, 1/6) must be exact 1/6, got {}", r);
+
+        let formatted = crate::domains::format_bigrational(r, Some(10));
+        // 1/6 = 0.166666...（无限循环 6），10 位小数为 0.1666666666（10 个 6，无舍入）
+        assert_eq!(formatted, "0.1666666666", "got {}", formatted);
     }
 }
