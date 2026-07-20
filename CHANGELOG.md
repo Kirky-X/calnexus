@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ReplSession` 持有 `I18n`**: REPL 会话独立持有 i18n 实例，支持运行时切换语言
 - **`batch::run()` 接收 `I18n` 参数**: 批处理模式支持本地化输出
 
+### Fixed
+
+- **`--steps` 模式下 `sin(pi/2)` 计算错误**: `output::steps::walk()` 的 `Variable(name)` 分支用 `ctx.get_var(name).unwrap_or(0.0)`，导致 `pi`/`e` 数学常量被错误求值为 0.0（用户报告：`calnexus --steps 'sin(pi/2)'` 输出 `sin(0)=0`）。修复：在 Variable 分支识别 `pi`/`e` 常量，用户绑定的变量优先（与 scientific/statistics/matrix domain 预绑定 pi/e 一致）
+- **`release.yml` tar 打包失败**: `tar czf .` 报 "file changed as we read it"，改用 `git archive` 基于 git 索引打包，避免文件系统变化干扰
+
 ### Removed
 
 - **死键 `msg.core.eval_domain_error`**: src/ 下 0 命中，删除避免误导
@@ -48,9 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Testing
 
-- 全 feature 矩阵测试通过：`default` 1432 / `cli` 1485 / `cli,icu` 1485 / `cli,server` 1523 / `cli,server,icu` 1523
+- 全 feature 矩阵测试通过：`default` 1437 / `cli` 1791 / `cli,icu` 1791 / `cli,server` 1847 / `cli,server,icu` 1847
 - `cargo clippy --features cli --all-targets` 零警告
 - 3 维度 subagent 审查（安全 / 架构 / 性能）通过，无 CRITICAL / HIGH
+- 新增 5 个回归测试覆盖 `Variable("pi")`/`Variable("e")` 在 steps 模式下的求值
 
 ## [0.1.0] - 2026-07-15
 

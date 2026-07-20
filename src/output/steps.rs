@@ -53,7 +53,19 @@ fn walk(
                 )
             }),
         AstNode::Complex(re, _im) => Ok(*re),
-        AstNode::Variable(name) => Ok(ctx.get_var(name).unwrap_or(0.0)),
+        AstNode::Variable(name) => {
+            // 用户绑定的变量优先（与 scientific/statistics/matrix domain 预绑定 pi/e 一致）
+            if let Some(v) = ctx.get_var(name) {
+                return Ok(v);
+            }
+            // 数学常量 pi/e：parser.rs line 708 将 0-arity FunctionCall("pi"/"e") 转为 Variable，
+            // 此处识别为数学常量，而非未绑定变量（否则 pi/e 被错误求值为 0.0）
+            match name.as_str() {
+                "pi" => Ok(std::f64::consts::PI),
+                "e" => Ok(std::f64::consts::E),
+                _ => Ok(0.0), // 未绑定变量视为 0.0（与 ArithmeticDomain 行为一致）
+            }
+        }
         AstNode::BinaryOp(op, lhs, rhs) => {
             let l = walk(lhs, ctx, steps, depth + 1)?;
             let r = walk(rhs, ctx, steps, depth + 1)?;
@@ -594,6 +606,87 @@ mod tests {
         let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
         assert_eq!(steps.len(), 1);
         assert!(steps[0].starts_with("pi()="));
+    }
+
+    // ===== 回归测试：Variable("pi")/Variable("e") 应返回数学常量，而非 0.0 =====
+    // 用户报告 bug：`calnexus --steps 'sin(pi/2)'` 输出 `0/2=0 → sin(0)=0`
+    // 根因：parser 将 `pi`/`e` 转为 Variable（parser.rs line 708），但 steps.rs walk() 的
+    // Variable 分支用 `ctx.get_var(name).unwrap_or(0.0)`，未绑定变量被错误求值为 0.0。
+
+    #[test]
+    fn steps_variable_pi_returns_math_constant() {
+        // Variable("pi") 单独求值：叶节点不输出步骤，但值应为 PI
+        let ast = AstNode::Variable("pi".to_string());
+        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
+        assert!(steps.is_empty(), "叶节点不应输出步骤");
+        // 通过父节点验证 Variable("pi") 的值
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Div,
+            Box::new(AstNode::Variable("pi".to_string())),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(steps, vec!["3.141592653589793/2=1.5707963267948966"]);
+    }
+
+    #[test]
+    fn steps_variable_e_returns_math_constant() {
+        // Variable("e") 通过父节点验证值应为 E
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Mul,
+            Box::new(AstNode::Variable("e".to_string())),
+            Box::new(AstNode::Number(1.0)),
+        );
+        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(steps, vec!["2.718281828459045*1=2.718281828459045"]);
+    }
+
+    #[test]
+    fn steps_sin_pi_over_2_equals_one() {
+        // sin(pi/2) = 1（用户报告的 bug 回归测试）
+        let ast = AstNode::FunctionCall(
+            "sin".to_string(),
+            vec![AstNode::BinaryOp(
+                BinaryOp::Div,
+                Box::new(AstNode::Variable("pi".to_string())),
+                Box::new(AstNode::Number(2.0)),
+            )],
+        );
+        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
+        assert_eq!(
+            steps,
+            vec![
+                "3.141592653589793/2=1.5707963267948966",
+                "sin(1.5707963267948966)=1"
+            ]
+        );
+    }
+
+    #[test]
+    fn steps_unbound_variable_still_defaults_zero() {
+        // 未绑定变量（非 pi/e）仍视为 0.0（保持向后兼容）
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Variable("y".to_string())),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let ctx = EvalContext::new();
+        let steps = generate_steps(&ast, &ctx).unwrap();
+        assert_eq!(steps, vec!["0+2=2"]);
+    }
+
+    #[test]
+    fn steps_user_var_pi_overrides_constant() {
+        // 用户显式绑定 pi 时，覆盖数学常量（与 scientific/statistics/matrix domain 一致）
+        // 叶节点不输出步骤，通过父节点验证
+        let ctx = EvalContext::new().with_var("pi", 100.0);
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Variable("pi".to_string())),
+            Box::new(AstNode::Number(0.0)),
+        );
+        let steps = generate_steps(&ast, &ctx).unwrap();
+        assert_eq!(steps, vec!["100+0=100"]);
     }
 
     #[test]

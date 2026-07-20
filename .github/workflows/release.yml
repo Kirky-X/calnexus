@@ -32,13 +32,11 @@ jobs:
       - name: Create source archives
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          tar czf "calnexus-${VERSION}.tar.gz" \
-            --exclude='.git' \
-            --exclude='target' \
-            --exclude='temp' \
-            .
-          zip -r "calnexus-${VERSION}.zip" . \
-            -x '.git/*' 'target/*' 'temp/*'
+          TAG="${{ steps.version.outputs.tag }}"
+          # 使用 git archive 基于 git 索引打包，避免 tar 报 "file changed as we read it"
+          # git archive 只包含 git 跟踪的文件，自动排除 .git/target/temp 等
+          git archive --format=tar.gz --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.tar.gz" "$TAG"
+          git archive --format=zip --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.zip" "$TAG"
 
       - name: Generate SHA256 checksums
         run: |
