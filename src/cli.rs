@@ -17,16 +17,12 @@ use crate::{parse, AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalR
 use sdforge::clap::{self, Parser};
 use std::io::{self, IsTerminal, Read};
 
-/// CLI 参数定义（通过 sdforge::clap 重导出使用 clap v4 derive）。
-///
-/// 注意：`about` 字段是 clap derive 编译时字面量，无法运行时国际化。
-/// 用户可见的本地化消息通过 `--lang` 切换 `I18n` 实例，由 `friendly()`/`tf()` 渲染。
-/// `about` 保留英文与默认语言（en）一致；`cli.about` 键供其他场景运行时查询。
 #[derive(Parser)]
 #[command(
     name = "calnexus",
     version,
-    about = "CalNexus: math expression evaluator"
+    about = "CalNexus: math expression evaluator",
+    long_about = None
 )]
 struct Cli {
     /// Expression to evaluate (reads from stdin if omitted and piped)

@@ -1,12 +1,14 @@
-# CalNexus
+<p align="center">
+  <img src="./docs/asserts/logo.png" alt="CalNexus Logo" width="200">
+</p>
 
-[![version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/kirky-x/calnexus)[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases)[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
 
 A command-line math expression evaluator with 11 computation domains, symbolic calculus, REPL, and batch processing.
 
 | Project Info | Value |
 | --- | --- |
-| Version | 0.1.0 |
+| Version | 0.1.2 |
 | License | MIT |
 | Author | Kirky.X |
 | Repository | https://github.com/kirky-x/calnexus |
@@ -60,7 +62,7 @@ A command-line math expression evaluator with 11 computation domains, symbolic c
 | High-performance cache | Moka L1 cache (10000 entries, BLAKE3 hash, thread-safe) |
 | Implicit multiplication | Auto-recognition of math idioms like `2x`, `3(x+1)` |
 | JSON output | `--json` emits a `result/domain/cache` structure for pipeline integration |
-| Industrial-grade testing | 1650 tests (1369 lib + 108 CLI + 173 integration), 97.27% coverage, release build with zero warnings |
+| Industrial-grade testing | 1856 tests, 97.27% coverage, release build with zero warnings |
 
 ### 11 Computation Domains
 
@@ -291,7 +293,7 @@ CalNexus is a Rust library + CLI binary project; the interface docs can be viewe
 ## Testing
 
 ```bash
-# Run all tests (1650 tests)
+# Run all tests (1856+ tests)
 cargo test --features cli
 
 # Release build (zero warnings)
@@ -302,7 +304,7 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-Test scale: 1650 tests (1369 lib + 108 CLI + 173 integration), 97.27% coverage, release build with zero warnings.
+Test scale: 1856 tests (1553 lib + 122 CLI + 132 integration + 6 REPL + 13 security + 12 property + 10 snapshot + 6 performance), 97.27% coverage, release build with zero warnings.
 
 ---
 

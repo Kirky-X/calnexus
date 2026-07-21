@@ -5,39 +5,25 @@ All notable changes to CalNexus are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
 ## [0.1.2] - 2026-07-21
-
-### Changed
-
-- **SKILL.md 移至 `skill/SKILL.md`**: 根目录 SKILL.md 移至 `skill/SKILL.md` 作为项目使用指南，`.claude/skills/calnexus-dev/SKILL.md` 精简为轻量 skill 参考
 
 ### Fixed
 
 - **SKILL.md 前移损坏修复**: `description` 字段内容合并到单行的损坏已修复，恢复正确 YAML 前移结构
+- **文档-代码一致性修复**: 根据发布前审查修复 20 项文档与代码不一致（CLI 标志缺失/示例输出过期/版本号陈旧/Domain 表格错误/CHANGELOG 重复/ARCHITECTURE 误导性陈述）
 
-### Security
+**4 subagent 穷举分析 + TDD 修复（Core/Domains/Output/Server+i18n）**：
 
-- **tiangang SAST 扫描**: 0 CRITICAL/HIGH（Gitleaks 0 泄漏 / Trivy 0 漏洞 / cargo-audit 0 通报 / Trufflehog 0 验证密钥）
-
-### Testing
-
-- 全 feature 矩阵测试通过：`cli` 1553 测试通过 / 0 失败 / 2 ignored（预期）
-- `cargo clippy --features cli --all-targets -- -D warnings` 0 警告
-
-## [0.1.1] - 2026-07-21
-
-### Added
-
-- **ICU 国际化基础设施**: 新增 `src/i18n.rs` 模块，基于 ICU4X 2.2 实现 BCP-47 locale 解析与消息本地化
-
-**Core 模块**（Subagent A，7 个 bugs）：
+**Core 模块**（7 个 bugs）：
 - BUG-C-M-001/002/006: `cache.rs` 3 处 `.ok().flatten()` / `let _ =` / `unwrap_or(0)` 静默吞错改为显式 `match` + `eprintln!` 降级为 cache miss（规则 12）
 - BUG-C-M-003: `canonicalizer.rs` NaN 比较从 `partial_cmp + unwrap_or(Equal)` 改为 `f64::total_cmp`，提供 IEEE 754 totalOrder 全序
 - BUG-C-M-004: `canonicalizer.rs` 显式处理 `0^0 = 1.0`，与所有域保持一致
 - BUG-C-M-005: `parser.rs` `validate_no_consecutive_plus` 扩展为 `validate_no_consecutive_operators`，检查 `++`/`**`/`//`/`^^` 四种运算符
 - BUG-C-L-008: `domain.rs` `format!("{:?}", functions)` 输出限制为 5 个 + `... and N more` 提示，防止超长 Debug 输出
 
-**Domains 模块**（Subagent B，9 个 MEDIUM + 多个 LOW）：
+**Domains 模块**（9 个 MEDIUM + 多个 LOW）：
 - BUG-D-M-001/002/003: `vector.rs` / `complex.rs` / `polynomial.rs` 标量 Pow 添加 `0^0=1.0` + `is_finite` 检查
 - BUG-D-M-004/005: `polynomial.rs` `coeffs_from_pow` NaN 检查 + `poly_eval_horner` 签名改为 `Result<f64, CalcError>`
 - BUG-D-M-006: `symbolic.rs` `taylor()` 从 `unwrap_or(0.0)` 改为 `?` 传播错误
@@ -46,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BUG-D-L-001/002: `vector.rs` / `precision.rs` `evaluate()` 顶部预绑定 pi/e（参考 polynomial 模式）
 - LOW: `vector.rs` / `complex.rs` / `precision.rs` 24 处硬编码错误消息 i18n 化
 
-**Output 模块**（Subagent C，12 个 MEDIUM）：
+**Output 模块**（12 个 MEDIUM）：
 - BUG-O-M-001/002/003: `steps.rs` `format_value` 浮点噪声检测 + 大数科学计数法 + `-0.0` 保留负号
 - BUG-O-M-004: `steps.rs` `walk` Matrix 分支从 `Ok(0.0)` 改为 `Err(DomainError)`
 - BUG-O-M-005: `steps.rs` BigNumber 分支检查 f64 安全整数范围（2^53），超出报错
@@ -56,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BUG-O-M-011: `latex.rs` `join_latex_polynomial_terms` 负项用 ` - ` 分隔
 - BUG-O-M-012: `latex.rs` `symbolic_str_to_latex` 状态机解析 `^N` 转换为 `^{N}`
 
-**Server/i18n/入口模块**（Subagent D，4 个 MEDIUM + 1 LOW）：
+**Server/i18n/入口模块**（4 个 MEDIUM + 1 LOW）：
 - BUG-S-M-001: `server/evaluate.rs` 新增 `REQUEST_TIMEOUT_SECS=30` + `evaluate_with_timeout` 可测试入口，`tokio::time::timeout` 包裹 `spawn_blocking`
 - BUG-S-M-002: `server/types.rs` `validate()` 新增 vars 键名长度（≤64）和 null 字节校验
 - BUG-S-M-003: `server/http.rs` 新增 `shutdown_signal` 监听 SIGINT/SIGTERM，`with_graceful_shutdown` 优雅关闭
@@ -70,13 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **i18n 键扩展**: en.json / zh.json 从 199 键扩展到 248 键（新增 49 键，删除 1 死键 `msg.output.eval_error`，修改 1 键 `msg.core.parse_illegal_consecutive_ops` 添加 `{op}` 占位符），en/zh 完全对等
+- **SKILL.md 移至 `skill/SKILL.md`**: 根目录 SKILL.md 移至 `skill/SKILL.md` 作为项目使用指南，`.claude/skills/calnexus-dev/SKILL.md` 精简为轻量 skill 参考
+- **i18n 键扩展**: en.json / zh.json 从 195 键扩展到 248 键（新增 53 键，删除 1 死键 `msg.output.eval_error`，修改 1 键 `msg.core.parse_illegal_consecutive_ops` 添加 `{op}` 占位符），en/zh 完全对等
 - **Cargo.toml**: `http` feature 新增 `tokio/signal` 依赖，支持 graceful shutdown 信号监听
 
 ### Security
 
 - 3 个独立审查 subagent（安全/架构/性能）按规则 26 完成 commit 前审查
-- `cargo audit` 0 漏洞（381 deps）/ `semgrep` 0 findings（51 rules / 37 files）
+- **tiangang SAST 扫描**: 0 CRITICAL/HIGH（Gitleaks 0 泄漏 / Trivy 0 漏洞 / cargo-audit 0 通报 / Trufflehog 0 验证密钥）
 - HTTP server 请求级超时（30s）+ vars 键名校验 + 优雅关闭三重防护
 - 缓存层错误降级为 cache miss，避免 panic 影响 HTTP 请求处理
 

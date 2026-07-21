@@ -52,7 +52,7 @@ flowchart TD
 | `canonicalizer.rs` | AST 规范化（交换律排序 + 常量折叠 + 一元归一化）+ S-表达式序列化 |
 | `cache.rs` | L1 缓存管理器（Moka + BLAKE3 哈希键） |
 | `domain.rs` | `CalculationDomain` trait + `DomainRouter`（11 域优先级路由） |
-| `evaluator.rs` | 顶层 `evaluate()` 编排函数（parse → canonicalize → cache → route → evaluate） |
+| `evaluator.rs` | 顶层 `evaluate()` 编排函数（parse → canonicalize → cache → route → evaluate） — **L3 编排层**，但位于 `src/core/` 目录下 |
 
 ### 1.2 L2 — 计算域层 (`src/domains/`)
 
@@ -87,7 +87,7 @@ flowchart LR
     K --> R{precision?}
     R -->|Some| PM["4a. PrecisionDomain<br/>BigRational 求值"]
     R -->|None| RM["4b. DomainRouter<br/>route + evaluate"]
-    PM --> F["5. format output"]
+    PM --> F["5. format output（由调用者完成）"]
     RM --> F
 ```
 
@@ -96,7 +96,7 @@ flowchart LR
 - **CLI** (`src/cli.rs`)：clap 命令行入口，`--latex`/`--steps`/`--canonical`/`--json`/`--precision` 等标志
 - **REPL** (`src/repl.rs`)：rustyline 交互式求值
 - **Batch** (`src/batch.rs`)：批处理文件求值
-- **Server** (`src/server/`)：HTTP + MCP 双协议服务，`#[forge]` 声明式封装（sdforge 0.4.2）——单个 async fn 同时生成 HTTP `POST /api/v1/evaluate` 路由 + MCP `evaluate` tool，错误响应统一 `ApiError` 契约（`InvalidInput`→400 / `ValidationError`→422 / `ServiceUnavailable`→503）
+- **Server** (`src/server/`)：HTTP + MCP 双协议服务，`#[forge]` 声明式封装（sdforge）——单个 async fn 同时生成 HTTP `POST /api/v1/evaluate` 路由 + MCP `evaluate` tool，错误响应统一 `ApiError` 契约（`InvalidInput`→400 / `ValidationError`→422 / `ServiceUnavailable`→503）。模块包含：`evaluate.rs`（`#[forge]` 入口）、`http.rs`（HTTP 启动 + 优雅关闭）、`mcp.rs`（MCP stdio 启动）、`types.rs`（请求/响应 DTO + vars 校验）、`cache.rs`（共享服务端缓存）
 - **Output** (`src/output/`)：LaTeX / 步骤 / 规范形式三种格式化器
 
 ## 2. 循环依赖修复策略（P2 Phase 1-3）
@@ -140,7 +140,7 @@ flowchart LR
 | 总依赖数 | 12 | 2 | **-83%** |
 | 循环依赖 | 存在 | 消除 | ✓ |
 
-> **验证方法**：`grep -rn "crate::domains::.*Domain" src/core/` 返回 0 匹配（生产代码与 `#[cfg(test)]` 测试代码均无具体域类型引用）。`core` 仅通过 `build_default_router()` / `build_precision_domain()` 两个工厂函数抽象入口调用 `domains` 层。
+> **验证方法**：`grep -rn "crate::domains::.*Domain" src/core/` 返回 0 匹配生产代码 import（注释中包含模式名的 2 行不计入）。`core` 仅通过 `build_default_router()` / `build_precision_domain()` 两个工厂函数抽象入口调用 `domains` 层。
 > priority 测试位于 `domains/factory.rs` 测试模块（priority 是 domains 层属性，应由 domains 层自测）。
 
 ## 3. 复杂度治理（P2 Phase 4-8）
@@ -234,8 +234,7 @@ flowchart LR
 | `mcp` | `server/mcp.rs` | MCP tool |
 | `server` | `http` + `mcp` | 聚合特性 |
 | `icu` | ICU4X 国际化 | 本地化错误消息 |
-| `fx` | 汇率换算 | 外部数据源 |
-| `numerical` | 数值扩展 | 高级数值方法 |
+| `fx` | 汇率换算（规划中，P2） | 外部数据源 — 当前 `fx = []` 无模块 |<br>| `numerical` | 数值扩展（规划中，P3） | 高级数值方法 — 当前 `numerical = []` 无模块 |
 
 `default = []`：核心库零依赖，可作为嵌入式计算引擎被其他 crate 引用。
 

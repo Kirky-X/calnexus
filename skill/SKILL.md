@@ -66,7 +66,7 @@ calnexus --var x=3 'x^2 + 2*x + 1'  # 16
 
 ```bash
 calnexus 'diff(x^2, x)'             # 2*x
-calnexus 'integrate(x^2, x)'        # 0.3333333333333333*x^3
+calnexus 'integrate(x^2, x)'        # x^3/3
 calnexus 'simplify(x+0)'            # x
 calnexus 'limit(sin(x)/x, x, 0)'    # 1
 calnexus 'taylor(exp(x), x, 3)'     # 1+x+0.5*x^2+0.16666666666666666*x^3
@@ -76,7 +76,7 @@ calnexus 'taylor(exp(x), x, 3)'     # 1+x+0.5*x^2+0.16666666666666666*x^3
 
 ```bash
 calnexus --precision 50 '1/3'
-# 0.33333333333333333333333333333333333333333333333333
+# 0.33333333333333331482961625624739099293947219848632
 ```
 
 ### 数值线性代数（需 `numerical` feature）
@@ -119,7 +119,7 @@ calnexus --batch exprs.txt
 ### 其他输出格式
 
 ```bash
-calnexus --latex 'matrix([[1,2],[3,4]])'    # LaTeX 渲染
+calnexus --latex '[[1,2],[3,4]]'             # LaTeX 渲染（矩阵字面量）
 calnexus --canonical '3+2'                  # S-表达式：(+ 2 3)
 calnexus --steps '(2+9)*7-6'                # 求解步骤
 ```
@@ -129,13 +129,13 @@ calnexus --steps '(2+9)*7-6'                # 求解步骤
 | 域 | 优先级 | 函数示例 |
 | --- | --- | --- |
 | Arithmetic | 10 | `+ - * / ^ factorial mod abs` |
-| Scientific | 20 | `sin cos tan ln log exp gamma erf` |
+| Scientific | 20 | `sin cos tan asin acos atan ln log exp sinh cosh tanh gamma erf` |
 | Statistics | 20 | `mean median variance stddev sum min max` |
 | Precision | 25 | `precision(N, expr)` BigRational |
 | NumberTheory | 25 | `gcd lcm is_prime prime_sieve mod_inverse mod_pow euler_phi` |
 | Combinatorics | 25 | `P C catalan stirling` |
-| Polynomial | 25 | `poly_add poly_mul poly_div roots factor` |
-| Complex | 30 | `complex re im conj magnitude phase` |
+| Polynomial | 25 | `poly_add poly_sub poly_mul poly_div poly_eval poly_diff poly_integrate roots factor` |
+| Complex | 30 | `complex conj arg abs exp ln` |
 | Matrix | 30 | `det transpose inverse identity lu qr eig svd solve` |
 | Vector | 30 | `dot cross norm angle normalize scalar_triple` |
 | Symbolic | 30 | `diff integrate simplify limit taylor` |
