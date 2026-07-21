@@ -5,11 +5,30 @@ All notable changes to CalNexus are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.2] - 2026-07-21
+
+### Changed
+
+- **SKILL.md 移至 `skill/SKILL.md`**: 根目录 SKILL.md 移至 `skill/SKILL.md` 作为项目使用指南，`.claude/skills/calnexus-dev/SKILL.md` 精简为轻量 skill 参考
 
 ### Fixed
 
-本次发布包含 4 个 subagent 穷举法分析后修复的所有 MEDIUM 和 LOW bugs（共 33+ 个），以及 3 个独立审查 subagent（安全/架构/性能）发现的 3 个回归问题。
+- **SKILL.md 前移损坏修复**: `description` 字段内容合并到单行的损坏已修复，恢复正确 YAML 前移结构
+
+### Security
+
+- **tiangang SAST 扫描**: 0 CRITICAL/HIGH（Gitleaks 0 泄漏 / Trivy 0 漏洞 / cargo-audit 0 通报 / Trufflehog 0 验证密钥）
+
+### Testing
+
+- 全 feature 矩阵测试通过：`cli` 1553 测试通过 / 0 失败 / 2 ignored（预期）
+- `cargo clippy --features cli --all-targets -- -D warnings` 0 警告
+
+## [0.1.1] - 2026-07-21
+
+### Added
+
+- **ICU 国际化基础设施**: 新增 `src/i18n.rs` 模块，基于 ICU4X 2.2 实现 BCP-47 locale 解析与消息本地化
 
 **Core 模块**（Subagent A，7 个 bugs）：
 - BUG-C-M-001/002/006: `cache.rs` 3 处 `.ok().flatten()` / `let _ =` / `unwrap_or(0)` 静默吞错改为显式 `match` + `eprintln!` 降级为 cache miss（规则 12）
@@ -134,3 +153,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DoS 防护：表达式长度限制（4096）、AST 深度限制（256）、precision 上界（MAX_PRECISION）、pow 输出位限制、factorial 输入上界
 - 缓存层（`CacheManager` + `CanonicalForm` 规范化键）
 - 超时机制（`EvalContext.timeout` + 关键节点 `check_elapsed`）
+
+[unreleased]: https://github.com/kirky-x/calnexus/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/kirky-x/calnexus/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/kirky-x/calnexus/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/kirky-x/calnexus/releases/tag/v0.1.0

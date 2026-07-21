@@ -1,9 +1,6 @@
 ---
-name: calnexus
-description: CalNexus CLI 数学表达式求值器。触发场景：数学计算/符号微积分/矩阵运算/数论/批量求值/REPL 交互/任意精度计算。当用户需要求值数学表达式、求导积分、解线性代数、判断素数、组合数计算时使用。
-when_to_use: calnexus、求值、diff、integrate、simplify、limit、taylor、matrix、
-  determinant、gcd、lcm、is_prime、prime_sieve、mod_inverse、mod_pow、euler_phi、
-  polynomial、complex、vector、statistical、precision、REPL、batch、JSON output。
+name: calnexus-dev
+description: CalNexus 项目使用指南。当需要了解如何构建、运行、使用 CalNexus 计算引擎的 CLI/REPL/批量模式，或查询支持的计算域与函数时使用。
 ---
 
 # CalNexus
