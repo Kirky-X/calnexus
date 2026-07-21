@@ -2,9 +2,11 @@
   <img src="./docs/asserts/logo.png" alt="CalNexus Logo" width="200">
 </p>
 
-<p align="center">
-  [![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases)[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
-</p>
+<div align="center">
+
+[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases)[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+
+</div>
 
 一个具备 11 个计算域、符号微积分、REPL 与批量处理的命令行数学表达式求值器。
 
