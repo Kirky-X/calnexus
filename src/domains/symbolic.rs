@@ -763,7 +763,14 @@ fn simplify_div(l: &SymbolicExpr, r: &SymbolicExpr) -> SymbolicExpr {
 
 fn simplify_pow(l: &SymbolicExpr, r: &SymbolicExpr) -> SymbolicExpr {
     if let (Some(a), Some(b)) = (l.as_const(), r.as_const()) {
-        return SymbolicExpr::Const(a.powf(b));
+        // BUG-D-M-007: 检查 NaN/Inf（如 (-1)^0.5 = NaN）。
+        // 若产生非有限值，保留原始 Pow 表达式（不化简），交由 eval_symbolic 处理错误。
+        let val = a.powf(b);
+        if val.is_finite() {
+            return SymbolicExpr::Const(val);
+        }
+        // 保留原始表达式，让后续求值报错
+        return SymbolicExpr::Pow(Box::new(l.clone()), Box::new(r.clone()));
     }
     // x^0 → 1
     if r.is_zero() {
@@ -868,18 +875,59 @@ fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64,
                     vec![("name".to_string(), name.to_string())],
                 )
             }),
-        SymbolicExpr::Add(l, r) => Ok(eval_symbolic(l, env)? + eval_symbolic(r, env)?),
-        SymbolicExpr::Sub(l, r) => Ok(eval_symbolic(l, env)? - eval_symbolic(r, env)?),
-        SymbolicExpr::Mul(l, r) => Ok(eval_symbolic(l, env)? * eval_symbolic(r, env)?),
+        SymbolicExpr::Add(l, r) => {
+            let r = eval_symbolic(l, env)? + eval_symbolic(r, env)?;
+            check_finite(r)
+        }
+        SymbolicExpr::Sub(l, r) => {
+            let r = eval_symbolic(l, env)? - eval_symbolic(r, env)?;
+            check_finite(r)
+        }
+        SymbolicExpr::Mul(l, r) => {
+            let r = eval_symbolic(l, env)? * eval_symbolic(r, env)?;
+            check_finite(r)
+        }
         SymbolicExpr::Div(l, r) => eval_div(l, r, env),
-        SymbolicExpr::Pow(l, r) => Ok(eval_symbolic(l, env)?.powf(eval_symbolic(r, env)?)),
+        // BUG-D-M-008: 检查 NaN/Inf（如 (-1)^0.5 = NaN, 0^(-1) = Inf）
+        SymbolicExpr::Pow(l, r) => {
+            let base = eval_symbolic(l, env)?;
+            let exp = eval_symbolic(r, env)?;
+            // 0^0 = 1（与其他域一致）
+            if base == 0.0 && exp == 0.0 {
+                return Ok(1.0);
+            }
+            let r = base.powf(exp);
+            check_finite(r)
+        }
         SymbolicExpr::Neg(e) => Ok(-eval_symbolic(e, env)?),
-        SymbolicExpr::Sin(e) => Ok(eval_symbolic(e, env)?.sin()),
-        SymbolicExpr::Cos(e) => Ok(eval_symbolic(e, env)?.cos()),
-        SymbolicExpr::Tan(e) => Ok(eval_symbolic(e, env)?.tan()),
+        SymbolicExpr::Sin(e) => {
+            let r = eval_symbolic(e, env)?.sin();
+            check_finite(r)
+        }
+        SymbolicExpr::Cos(e) => {
+            let r = eval_symbolic(e, env)?.cos();
+            check_finite(r)
+        }
+        SymbolicExpr::Tan(e) => {
+            let r = eval_symbolic(e, env)?.tan();
+            check_finite(r)
+        }
         SymbolicExpr::Ln(e) => eval_ln(e, env),
-        SymbolicExpr::Exp(e) => Ok(eval_symbolic(e, env)?.exp()),
+        SymbolicExpr::Exp(e) => {
+            let r = eval_symbolic(e, env)?.exp();
+            check_finite(r)
+        }
     }
+}
+
+/// 检查浮点结果是否有限，违反规则 12 失败显性化。
+///
+/// BUG-D-M-008: 提取共用检查逻辑，避免 NaN/Inf 被静默返回。
+fn check_finite(v: f64) -> Result<f64, CalcError> {
+    if !v.is_finite() {
+        return Err(CalcError::nan_or_inf());
+    }
+    Ok(v)
 }
 
 /// `Div` 求值：除零时返回 `DivisionByZero` 错误。
@@ -947,9 +995,11 @@ pub fn taylor(expr: &SymbolicExpr, var: &str, order: u32) -> Result<EvalResult, 
         // f^(k)(0)
         let mut env = HashMap::new();
         env.insert(var.to_string(), 0.0);
-        let f_k = eval_symbolic(&current, &env).unwrap_or(0.0);
+        // BUG-D-M-006: 不再使用 unwrap_or(0.0) 吞没错误（违反规则 12 失败显性化）。
+        // 若求值失败（如 ln(0) 在 0 处无定义），返回 DomainError。
+        let f_k = eval_symbolic(&current, &env)?;
 
-        if f_k != 0.0 {
+        if f_k != 0.0 && f_k.is_finite() {
             let coeff = f_k / factorial(k);
             let term = format_taylor_term(coeff, var, k);
             terms.push(term);

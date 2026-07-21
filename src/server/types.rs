@@ -65,6 +65,7 @@ impl EvaluateRequest {
     ///
     /// - `expr` 非空 / 长度 ≤ `MAX_EXPR_LEN`（4096）/ 不含 null 字节：防止 DoS 与注入
     /// - `vars` 键数 ≤ `MAX_VARS`（1024）：防止内存耗尽攻击
+    /// - `vars` 键名长度 ≤ `MAX_VAR_NAME_LEN`（64）/ 不含 null 字节：防止键名注入与内存攻击
     /// - `vars` 值必须有限（拒绝 NaN/Infinity）：输入值合法性
     /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
     ///
@@ -101,6 +102,26 @@ impl EvaluateRequest {
                 format!("size {} exceeds limit {}", self.vars.len(), MAX_VARS),
             ));
         }
+        // BUG-S-M-002: vars 键名校验（长度 / null 字节）
+        // 单个键名超长或含 null 字节是内存攻击 / 注入向量，与 expr 校验对齐。
+        for name in self.vars.keys() {
+            if name.len() > MAX_VAR_NAME_LEN {
+                return Err(ApiError::validation(
+                    "vars",
+                    format!(
+                        "var name length {} exceeds limit {}",
+                        name.len(),
+                        MAX_VAR_NAME_LEN
+                    ),
+                ));
+            }
+            if name.bytes().any(|b| b == 0) {
+                return Err(ApiError::validation(
+                    "vars",
+                    "var name null bytes not allowed",
+                ));
+            }
+        }
         // NaN/Infinity 不被 JSON 标准支持，serde_json 默认在反序列化层拦截；
         // 此处显式校验确保 validate() 自包含，不依赖反序列化层隐式行为
         // （防御未来 JSON 库切换 / 测试直接构造 struct 的路径）。
@@ -124,6 +145,9 @@ impl EvaluateRequest {
 
 /// `vars` 最大键数（T016 安全前置任务：防止内存耗尽攻击）。
 const MAX_VARS: usize = 1024;
+
+/// `vars` 单个键名最大长度（BUG-S-M-002：防止键名注入 / 内存攻击）。
+const MAX_VAR_NAME_LEN: usize = 64;
 
 /// `expr` 最大长度（BUG-O-004：防止超长表达式导致 DoS）。
 const MAX_EXPR_LEN: usize = 4096;
@@ -547,6 +571,54 @@ mod tests {
         assert!(
             matches!(err, ApiError::ValidationError { .. }),
             "expr with null bytes should be rejected"
+        );
+    }
+
+    // === BUG-S-M-002: vars 键名长度 / 内容校验 ===
+    // validate() 此前仅校验 vars 总数，未校验单个键名长度和内容，
+    // 单个超长键名或含 null 字节键名可被滥用做内存攻击或注入向量。
+
+    #[test]
+    fn test_validate_rejects_oversized_var_name() {
+        let mut vars = HashMap::new();
+        vars.insert("x".repeat(MAX_VAR_NAME_LEN + 1), 1.0);
+        let req = EvaluateRequest {
+            expr: "x".into(),
+            vars,
+            precision: None,
+        };
+        let err = req.validate().unwrap_err();
+        assert!(
+            matches!(err, ApiError::ValidationError { .. }),
+            "oversized var name should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_max_var_name_len() {
+        let mut vars = HashMap::new();
+        vars.insert("x".repeat(MAX_VAR_NAME_LEN), 1.0);
+        let req = EvaluateRequest {
+            expr: "x".into(),
+            vars,
+            precision: None,
+        };
+        assert!(req.validate().is_ok(), "max var name length should pass");
+    }
+
+    #[test]
+    fn test_validate_rejects_null_bytes_in_var_name() {
+        let mut vars = HashMap::new();
+        vars.insert("x\0y".to_string(), 1.0);
+        let req = EvaluateRequest {
+            expr: "x".into(),
+            vars,
+            precision: None,
+        };
+        let err = req.validate().unwrap_err();
+        assert!(
+            matches!(err, ApiError::ValidationError { .. }),
+            "var name with null bytes should be rejected"
         );
     }
 }

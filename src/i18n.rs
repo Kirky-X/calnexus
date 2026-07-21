@@ -153,13 +153,21 @@ fn parse_lang_icu(s: &str) -> Lang {
 
 /// 使用简单字符串匹配解析语言标签（无 `icu` feature 时的回退）。
 ///
-/// 仅精确匹配 `zh`、`zh-CN`、`zh-TW`（忽略大小写），避免 `starts_with("zh")`
-/// 误匹配 `zhongwen` 等字符串。
+/// BUG-I-M-001 修复：按 BCP-47 标准以 `-` 分割子标签，取第一段作为 language primary subtag。
+/// 此前仅精确匹配 `zh`/`zh-CN`/`zh-TW`，不识别 `zh-Hans`/`zh-Hant`/`zh-Hans-CN` 等
+/// 带脚本子标签的标准标签。现按 primary subtag 识别，覆盖所有 `zh-*` 变体
+/// （包括 `zh-Hans`/`zh-Hant`/`zh-Hans-CN`/`zh-Latn-pinyin`/`zh-x-*` 私有用标签）。
+///
+/// 通过 split('-') 而非 starts_with("zh") 避免误匹配 `zhongwen` 等字符串
+/// （`zhongwen` 的 primary subtag 是 `zhongwen` 而非 `zh`）。
 #[cfg(not(feature = "icu"))]
 fn parse_lang_simple(s: &str) -> Lang {
     let lower = s.to_ascii_lowercase();
-    match lower.as_str() {
-        "zh" | "zh-cn" | "zh-tw" => Lang::Zh,
+    // BCP-47 标签结构：language [-script] [-region] [-variant]
+    // 取第一段作为 language primary subtag（如 "zh-Hans-CN" → "zh"）
+    let primary = lower.split('-').next().unwrap_or("");
+    match primary {
+        "zh" => Lang::Zh,
         _ => Lang::En,
     }
 }
@@ -257,6 +265,64 @@ mod tests {
             Lang::En,
             "zhongwen should fall back to En, not Zh"
         );
+    }
+
+    // ===== BUG-I-M-001: BCP-47 脚本子标签解析 =====
+    // parse_lang_simple 此前仅精确匹配 "zh"/"zh-CN"/"zh-TW"，
+    // 不识别 "zh-Hans"/"zh-Hant"/"zh-Hans-CN" 等带脚本的标准 BCP-47 标签。
+
+    #[test]
+    fn test_from_str_zh_hans() {
+        assert_eq!(I18n::from_str("zh-Hans").lang(), Lang::Zh);
+    }
+
+    #[test]
+    fn test_from_str_zh_hant() {
+        assert_eq!(I18n::from_str("zh-Hant").lang(), Lang::Zh);
+    }
+
+    #[test]
+    fn test_from_str_zh_hans_cn() {
+        assert_eq!(I18n::from_str("zh-Hans-CN").lang(), Lang::Zh);
+    }
+
+    #[test]
+    fn test_from_str_zh_hant_tw() {
+        assert_eq!(I18n::from_str("zh-Hant-TW").lang(), Lang::Zh);
+    }
+
+    #[test]
+    fn test_from_str_zh_hans_sg() {
+        assert_eq!(I18n::from_str("zh-Hans-SG").lang(), Lang::Zh);
+    }
+
+    #[test]
+    fn test_from_str_zh_hant_hk() {
+        assert_eq!(I18n::from_str("zh-Hant-HK").lang(), Lang::Zh);
+    }
+
+    #[test]
+    fn test_from_str_zh_hans_mixed_case() {
+        assert_eq!(I18n::from_str("ZH-hans").lang(), Lang::Zh);
+        assert_eq!(I18n::from_str("zh-HANS").lang(), Lang::Zh);
+    }
+
+    /// "zh-x-calnexus" 是合法 BCP-47 私有用标签，应识别为 Zh。
+    #[test]
+    fn test_from_str_zh_private_use() {
+        assert_eq!(I18n::from_str("zh-x-calnexus").lang(), Lang::Zh);
+    }
+
+    /// "zh-Latn-pinyin" 是合法 BCP-47 标签（拼音罗马化），应识别为 Zh。
+    #[test]
+    fn test_from_str_zh_latn_pinyin() {
+        assert_eq!(I18n::from_str("zh-Latn-pinyin").lang(), Lang::Zh);
+    }
+
+    /// "zhongwen-Hans" 不是合法 BCP-47 language（primary subtag "zhongwen" 非短码），应回退到 En。
+    #[test]
+    fn test_from_str_zhongwen_hans_falls_back_to_en() {
+        assert_eq!(I18n::from_str("zhongwen-Hans").lang(), Lang::En);
     }
 
     // ===== I18n::from_str — 大小写不敏感 =====

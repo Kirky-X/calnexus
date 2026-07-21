@@ -80,7 +80,11 @@ impl DomainRouter {
         let detail = if functions.is_empty() {
             "no functions".to_string()
         } else {
-            format!("functions: {:?}", functions)
+            // BUG-C-L-008 修复：限制 functions 列表显示数量，防止无界长度错误消息。
+            // 原代码 `format!("functions: {:?}", functions)` 对含大量函数的 AST
+            // 产生超长错误消息（50 个函数 ~1KB），污染日志、影响 UI。
+            // 截断策略：显示前 MAX_DISPLAY_FUNCTIONS 个，超过则追加 "... and N more"。
+            format_functions_list(&functions)
         };
         Err(CalcError::domain(format!(
             "no registered domain supports this expression ({})",
@@ -123,6 +127,38 @@ fn collect_function_names(ast: &AstNode) -> Vec<String> {
     names.sort();
     names.dedup();
     names
+}
+
+/// 错误消息中最多显示的函数名数量（BUG-C-L-008 修复）。
+///
+/// 超过此数量时截断并追加 `... and N more` 提示。
+/// 阈值 5 兼顾信息量与简洁性：用户能识别主要函数，又不会被超长列表淹没。
+const MAX_DISPLAY_FUNCTIONS: usize = 5;
+
+/// 格式化函数名列表用于错误消息，超长时截断。
+///
+/// 输出示例：
+/// - 0 个函数：调用方应使用 "no functions" 分支，不会调用此函数
+/// - 1-5 个函数：`functions: ["foo", "bar"]`（与原 `{:?}` 格式一致）
+/// - 6+ 个函数：`functions: ["foo", "bar", "baz", "qux", "quux", ... and 45 more]`
+///
+/// BUG-C-L-008 修复：原 `format!("functions: {:?}", functions)` 对含大量函数的
+/// AST 产生无界长度错误消息，污染日志、影响 UI 显示。
+fn format_functions_list(functions: &[String]) -> String {
+    if functions.len() <= MAX_DISPLAY_FUNCTIONS {
+        return format!("functions: {:?}", functions);
+    }
+    // 截断：显示前 MAX_DISPLAY_FUNCTIONS 个，追加 "... and N more"
+    let displayed: Vec<&str> = functions
+        .iter()
+        .take(MAX_DISPLAY_FUNCTIONS)
+        .map(String::as_str)
+        .collect();
+    let remaining = functions.len() - MAX_DISPLAY_FUNCTIONS;
+    format!(
+        "functions: {:?}, ... and {} more",
+        displayed, remaining
+    )
 }
 
 fn collect_function_names_recursive(ast: &AstNode, names: &mut Vec<String>) {
@@ -607,6 +643,71 @@ mod tests {
             err.to_string().contains("foo"),
             "错误信息应包含 'foo': {}",
             err
+        );
+    }
+
+    // ===== BUG-C-L-008 回归测试：长函数列表必须截断 =====
+    //
+    // 原始 bug：`format!("functions: {:?}", functions)` 对包含大量函数的 AST
+    // 产生无界长度的错误消息。如 `foo1(x) + foo2(x) + ... + foo1000(x)` 会产生
+    // ~10KB 的错误消息，污染日志、可能导致 UI 显示问题。
+    // 修复：限制 functions 列表显示数量（默认 5 个），超过时显示 "... and N more"。
+    #[test]
+    fn test_route_error_truncates_long_function_list() {
+        // 构造含 50 个未知函数的 AST，错误消息应截断而非全量展示
+        let mut ast = AstNode::FunctionCall(
+            "unknown_func_00".to_string(),
+            vec![AstNode::Number(1.0)],
+        );
+        for i in 1..50 {
+            ast = AstNode::BinaryOp(
+                crate::core::types::BinaryOp::Add,
+                Box::new(ast),
+                Box::new(AstNode::FunctionCall(
+                    format!("unknown_func_{:02}", i),
+                    vec![AstNode::Number(1.0)],
+                )),
+            );
+        }
+
+        let router = default_router();
+        let err = router.route(&ast).err().expect("expected error");
+        let msg = err.to_string();
+
+        // 截断阈值：错误消息应远小于全量展示的长度
+        // 全量展示 50 个函数 × ~20 字符 = ~1000 字符（不含前缀）
+        // 截断后应 < 300 字符（含前缀和截断提示）
+        assert!(
+            msg.len() < 500,
+            "error message too long ({} chars), should be truncated: {}",
+            msg.len(),
+            msg
+        );
+
+        // 截断提示：应包含明确的截断指示符
+        assert!(
+            msg.contains("more") || msg.contains("..."),
+            "error message should indicate truncation: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_route_error_short_function_list_not_truncated() {
+        // 短函数列表（≤ 阈值）不应截断，保持原有行为
+        let ast = AstNode::FunctionCall(
+            "unknown_func".to_string(),
+            vec![AstNode::Number(1.0)],
+        );
+        let router = default_router();
+        let err = router.route(&ast).err().expect("expected error");
+        let msg = err.to_string();
+
+        // 单个函数不应触发截断
+        assert!(
+            msg.contains("unknown_func") && !msg.contains("more"),
+            "short list should not be truncated: {}",
+            msg
         );
     }
 

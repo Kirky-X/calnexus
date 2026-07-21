@@ -55,14 +55,7 @@ fn walk(
     }
     match node {
         AstNode::Number(n) => Ok(*n),
-        AstNode::BigNumber(s) => s
-            .parse::<f64>()
-            .map_err(|_| {
-                CalcError::eval(format!("invalid BigNumber: {}", s)).with_i18n(
-                    "msg.output.invalid_bignumber",
-                    vec![("value".to_string(), s.to_string())],
-                )
-            }),
+        AstNode::BigNumber(s) => parse_bignumber_for_steps(s),
         AstNode::Complex(_, _) => Err(CalcError::domain(
             "steps mode does not support complex numbers",
         )
@@ -119,16 +112,52 @@ fn walk(
             steps.push(format!("{}({})={}", name, args_joined, result_str));
             Ok(result)
         }
-        AstNode::Matrix(rows) => {
-            // 矩阵不输出步骤，返回 0.0（步骤模式不适用于矩阵运算）
-            let _ = rows;
-            Ok(0.0)
-        }
+        AstNode::Matrix(_) => Err(CalcError::domain(
+            "steps mode does not support matrices",
+        )
+        .with_i18n("msg.output.steps_no_matrix", vec![])),
         AstNode::List(_) => Err(CalcError::domain(
             "steps mode does not support lists as sub-expressions",
         )
         .with_i18n("msg.output.steps_no_list", vec![])),
     }
+}
+
+/// 解析 BigNumber 字符串为 f64（steps 模式专用）。
+///
+/// BigNumber 设计用于高精度整数，但 steps 模式只支持 f64 计算。
+/// 当 BigNumber 超过 f64 安全整数范围（2^53 ≈ 9e15）时，parse::<f64>()
+/// 会丢失精度，应显式报错（Rule 12: 失败显性化）而非静默丢失。
+///
+/// 安全范围内的小 BigNumber（如 "42"、"1234567890123456"）正常解析。
+fn parse_bignumber_for_steps(s: &str) -> Result<f64, CalcError> {
+    // 先尝试 f64 解析（捕获非数字字符串）
+    let v: f64 = s.parse().map_err(|_| {
+        CalcError::eval(format!("invalid BigNumber: {}", s)).with_i18n(
+            "msg.output.invalid_bignumber",
+            vec![("value".to_string(), s.to_string())],
+        )
+    })?;
+    // 检查是否为有限数（NaN/Inf 不应在 BigNumber 中出现）
+    if !v.is_finite() {
+        return Err(CalcError::eval(format!("invalid BigNumber: {}", s)).with_i18n(
+            "msg.output.invalid_bignumber",
+            vec![("value".to_string(), s.to_string())],
+        ));
+    }
+    // 检查是否在 f64 安全整数范围内（2^53 ≈ 9.007e15）
+    // 超过此范围，f64 无法精确表示所有整数，会丢失精度
+    if v.abs() > 9_007_199_254_740_992.0 {
+        return Err(CalcError::domain(format!(
+            "BigNumber '{}' exceeds f64 safe integer range in steps mode",
+            s
+        ))
+        .with_i18n(
+            "msg.output.bignumber_exceeds_f64",
+            vec![("value".to_string(), s.to_string())],
+        ));
+    }
+    Ok(v)
 }
 
 /// 计算二元运算结果。
@@ -237,13 +266,13 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
         ("ceil", &[x]) => x.ceil(),
         ("round", &[x]) => x.round(),
         ("gcd", &[a, b]) => {
-            let a_int = a as i64;
-            let b_int = b as i64;
+            let a_int = check_integer_arg("gcd", a)?;
+            let b_int = check_integer_arg("gcd", b)?;
             gcd(a_int, b_int) as f64
         }
         ("lcm", &[a, b]) => {
-            let a_int = a as i64;
-            let b_int = b as i64;
+            let a_int = check_integer_arg("lcm", a)?;
+            let b_int = check_integer_arg("lcm", b)?;
             lcm(a_int, b_int) as f64
         }
         ("min", &[a, b]) => a.min(b),
@@ -326,6 +355,42 @@ fn check_positive(name: &str, x: f64) -> Result<(), CalcError> {
     Ok(())
 }
 
+/// 验证参数为 i64 范围内的整数（gcd/lcm 域约束）。
+///
+/// 拒绝非整数（如 3.5）和超出 i64 范围的值（如 1e20），
+/// 避免 `as i64` cast 静默丢失小数部分或饱和到边界值。
+fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
+    // 拒绝非整数（fract != 0 表示有小数部分）
+    if x.fract() != 0.0 {
+        return Err(CalcError::domain(format!(
+            "{} requires integer argument, got {}",
+            name, x
+        ))
+        .with_i18n(
+            "msg.output.requires_integer",
+            vec![
+                ("name".to_string(), name.to_string()),
+                ("value".to_string(), x.to_string()),
+            ],
+        ));
+    }
+    // 拒绝超出 i64 范围的值（避免饱和 cast）
+    if !x.is_finite() || x < i64::MIN as f64 || x > i64::MAX as f64 {
+        return Err(CalcError::domain(format!(
+            "{} argument {} exceeds i64 range",
+            name, x
+        ))
+        .with_i18n(
+            "msg.output.integer_out_of_range",
+            vec![
+                ("name".to_string(), name.to_string()),
+                ("value".to_string(), x.to_string()),
+            ],
+        ));
+    }
+    Ok(x as i64)
+}
+
 fn gcd(a: i64, b: i64) -> i64 {
     let mut a = a.abs();
     let mut b = b.abs();
@@ -356,13 +421,61 @@ fn binary_op_str(op: BinaryOp) -> &'static str {
     }
 }
 
-/// 格式化数值为步骤中的字符串（整数显示为整数，否则小数）。
+/// 格式化数值为步骤中的字符串。
+///
+/// - NaN/Inf：可读字符串（`NaN` / `inf` / `-inf`）
+/// - 零：保留负号（`0` / `-0`），与 `f64::Display` 一致
+/// - 整数：避免科学计数法（`42` / `1000000000000000000000`）
+/// - 小数：默认 `f64::Display` 最短可逆表示；检测浮点精度噪声（如 `0.1+0.2` 的
+///   `0.30000000000000004`）并舍入到 10 位小数去尾零
 fn format_value(v: f64) -> String {
-    if v.fract() == 0.0 && v.abs() < 1e15 {
-        format!("{}", v as i64)
-    } else {
-        format!("{}", v)
+    if v.is_nan() {
+        return "NaN".to_string();
     }
+    if v.is_infinite() {
+        return if v > 0.0 {
+            "inf".to_string()
+        } else {
+            "-inf".to_string()
+        };
+    }
+    // 零：保留负号（与 f64::Display 一致：format!("{}", -0.0) == "-0"）
+    if v == 0.0 {
+        return if v.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
+    }
+    // 整数：避免科学计数法
+    if v.fract() == 0.0 {
+        if v.abs() < 9e15 {
+            // 安全整数范围（|v| < 2^53 ≈ 9e15）：用 i64 精确表示
+            return format!("{}", v as i64);
+        }
+        // 大整数：用 {:.0} 避免科学计数法（f64::Display 在大数时可能输出 "1e21"）
+        return format!("{:.0}", v);
+    }
+    // 小数：默认最短可逆表示
+    let default = format!("{}", v);
+    // 检测浮点精度噪声：连续 7 个 0 或 9（如 0.30000000000000004 中的 00000000）
+    if has_floating_point_noise(&default) {
+        // 舍入到 10 位小数，去尾零
+        let rounded = format!("{:.10}", v);
+        let trimmed = rounded.trim_end_matches('0').trim_end_matches('.');
+        if !trimmed.is_empty() && trimmed != "-" {
+            return trimmed.to_string();
+        }
+    }
+    default
+}
+
+/// 检测浮点精度噪声模式。
+///
+/// 当 `f64::Display` 输出包含连续 7 个 `0` 或 `9` 时，通常是浮点运算的精度噪声
+/// （如 `0.1+0.2 = 0.30000000000000004`、`1-0.9 = 0.09999999999999998`）。
+fn has_floating_point_noise(s: &str) -> bool {
+    s.contains("0000000") || s.contains("9999999")
 }
 
 #[cfg(test)]
@@ -602,9 +715,10 @@ mod tests {
 
     #[test]
     fn steps_matrix_leaf_no_step_emitted() {
+        // BUG-O-M-004 修复后：Matrix 叶节点返回 DomainError（不再静默 Ok(0.0)）
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
-        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
-        assert!(steps.is_empty());
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain);
     }
 
     #[test]
@@ -748,6 +862,43 @@ mod tests {
         assert_eq!(format_value(42.0), "42");
         assert_eq!(format_value(3.14), "3.14");
         assert_eq!(format_value(-7.0), "-7");
+    }
+
+    // ===== BUG-O-M-001 ~ M-003: format_value 精度、大数、负零问题 =====
+
+    #[test]
+    fn steps_format_value_floating_point_noise() {
+        // BUG-O-M-001: 0.1+0.2 = 0.30000000000000004，应显示为 0.3
+        assert_eq!(format_value(0.1 + 0.2), "0.3");
+    }
+
+    #[test]
+    fn steps_format_value_large_integer_no_scientific() {
+        // BUG-O-M-002: 超大整数不应输出科学计数法（Rust f64 Display 在 >= 1e21 时用科学计数法）
+        assert_eq!(format_value(1e15), "1000000000000000");
+        assert_eq!(format_value(1e20), "100000000000000000000");
+        assert_eq!(format_value(1e21), "1000000000000000000000");
+    }
+
+    #[test]
+    fn steps_format_value_negative_zero_preserves_sign() {
+        // BUG-O-M-003: -0.0 应保留负号（与 f64 的 to_string 一致）
+        assert_eq!(format_value(-0.0), "-0");
+    }
+
+    #[test]
+    fn steps_format_value_nan_and_inf() {
+        // BUG-O-M-001 扩展：NaN/Inf 应有可读表示
+        assert_eq!(format_value(f64::NAN), "NaN");
+        assert_eq!(format_value(f64::INFINITY), "inf");
+        assert_eq!(format_value(f64::NEG_INFINITY), "-inf");
+    }
+
+    #[test]
+    fn steps_format_value_preserves_precision_for_irreducible_values() {
+        // 确保修复不会破坏完整精度表示
+        assert_eq!(format_value(1.0 / 3.0), "0.3333333333333333");
+        assert_eq!(format_value(std::f64::consts::PI), "3.141592653589793");
     }
 
     #[test]
@@ -905,5 +1056,88 @@ mod tests {
         // lcm(0, 5) = 0（line 277）
         let result = eval_function("lcm", &[0.0, 5.0]).unwrap();
         assert_eq!(result, 0.0);
+    }
+
+    // ===== BUG-O-M-004: Matrix 节点静默返回 Ok(0.0) 违反 Rule 12 =====
+
+    #[test]
+    fn steps_matrix_leaf_returns_error_not_silent_zero() {
+        // BUG-O-M-004: Matrix 节点不应静默返回 Ok(0.0)，应显式报错（Rule 12: 失败显性化）
+        let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(
+            err.kind == ErrorKind::Domain,
+            "Matrix in steps mode should return DomainError, got: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn steps_matrix_in_binary_op_returns_error() {
+        // BUG-O-M-004 扩展：Matrix 作为 BinaryOp 子节点也应返回 Err
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Add,
+            Box::new(AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])),
+            Box::new(AstNode::Number(2.0)),
+        );
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain);
+    }
+
+    // ===== BUG-O-M-005: BigNumber 精度丢失 =====
+
+    #[test]
+    fn steps_bignumber_exceeds_f64_precision_returns_error() {
+        // BUG-O-M-005: BigNumber("12345678901234567890") 超过 f64 安全整数范围（2^53 ≈ 9e15），
+        // parse::<f64>() 会丢失精度，应返回 Err 而非静默丢失精度
+        let ast = AstNode::BigNumber("12345678901234567890".to_string());
+        let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
+        assert!(
+            err.kind == ErrorKind::Eval || err.kind == ErrorKind::Domain,
+            "BigNumber exceeding f64 precision should return error, got: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn steps_bignumber_within_f64_range_succeeds() {
+        // BUG-O-M-005 验证：小 BigNumber 仍能正常工作
+        let ast = AstNode::BigNumber("42".to_string());
+        let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
+        assert!(steps.is_empty()); // 叶节点不输出步骤
+    }
+
+    // ===== BUG-O-M-006: gcd/lcm 输入未验证 =====
+
+    #[test]
+    fn steps_gcd_non_integer_returns_error() {
+        // BUG-O-M-006: gcd(3.5, 5) 应报错（非整数输入），而非静默 cast 丢失小数
+        let err = eval_function("gcd", &[3.5, 5.0]).unwrap_err();
+        assert!(
+            err.kind == ErrorKind::Domain,
+            "gcd with non-integer should return DomainError, got: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn steps_lcm_non_integer_returns_error() {
+        // BUG-O-M-006: lcm(4.2, 6) 应报错
+        let err = eval_function("lcm", &[4.2, 6.0]).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain);
+    }
+
+    #[test]
+    fn steps_gcd_exceeds_i64_returns_error() {
+        // BUG-O-M-006: gcd(1e20, 5) 超过 i64 范围，应报错而非溢出
+        let err = eval_function("gcd", &[1e20, 5.0]).unwrap_err();
+        assert!(err.kind == ErrorKind::Domain || err.kind == ErrorKind::Overflow);
+    }
+
+    #[test]
+    fn steps_gcd_integer_inputs_succeed() {
+        // 确保修复不破坏合法输入
+        assert_eq!(eval_function("gcd", &[12.0, 18.0]).unwrap(), 6.0);
+        assert_eq!(eval_function("lcm", &[4.0, 6.0]).unwrap(), 12.0);
     }
 }

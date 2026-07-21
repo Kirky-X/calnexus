@@ -91,18 +91,45 @@ impl CacheManager {
     ///
     /// 命中时返回缓存值的克隆（`EvalResult` 实现 `Clone`）。
     /// 未命中返回 `None`（Req 2）。
+    ///
+    /// **错误处理（Rule 12 + H-1 修复）**：oxcache 后端错误降级为 cache miss 而非 panic。
+    /// cache 层错误不应影响业务逻辑（用户表达式仍可正确求值），降级为 cache miss 是
+    /// 行业标准做法（Redis/Memcached 客户端都这么做）。错误通过 `eprintln!` 显性化记录，
+    /// 保留 API 兼容性（`Option<EvalResult>` 签名不变）。
+    /// Moka 后端的 get 实际不会返回 Err（永远 `Ok(...)`），但反序列化失败
+    /// 等理论错误路径必须显性化而非 panic 影响请求处理。
     pub fn get(&self, cf: &CanonicalForm) -> Option<EvalResult> {
         let key = CacheKeyGen::make_key(cf);
-        runtime().block_on(self.inner.get(&key)).ok().flatten()
+        match runtime().block_on(self.inner.get(&key)) {
+            Ok(v) => v,
+            Err(e) => {
+                // 降级为 cache miss：避免 panic 影响请求处理（H-1 修复）
+                eprintln!(
+                    "WARN: cache get failed (key={}), degrading to cache miss: {}",
+                    key, e
+                );
+                None
+            }
+        }
     }
 
     /// 写入缓存（仅成功结果，Req 7）。
     ///
     /// 接受 `&Result`，仅在 `Ok` 时写入，`Err` 时无操作。
+    ///
+    /// **错误处理（Rule 12 + H-1 修复）**：oxcache 后端错误降级为忽略写入而非 panic。
+    /// cache 写入失败不应影响业务逻辑（用户表达式仍可正确求值并返回结果）。
+    /// 错误通过 `eprintln!` 显性化记录，避免静默吞没（规则 12）。
     pub fn insert(&self, cf: &CanonicalForm, result: &Result<EvalResult, CalcError>) {
         if let Ok(value) = result {
             let key = CacheKeyGen::make_key(cf);
-            let _ = runtime().block_on(self.inner.set(&key, value));
+            if let Err(e) = runtime().block_on(self.inner.set(&key, value)) {
+                // 降级为忽略写入：避免 panic 影响请求处理（H-1 修复）
+                eprintln!(
+                    "WARN: cache insert failed (key={}), ignoring: {}",
+                    key, e
+                );
+            }
         }
     }
 
@@ -125,8 +152,22 @@ impl CacheManager {
     /// 当前缓存条目数（用于测试验证）。
     ///
     /// 注意：oxcache L1 基于 Moka，entry_count 为最终一致值。
+    ///
+    /// **错误处理（Rule 12 + H-1 修复）**：oxcache 后端错误降级为返回 0 而非 panic。
+    /// 返回 0 不影响业务逻辑（仅用于测试验证），避免 panic 在 HTTP server 上下文中
+    /// 走 `spawn_blocking` panic 路径导致客户端仅见通用 500。
     pub fn entry_count(&self) -> u64 {
-        runtime().block_on(self.inner.len()).unwrap_or(0)
+        match runtime().block_on(self.inner.len()) {
+            Ok(n) => n,
+            Err(e) => {
+                // 降级为 0：避免 panic 影响请求处理（H-1 修复）
+                eprintln!(
+                    "WARN: cache len failed, returning 0: {}",
+                    e
+                );
+                0
+            }
+        }
     }
 }
 
@@ -509,6 +550,54 @@ mod tests {
         cache.insert(&cf, &Ok(EvalResult::Scalar(7.0)));
         // 通过 get 命中验证 make_key 生成一致键
         assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(7.0)));
+    }
+
+    // ===== H-1 修复：cache 层错误降级契约测试 =====
+    //
+    // 以下测试验证 cache 层错误降级行为契约：
+    // - get/insert/entry_count 永不 panic（避免 HTTP server 上下文中的 spawn_blocking panic）
+    // - 错误路径降级为 cache miss / 忽略 / 返回 0
+    // - 保留 API 兼容性（签名不变）
+    //
+    // 注：oxcache Moka 后端实际不会返回 Err（永远 Ok(...)），故无法直接触发错误路径。
+    // 这些测试作为行为契约，确保后续 cache 后端替换或扩展时降级行为不被破坏。
+
+    #[test]
+    fn test_get_never_panics_on_normal_path() {
+        // H-1 契约：get 在正常路径下不 panic，返回 Option<EvalResult>
+        let cache = CacheManager::new();
+        let cf = CanonicalForm::new("(+ 1 2)");
+        // 空缓存 → None
+        assert_eq!(cache.get(&cf), None);
+        // 写入后 → Some
+        cache.insert(&cf, &Ok(EvalResult::Scalar(3.0)));
+        assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(3.0)));
+    }
+
+    #[test]
+    fn test_insert_never_panics_on_normal_path() {
+        // H-1 契约：insert 在正常路径下不 panic
+        let cache = CacheManager::new();
+        let cf = CanonicalForm::new("(+ 100 1)");
+        // 写入 Ok
+        cache.insert(&cf, &Ok(EvalResult::Scalar(101.0)));
+        assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(101.0)));
+        // 写入 Err（应被忽略，不写入缓存）
+        cache.insert(&cf, &Err(CalcError::division_by_zero()));
+        assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(101.0)));
+    }
+
+    #[test]
+    fn test_entry_count_never_panics_on_normal_path() {
+        // H-1 契约：entry_count 在正常路径下不 panic，返回 u64
+        let cache = CacheManager::new();
+        // 空缓存 → 0
+        let count = cache.entry_count();
+        assert_eq!(count, 0);
+        // 写入后仍可调用且不 panic
+        let cf = CanonicalForm::new("(+ 5 7)");
+        cache.insert(&cf, &Ok(EvalResult::Scalar(12.0)));
+        let _count_after = cache.entry_count();
     }
 
     // ===== proptest 属性测试 =====

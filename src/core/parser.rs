@@ -73,8 +73,11 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 预处理大整数字面量：将 16+ 位整数替换为占位符 `__bn_N`（避免 f64 精度丢失）
     let without_bigint = preprocess_bigint(&without_brackets, &mut placeholders)?;
 
-    // 非法连续运算符检查（mathexpr 将 `+3` 当作数字字面量，需在此显式拒绝 `++`）
-    validate_no_consecutive_plus(&without_bigint)?;
+    // 非法连续运算符检查：拒绝 `++`、`**`、`//`、`^^`（保留 `--` 合法性）
+    // mathexpr 对 `+3` 当作数字字面量，导致 `2++3` 被静默接受；
+    // 对 `**`、`//`、`^^` 给出通用 "Unexpected trailing input" 错误，用户体验差。
+    // 此处统一显式拒绝，提供清晰的 "illegal consecutive operators 'XX'" 错误消息。
+    validate_no_consecutive_operators(&without_bigint)?;
 
     // 复数预处理：`3+4i` → `complex(3, 4)`、`2i` → `complex(0, 2)`
     let after_complex = preprocess_complex(&without_bigint)?;
@@ -446,29 +449,47 @@ fn split_top_level_commas(input: &str) -> Vec<String> {
     split_by_pattern(input, ",")
 }
 
-/// 拒绝非法连续运算符 `++`。
+/// 拒绝非法连续运算符 `++`、`**`、`//`、`^^`。
 ///
 /// mathexpr 依赖 `nom::number::complete::double`，该解析器接受 `+3` 作为数字字面量，
 /// 导致 `2++3` 被静默接受为 `2 + 3.0`。此函数在解析前显式拒绝 `++` 模式。
 ///
-/// Span：从第一个 `+` 到第二个 `+`（含），基于原始输入的字符位置。
-fn validate_no_consecutive_plus(input: &str) -> Result<(), CalcError> {
+/// BUG-C-M-005 修复：原 `validate_no_consecutive_plus` 只检查 `++`，对 `**`、`//`、`^^`
+/// 给出 mathexpr 的通用 "Unexpected trailing input" 错误，用户体验差且不一致。
+/// 扩展为检查所有四种非法连续运算符，提供统一的 "illegal consecutive operators 'XX'" 错误消息。
+///
+/// **不检查 `--`**：双重负号 `--x` 是合法语法（等价于 `x`），由 canonicalizer 消除。
+///
+/// Span：从第一个运算符到第二个运算符（含），基于原始输入的字符位置。
+fn validate_no_consecutive_operators(input: &str) -> Result<(), CalcError> {
+    // 非法连续运算符列表（不含 `--`，因为双重负号合法）
+    const ILLEGAL_CONSECUTIVE_OPS: &[&str] = &["++", "**", "//", "^^"];
+
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == '+' {
-            let start = i;
-            // 跳过空格查找下一个 `+`
+        // 检查以 chars[i] 开头的非法连续运算符
+        for &op in ILLEGAL_CONSECUTIVE_OPS {
+            let op_chars: Vec<char> = op.chars().collect();
+            // 跳过空格查找第二个字符
             let mut j = i + 1;
             while j < chars.len() && chars[j].is_whitespace() {
                 j += 1;
             }
-            if j < chars.len() && chars[j] == '+' {
-                return Err(
-                    CalcError::parse("illegal consecutive operators '++'".to_string())
-                        .with_span(Span::new(start, j + 1))
-                        .with_i18n("msg.core.parse_illegal_consecutive_ops", vec![]),
-                );
+            // 检查是否匹配：第一个字符 + (可选空格) + 第二个字符
+            if chars[i] == op_chars[0]
+                && j < chars.len()
+                && chars[j] == op_chars[1]
+            {
+                return Err(CalcError::parse(format!(
+                    "illegal consecutive operators '{}'",
+                    op
+                ))
+                .with_span(Span::new(i, j + 1))
+                .with_i18n(
+                    "msg.core.parse_illegal_consecutive_ops",
+                    vec![("op".to_string(), op.to_string())],
+                ));
             }
         }
         i += 1;
@@ -1036,6 +1057,94 @@ mod tests {
         // mathexpr 将 `+3` 当作数字字面量，需由 CalNexus 预处理层显式拒绝 `++`
         let err = parse("2++3").unwrap_err();
         assert!(err.kind == ErrorKind::Parse && err.message.contains("consecutive operators"));
+    }
+
+    // ===== BUG-C-M-005 回归测试：扩展连续运算符检查至 **, //, ^^ =====
+    //
+    // 原始 bug：`validate_no_consecutive_plus` 只检查 `++`，未检查其他非法连续运算符。
+    // `**`、`//`、`^^` 是非法的数学语法（合法运算符是单字符 *, /, ^）。
+    // 修复前：mathexpr 给出 "Unexpected trailing input: **3" 这类通用错误消息，
+    //         用户难以理解具体原因。
+    // 修复后：parser 预处理层显式拒绝 `**`、`//`、`^^`，与 `++` 一致地给出
+    //         "illegal consecutive operators '**'" 等清晰错误消息。
+    // 注意：`--` 合法（双重负号 → 正号），不在禁止列表中。
+    #[test]
+    fn test_consecutive_mul_operators_rejected() {
+        // `2**3` 应被显式拒绝，错误信息必须明确指出 `**` 并使用专用 i18n key
+        let err = parse("2**3").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert!(
+            err.message.contains("consecutive operators"),
+            "error message should mention 'consecutive operators', got: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("**"),
+            "error message should mention '**', got: {}",
+            err.message
+        );
+        assert_eq!(
+            err.i18n_key,
+            Some("msg.core.parse_illegal_consecutive_ops"),
+            "should use dedicated i18n key, got: {:?}",
+            err.i18n_key
+        );
+    }
+
+    #[test]
+    fn test_consecutive_div_operators_rejected() {
+        // `2//3` 应被显式拒绝
+        let err = parse("2//3").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert!(
+            err.message.contains("consecutive operators") && err.message.contains("//"),
+            "error message should mention 'consecutive operators' and '//', got: {}",
+            err.message
+        );
+        assert_eq!(err.i18n_key, Some("msg.core.parse_illegal_consecutive_ops"));
+    }
+
+    #[test]
+    fn test_consecutive_pow_operators_rejected() {
+        // `2^^3` 应被显式拒绝
+        let err = parse("2^^3").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert!(
+            err.message.contains("consecutive operators") && err.message.contains("^^"),
+            "error message should mention 'consecutive operators' and '^^', got: {}",
+            err.message
+        );
+        assert_eq!(err.i18n_key, Some("msg.core.parse_illegal_consecutive_ops"));
+    }
+
+    #[test]
+    fn test_consecutive_operators_with_whitespace_rejected() {
+        // `2* *3` 中间有空格也应被检测（与 `++` 一致）
+        // 这是原 `++` 检查的既有行为，扩展后应保持
+        let err = parse("2* *3").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert_eq!(err.i18n_key, Some("msg.core.parse_illegal_consecutive_ops"));
+    }
+
+    #[test]
+    fn test_double_negation_still_allowed() {
+        // `--` 合法（双重负号 → 正号），不应被新检查拒绝
+        // 这是关键的不变量：扩展检查不能误伤 `--x` 合法语法
+        let result = parse("2--3");
+        assert!(
+            result.is_ok(),
+            "'--' should be allowed (double negation), got error: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_single_operator_still_allowed() {
+        // 单个运算符仍合法：扩展检查不能误伤正常表达式
+        assert!(parse("2*3").is_ok(), "'*' alone should be allowed");
+        assert!(parse("6/3").is_ok(), "'/' alone should be allowed");
+        assert!(parse("2^3").is_ok(), "'^' alone should be allowed");
+        assert!(parse("2+3").is_ok(), "'+' alone should be allowed");
     }
 
     #[test]

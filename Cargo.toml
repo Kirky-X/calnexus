@@ -18,7 +18,8 @@ cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
-http = ["dep:sdforge", "sdforge/http", "dep:axum", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time"]
+# tokio/signal: BUG-S-M-003 graceful shutdown（Ctrl+C / SIGTERM）
+http = ["dep:sdforge", "sdforge/http", "dep:axum", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # FX: 汇率换算（P2 实现）

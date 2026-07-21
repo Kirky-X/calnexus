@@ -252,7 +252,7 @@ impl PolynomialDomain {
         }
         let (coeffs, _) = self.arg_to_coeffs(&args[0], ctx)?;
         let x = self.eval_scalar(&args[1], ctx)?;
-        let result = poly_eval_horner(&coeffs, x);
+        let result = poly_eval_horner(&coeffs, x)?;
         Ok(EvalResult::Scalar(result))
     }
 
@@ -394,7 +394,17 @@ impl PolynomialDomain {
                         }
                         Ok(a / b)
                     }
-                    BinaryOp::Pow => Ok(a.powf(b)),
+                    BinaryOp::Pow => {
+                        // BUG-D-M-003: 显式处理 0^0=1，并检查 NaN/Inf（与其他域一致）
+                        if a == 0.0 && b == 0.0 {
+                            return Ok(1.0);
+                        }
+                        let r = a.powf(b);
+                        if !r.is_finite() {
+                            return Err(CalcError::nan_or_inf());
+                        }
+                        Ok(r)
+                    }
                     BinaryOp::Mod => {
                         if b == 0.0 {
                             return Err(CalcError::division_by_zero());
@@ -506,7 +516,15 @@ fn coeffs_from_pow(
     }
     // Number ^ Number → 常数
     if let (AstNode::Number(a), AstNode::Number(b)) = (l, r) {
-        return Ok((vec![a.powf(*b)], String::new()));
+        // BUG-D-M-004: 检查 NaN/Inf（如 (-1)^0.5 = NaN），失败显性化（规则 12）
+        if *a == 0.0 && *b == 0.0 {
+            return Ok((vec![1.0], String::new()));
+        }
+        let r = a.powf(*b);
+        if !r.is_finite() {
+            return Err(CalcError::nan_or_inf());
+        }
+        return Ok((vec![r], String::new()));
     }
     Err(
         CalcError::domain("not a polynomial: unsupported power expression".to_string())
@@ -689,15 +707,21 @@ fn poly_div_coeffs(a: &[f64], b: &[f64]) -> (Vec<f64>, Vec<f64>) {
 }
 
 /// Horner 法则求值。
-fn poly_eval_horner(coeffs: &[f64], x: f64) -> f64 {
+///
+/// BUG-D-M-005: 检查 NaN/Inf，失败显性化（规则 12）。
+/// 如 `poly_eval([1,1,1,1,1], 1e308)` 会因 `1e308 * 1e308` 溢出为 inf。
+fn poly_eval_horner(coeffs: &[f64], x: f64) -> Result<f64, CalcError> {
     if coeffs.is_empty() {
-        return 0.0;
+        return Ok(0.0);
     }
     let mut result = 0.0;
     for &c in coeffs.iter().rev() {
         result = result * x + c;
+        if !result.is_finite() {
+            return Err(CalcError::nan_or_inf());
+        }
     }
-    result
+    Ok(result)
 }
 
 /// 多项式微分：coef[i] -> coef[i+1] * (i+1)，降次。
@@ -1578,8 +1602,8 @@ mod tests {
 
     #[test]
     fn test_poly_eval_horner() {
-        assert_eq!(poly_eval_horner(&[1.0, 2.0, 1.0], 2.0), 9.0); // 1+2*2+1*4=9
-        assert_eq!(poly_eval_horner(&[], 1.0), 0.0);
+        assert_eq!(poly_eval_horner(&[1.0, 2.0, 1.0], 2.0).unwrap(), 9.0); // 1+2*2+1*4=9
+        assert_eq!(poly_eval_horner(&[], 1.0).unwrap(), 0.0);
     }
 
     #[test]
@@ -2116,7 +2140,7 @@ mod tests {
 
     #[test]
     fn test_poly_eval_horner_empty() {
-        assert_eq!(poly_eval_horner(&[], 1.0), 0.0);
+        assert_eq!(poly_eval_horner(&[], 1.0).unwrap(), 0.0);
     }
 
     #[test]

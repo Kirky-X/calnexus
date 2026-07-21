@@ -23,7 +23,12 @@ use num_traits::Signed;
 
 /// 格式化标量为 LaTeX。
 ///
-/// 整数值渲染为整数（`42`），非整数渲染为最简小数（`3.14`）。
+/// - NaN/Inf 渲染为 `\text{NaN}` / `\infty` / `-\infty`
+/// - 整数值（在 i64 安全范围内）渲染为整数（`42`）
+/// - 大整数（超出 i64 范围）渲染为不带小数点的数字串（`100000000000000000000`），
+///   避免触发科学计数法
+/// - 浮点数渲染为最简小数（`3.14`），并消除浮点精度噪声
+///   （如 `0.1+0.2=0.30000000000000004` → `0.3`）
 pub fn format_latex_scalar(v: f64) -> String {
     if v.is_nan() {
         return "\\text{NaN}".to_string();
@@ -35,17 +40,58 @@ pub fn format_latex_scalar(v: f64) -> String {
             "-\\infty".to_string()
         };
     }
-    if v.fract() == 0.0 && v.abs() < 9e15 {
-        format!("{}", v as i64)
-    } else {
-        format!("{}", v)
+    if v.fract() == 0.0 {
+        // Integer value: render without decimal point
+        if v.abs() < 9e15 {
+            return format!("{}", v as i64);
+        }
+        // Large integer outside i64 safe range: {:.0} avoids scientific notation
+        return format!("{:.0}", v);
     }
+    let default = format!("{}", v);
+    if has_floating_point_noise(&default) {
+        let rounded = format!("{:.10}", v);
+        let trimmed = rounded.trim_end_matches('0').trim_end_matches('.');
+        if !trimmed.is_empty() && trimmed != "-" {
+            return trimmed.to_string();
+        }
+    }
+    default
 }
 
-/// 格式化复数为 LaTeX `re + im i`（虚部非负时加 `+`）。
+/// 检测浮点精度噪声：连续 7 个 0 或 9 表示二进制浮点误差。
+fn has_floating_point_noise(s: &str) -> bool {
+    s.contains("0000000") || s.contains("9999999")
+}
+
+/// 格式化复数为 LaTeX。
+///
+/// 简化规则（避免冗余的 `0 + 0i` 或 `1i` 形式）：
+/// - 虚部为 0 → 仅实部（`3`）
+/// - 实部为 0 → 仅虚部（`4i`），虚部为 ±1 时进一步简化为 `i` / `-i`
+/// - 一般形式 → `re + im i` 或 `re - im i`（虚部为 ±1 时简化为 `re + i` / `re - i`）
 pub fn format_latex_complex(re: f64, im: f64) -> String {
+    // Case 1: imaginary part is zero → just real part
+    if im == 0.0 {
+        return format_latex_scalar(re);
+    }
+    // Case 2: real part is zero → just imaginary part
+    if re == 0.0 {
+        if im == 1.0 {
+            return "i".to_string();
+        }
+        if im == -1.0 {
+            return "-i".to_string();
+        }
+        return format!("{}i", format_latex_scalar(im));
+    }
+    // Case 3: general form re ± im i
     let re_s = format_latex_scalar(re);
-    if im >= 0.0 {
+    if im == 1.0 {
+        format!("{} + i", re_s)
+    } else if im == -1.0 {
+        format!("{} - i", re_s)
+    } else if im > 0.0 {
         format!("{} + {}i", re_s, format_latex_scalar(im))
     } else {
         format!("{} - {}i", re_s, format_latex_scalar(-im))
@@ -118,12 +164,17 @@ fn format_latex_polynomial_term(coef: f64, i: usize) -> Option<String> {
     Some(term)
 }
 
-/// 合并 LaTeX 多项式单项列表：第一项不加前缀，后续正项加 ` + `，负项直接拼接（已含 `-`）。
+/// 合并 LaTeX 多项式单项列表。
+///
+/// 第一项原样输出（即使以 `-` 开头），后续项：
+/// - 正项用 ` + ` 分隔
+/// - 负项用 ` - ` 分隔并去除其前导 `-`（与正项对称，避免 `x^{2}-2x` 的紧凑形式）
 fn join_latex_polynomial_terms(terms: &[String]) -> String {
     let mut result = terms[0].clone();
     for term in &terms[1..] {
-        if term.starts_with('-') {
-            result.push_str(term);
+        if let Some(stripped) = term.strip_prefix('-') {
+            result.push_str(" - ");
+            result.push_str(stripped);
         } else {
             result.push_str(" + ");
             result.push_str(term);
@@ -299,11 +350,45 @@ fn ast_to_latex_expr(node: &AstNode) -> Option<String> {
     }
 }
 
-/// 将符号结果字符串（如 `2*x` 或 `x-1`）转换为 LaTeX（`2 \cdot x`、`x - 1`）。
+/// 将符号结果字符串（如 `2*x` 或 `x^2`）转换为 LaTeX（`2 \cdot x`、`x^{2}`）。
 ///
-/// 仅做轻度替换：`*` → `\cdot`、`^` → `^{...}` 仅用于显式幂。其他字符原样保留。
+/// 替换规则：
+/// - `*` → ` \cdot `（LaTeX 乘号）
+/// - `^N` → `^{N}`（N 为整数指数，可能带前导 `-`；LaTeX 要求指数用花括号包裹）
+/// - 其他字符原样保留
 fn symbolic_str_to_latex(s: &str) -> String {
-    s.replace('*', " \\cdot ")
+    let chars: Vec<char> = s.chars().collect();
+    let mut result = String::with_capacity(s.len() * 2);
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match c {
+            '*' => {
+                result.push_str(" \\cdot ");
+                i += 1;
+            }
+            '^' => {
+                result.push_str("^{");
+                i += 1;
+                // Capture optional negative sign for exponent
+                if i < chars.len() && chars[i] == '-' {
+                    result.push('-');
+                    i += 1;
+                }
+                // Capture digit sequence as exponent
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    result.push(chars[i]);
+                    i += 1;
+                }
+                result.push('}');
+            }
+            _ => {
+                result.push(c);
+                i += 1;
+            }
+        }
+    }
+    result
 }
 
 /// 顶层 LaTeX 格式化器：根据 `EvalResult` 变体分发到具体格式化函数。
@@ -599,9 +684,9 @@ mod tests {
 
     #[test]
     fn latex_polynomial_negative_term_concatenation() {
-        // 非首项以 '-' 开头时直接拼接（line 114）
-        // [1, -2, 1] → "x^{2}-2x + 1"
-        assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2}-2x + 1");
+        // BUG-O-M-011 修复后：非首项以 '-' 开头时用 " - " 分隔（与 " + " 对称）
+        // [1, -2, 1] → "x^{2} - 2x + 1"
+        assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2} - 2x + 1");
     }
 
     // ===== 覆盖 format_latex_bigrational prec==0 分支 =====
@@ -809,5 +894,102 @@ mod tests {
         let r = EvalResult::Symbolic("2*x".to_string());
         let ast = AstNode::Number(0.0);
         assert_eq!(format_latex(&r, &ast, "", None), "2 \\cdot x");
+    }
+
+    // ===== BUG-O-M-007: format_latex_scalar 浮点精度噪声 =====
+
+    #[test]
+    fn latex_scalar_floating_point_noise() {
+        // BUG-O-M-007: 0.1+0.2 = 0.30000000000000004，应显示为 0.3
+        assert_eq!(format_latex_scalar(0.1 + 0.2), "0.3");
+    }
+
+    #[test]
+    fn latex_scalar_preserves_precision_for_irreducible() {
+        // 确保修复不破坏完整精度表示
+        assert_eq!(format_latex_scalar(1.0 / 3.0), "0.3333333333333333");
+        assert_eq!(format_latex_scalar(std::f64::consts::PI), "3.141592653589793");
+    }
+
+    // ===== BUG-O-M-008: format_latex_scalar 大整数科学计数法 =====
+
+    #[test]
+    fn latex_scalar_large_integer_no_scientific() {
+        // BUG-O-M-008: 大整数不应输出科学计数法
+        assert_eq!(format_latex_scalar(1e15), "1000000000000000");
+        assert_eq!(format_latex_scalar(1e20), "100000000000000000000");
+        assert_eq!(format_latex_scalar(1e21), "1000000000000000000000");
+    }
+
+    // ===== BUG-O-M-009 / M-010: format_latex_complex 简化 =====
+
+    #[test]
+    fn latex_complex_zero_imaginary_simplified() {
+        // BUG-O-M-009: 虚部为 0 时应简化为实部（不输出 "+ 0i"）
+        assert_eq!(format_latex_complex(3.0, 0.0), "3");
+        assert_eq!(format_latex_complex(-3.0, 0.0), "-3");
+    }
+
+    #[test]
+    fn latex_complex_zero_real_simplified() {
+        // BUG-O-M-010: 实部为 0 时应简化为虚部（不输出 "0 + 4i"）
+        assert_eq!(format_latex_complex(0.0, 4.0), "4i");
+        assert_eq!(format_latex_complex(0.0, -4.0), "-4i");
+    }
+
+    #[test]
+    fn latex_complex_both_zero_simplified() {
+        // 边界：实部和虚部都为 0 → "0"
+        assert_eq!(format_latex_complex(0.0, 0.0), "0");
+    }
+
+    #[test]
+    fn latex_complex_one_imaginary_simplified() {
+        // 边界：虚部为 ±1 时不输出系数（"i" 而非 "1i"）
+        assert_eq!(format_latex_complex(2.0, 1.0), "2 + i");
+        assert_eq!(format_latex_complex(2.0, -1.0), "2 - i");
+        assert_eq!(format_latex_complex(0.0, 1.0), "i");
+        assert_eq!(format_latex_complex(0.0, -1.0), "-i");
+    }
+
+    #[test]
+    fn latex_complex_general_form_preserved() {
+        // 确保修复不破坏一般形式
+        assert_eq!(format_latex_complex(3.0, 4.0), "3 + 4i");
+        assert_eq!(format_latex_complex(3.0, -4.0), "3 - 4i");
+    }
+
+    // ===== BUG-O-M-011: join_latex_polynomial_terms 负项空格 =====
+
+    #[test]
+    fn latex_polynomial_negative_terms_with_spaces() {
+        // BUG-O-M-011: 负项应统一用 " - " 分隔（与正项 " + " 对称）
+        // [1, -2, 1] → "x^{2} - 2x + 1"（不是 "x^{2}-2x + 1"）
+        assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2} - 2x + 1");
+        // [-1, 2] → "2x - 1"
+        assert_eq!(format_latex_polynomial(&[-1.0, 2.0]), "2x - 1");
+    }
+
+    // ===== BUG-O-M-012: symbolic_str_to_latex 幂运算 =====
+
+    #[test]
+    fn latex_symbolic_str_to_latex_pow() {
+        // BUG-O-M-012: "x^2" 应转换为 "x^{2}"（LaTeX 规范）
+        assert_eq!(symbolic_str_to_latex("x^2"), "x^{2}");
+        assert_eq!(symbolic_str_to_latex("x^10"), "x^{10}");
+    }
+
+    #[test]
+    fn latex_symbolic_str_to_latex_combined_ops() {
+        // 综合测试：乘法和幂混合
+        assert_eq!(symbolic_str_to_latex("2*x^2"), "2 \\cdot x^{2}");
+        assert_eq!(symbolic_str_to_latex("x^2*y"), "x^{2} \\cdot y");
+    }
+
+    #[test]
+    fn latex_symbolic_str_to_latex_preserves_plain() {
+        // 确保修复不破坏无幂运算的字符串
+        assert_eq!(symbolic_str_to_latex("2*x"), "2 \\cdot x");
+        assert_eq!(symbolic_str_to_latex("42"), "42");
     }
 }

@@ -12,6 +12,15 @@ use crate::core::{CalcError, ErrorKind};
 use crate::evaluate as eval_expr;
 use sdforge::error::ApiError;
 use sdforge::forge;
+use std::time::Duration;
+
+/// 请求级超时（秒）：防止慢攻击（slowloris）与无限循环表达式耗尽连接资源。
+///
+/// spec.md R-sdforge-002 安全约束：HTTP/MCP 请求必须在合理时间内返回（成功或 503）。
+/// 与 `CalcError::Timeout`（计算层超时，由 evaluate 内部 Alarm 控制）互补：
+/// - 计算层超时：精确中断 evaluate 内部的循环
+/// - 请求级超时：兜底保护，覆盖 spawn_blocking 启动 / 缓存写入等任何意外延迟
+pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 
 /// `POST /api/v1/evaluate` + MCP `evaluate` tool（单函数双协议）。
 ///
@@ -22,6 +31,9 @@ use sdforge::forge;
 ///
 /// 函数体内保留 `spawn_blocking` 隔离 oxcache 同步 `block_on`（与 p1 手写 handler 等价）：
 /// `#[forge]` 只生成外层路由/tool 外壳，函数体仍是 CalNexus 代码，隔离策略不变。
+///
+/// BUG-S-M-001: 用 `tokio::time::timeout` 包裹 `spawn_blocking`，超时返回 503
+/// ServiceUnavailable（`retry_after=REQUEST_TIMEOUT_SECS`），防止慢攻击。
 #[forge(
     name = "evaluate",
     version = "v1",
@@ -31,18 +43,50 @@ use sdforge::forge;
     description = "Evaluate a math expression. Returns {result, domain, cache}. Supports vars and precision."
 )]
 pub(crate) async fn evaluate(req: EvaluateRequest) -> Result<EvaluateResponse, ApiError> {
+    evaluate_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await
+}
+
+/// 带超时的 evaluate 实现（可测试入口）。
+///
+/// 提取为独立函数以便单元测试注入短超时验证 503 路径，避免依赖真实慢表达式。
+/// `evaluate` 公开入口固定使用 `REQUEST_TIMEOUT_SECS`。
+///
+/// 超时映射：`Err(Elapsed)` → `ApiError::service_unavailable("evaluate", Some(secs))`
+/// （HTTP 503 / MCP SERVICE_UNAVAILABLE，与 `CalcError::Timeout` 路径一致）。
+/// spawn_blocking panic：保留原 `internal_with_source` 500 路径（不脱敏，因为
+/// `ApiError::Internal` 序列化时 `source` 字段 `#[serde(skip)]`，客户端仅见通用消息）。
+pub(crate) async fn evaluate_with_timeout(
+    req: EvaluateRequest,
+    timeout: Duration,
+) -> Result<EvaluateResponse, ApiError> {
     req.validate()?;
     let ctx = req.to_eval_context();
     let precision = req.precision;
     let expr = req.expr.clone();
     // spawn_blocking 把同步 evaluate（内部 CacheManager 用 block_on 调 oxcache async API）
     // 移到无 runtime context 的阻塞线程池，避免 "Cannot start a runtime from within a runtime"。
-    let (result, domain, cache_hit, fmt_prec) = tokio::task::spawn_blocking(move || {
+    let join_handle = tokio::task::spawn_blocking(move || {
         let cache = shared_cache();
         eval_expr(&expr, &ctx, precision, cache)
-    })
-    .await
-    .map_err(|e| ApiError::internal_with_source("evaluate task failed", "spawn_blocking", e))?
+    });
+    // BUG-S-M-001: 请求级超时兜底，覆盖 spawn_blocking 启动 / evaluate 内部任何意外延迟。
+    // 计算层 Alarm 已在 evaluate 内部精确中断循环，此处仅作慢攻击防御。
+    let (result, domain, cache_hit, fmt_prec) = match tokio::time::timeout(timeout, join_handle).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(join_err)) => {
+            return Err(ApiError::internal_with_source(
+                "evaluate task failed",
+                "spawn_blocking",
+                join_err,
+            ))
+        }
+        Err(_) => {
+            return Err(ApiError::service_unavailable(
+                "evaluate",
+                Some(timeout.as_secs()),
+            ))
+        }
+    }
     .map_err(calc_error_to_api_error)?;
     Ok(EvaluateResponse::from_eval(
         result, domain, cache_hit, fmt_prec,
@@ -165,5 +209,87 @@ mod tests {
             }
             _ => panic!("期望 InvalidInput"),
         }
+    }
+
+    // === BUG-S-M-001: 请求级超时（防止慢攻击 / slowloris）===
+    // evaluate_with_timeout 是 evaluate 的可测试入口，注入短超时验证 503 路径。
+
+    /// 简单表达式 + 充足超时 → 成功返回 EvaluateResponse（基线）。
+    /// 不验证 cache 状态（可能被前序测试缓存命中），仅验证成功返回 + 域名正确。
+    #[tokio::test]
+    async fn test_evaluate_with_timeout_succeeds_on_simple_expr() {
+        let req = EvaluateRequest {
+            expr: "2+3".into(),
+            vars: std::collections::HashMap::new(),
+            precision: None,
+        };
+        let result = evaluate_with_timeout(req, Duration::from_secs(5)).await;
+        assert!(result.is_ok(), "simple expr should succeed within 5s");
+        let resp = result.unwrap();
+        assert_eq!(resp.domain, "arithmetic");
+        // cache 字段为 "hit" 或 "miss"（取决于前序测试是否已缓存该表达式）
+        assert!(resp.cache == "hit" || resp.cache == "miss");
+    }
+
+    /// 零超时（1ns）→ 立即返回 ServiceUnavailable（503）。
+    /// 使用 `precision(10000, factorial(10000))`（CPU 密集计算）确保 1ns 内不可能完成，
+    /// 避免简单表达式在缓存命中时 1ns 内完成导致测试不稳定。
+    #[tokio::test]
+    async fn test_evaluate_with_timeout_returns_service_unavailable_on_zero_timeout() {
+        let req = EvaluateRequest {
+            expr: "precision(10000, factorial(10000))".into(),
+            vars: std::collections::HashMap::new(),
+            precision: None,
+        };
+        let result = evaluate_with_timeout(req, Duration::from_nanos(1)).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ApiError::ServiceUnavailable { service, .. } => {
+                assert_eq!(service, "evaluate");
+            }
+            other => panic!("期望 ServiceUnavailable，得到 {other:?}"),
+        }
+    }
+
+    /// 真实慢表达式 + 短超时 → ServiceUnavailable（503）。
+    /// `factorial(10000)` 在 precision domain 内触发 CPU 密集计算（大整数阶乘 + 高精度格式化）。
+    /// timeout=1ms 确保稳定性（不依赖机器绝对性能，只需 spawn_blocking 启动 + 计算超过 1ms）。
+    #[tokio::test]
+    async fn test_evaluate_with_timeout_returns_service_unavailable_on_slow_expr() {
+        let req = EvaluateRequest {
+            expr: "precision(10000, factorial(10000))".into(),
+            vars: std::collections::HashMap::new(),
+            precision: None,
+        };
+        let result = evaluate_with_timeout(req, Duration::from_millis(1)).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ApiError::ServiceUnavailable { service, .. } => {
+                assert_eq!(service, "evaluate");
+            }
+            other => panic!("期望 ServiceUnavailable（慢表达式超时），得到 {other:?}"),
+        }
+    }
+
+    /// validate() 失败 → 立即返回 ValidationError，不进入 spawn_blocking / timeout 路径。
+    #[tokio::test]
+    async fn test_evaluate_with_timeout_validates_before_timeout() {
+        let req = EvaluateRequest {
+            expr: String::new(),
+            vars: std::collections::HashMap::new(),
+            precision: None,
+        };
+        let result = evaluate_with_timeout(req, Duration::from_secs(5)).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ApiError::ValidationError { .. }
+        ));
+    }
+
+    /// REQUEST_TIMEOUT_SECS 常量必须为 30（spec.md R-sdforge-002 契约）。
+    #[test]
+    fn test_request_timeout_secs_is_30() {
+        assert_eq!(REQUEST_TIMEOUT_SECS, 30);
     }
 }

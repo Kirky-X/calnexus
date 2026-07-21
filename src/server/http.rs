@@ -22,6 +22,38 @@ pub fn build_router() -> Router {
     sdforge::http::build().layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
 }
 
+/// 优雅关闭信号：监听 Ctrl+C（SIGINT），返回时 axum 停止接受新连接、等待已有连接完成。
+///
+/// BUG-S-M-003: 此前 `axum::serve` 无 `with_graceful_shutdown`，收到 SIGINT 时
+/// 立即终止所有连接，可能导致正在执行的 evaluate 请求被中断、响应丢失。
+/// 现通过 `with_graceful_shutdown(shutdown_signal())` 让 server 在收到 Ctrl+C 后
+/// 进入 drain 阶段（停止 accept、等待 in-flight 请求完成）。
+///
+/// 单元测试通过 `assert_shutdown_signal_is_send` 验证 future 为 `Send`（axum 要求）。
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install ctrl_c signal handler failed");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler failed")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+
 /// HTTP server 配置。
 #[derive(Debug, Clone)]
 pub struct HttpServer {
@@ -64,13 +96,17 @@ impl HttpServer {
         runtime.block_on(self.start_inner())
     }
 
-    /// 内部 async 启动逻辑：bind TcpListener + axum::serve。
+    /// 内部 async 启动逻辑：bind TcpListener + axum::serve（含 graceful shutdown）。
+    ///
+    /// BUG-S-M-003: `with_graceful_shutdown(shutdown_signal())` 让 server 收到
+    /// Ctrl+C / SIGTERM 后进入 drain 阶段，等待 in-flight 请求完成再退出。
     async fn start_inner(&self) -> Result<(), ServerError> {
         let listener = tokio::net::TcpListener::bind(&self.addr)
             .await
             .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
         let router = build_router();
         sdforge::axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| ServerError::Http(format!("server error: {}", e)))?;
         Ok(())
@@ -116,5 +152,23 @@ mod tests {
         let result = server.start_inner().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ServerError::Http(_)));
+    }
+
+    /// BUG-S-M-003: 验证 `shutdown_signal` 返回的 future 为 `Send`。
+    /// axum `with_graceful_shutdown` 要求 signal future 为 `Send`，编译期检查。
+    /// 此测试在编译期捕获 Send 约束违规（若 future 非 Send，编译失败）。
+    #[test]
+    fn test_shutdown_signal_is_send() {
+        fn assert_send<T: Send>(_t: T) {}
+        let fut = shutdown_signal();
+        assert_send(fut);
+    }
+
+    /// BUG-S-M-003: 验证 `shutdown_signal` 函数存在且可调用（构造即不 panic）。
+    /// 不实际 await（await 需要真实信号，单元测试环境难以注入）。
+    #[test]
+    fn test_shutdown_signal_callable_without_panic() {
+        let _fut = shutdown_signal();
+        // 不 await，仅验证构造无 panic（信号 handler 安装在 await 阶段）
     }
 }

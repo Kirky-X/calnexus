@@ -76,9 +76,12 @@ impl ComplexDomain {
                 if name == "i" {
                     return Ok(ComplexValue::Complex(Complex64::new(0.0, 1.0)));
                 }
-                ctx.get_var(name)
-                    .map(ComplexValue::Scalar)
-                    .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name)))
+                ctx.get_var(name).map(ComplexValue::Scalar).ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                })
             }
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval(l, ctx)?;
@@ -95,16 +98,18 @@ impl ComplexDomain {
                     UnaryOp::Abs => Ok(ComplexValue::Scalar(v.to_complex().norm())),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in complex domain".to_string(),
-                    )),
+                    )
+                    .with_i18n("msg.complex.factorial_not_supported", vec![])),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
-                Err(CalcError::domain(format!(
-                    "complex domain does not support this node type: {:?}",
-                    ast
-                )))
-            }
+            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => Err(CalcError::domain(
+                format!("complex domain does not support this node type: {:?}", ast),
+            )
+            .with_i18n(
+                "msg.complex.unsupported_node",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            )),
         }
     }
 
@@ -129,11 +134,22 @@ impl ComplexDomain {
                     }
                     av / bv
                 }
-                BinaryOp::Pow => av.powf(*bv),
+                // BUG-D-M-002: 显式处理 0^0=1（与其他域一致），并检查 NaN/Inf
+                BinaryOp::Pow => {
+                    if *av == 0.0 && *bv == 0.0 {
+                        return Ok(ComplexValue::Scalar(1.0));
+                    }
+                    let r = av.powf(*bv);
+                    if !r.is_finite() {
+                        return Err(CalcError::nan_or_inf());
+                    }
+                    r
+                }
                 BinaryOp::Mod => {
                     return Err(CalcError::domain(
                         "mod not supported in complex domain".to_string(),
-                    ))
+                    )
+                    .with_i18n("msg.complex.mod_not_supported_scalar", vec![]))
                 }
             };
             return Ok(ComplexValue::Scalar(result));
@@ -152,11 +168,27 @@ impl ComplexDomain {
                 }
                 ac / bc
             }
-            BinaryOp::Pow => ac.powc(bc),
+            BinaryOp::Pow => {
+                // M-1 修复：显式处理 0^0=1（与标量分支 line 138-141 一致，与所有域约定一致）
+                // 修复前：直接 ac.powc(bc) 返回 Complex(1.0, 0.0)，类型与标量分支不一致
+                // 修复后：显式返回 Scalar(1.0)，与标量分支保持一致
+                if ac == Complex64::new(0.0, 0.0) && bc == Complex64::new(0.0, 0.0) {
+                    return Ok(ComplexValue::Scalar(1.0));
+                }
+                let r = ac.powc(bc);
+                // 规则 12：NaN/Inf 必须显性化（M-1 修复）
+                // 修复前：复数 Pow 路径未检查 is_finite，可能返回包含 Inf/NaN 的复数
+                // 修复后：在 eval_binary 中显式检查 is_finite，返回 NaNOrInf 错误
+                if !r.is_finite() {
+                    return Err(CalcError::nan_or_inf());
+                }
+                r
+            }
             BinaryOp::Mod => {
                 return Err(CalcError::domain(
                     "mod not supported for complex numbers".to_string(),
-                ))
+                )
+                .with_i18n("msg.complex.mod_not_supported_complex", vec![]))
             }
         };
         Ok(ComplexValue::Complex(result))
@@ -175,7 +207,11 @@ impl ComplexDomain {
                     return Err(CalcError::domain(format!(
                         "complex() requires exactly 2 arguments, got {}",
                         args.len()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.complex.complex_arg_count",
+                        vec![("actual".to_string(), args.len().to_string())],
+                    ));
                 }
                 // BUG-D-016 修复：re/im 必须为标量，丢弃虚部会掩盖用户错误
                 let re = match self.eval(&args[0], ctx)? {
@@ -204,6 +240,13 @@ impl ComplexDomain {
             }
             "arg" => {
                 let c = self.expect_one_arg(name, args, ctx)?;
+                // BUG-D-M-009: arg(0+0i) 未定义（atan2(0,0) 不确定），返回错误而非静默 0.0
+                if c.re == 0.0 && c.im == 0.0 {
+                    return Err(CalcError::domain(
+                        "arg(0+0i) is undefined (atan2(0,0) is indeterminate)".to_string(),
+                    )
+                    .with_i18n("msg.complex.arg_zero_undefined", vec![]));
+                }
                 Ok(ComplexValue::Scalar(c.arg()))
             }
             "abs" => {
@@ -221,7 +264,11 @@ impl ComplexDomain {
             _ => Err(CalcError::domain(format!(
                 "unsupported function in complex domain: {}",
                 name
-            ))),
+            ))
+            .with_i18n(
+                "msg.complex.unsupported_function",
+                vec![("name".to_string(), name.to_string())],
+            )),
         }
     }
 
@@ -237,7 +284,14 @@ impl ComplexDomain {
                 "{}() requires exactly 1 argument, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.complex.arg_count_1",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         Ok(self.eval(&args[0], ctx)?.to_complex())
     }
@@ -636,6 +690,43 @@ mod tests {
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
         assert_complex_approx(&result, 0.0, 2.0);
+    }
+
+    // ===== M-1 修复：复数 Pow 路径补 0^0 和 is_finite 检查 =====
+
+    #[test]
+    fn test_complex_pow_zero_zero_returns_scalar_one() {
+        // 0+0i ^ 0+0i → 1.0（与所有域 0^0=1 约定一致）
+        // 修复前：复数分支走 ac.powc(bc)，结果为 Complex(1.0, 0.0)，与标量分支不一致
+        // 修复后：显式返回 Scalar(1.0)，与标量分支（line 138-141）保持一致
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Complex(0.0, 0.0)),
+            Box::new(AstNode::Complex(0.0, 0.0)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx()).unwrap();
+        // 期望 Scalar(1.0)，与标量分支 0^0=1 一致
+        assert_scalar(&result, 1.0);
+    }
+
+    #[test]
+    fn test_complex_pow_overflow_returns_nan_or_inf() {
+        // (1e308+1e308i) ^ (1e308+1e308i) → overflow → NaN/Inf
+        // 修复前：复数 Pow 路径未检查 is_finite，可能返回包含 Inf/NaN 的复数
+        // 修复后：在 eval_binary 中显式检查 is_finite，返回 NaNOrInf 错误
+        let ast = AstNode::BinaryOp(
+            BinaryOp::Pow,
+            Box::new(AstNode::Complex(1e308, 1e308)),
+            Box::new(AstNode::Complex(1e308, 1e308)),
+        );
+        let domain = ComplexDomain;
+        let result = domain.evaluate(&ast, &default_ctx());
+        assert!(
+            matches!(result, Err(ref e) if e.kind == ErrorKind::NaNOrInf),
+            "expected NaNOrInf error, got {:?}",
+            result
+        );
     }
 
     #[test]
