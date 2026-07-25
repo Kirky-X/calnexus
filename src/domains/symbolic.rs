@@ -146,13 +146,16 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 )),
             }
         }
-        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
-            format!("node type not supported in symbolic expressions: {:?}", ast),
-        )
-        .with_i18n(
-            "msg.symbolic.node_not_supported",
-            vec![("node".to_string(), format!("{:?}", ast))],
-        )),
+        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
+            Err(CalcError::domain(format!(
+                "node type not supported in symbolic expressions: {:?}",
+                ast
+            ))
+            .with_i18n(
+                "msg.symbolic.node_not_supported",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            ))
+        }
     }
 }
 

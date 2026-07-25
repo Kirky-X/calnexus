@@ -237,6 +237,9 @@ fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
         EvalResult::LaTeX(s) => Value::from(s.as_str()),
         EvalResult::Steps(v) => Value::Array(v.iter().map(|s| Value::from(s.as_str())).collect()),
         EvalResult::Json(v) => v.clone(),
+        // DateTime（time-unit-fx-domains D2）：序列化为 {"type":"datetime","value":"<RFC3339>"}
+        // 类型标签使客户端可区分 DateTime 与 Symbolic/LaTeX 等纯字符串结果。
+        EvalResult::DateTime(s) => json!({"type": "datetime", "value": s}),
     }
 }
 

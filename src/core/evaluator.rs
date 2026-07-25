@@ -158,6 +158,10 @@ fn eval_precision_mode(
 }
 
 /// 常规模式：路由器分发 + 缓存查询 + 格式化精度提取。
+///
+/// time-unit-fx-domains R-ncb-003：对非确定性表达式（含 now()/today()/fx() 等）
+/// **同时跳过**缓存读取与缓存写入，避免时间/汇率结果被缓存污染。
+/// 检测通过 `DomainRouter::is_nondeterministic` 完成，O(AST 节点数) HashSet 查询。
 fn eval_regular_mode(
     canonical_ast: &AstNode,
     ctx: &EvalContext,
@@ -166,6 +170,17 @@ fn eval_regular_mode(
     start: Instant,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     let router = build_default_router();
+
+    // 非确定性函数旁路缓存（R-ncb-003）：跳过 cache.get 与 cache.insert
+    if router.is_nondeterministic(canonical_ast) {
+        let domain = router.route(canonical_ast)?;
+        check_elapsed(start, ctx.timeout)?;
+        let result = domain.evaluate(canonical_ast, ctx)?;
+        check_elapsed(start, ctx.timeout)?;
+        let fmt_prec = extract_format_precision(canonical_ast);
+        // cache_hit = false，且不写入缓存
+        return Ok((result, domain.domain_name().to_string(), false, fmt_prec));
+    }
 
     // 缓存命中
     if let Some(cached) = cache.get(cache_cf) {

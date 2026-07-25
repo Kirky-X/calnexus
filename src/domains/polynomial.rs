@@ -96,7 +96,7 @@ impl PolynomialDomain {
                 })?;
                 Ok(EvalResult::Scalar(n))
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
                 Err(CalcError::domain(format!(
                     "polynomial domain does not support this node type: {:?}",
                     ast
@@ -1056,7 +1056,8 @@ fn contains_polynomial_function(ast: &AstNode) -> bool {
         AstNode::Number(_)
         | AstNode::Variable(_)
         | AstNode::Complex(_, _)
-        | AstNode::BigNumber(_) => false,
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => false,
     }
 }
 

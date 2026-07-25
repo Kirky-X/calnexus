@@ -120,6 +120,12 @@ fn walk(
             "steps mode does not support lists as sub-expressions",
         )
         .with_i18n("msg.output.steps_no_list", vec![])),
+        // Str 节点仅合法作为 FunctionCall 实参；出现在 walk 中表示它被直接求值
+        // （如 BinaryOp 操作数），steps 模式不支持字符串参与算术运算。
+        AstNode::Str(_) => Err(CalcError::domain(
+            "steps mode does not support string literals in arithmetic",
+        )
+        .with_i18n("msg.output.steps_no_string", vec![])),
     }
 }
 

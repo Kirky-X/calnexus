@@ -131,7 +131,7 @@ impl PrecisionDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
                 Err(CalcError::domain(format!(
                     "precision domain does not support this node type: {:?}",
                     ast
@@ -328,7 +328,9 @@ fn contains_precision(ast: &AstNode) -> bool {
         AstNode::UnaryOp(_, e) => contains_precision(e),
         AstNode::Matrix(rows) => rows.iter().flatten().any(contains_precision),
         AstNode::List(elements) => elements.iter().any(contains_precision),
-        AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) => false,
+        AstNode::Number(_) | AstNode::Variable(_) | AstNode::Complex(_, _) | AstNode::Str(_) => {
+            false
+        }
     }
 }
 
@@ -364,7 +366,8 @@ fn contains_other_domain_function(ast: &AstNode) -> bool {
         AstNode::Number(_)
         | AstNode::Variable(_)
         | AstNode::BigNumber(_)
-        | AstNode::Complex(_, _) => false,
+        | AstNode::Complex(_, _)
+        | AstNode::Str(_) => false,
     }
 }
 

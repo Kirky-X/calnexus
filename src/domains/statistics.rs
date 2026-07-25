@@ -84,7 +84,8 @@ impl StatisticsDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
+            | AstNode::BigNumber(_)
+            | AstNode::Str(_) => Err(CalcError::domain(format!(
                 "statistics domain does not support this node type: {:?}",
                 ast
             ))
@@ -247,7 +248,8 @@ fn contains_statistics_function(ast: &AstNode) -> bool {
         AstNode::Number(_)
         | AstNode::Variable(_)
         | AstNode::Complex(_, _)
-        | AstNode::BigNumber(_) => false,
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => false,
     }
 }
 

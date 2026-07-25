@@ -118,10 +118,9 @@ impl VectorDomain {
                 )
                 .with_i18n("msg.vector.factorial_not_supported", vec![])),
             },
-            AstNode::Complex(_, _) | AstNode::Matrix(_) => Err(CalcError::domain(format!(
-                "vector domain does not support this node type: {:?}",
-                ast
-            ))
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::Str(_) => Err(CalcError::domain(
+                format!("vector domain does not support this node type: {:?}", ast),
+            )
             .with_i18n(
                 "msg.vector.unsupported_node",
                 vec![("node".to_string(), format!("{:?}", ast))],
@@ -539,7 +538,8 @@ fn contains_vector_function(ast: &AstNode) -> bool {
         AstNode::Number(_)
         | AstNode::Variable(_)
         | AstNode::Complex(_, _)
-        | AstNode::BigNumber(_) => false,
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => false,
     }
 }
 
@@ -560,7 +560,8 @@ fn contains_vector_arithmetic(ast: &AstNode) -> bool {
         AstNode::Number(_)
         | AstNode::Variable(_)
         | AstNode::Complex(_, _)
-        | AstNode::BigNumber(_) => false,
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => false,
     }
 }
 

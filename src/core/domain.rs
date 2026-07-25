@@ -15,6 +15,7 @@
 //! 方案（"自研 trait + 手动注册表"），功能等价且更可控。
 
 use crate::core::types::{AstNode, CalcError, EvalContext, EvalResult};
+use std::collections::HashSet;
 
 /// 计算域接口：所有计算域必须实现此 trait。
 ///
@@ -23,6 +24,7 @@ use crate::core::types::{AstNode, CalcError, EvalContext, EvalResult};
 /// - `supports()` 判断是否能处理某 AST
 /// - `evaluate()` 执行实际计算
 /// - 优先级（数值越大越优先）
+/// - `nondeterministic_functions()` 申报非确定性函数（time-unit-fx-domains R-ncb-001）
 pub trait CalculationDomain: Send + Sync {
     /// 域名称（如 `"arithmetic"`、`"scientific"`）。
     fn domain_name(&self) -> &str;
@@ -39,13 +41,27 @@ pub trait CalculationDomain: Send + Sync {
 
     /// 优先级（数值越大优先级越高，同优先级按注册顺序）。
     fn priority(&self) -> u8;
+
+    /// 申报本域的非确定性函数名列表（time-unit-fx-domains R-ncb-001）。
+    ///
+    /// 默认返回空表（既有 11 个域不覆写，行为零变化）。
+    /// TimeDomain 申报 `["now","today"]`；FxDomain 申报 `["fx","fx_rate"]`。
+    /// core 层不出现任何具体函数名硬编码（DIP：core → domains 零依赖保持）。
+    fn nondeterministic_functions(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 /// 域路由器：按优先级降序遍历已注册域，选择第一个 `supports()` 返回 `true` 的域。
 ///
 /// 线程安全（`Send + Sync`），支持并发路由查询。
+///
+/// time-unit-fx-domains R-ncb-002：在 register() 时增量聚合各域申报的非确定性函数名，
+/// 提供 `is_nondeterministic(ast)` 检测 AST 是否含非确定性函数调用。
 pub struct DomainRouter {
     domains: Vec<Box<dyn CalculationDomain>>,
+    /// 聚合的非确定性函数名集合（register 时增量构建，查询路径无重复构建开销）
+    nondeterministic_functions: HashSet<String>,
 }
 
 impl DomainRouter {
@@ -53,13 +69,20 @@ impl DomainRouter {
     pub fn new() -> Self {
         Self {
             domains: Vec::new(),
+            nondeterministic_functions: HashSet::new(),
         }
     }
 
     /// 注册计算域。
     ///
     /// 注册后按 `priority()` 降序稳定排序（同优先级保持注册顺序）。
+    /// 同时聚合该域申报的非确定性函数名到内部 HashSet（R-ncb-002）。
     pub fn register(&mut self, domain: Box<dyn CalculationDomain>) {
+        // 聚合非确定性函数名（增量构建，查询路径无重复构建开销）
+        for &func_name in domain.nondeterministic_functions() {
+            self.nondeterministic_functions
+                .insert(func_name.to_string());
+        }
         self.domains.push(domain);
         // 稳定排序：同优先级时保持注册顺序（Req 4 Scen 2）
         self.domains
@@ -104,6 +127,23 @@ impl DomainRouter {
     /// 获取所有已注册域的名称（按优先级降序）。
     pub fn domain_names(&self) -> Vec<&str> {
         self.domains.iter().map(|d| d.domain_name()).collect()
+    }
+
+    /// 检测 AST 是否包含非确定性函数调用（time-unit-fx-domains R-ncb-002）。
+    ///
+    /// 递归扫描 AST 中全部 FunctionCall 名，任一命中已注册域的申报表即返回 true。
+    /// 用于 evaluator 在常规模式下旁路缓存读写（R-ncb-003）。
+    ///
+    /// 验收标准：
+    /// - 申报 `["now"]` 的域注册后：`now()` → true、`now()+1` → true、`sin(now())` → true
+    /// - 无任何申报时恒 false
+    /// - 检测开销为 O(AST 节点数) 的 HashSet 查询
+    pub fn is_nondeterministic(&self, ast: &AstNode) -> bool {
+        // 复用 collect_function_names 递归收集，再与 HashSet 做交集判断
+        let functions = collect_function_names(ast);
+        functions
+            .iter()
+            .any(|f| self.nondeterministic_functions.contains(f))
     }
 }
 
@@ -219,7 +259,8 @@ mod tests {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => false,
+            | AstNode::BigNumber(_)
+            | AstNode::Str(_) => false,
         }
     }
 
@@ -830,5 +871,82 @@ mod tests {
             "错误信息应包含 'unknown_func': {}",
             e
         );
+    }
+
+    // ----- 6.6 非确定性函数检测测试（time-unit-fx-domains T005）-----
+
+    /// 申报非确定性函数的 Mock 域（用于 is_nondeterministic 测试）。
+    struct NondeterministicMockDomain {
+        funcs: &'static [&'static str],
+    }
+
+    impl CalculationDomain for NondeterministicMockDomain {
+        fn domain_name(&self) -> &str {
+            "nondeterministic_mock"
+        }
+        fn priority(&self) -> u8 {
+            50
+        }
+        fn supports(&self, _ast: &AstNode) -> bool {
+            false
+        }
+        fn evaluate(&self, _ast: &AstNode, _ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+            Ok(EvalResult::Scalar(0.0))
+        }
+        fn nondeterministic_functions(&self) -> &'static [&'static str] {
+            self.funcs
+        }
+    }
+
+    #[test]
+    fn test_is_nondeterministic_empty_router() {
+        // 空申报路由器恒 false（验收标准：无任何申报时恒 false）
+        let router = DomainRouter::new();
+        let ast = parse("now()").unwrap();
+        assert!(!router.is_nondeterministic(&ast));
+        let ast = parse("sin(1)").unwrap();
+        assert!(!router.is_nondeterministic(&ast));
+    }
+
+    #[test]
+    fn test_is_nondeterministic_with_declaration() {
+        // 申报 ["now"] 后：now() → true、now()+1 → true、sin(now()) → true、sin(1) → false
+        let mut router = DomainRouter::new();
+        router.register(Box::new(NondeterministicMockDomain { funcs: &["now"] }));
+
+        assert!(
+            router.is_nondeterministic(&parse("now()").unwrap()),
+            "now() 必须检测为非确定性"
+        );
+        assert!(
+            router.is_nondeterministic(&parse("now()+1").unwrap()),
+            "now()+1 必须检测为非确定性"
+        );
+        assert!(
+            router.is_nondeterministic(&parse("sin(now())").unwrap()),
+            "sin(now()) 必须检测为非确定性"
+        );
+        assert!(
+            !router.is_nondeterministic(&parse("sin(1)").unwrap()),
+            "sin(1) 不含非确定性函数"
+        );
+        assert!(
+            !router.is_nondeterministic(&parse("1+2").unwrap()),
+            "1+2 不含非确定性函数"
+        );
+    }
+
+    #[test]
+    fn test_is_nondeterministic_multiple_functions() {
+        // 多函数申报：任一命中即 true
+        let mut router = DomainRouter::new();
+        router.register(Box::new(NondeterministicMockDomain {
+            funcs: &["now", "today", "fx"],
+        }));
+
+        assert!(router.is_nondeterministic(&parse("now()").unwrap()));
+        assert!(router.is_nondeterministic(&parse("today()").unwrap()));
+        assert!(router.is_nondeterministic(&parse("fx(1,\"USD\",\"CNY\")").unwrap()));
+        assert!(!router.is_nondeterministic(&parse("sin(1)").unwrap()));
     }
 }

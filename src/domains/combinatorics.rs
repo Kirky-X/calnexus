@@ -89,7 +89,7 @@ impl CombinatoricsDomain {
                     )),
                 }
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
                 Err(CalcError::domain(format!(
                     "combinatorics domain does not support this node type: {:?}",
                     ast
@@ -146,7 +146,8 @@ impl CombinatoricsDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::FunctionCall(_, _) => Err(CalcError::domain(format!(
+            | AstNode::FunctionCall(_, _)
+            | AstNode::Str(_) => Err(CalcError::domain(format!(
                 "expected integer expression, got: {:?}",
                 ast
             ))),
@@ -453,7 +454,8 @@ fn contains_combinatorics_function(ast: &AstNode) -> bool {
         AstNode::Number(_)
         | AstNode::Variable(_)
         | AstNode::Complex(_, _)
-        | AstNode::BigNumber(_) => false,
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => false,
     }
 }
 

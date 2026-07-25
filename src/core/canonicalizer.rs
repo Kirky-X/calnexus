@@ -68,7 +68,8 @@ impl AstCanonicalizer {
             AstNode::Number(_)
             | AstNode::Variable(_)
             | AstNode::Complex(_, _)
-            | AstNode::BigNumber(_) => Ok(ast.clone()),
+            | AstNode::BigNumber(_)
+            | AstNode::Str(_) => Ok(ast.clone()),
             AstNode::BinaryOp(op, l, r) => {
                 Self::transform_binary(*op, l, r, fold_constants, fold_unary)
             }
@@ -323,6 +324,10 @@ impl AstCanonicalizer {
                 let elems_str: Vec<String> = elements.iter().map(Self::serialize).collect();
                 format!("(list {})", elems_str.join(" "))
             }
+            // Str 节点：按字节序列参与 CanonicalForm 哈希（R-esl-004）。
+            // 用 (str ...) 包装使不同字符串产生不同规范形式，且与变量/函数名空间隔离，
+            // 避免被误识别为其他 AST 节点。
+            AstNode::Str(s) => format!("(str {})", s),
         }
     }
 
@@ -597,7 +602,8 @@ mod tests {
             AstNode::Number(_)
             | AstNode::Variable(_)
             | AstNode::Complex(_, _)
-            | AstNode::BigNumber(_) => 1,
+            | AstNode::BigNumber(_)
+            | AstNode::Str(_) => 1,
             AstNode::BinaryOp(_, l, r) => 1 + ast_depth(l).max(ast_depth(r)),
             AstNode::UnaryOp(_, e) => 1 + ast_depth(e),
             AstNode::FunctionCall(_, args) => 1 + args.iter().map(ast_depth).max().unwrap_or(0),

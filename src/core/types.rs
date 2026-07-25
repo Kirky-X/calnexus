@@ -83,7 +83,8 @@ pub fn check_pow_output_size(base_bits: u64, abs_exp: u64) -> Result<(), CalcErr
 
 /// 表达式抽象语法树节点。
 ///
-/// v0.1 支持 5 种节点；v0.5 扩展 Complex/Matrix/List（design.md D2）。
+/// v0.1 支持 5 种节点；v0.5 扩展 Complex/Matrix/List（design.md D2）；
+/// time-unit-fx-domains D1 新增 Str（字符串字面量，仅作为 FunctionCall 实参合法）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {
     /// 数字字面量（浮点）。
@@ -104,6 +105,9 @@ pub enum AstNode {
     Matrix(Vec<Vec<AstNode>>),
     /// 列表字面量：统计域用，如 `[1,2,3,4,5]`。
     List(Vec<AstNode>),
+    /// 字符串字面量：双引号包裹的文本，支持 `\"` 转义。
+    /// 仅合法作为 FunctionCall 实参；出现在 BinaryOp/UnaryOp 中由各域 evaluate 拒绝。
+    Str(String),
 }
 
 /// 二元运算符。
@@ -132,6 +136,9 @@ pub enum UnaryOp {
 ///
 /// v0.1 仅支持标量；v0.5 扩展 Complex（design.md D4）与 Matrix（design.md D5）。
 /// 派生 Serialize/Deserialize 以支持 oxcache 缓存序列化（ADD ADR-001）。
+///
+/// time-unit-fx-domains D2 新增 DateTime（RFC3339 字符串），
+/// 用于 TimeDomain/FxDomain 的 now()/today()/fx() 等返回时间或汇率字符串的结果。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EvalResult {
     /// 标量浮点结果。
@@ -159,6 +166,10 @@ pub enum EvalResult {
     /// JSON 复合结果（p4 新增，numerical-linalg）：lu/qr/eig/svd 分解的多矩阵结构化返回。
     /// 持有 serde_json::Value；eval_result_to_json 直接透传，typed 访问器返回 None。
     Json(serde_json::Value),
+    /// DateTime 结果（time-unit-fx-domains D2 新增）：RFC3339 字符串。
+    /// 用于 TimeDomain（now()/today()）与 FxDomain（fx()）等返回时间或汇率字符串。
+    /// 非确定性函数的结果通过此变体返回，不参与 L1 缓存（evaluator 旁路）。
+    DateTime(String),
 }
 
 impl EvalResult {
@@ -176,7 +187,8 @@ impl EvalResult {
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
-            | EvalResult::Json(_) => None,
+            | EvalResult::Json(_)
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -195,6 +207,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -213,6 +226,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -231,6 +245,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -249,6 +264,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -267,6 +283,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -285,6 +302,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -303,6 +321,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -321,6 +340,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -339,6 +359,7 @@ impl EvalResult {
             | EvalResult::Symbolic(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 
@@ -357,6 +378,7 @@ impl EvalResult {
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
             | EvalResult::Json(_) => None,
+            | EvalResult::DateTime(_) => None,
         }
     }
 }

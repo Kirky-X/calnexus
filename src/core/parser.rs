@@ -58,9 +58,13 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
             .with_i18n("msg.core.parse_empty", vec![]));
     }
 
+    // 预处理字符串字面量：将所有 `"..."` 替换为占位符 `__str_N`
+    // 必须在 brackets/bigint 之前执行，防止字符串内的 `[`、长数字被误提取（R-esl-003）
+    let (without_strings, placeholders) = preprocess_strings(trimmed)?;
+
     // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
     // 使矩阵/列表字面量可出现在表达式任意位置（如 `det([[1,2]])`、`2*[[1,2]]`）
-    let (without_brackets, mut placeholders) = preprocess_brackets(trimmed)?;
+    let (without_brackets, mut placeholders) = preprocess_brackets(&without_strings, placeholders)?;
 
     // 若整个表达式就是单个括号字面量，直接返回（避免 mathexpr 处理）
     if placeholders.len() == 1 {
@@ -173,19 +177,97 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
     }
 }
 
-/// 预处理括号字面量：将所有 `[...]` 子串替换为占位符 `__cb_N`，
-/// 并返回 (替换后的字符串, 占位符到 AstNode 的映射)。
+/// 预处理字符串字面量：将所有 `"..."` 子串替换为占位符 `__str_N`，
+/// 并返回 (替换后的字符串, 占位符到 AstNode::Str 的映射)。
 ///
-/// 使矩阵/列表字面量可出现在表达式任意位置（如 `det([[1,2]])`、`2*[[1,2]]`）。
-/// 正确匹配嵌套 `[]`，如 `[[1,2],[3,4]]`。
-fn preprocess_brackets(
+/// 双引号字符串内可包含任意字符（含 `[`、`]`、数字、空格、UTF-8 等），
+/// `\"` 转义为字面双引号。未闭合引号返回 ParseError。
+///
+/// 必须在 brackets/bigint 预处理**之前**执行，防止字符串内的 `[`、长数字被误提取
+/// （R-esl-003）。
+fn preprocess_strings(
     input: &str,
-) -> Result<(String, std::collections::HashMap<String, AstNode>), CalcError> {
+) -> Result<
+    (
+        String,
+        std::collections::HashMap<String, AstNode>,
+    ),
+    CalcError,
+> {
     let mut result = String::with_capacity(input.len());
     let mut placeholders: std::collections::HashMap<String, AstNode> =
         std::collections::HashMap::new();
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
+    let mut count = 0;
+
+    while i < chars.len() {
+        if chars[i] == '"' {
+            // 进入字符串字面量：扫描到匹配的 `"`，处理 `\"` 转义
+            let start = i; // 起始 `"` 的字符偏移
+            i += 1; // 跳过起始 `"`
+            let mut content = String::new();
+            let mut closed = false;
+            while i < chars.len() {
+                if chars[i] == '\\' {
+                    // 转义序列：`\"` → `"`，`\\` → `\`
+                    if i + 1 < chars.len() && chars[i + 1] == '"' {
+                        content.push('"');
+                        i += 2;
+                    } else if i + 1 < chars.len() && chars[i + 1] == '\\' {
+                        content.push('\\');
+                        i += 2;
+                    } else {
+                        // 单独的反斜杠：保留原样（不视为转义）
+                        content.push('\\');
+                        i += 1;
+                    }
+                } else if chars[i] == '"' {
+                    // 闭合引号
+                    i += 1;
+                    closed = true;
+                    break;
+                } else {
+                    content.push(chars[i]);
+                    i += 1;
+                }
+            }
+            if !closed {
+                // 字符偏移用 start..i（i 已到字符串末尾）
+                return Err(CalcError::parse("unclosed string literal".to_string())
+                    .with_span(Span::new(start, i))
+                    .with_i18n("msg.core.parse_unclosed_string", vec![]));
+            }
+            // 生成占位符并存储 Str 节点
+            let placeholder = format!("__str_{}", count);
+            count += 1;
+            placeholders.insert(placeholder.clone(), AstNode::Str(content));
+            result.push_str(&placeholder);
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    Ok((result, placeholders))
+}
+
+/// 预处理括号字面量：将所有 `[...]` 子串替换为占位符 `__cb_N`，
+/// 并返回 (替换后的字符串, 占位符到 AstNode 的映射)。
+///
+/// 使矩阵/列表字面量可出现在表达式任意位置（如 `det([[1,2]])`、`2*[[1,2]]`）。
+/// 正确匹配嵌套 `[]`，如 `[[1,2],[3,4]]`。
+///
+/// 接受外部已存在的 placeholders 映射（来自 preprocess_strings），
+/// 在其基础上增量追加，保持各预处理阶段共享同一份占位符表。
+fn preprocess_brackets(
+    input: &str,
+    mut placeholders: std::collections::HashMap<String, AstNode>,
+) -> Result<(String, std::collections::HashMap<String, AstNode>), CalcError> {
+    let mut result = String::with_capacity(input.len());
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+    // 各占位符前缀独立编号（__cb_N、__str_N、__bn_N 互不冲突）
     let mut count = 0;
 
     while i < chars.len() {
@@ -318,7 +400,10 @@ fn replace_placeholders(
                 replace_placeholders(elem, placeholders);
             }
         }
-        AstNode::Number(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => {}
+        AstNode::Number(_)
+        | AstNode::Complex(_, _)
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => {}
     }
 }
 
@@ -1922,5 +2007,150 @@ mod tests {
         let err = parse("1+2)!").unwrap_err();
         assert_eq!(err.kind, ErrorKind::Parse);
         assert_span(&err, Span::point(4));
+    }
+
+    // ===== T001 Red：字符串字面量解析（expression-string-literals spec）=====
+    //
+    // 验证 R-esl-001/002/003：双引号字符串解析为 Str 节点，转义与未闭合错误，
+    // 预处理管线顺序（strings 必须在 brackets/bigint 之前）。
+    // 当前 preprocess_strings 未实现，所有测试应失败（Red）。
+
+    /// R-esl-001：`date("2026-07-25")` → FunctionCall("date", [Str("2026-07-25")])
+    #[test]
+    fn test_parse_string_literal_in_function_arg() {
+        let ast = parse(r#"date("2026-07-25")"#).unwrap();
+        assert_eq!(
+            ast,
+            call("date", vec![AstNode::Str("2026-07-25".to_string())])
+        );
+    }
+
+    /// R-esl-001：多参数函数中字符串可出现在任意位置（首参/中参/尾参）
+    #[test]
+    fn test_parse_string_literal_at_any_position() {
+        // 字符串在尾参：convert(100,"cm","m")
+        let ast = parse(r#"convert(100,"cm","m")"#).unwrap();
+        assert_eq!(
+            ast,
+            call(
+                "convert",
+                vec![
+                    num(100.0),
+                    AstNode::Str("cm".to_string()),
+                    AstNode::Str("m".to_string()),
+                ]
+            )
+        );
+
+        // 字符串在首参：format_date("%Y", ts)
+        let ast = parse(r#"format_date("%Y", 0)"#).unwrap();
+        assert_eq!(
+            ast,
+            call(
+                "format_date",
+                vec![AstNode::Str("%Y".to_string()), num(0.0)]
+            )
+        );
+
+        // 字符串在中参：reformat_date(input, "%d/%m/%Y", "%Y-%m-%d")
+        let ast = parse(r#"reformat_date(0, "%d/%m/%Y", "%Y-%m-%d")"#).unwrap();
+        assert_eq!(
+            ast,
+            call(
+                "reformat_date",
+                vec![
+                    num(0.0),
+                    AstNode::Str("%d/%m/%Y".to_string()),
+                    AstNode::Str("%Y-%m-%d".to_string()),
+                ]
+            )
+        );
+    }
+
+    /// R-esl-002：`\"` 转义为字面双引号
+    #[test]
+    fn test_parse_string_literal_with_escaped_quote() {
+        let ast = parse(r#"f("a\"b")"#).unwrap();
+        assert_eq!(ast, call("f", vec![AstNode::Str("a\"b".to_string())]));
+    }
+
+    /// R-esl-002：未闭合引号返回 ParseError，消息含 "unclosed string"
+    #[test]
+    fn test_parse_string_literal_unclosed_rejected() {
+        let err = parse(r#"f("unclosed)"#).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Parse);
+        assert!(
+            err.message.contains("unclosed string"),
+            "error message should mention 'unclosed string', got: {}",
+            err.message
+        );
+    }
+
+    /// R-esl-002：空字符串 `f("")` 合法，产出 Str("")
+    #[test]
+    fn test_parse_string_literal_empty() {
+        let ast = parse(r#"f("")"#).unwrap();
+        assert_eq!(ast, call("f", vec![AstNode::Str("".to_string())]));
+    }
+
+    /// R-esl-003：字符串内的 `[` 不被 brackets 预处理提取
+    /// `f("[1,2]")` → Str("[1,2]") 而非 Matrix/List
+    #[test]
+    fn test_parse_string_literal_preserves_brackets() {
+        let ast = parse(r#"f("[1,2]")"#).unwrap();
+        assert_eq!(ast, call("f", vec![AstNode::Str("[1,2]".to_string())]));
+    }
+
+    /// R-esl-003：字符串内的长数字不被 bigint 预处理提取
+    /// `f("12345678901234567890")` → Str(...) 而非 BigNumber
+    #[test]
+    fn test_parse_string_literal_preserves_bigint() {
+        let ast = parse(r#"f("12345678901234567890")"#).unwrap();
+        assert_eq!(
+            ast,
+            call(
+                "f",
+                vec![AstNode::Str("12345678901234567890".to_string())]
+            )
+        );
+    }
+
+    /// R-esl-001 边界：字符串含特殊字符（空格、`-`、`/`、`:`、UTF-8 中文）
+    #[test]
+    fn test_parse_string_literal_with_special_chars() {
+        let ast = parse(r#"f("2026-07-25 12:30:00")"#).unwrap();
+        assert_eq!(
+            ast,
+            call(
+                "f",
+                vec![AstNode::Str("2026-07-25 12:30:00".to_string())]
+            )
+        );
+    }
+
+    /// R-esl-003 边界：字符串内的嵌套引号（已转义）不影响外层解析
+    #[test]
+    fn test_parse_string_literal_with_nested_escaped_quotes() {
+        // 输入: f("a\"b\"c") → Str 内容为 a"b"c
+        let ast = parse(r#"f("a\"b\"c")"#).unwrap();
+        assert_eq!(ast, call("f", vec![AstNode::Str("a\"b\"c".to_string())]));
+    }
+
+    /// 占位符命名约定：`__str_N`（与 `__cb_N`/`__bn_N` 一致）
+    /// 通过多个字符串验证占位符递增编号（间接验证占位符命名）
+    #[test]
+    fn test_parse_multiple_string_literals() {
+        let ast = parse(r#"f("a", "b", "c")"#).unwrap();
+        assert_eq!(
+            ast,
+            call(
+                "f",
+                vec![
+                    AstNode::Str("a".to_string()),
+                    AstNode::Str("b".to_string()),
+                    AstNode::Str("c".to_string()),
+                ]
+            )
+        );
     }
 }

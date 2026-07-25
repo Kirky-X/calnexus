@@ -354,6 +354,8 @@ pub(crate) fn format_result(result: &EvalResult, fmt_prec: Option<usize>) -> Str
         EvalResult::LaTeX(s) => s.clone(),
         EvalResult::Steps(v) => v.join("\n"),
         EvalResult::Json(v) => v.to_string(),
+        // DateTime（time-unit-fx-domains D2）：RFC3339 字符串直接输出
+        EvalResult::DateTime(s) => s.clone(),
     }
 }
 

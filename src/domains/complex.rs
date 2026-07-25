@@ -103,7 +103,7 @@ impl ComplexDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
+            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) | AstNode::Str(_) => {
                 Err(CalcError::domain(format!(
                     "complex domain does not support this node type: {:?}",
                     ast
@@ -343,7 +343,9 @@ fn contains_complex(ast: &AstNode) -> bool {
         AstNode::UnaryOp(_, e) => contains_complex(e),
         AstNode::Matrix(rows) => rows.iter().flatten().any(contains_complex),
         AstNode::List(elements) => elements.iter().any(contains_complex),
-        AstNode::Number(_) | AstNode::Variable(_) | AstNode::BigNumber(_) => false,
+        AstNode::Number(_) | AstNode::Variable(_) | AstNode::BigNumber(_) | AstNode::Str(_) => {
+            false
+        }
     }
 }
 

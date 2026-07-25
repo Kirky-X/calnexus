@@ -72,7 +72,8 @@ impl ArithmeticDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
+            | AstNode::BigNumber(_)
+            | AstNode::Str(_) => Err(CalcError::domain(format!(
                 "arithmetic domain does not support this node type: {:?}",
                 ast
             ))
@@ -229,9 +230,11 @@ fn is_arithmetic_only(ast: &AstNode) -> bool {
         AstNode::FunctionCall(name, args) => {
             ARITHMETIC_FUNCTIONS.contains(&name.as_str()) && args.iter().all(is_arithmetic_only)
         }
-        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
-            false
-        }
+        AstNode::Complex(_, _)
+        | AstNode::Matrix(_)
+        | AstNode::List(_)
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => false,
     }
 }
 

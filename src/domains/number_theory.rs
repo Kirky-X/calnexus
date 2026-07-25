@@ -103,7 +103,7 @@ impl NumberTheoryDomain {
                     )),
                 }
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
                 Err(CalcError::domain(format!(
                     "number theory domain does not support this node type: {:?}",
                     ast
@@ -152,7 +152,7 @@ impl NumberTheoryDomain {
                 let result = self.eval_node(ast, ctx)?;
                 evalresult_to_bigint(result, ast)
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => Err(
                 CalcError::domain(format!("expected integer expression, got: {:?}", ast)),
             ),
         }
@@ -643,7 +643,8 @@ fn contains_number_theory_function(ast: &AstNode) -> bool {
         AstNode::Number(_)
         | AstNode::Variable(_)
         | AstNode::Complex(_, _)
-        | AstNode::BigNumber(_) => false,
+        | AstNode::BigNumber(_)
+        | AstNode::Str(_) => false,
     }
 }
 

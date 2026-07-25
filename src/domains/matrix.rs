@@ -147,7 +147,7 @@ impl MatrixDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Complex(_, _) | AstNode::List(_) | AstNode::BigNumber(_) => {
+            AstNode::Complex(_, _) | AstNode::List(_) | AstNode::BigNumber(_) | AstNode::Str(_) => {
                 Err(CalcError::domain(format!(
                     "matrix domain does not support this node type: {:?}",
                     ast
@@ -749,7 +749,7 @@ fn contains_matrix(ast: &AstNode) -> bool {
         AstNode::FunctionCall(_, args) => args.iter().any(contains_matrix),
         AstNode::BinaryOp(_, l, r) => contains_matrix(l) || contains_matrix(r),
         AstNode::UnaryOp(_, e) => contains_matrix(e),
-        AstNode::Complex(_, _) | AstNode::BigNumber(_) => false,
+        AstNode::Complex(_, _) | AstNode::BigNumber(_) | AstNode::Str(_) => false,
         AstNode::List(elements) => elements.iter().any(contains_matrix),
         AstNode::Number(_) | AstNode::Variable(_) => false,
     }

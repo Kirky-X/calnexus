@@ -103,7 +103,8 @@ impl ScientificDomain {
             AstNode::Complex(_, _)
             | AstNode::Matrix(_)
             | AstNode::List(_)
-            | AstNode::BigNumber(_) => Err(CalcError::domain(format!(
+            | AstNode::BigNumber(_)
+            | AstNode::Str(_) => Err(CalcError::domain(format!(
                 "scientific domain does not support this node type: {:?}",
                 ast
             ))
@@ -390,7 +391,9 @@ impl Default for ScientificDomain {
 /// 检查 AST 是否包含科学函数或 pi/e 常量。
 fn contains_scientific(ast: &AstNode) -> bool {
     match ast {
-        AstNode::Number(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) => false,
+        AstNode::Number(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) | AstNode::Str(_) => {
+            false
+        }
         AstNode::Variable(name) => name == "pi" || name == "e",
         AstNode::BinaryOp(_, l, r) => contains_scientific(l) || contains_scientific(r),
         AstNode::UnaryOp(_, e) => contains_scientific(e),
