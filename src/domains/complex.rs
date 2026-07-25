@@ -103,13 +103,16 @@ impl ComplexDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
-            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => Err(CalcError::domain(
-                format!("complex domain does not support this node type: {:?}", ast),
-            )
-            .with_i18n(
-                "msg.complex.unsupported_node",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            )),
+            AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) => {
+                Err(CalcError::domain(format!(
+                    "complex domain does not support this node type: {:?}",
+                    ast
+                ))
+                .with_i18n(
+                    "msg.complex.unsupported_node",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ))
+            }
         }
     }
 
@@ -185,10 +188,10 @@ impl ComplexDomain {
                 r
             }
             BinaryOp::Mod => {
-                return Err(CalcError::domain(
-                    "mod not supported for complex numbers".to_string(),
+                return Err(
+                    CalcError::domain("mod not supported for complex numbers".to_string())
+                        .with_i18n("msg.complex.mod_not_supported_complex", vec![]),
                 )
-                .with_i18n("msg.complex.mod_not_supported_complex", vec![]))
             }
         };
         Ok(ComplexValue::Complex(result))

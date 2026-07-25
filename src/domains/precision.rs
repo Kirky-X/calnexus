@@ -98,11 +98,10 @@ impl PrecisionDomain {
             AstNode::Number(n) => f64_to_rational(*n),
             AstNode::BigNumber(s) => {
                 let big = BigInt::parse_bytes(s.as_bytes(), 10).ok_or_else(|| {
-                    CalcError::parse(format!("invalid big integer literal: {}", s))
-                        .with_i18n(
-                            "msg.precision.invalid_big_integer",
-                            vec![("value".to_string(), s.to_string())],
-                        )
+                    CalcError::parse(format!("invalid big integer literal: {}", s)).with_i18n(
+                        "msg.precision.invalid_big_integer",
+                        vec![("value".to_string(), s.to_string())],
+                    )
                 })?;
                 Ok(BigRational::from_integer(big))
             }
@@ -187,21 +186,19 @@ impl PrecisionDomain {
                 // 指数已受约束1限制，但底数 `a` 可为任意大小 BigInt，故需复合限制。
                 // 复用 core 层 `check_pow_output_size`，number_theory/combinatorics 域共用同一检查。
                 let abs_exp_u64 = u64::try_from(&exp.abs()).map_err(|_| {
-                    CalcError::domain(format!("power exponent too large: {}", exp))
-                        .with_i18n(
-                            "msg.precision.power_exponent_too_large",
-                            vec![("value".to_string(), exp.to_string())],
-                        )
+                    CalcError::domain(format!("power exponent too large: {}", exp)).with_i18n(
+                        "msg.precision.power_exponent_too_large",
+                        vec![("value".to_string(), exp.to_string())],
+                    )
                 })?;
                 let base_bits = std::cmp::max(a.numer().bits(), a.denom().bits()) as u64;
                 check_pow_output_size(base_bits, abs_exp_u64)?;
                 // BigRational::pow 接受 i32 指数
                 let exp_i32 = i32::try_from(&exp).map_err(|_| {
-                    CalcError::domain(format!("power exponent too large: {}", exp))
-                        .with_i18n(
-                            "msg.precision.power_exponent_too_large",
-                            vec![("value".to_string(), exp.to_string())],
-                        )
+                    CalcError::domain(format!("power exponent too large: {}", exp)).with_i18n(
+                        "msg.precision.power_exponent_too_large",
+                        vec![("value".to_string(), exp.to_string())],
+                    )
                 })?;
                 Ok(a.pow(exp_i32))
             }
@@ -236,10 +233,10 @@ impl PrecisionDomain {
             }
             "precision" => {
                 // precision(N, expr) 在 evaluate() 顶层处理，此处不应到达
-                Err(CalcError::domain(
-                    "precision() must be at expression top level".to_string(),
+                Err(
+                    CalcError::domain("precision() must be at expression top level".to_string())
+                        .with_i18n("msg.precision.precision_must_be_top_level", vec![]),
                 )
-                .with_i18n("msg.precision.precision_must_be_top_level", vec![]))
             }
             "mod" => {
                 // parser 将 `%` 转换为 mod(a, b) 函数调用
@@ -403,17 +400,17 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
             })?
         }
         _ => {
-            return Err(CalcError::domain(
-                "precision N must be a literal integer".to_string(),
-            )
-            .with_i18n("msg.precision.precision_must_be_literal", vec![]));
+            return Err(
+                CalcError::domain("precision N must be a literal integer".to_string())
+                    .with_i18n("msg.precision.precision_must_be_literal", vec![]),
+            );
         }
     };
     if v == 0 {
-        return Err(CalcError::domain(
-            "precision N must be positive".to_string(),
-        )
-        .with_i18n("msg.precision.precision_must_be_positive", vec![]));
+        return Err(
+            CalcError::domain("precision N must be positive".to_string())
+                .with_i18n("msg.precision.precision_must_be_positive", vec![]),
+        );
     }
     // 安全约束：拒绝超大精度值，防止 format_decimal 循环 DoS
     // （tiangang SAST CRITICAL：precision(N, expr) 表达式语法绕过 server 层校验）
@@ -450,17 +447,15 @@ fn rational_to_result(value: BigRational) -> EvalResult {
 /// 例如 pow 的负指数由此返回，再由 `BinaryOp::Pow` 分支的 `abs()` 检查约束。
 fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
     if !r.is_integer() {
-        return Err(CalcError::domain(format!(
-            "{} requires integer operand, got {}",
-            ctx, r
-        ))
-        .with_i18n(
-            "msg.precision.requires_integer_operand",
-            vec![
-                ("ctx".to_string(), ctx.to_string()),
-                ("value".to_string(), r.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("{} requires integer operand, got {}", ctx, r)).with_i18n(
+                "msg.precision.requires_integer_operand",
+                vec![
+                    ("ctx".to_string(), ctx.to_string()),
+                    ("value".to_string(), r.to_string()),
+                ],
+            ),
+        );
     }
     Ok(r.numer().clone())
 }

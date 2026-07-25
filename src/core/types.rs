@@ -512,11 +512,7 @@ impl CalcError {
     /// CalcError::eval(format!("unbound variable: {}", name))
     ///     .with_i18n("msg.unbound_variable", vec![("name".to_string(), name.to_string())])
     /// ```
-    pub fn with_i18n(
-        mut self,
-        key: &'static str,
-        args: Vec<(String, String)>,
-    ) -> Self {
+    pub fn with_i18n(mut self, key: &'static str, args: Vec<(String, String)>) -> Self {
         self.i18n_key = Some(key);
         self.i18n_args = args;
         self
@@ -530,8 +526,7 @@ impl CalcError {
         Self::new(ErrorKind::Eval, msg)
     }
     pub fn overflow() -> Self {
-        Self::new(ErrorKind::Overflow, "integer overflow")
-            .with_i18n("detail.overflow", vec![])
+        Self::new(ErrorKind::Overflow, "integer overflow").with_i18n("detail.overflow", vec![])
     }
     pub fn nan_or_inf() -> Self {
         Self::new(ErrorKind::NaNOrInf, "result is NaN or infinity")
@@ -1134,8 +1129,10 @@ mod tests {
 
     #[test]
     fn calc_error_with_i18n_sets_key_and_args() {
-        let e = CalcError::eval("unbound variable: x")
-            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let e = CalcError::eval("unbound variable: x").with_i18n(
+            "msg.unbound_variable",
+            vec![("name".to_string(), "x".to_string())],
+        );
         assert_eq!(e.i18n_key, Some("msg.unbound_variable"));
         assert_eq!(e.i18n_args, vec![("name".to_string(), "x".to_string())]);
     }
@@ -1145,7 +1142,10 @@ mod tests {
         let e = CalcError::domain("test")
             .with_span(Span::new(0, 4))
             .with_hint("hint")
-            .with_i18n("msg.unknown_function", vec![("name".to_string(), "sin".to_string())]);
+            .with_i18n(
+                "msg.unknown_function",
+                vec![("name".to_string(), "sin".to_string())],
+            );
         assert_eq!(e.span, Some(Span::new(0, 4)));
         assert_eq!(e.hint.as_deref(), Some("hint"));
         assert_eq!(e.i18n_key, Some("msg.unknown_function"));
@@ -1155,8 +1155,10 @@ mod tests {
     #[test]
     fn calc_error_friendly_uses_i18n_key_when_set_en() {
         let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
-        let e = CalcError::eval("unbound variable: x")
-            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let e = CalcError::eval("unbound variable: x").with_i18n(
+            "msg.unbound_variable",
+            vec![("name".to_string(), "x".to_string())],
+        );
         let friendly = e.friendly(&i18n);
         // kind 前缀（英文）
         assert!(friendly.contains("Evaluation error"));
@@ -1169,8 +1171,10 @@ mod tests {
     #[test]
     fn calc_error_friendly_uses_i18n_key_when_set_zh() {
         let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
-        let e = CalcError::eval("unbound variable: x")
-            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let e = CalcError::eval("unbound variable: x").with_i18n(
+            "msg.unbound_variable",
+            vec![("name".to_string(), "x".to_string())],
+        );
         let friendly = e.friendly(&i18n);
         // kind 前缀（中文）
         assert!(friendly.contains("求值错误"));
@@ -1192,14 +1196,13 @@ mod tests {
     #[test]
     fn calc_error_friendly_multi_placeholder_i18n_en() {
         let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
-        let e = CalcError::domain("matrix dimension mismatch: 3x3 vs 2x2")
-            .with_i18n(
-                "msg.matrix_dim_mismatch",
-                vec![
-                    ("expected".to_string(), "3x3".to_string()),
-                    ("actual".to_string(), "2x2".to_string()),
-                ],
-            );
+        let e = CalcError::domain("matrix dimension mismatch: 3x3 vs 2x2").with_i18n(
+            "msg.matrix_dim_mismatch",
+            vec![
+                ("expected".to_string(), "3x3".to_string()),
+                ("actual".to_string(), "2x2".to_string()),
+            ],
+        );
         let friendly = e.friendly(&i18n);
         assert!(friendly.contains("Domain error"));
         assert!(friendly.contains("Matrix dimension mismatch: expected 3x3, got 2x2"));
@@ -1208,14 +1211,13 @@ mod tests {
     #[test]
     fn calc_error_friendly_multi_placeholder_i18n_zh() {
         let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
-        let e = CalcError::domain("matrix dimension mismatch: 3x3 vs 2x2")
-            .with_i18n(
-                "msg.matrix_dim_mismatch",
-                vec![
-                    ("expected".to_string(), "3x3".to_string()),
-                    ("actual".to_string(), "2x2".to_string()),
-                ],
-            );
+        let e = CalcError::domain("matrix dimension mismatch: 3x3 vs 2x2").with_i18n(
+            "msg.matrix_dim_mismatch",
+            vec![
+                ("expected".to_string(), "3x3".to_string()),
+                ("actual".to_string(), "2x2".to_string()),
+            ],
+        );
         let friendly = e.friendly(&i18n);
         assert!(friendly.contains("定义域错误"));
         assert!(friendly.contains("矩阵维度不匹配: 期望 3x3, 实际 2x2"));
@@ -1223,8 +1225,10 @@ mod tests {
 
     #[test]
     fn calc_error_to_json_ignores_i18n_key_uses_message() {
-        let e = CalcError::eval("unbound variable: x")
-            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let e = CalcError::eval("unbound variable: x").with_i18n(
+            "msg.unbound_variable",
+            vec![("name".to_string(), "x".to_string())],
+        );
         let json = e.to_json();
         // JSON 输出始终用 message（机器可读契约，DP-4）
         assert!(json.contains(r#""message":"unbound variable: x""#));
@@ -1234,8 +1238,10 @@ mod tests {
 
     #[test]
     fn calc_error_display_ignores_i18n_key_uses_message() {
-        let e = CalcError::eval("unbound variable: x")
-            .with_i18n("msg.unbound_variable", vec![("name".to_string(), "x".to_string())]);
+        let e = CalcError::eval("unbound variable: x").with_i18n(
+            "msg.unbound_variable",
+            vec![("name".to_string(), "x".to_string())],
+        );
         let display = e.to_string();
         // Display 始终用 message（DP-1 机器可读契约）
         assert_eq!(display, "evaluation error: unbound variable: x");
@@ -1243,8 +1249,10 @@ mod tests {
 
     #[test]
     fn calc_error_clone_preserves_i18n_fields() {
-        let e = CalcError::eval("test")
-            .with_i18n("msg.unknown_function", vec![("name".to_string(), "sin".to_string())]);
+        let e = CalcError::eval("test").with_i18n(
+            "msg.unknown_function",
+            vec![("name".to_string(), "sin".to_string())],
+        );
         let cloned = e.clone();
         assert_eq!(e.i18n_key, cloned.i18n_key);
         assert_eq!(e.i18n_args, cloned.i18n_args);

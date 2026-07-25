@@ -816,7 +816,11 @@ mod tests {
         let one = num_bigint::BigInt::from(1);
         let six = num_bigint::BigInt::from(6);
         let expected = num_rational::BigRational::new(one, six);
-        assert_eq!(*r, expected, "precision(10, 1/6) must be exact 1/6, got {}", r);
+        assert_eq!(
+            *r, expected,
+            "precision(10, 1/6) must be exact 1/6, got {}",
+            r
+        );
 
         let formatted = crate::domains::format_bigrational(r, Some(10));
         // 1/6 = 0.166666...（无限循环 6），10 位小数为 0.1666666666（10 个 6，无舍入）

@@ -376,14 +376,20 @@ mod tests {
 
         // 即使并行求值，输出应保持原始顺序
         let ctx = EvalContext::new();
-        let _code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
+        let _code =
+            BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
         // 验证不 panic 即可（顺序由 par_iter + collect 保证）
     }
 
     #[test]
     fn test_batch_nonexistent_file() {
         let ctx = EvalContext::new();
-        let code = BatchProcessor::run("/nonexistent/path/to/file.txt", &ctx, false, &I18n::default());
+        let code = BatchProcessor::run(
+            "/nonexistent/path/to/file.txt",
+            &ctx,
+            false,
+            &I18n::default(),
+        );
         assert_eq!(code, 2);
     }
 

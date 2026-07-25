@@ -153,8 +153,7 @@ impl ReplSession {
                 Err(e) => {
                     eprintln!(
                         "{}",
-                        self.i18n
-                            .tf("repl.error", &[("error", &e.to_string())])
+                        self.i18n.tf("repl.error", &[("error", &e.to_string())])
                     );
                     return 1;
                 }
@@ -190,11 +189,7 @@ impl ReplSession {
                 CommandResult::Continue
             }
             _ => {
-                eprintln!(
-                    "{}",
-                    self.i18n
-                        .tf("repl.unknown_command", &[("cmd", cmd)])
-                );
+                eprintln!("{}", self.i18n.tf("repl.unknown_command", &[("cmd", cmd)]));
                 CommandResult::Continue
             }
         }

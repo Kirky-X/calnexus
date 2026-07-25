@@ -58,14 +58,12 @@ impl StatisticsDomain {
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(*n),
-            AstNode::Variable(name) => ctx
-                .get_var(name)
-                .ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                }),
+            AstNode::Variable(name) => ctx.get_var(name).ok_or_else(|| {
+                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                    "msg.unbound_variable",
+                    vec![("name".to_string(), name.to_string())],
+                )
+            }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -76,12 +74,10 @@ impl StatisticsDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Abs => Ok(v.abs()),
-                    UnaryOp::Factorial => Err(
-                        CalcError::domain(
-                            "factorial not supported in statistics domain".to_string(),
-                        )
-                        .with_i18n("msg.statistics.factorial_not_supported", vec![]),
-                    ),
+                    UnaryOp::Factorial => Err(CalcError::domain(
+                        "factorial not supported in statistics domain".to_string(),
+                    )
+                    .with_i18n("msg.statistics.factorial_not_supported", vec![])),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
@@ -168,14 +164,12 @@ impl StatisticsDomain {
         let values = self.extract_list(&args[0], ctx)?;
         // 空列表 → DomainError（spec Req 8）
         if values.is_empty() {
-            return Err(CalcError::domain(format!(
-                "{}() requires a non-empty list",
-                name
-            ))
-            .with_i18n(
-                "msg.statistics.requires_non_empty_list",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(
+                CalcError::domain(format!("{}() requires a non-empty list", name)).with_i18n(
+                    "msg.statistics.requires_non_empty_list",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            );
         }
         match name {
             "mean" => Ok(values.iter().sum::<f64>() / values.len() as f64),

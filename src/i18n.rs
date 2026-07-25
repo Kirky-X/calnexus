@@ -43,8 +43,7 @@ fn en_messages() -> &'static HashMap<&'static str, &'static str> {
     EN_MESSAGES.get_or_init(|| {
         let json = include_str!("../locales/en.json");
         // 编译时 JSON 损坏是开发期错误，panic 提示修复（规则12 失败显性化）
-        serde_json::from_str(json)
-            .unwrap_or_else(|e| panic!("locales/en.json 解析失败: {e}"))
+        serde_json::from_str(json).unwrap_or_else(|e| panic!("locales/en.json 解析失败: {e}"))
     })
 }
 
@@ -52,8 +51,7 @@ fn en_messages() -> &'static HashMap<&'static str, &'static str> {
 fn zh_messages() -> &'static HashMap<&'static str, &'static str> {
     ZH_MESSAGES.get_or_init(|| {
         let json = include_str!("../locales/zh.json");
-        serde_json::from_str(json)
-            .unwrap_or_else(|e| panic!("locales/zh.json 解析失败: {e}"))
+        serde_json::from_str(json).unwrap_or_else(|e| panic!("locales/zh.json 解析失败: {e}"))
     })
 }
 
@@ -623,7 +621,10 @@ mod tests {
     fn test_tf_empty_args_equivalent_to_t() {
         let en = I18n::new(Lang::En);
         // 空参数：tf 等价于 t（返回模板字符串）
-        assert_eq!(en.tf("msg.unbound_variable", &[]), "Unbound variable: {name}");
+        assert_eq!(
+            en.tf("msg.unbound_variable", &[]),
+            "Unbound variable: {name}"
+        );
         assert_eq!(en.tf("error.parse", &[]), en.t("error.parse"));
 
         let zh = I18n::new(Lang::Zh);

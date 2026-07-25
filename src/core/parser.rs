@@ -351,8 +351,7 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
             AstNode::List(elements) => rows.push(elements),
             _ => {
                 // 限制 Debug 输出长度防止大型 AST 递归 Debug 导致性能问题（性能审查 MEDIUM-1）
-                let node_debug: String =
-                    format!("{:?}", row_node).chars().take(100).collect();
+                let node_debug: String = format!("{:?}", row_node).chars().take(100).collect();
                 return Err(CalcError::parse(format!(
                     "expected list row in matrix, got: {}",
                     node_debug
@@ -361,7 +360,7 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
                 .with_i18n(
                     "msg.core.parse_expected_list_row",
                     vec![("node".to_string(), node_debug)],
-                ))
+                ));
             }
         }
     }
@@ -477,19 +476,15 @@ fn validate_no_consecutive_operators(input: &str) -> Result<(), CalcError> {
                 j += 1;
             }
             // 检查是否匹配：第一个字符 + (可选空格) + 第二个字符
-            if chars[i] == op_chars[0]
-                && j < chars.len()
-                && chars[j] == op_chars[1]
-            {
-                return Err(CalcError::parse(format!(
-                    "illegal consecutive operators '{}'",
-                    op
-                ))
-                .with_span(Span::new(i, j + 1))
-                .with_i18n(
-                    "msg.core.parse_illegal_consecutive_ops",
-                    vec![("op".to_string(), op.to_string())],
-                ));
+            if chars[i] == op_chars[0] && j < chars.len() && chars[j] == op_chars[1] {
+                return Err(
+                    CalcError::parse(format!("illegal consecutive operators '{}'", op))
+                        .with_span(Span::new(i, j + 1))
+                        .with_i18n(
+                            "msg.core.parse_illegal_consecutive_ops",
+                            vec![("op".to_string(), op.to_string())],
+                        ),
+                );
             }
         }
         i += 1;
@@ -542,10 +537,10 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
     }
 
     if pos == 0 {
-        return Err(CalcError::parse(
-            "factorial operator '!' has no operand".to_string(),
-        )
-        .with_i18n("msg.core.parse_factorial_no_operand", vec![]));
+        return Err(
+            CalcError::parse("factorial operator '!' has no operand".to_string())
+                .with_i18n("msg.core.parse_factorial_no_operand", vec![]),
+        );
     }
 
     // 如果最后一个字符是 ')'，向左匹配括号
@@ -584,10 +579,10 @@ fn match_paren_backward(chars: &[char], close_idx: usize) -> Result<usize, CalcE
         }
     }
     if depth != 0 {
-        return Err(CalcError::parse(
-            "unmatched parenthesis in factorial operand".to_string(),
-        )
-        .with_i18n("msg.core.parse_unmatched_paren_factorial", vec![]));
+        return Err(
+            CalcError::parse("unmatched parenthesis in factorial operand".to_string())
+                .with_i18n("msg.core.parse_unmatched_paren_factorial", vec![]),
+        );
     }
     Ok(pos)
 }

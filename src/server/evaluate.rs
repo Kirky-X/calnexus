@@ -71,23 +71,24 @@ pub(crate) async fn evaluate_with_timeout(
     });
     // BUG-S-M-001: 请求级超时兜底，覆盖 spawn_blocking 启动 / evaluate 内部任何意外延迟。
     // 计算层 Alarm 已在 evaluate 内部精确中断循环，此处仅作慢攻击防御。
-    let (result, domain, cache_hit, fmt_prec) = match tokio::time::timeout(timeout, join_handle).await {
-        Ok(Ok(r)) => r,
-        Ok(Err(join_err)) => {
-            return Err(ApiError::internal_with_source(
-                "evaluate task failed",
-                "spawn_blocking",
-                join_err,
-            ))
+    let (result, domain, cache_hit, fmt_prec) =
+        match tokio::time::timeout(timeout, join_handle).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(join_err)) => {
+                return Err(ApiError::internal_with_source(
+                    "evaluate task failed",
+                    "spawn_blocking",
+                    join_err,
+                ))
+            }
+            Err(_) => {
+                return Err(ApiError::service_unavailable(
+                    "evaluate",
+                    Some(timeout.as_secs()),
+                ))
+            }
         }
-        Err(_) => {
-            return Err(ApiError::service_unavailable(
-                "evaluate",
-                Some(timeout.as_secs()),
-            ))
-        }
-    }
-    .map_err(calc_error_to_api_error)?;
+        .map_err(calc_error_to_api_error)?;
     Ok(EvaluateResponse::from_eval(
         result, domain, cache_hit, fmt_prec,
     ))

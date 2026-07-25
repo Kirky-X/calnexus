@@ -84,15 +84,12 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
     match ast {
         AstNode::Number(n) => Ok(SymbolicExpr::Const(*n)),
         AstNode::BigNumber(s) => {
-            let n: f64 = s
-                .parse()
-                .map_err(|_| {
-                    CalcError::domain(format!("invalid big number: {}", s))
-                        .with_i18n(
-                            "msg.invalid_bignumber",
-                            vec![("value".to_string(), s.to_string())],
-                        )
-                })?;
+            let n: f64 = s.parse().map_err(|_| {
+                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                    "msg.invalid_bignumber",
+                    vec![("value".to_string(), s.to_string())],
+                )
+            })?;
             Ok(SymbolicExpr::Const(n))
         }
         AstNode::Variable(name) => {
@@ -162,10 +159,7 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
 /// 提取单参数函数的符号化参数：验证参数数为 1，递归转换并返回 `Box<SymbolicExpr>`。
 ///
 /// 复用于 sin/cos/tan/ln/log/exp 等单参符号函数。
-fn unary_symbolic_arg(
-    name: &str,
-    args: &[AstNode],
-) -> Result<Box<SymbolicExpr>, CalcError> {
+fn unary_symbolic_arg(name: &str, args: &[AstNode]) -> Result<Box<SymbolicExpr>, CalcError> {
     if args.len() != 1 {
         return Err(CalcError::domain(format!(
             "{}() requires exactly 1 argument, got {}",
@@ -568,10 +562,10 @@ fn integrate_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
             ))));
         }
     }
-    Err(CalcError::domain(
-        "integrate() only supports 1/var form for division".to_string(),
+    Err(
+        CalcError::domain("integrate() only supports 1/var form for division".to_string())
+            .with_i18n("msg.symbolic.integrate_only_div", vec![]),
     )
-    .with_i18n("msg.symbolic.integrate_only_div", vec![]))
 }
 
 /// ∫-f dx = -∫f dx。
@@ -586,10 +580,10 @@ fn integrate_sin(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             SymbolicExpr::Var(var.to_string()),
         )))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports sin(var) form".to_string(),
+        Err(
+            CalcError::domain("integrate() only supports sin(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_sin", vec![]),
         )
-        .with_i18n("msg.symbolic.integrate_only_sin", vec![]))
     }
 }
 
@@ -600,10 +594,10 @@ fn integrate_cos(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             var.to_string(),
         ))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports cos(var) form".to_string(),
+        Err(
+            CalcError::domain("integrate() only supports cos(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_cos", vec![]),
         )
-        .with_i18n("msg.symbolic.integrate_only_cos", vec![]))
     }
 }
 
@@ -614,10 +608,10 @@ fn integrate_exp(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             var.to_string(),
         ))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports exp(var) form".to_string(),
+        Err(
+            CalcError::domain("integrate() only supports exp(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_exp", vec![]),
         )
-        .with_i18n("msg.symbolic.integrate_only_exp", vec![]))
     }
 }
 
@@ -866,15 +860,12 @@ fn limit_recursive(
 fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
     match expr {
         SymbolicExpr::Const(n) => Ok(*n),
-        SymbolicExpr::Var(name) => env
-            .get(name)
-            .copied()
-            .ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+        SymbolicExpr::Var(name) => env.get(name).copied().ok_or_else(|| {
+            CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                "msg.unbound_variable",
+                vec![("name".to_string(), name.to_string())],
+            )
+        }),
         SymbolicExpr::Add(l, r) => {
             let r = eval_symbolic(l, env)? + eval_symbolic(r, env)?;
             check_finite(r)
@@ -942,8 +933,7 @@ fn eval_div(
 ) -> Result<f64, CalcError> {
     let d = eval_symbolic(r, env)?;
     if d == 0.0 {
-        return Err(CalcError::division_by_zero()
-            .with_i18n("msg.core.division_by_zero", vec![]));
+        return Err(CalcError::division_by_zero().with_i18n("msg.core.division_by_zero", vec![]));
     }
     Ok(eval_symbolic(l, env)? / d)
 }
@@ -958,14 +948,12 @@ fn eval_div(
 fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
     let v = eval_symbolic(e, env)?;
     if v <= 0.0 {
-        return Err(CalcError::domain(format!(
-            "ln requires positive argument, got {}",
-            v
-        ))
-        .with_i18n(
-            "msg.output.requires_positive",
-            vec![("value".to_string(), v.to_string())],
-        ));
+        return Err(
+            CalcError::domain(format!("ln requires positive argument, got {}", v)).with_i18n(
+                "msg.output.requires_positive",
+                vec![("value".to_string(), v.to_string())],
+            ),
+        );
     }
     Ok(v.ln())
 }
@@ -978,14 +966,12 @@ fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcErro
 /// 返回 `EvalResult::Symbolic`（多项式字符串）。
 pub fn taylor(expr: &SymbolicExpr, var: &str, order: u32) -> Result<EvalResult, CalcError> {
     if order > 20 {
-        return Err(CalcError::domain(format!(
-            "taylor() order {} exceeds maximum of 20",
-            order
-        ))
-        .with_i18n(
-            "msg.symbolic.taylor_order_exceeds",
-            vec![("order".to_string(), order.to_string())],
-        ));
+        return Err(
+            CalcError::domain(format!("taylor() order {} exceeds maximum of 20", order)).with_i18n(
+                "msg.symbolic.taylor_order_exceeds",
+                vec![("order".to_string(), order.to_string())],
+            ),
+        );
     }
 
     let mut terms: Vec<String> = Vec::new();
@@ -1226,14 +1212,12 @@ fn contains_symbolic_function(ast: &AstNode) -> bool {
 fn extract_var_name(ast: &AstNode) -> Result<String, CalcError> {
     match ast {
         AstNode::Variable(name) => Ok(name.clone()),
-        _ => Err(CalcError::domain(format!(
-            "expected variable name, got: {:?}",
-            ast
-        ))
-        .with_i18n(
-            "msg.symbolic.expected_variable_name",
-            vec![("node".to_string(), format!("{:?}", ast))],
-        )),
+        _ => Err(
+            CalcError::domain(format!("expected variable name, got: {:?}", ast)).with_i18n(
+                "msg.symbolic.expected_variable_name",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            ),
+        ),
     }
 }
 
@@ -1248,14 +1232,12 @@ fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
             )
         }),
         AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(-extract_number(e)?),
-        _ => Err(CalcError::domain(format!(
-            "expected number, got: {:?}",
-            ast
-        ))
-        .with_i18n(
-            "msg.symbolic.expected_number",
-            vec![("node".to_string(), format!("{:?}", ast))],
-        )),
+        _ => Err(
+            CalcError::domain(format!("expected number, got: {:?}", ast)).with_i18n(
+                "msg.symbolic.expected_number",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            ),
+        ),
     }
 }
 

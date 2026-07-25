@@ -87,15 +87,12 @@ impl VectorDomain {
                 })?;
                 Ok(EvalResult::Scalar(n))
             }
-            AstNode::Variable(name) => ctx
-                .get_var(name)
-                .map(EvalResult::Scalar)
-                .ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                }),
+            AstNode::Variable(name) => ctx.get_var(name).map(EvalResult::Scalar).ok_or_else(|| {
+                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                    "msg.unbound_variable",
+                    vec![("name".to_string(), name.to_string())],
+                )
+            }),
             AstNode::List(_) => {
                 // 裸 List 节点 → 转为 Vector 结果
                 let v = self.list_to_vector(ast, ctx)?;
@@ -188,14 +185,12 @@ impl VectorDomain {
                     .with_i18n("msg.vector.factorial_not_supported", vec![])),
                 }
             }
-            _ => Err(CalcError::domain(format!(
-                "expected scalar expression, got: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.vector.expected_scalar",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            )),
+            _ => Err(
+                CalcError::domain(format!("expected scalar expression, got: {:?}", ast)).with_i18n(
+                    "msg.vector.expected_scalar",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ),
+            ),
         }
     }
 
@@ -285,14 +280,13 @@ impl VectorDomain {
                 let result: Vec<f64> = v.iter().map(|x| scalar * x).collect();
                 Ok(EvalResult::Vector(result))
             }
-            _ => Err(CalcError::domain(format!(
-                "unsupported vector binary operation: {:?}",
-                op
-            ))
-            .with_i18n(
-                "msg.vector.unsupported_binary",
-                vec![("op".to_string(), format!("{:?}", op))],
-            )),
+            _ => Err(
+                CalcError::domain(format!("unsupported vector binary operation: {:?}", op))
+                    .with_i18n(
+                        "msg.vector.unsupported_binary",
+                        vec![("op".to_string(), format!("{:?}", op))],
+                    ),
+            ),
         }
     }
 
@@ -372,10 +366,10 @@ impl VectorDomain {
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
         if a.len() != 3 || b.len() != 3 {
-            return Err(CalcError::domain(
-                "cross() requires 3-dimensional vectors".to_string(),
-            )
-            .with_i18n("msg.vector.cross_3d_only", vec![]));
+            return Err(
+                CalcError::domain("cross() requires 3-dimensional vectors".to_string())
+                    .with_i18n("msg.vector.cross_3d_only", vec![]),
+            );
         }
         let cross = vec![
             a[1] * b[2] - a[2] * b[1],
@@ -435,10 +429,10 @@ impl VectorDomain {
         let norm_a = dv_a.norm();
         let norm_b = dv_b.norm();
         if norm_a == 0.0 || norm_b == 0.0 {
-            return Err(CalcError::domain(
-                "angle(): zero vector has no angle".to_string(),
-            )
-            .with_i18n("msg.vector.angle_zero_vector", vec![]));
+            return Err(
+                CalcError::domain("angle(): zero vector has no angle".to_string())
+                    .with_i18n("msg.vector.angle_zero_vector", vec![]),
+            );
         }
         let cos_theta = dv_a.dot(&dv_b) / (norm_a * norm_b);
         let cos_clamped = cos_theta.clamp(-1.0, 1.0);
@@ -461,10 +455,10 @@ impl VectorDomain {
         let dv = DVector::from_vec(v);
         let norm = dv.norm();
         if norm == 0.0 {
-            return Err(CalcError::domain(
-                "normalize(): cannot normalize zero vector".to_string(),
-            )
-            .with_i18n("msg.vector.normalize_zero_vector", vec![]));
+            return Err(
+                CalcError::domain("normalize(): cannot normalize zero vector".to_string())
+                    .with_i18n("msg.vector.normalize_zero_vector", vec![]),
+            );
         }
         let normalized = &dv / norm;
         Ok(EvalResult::Vector(normalized.iter().cloned().collect()))
@@ -518,14 +512,12 @@ impl VectorDomain {
                 }
                 Ok(values)
             }
-            _ => Err(CalcError::domain(format!(
-                "expected vector (list), got: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.vector.expected_vector",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            )),
+            _ => Err(
+                CalcError::domain(format!("expected vector (list), got: {:?}", ast)).with_i18n(
+                    "msg.vector.expected_vector",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ),
+            ),
         }
     }
 }

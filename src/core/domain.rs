@@ -155,10 +155,7 @@ fn format_functions_list(functions: &[String]) -> String {
         .map(String::as_str)
         .collect();
     let remaining = functions.len() - MAX_DISPLAY_FUNCTIONS;
-    format!(
-        "functions: {:?}, ... and {} more",
-        displayed, remaining
-    )
+    format!("functions: {:?}, ... and {} more", displayed, remaining)
 }
 
 fn collect_function_names_recursive(ast: &AstNode, names: &mut Vec<String>) {
@@ -655,10 +652,8 @@ mod tests {
     #[test]
     fn test_route_error_truncates_long_function_list() {
         // 构造含 50 个未知函数的 AST，错误消息应截断而非全量展示
-        let mut ast = AstNode::FunctionCall(
-            "unknown_func_00".to_string(),
-            vec![AstNode::Number(1.0)],
-        );
+        let mut ast =
+            AstNode::FunctionCall("unknown_func_00".to_string(), vec![AstNode::Number(1.0)]);
         for i in 1..50 {
             ast = AstNode::BinaryOp(
                 crate::core::types::BinaryOp::Add,
@@ -695,10 +690,7 @@ mod tests {
     #[test]
     fn test_route_error_short_function_list_not_truncated() {
         // 短函数列表（≤ 阈值）不应截断，保持原有行为
-        let ast = AstNode::FunctionCall(
-            "unknown_func".to_string(),
-            vec![AstNode::Number(1.0)],
-        );
+        let ast = AstNode::FunctionCall("unknown_func".to_string(), vec![AstNode::Number(1.0)]);
         let router = default_router();
         let err = router.route(&ast).err().expect("expected error");
         let msg = err.to_string();

@@ -70,10 +70,12 @@ fn walk(
             match name.as_str() {
                 "pi" => Ok(std::f64::consts::PI),
                 "e" => Ok(std::f64::consts::E),
-                _ => Err(CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )),
+                _ => Err(
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    ),
+                ),
             }
         }
         AstNode::BinaryOp(op, lhs, rhs) => {
@@ -112,10 +114,8 @@ fn walk(
             steps.push(format!("{}({})={}", name, args_joined, result_str));
             Ok(result)
         }
-        AstNode::Matrix(_) => Err(CalcError::domain(
-            "steps mode does not support matrices",
-        )
-        .with_i18n("msg.output.steps_no_matrix", vec![])),
+        AstNode::Matrix(_) => Err(CalcError::domain("steps mode does not support matrices")
+            .with_i18n("msg.output.steps_no_matrix", vec![])),
         AstNode::List(_) => Err(CalcError::domain(
             "steps mode does not support lists as sub-expressions",
         )
@@ -140,10 +140,12 @@ fn parse_bignumber_for_steps(s: &str) -> Result<f64, CalcError> {
     })?;
     // 检查是否为有限数（NaN/Inf 不应在 BigNumber 中出现）
     if !v.is_finite() {
-        return Err(CalcError::eval(format!("invalid BigNumber: {}", s)).with_i18n(
-            "msg.output.invalid_bignumber",
-            vec![("value".to_string(), s.to_string())],
-        ));
+        return Err(
+            CalcError::eval(format!("invalid BigNumber: {}", s)).with_i18n(
+                "msg.output.invalid_bignumber",
+                vec![("value".to_string(), s.to_string())],
+            ),
+        );
     }
     // 检查是否在 f64 安全整数范围内（2^53 ≈ 9.007e15）
     // 超过此范围，f64 无法精确表示所有整数，会丢失精度
@@ -304,17 +306,15 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
 /// 验证参数在 `[-1, 1]` 范围内（asin/acos 域约束）。
 fn check_unit_range(name: &str, x: f64) -> Result<(), CalcError> {
     if !(-1.0..=1.0).contains(&x) {
-        return Err(CalcError::domain(format!(
-            "{} domain [-1,1], got {}",
-            name, x
-        ))
-        .with_i18n(
-            "msg.output.domain_range",
-            vec![
-                ("name".to_string(), name.to_string()),
-                ("value".to_string(), x.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("{} domain [-1,1], got {}", name, x)).with_i18n(
+                "msg.output.domain_range",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("value".to_string(), x.to_string()),
+                ],
+            ),
+        );
     }
     Ok(())
 }
@@ -322,17 +322,15 @@ fn check_unit_range(name: &str, x: f64) -> Result<(), CalcError> {
 /// 验证参数为非负数（sqrt 域约束）。
 fn check_non_negative(name: &str, x: f64) -> Result<(), CalcError> {
     if x < 0.0 {
-        return Err(CalcError::domain(format!(
-            "{} requires non-negative, got {}",
-            name, x
-        ))
-        .with_i18n(
-            "msg.output.requires_non_negative",
-            vec![
-                ("name".to_string(), name.to_string()),
-                ("value".to_string(), x.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("{} requires non-negative, got {}", name, x)).with_i18n(
+                "msg.output.requires_non_negative",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("value".to_string(), x.to_string()),
+                ],
+            ),
+        );
     }
     Ok(())
 }
@@ -340,17 +338,15 @@ fn check_non_negative(name: &str, x: f64) -> Result<(), CalcError> {
 /// 验证参数为正数（ln/log/log10/log2 域约束）。
 fn check_positive(name: &str, x: f64) -> Result<(), CalcError> {
     if x <= 0.0 {
-        return Err(CalcError::domain(format!(
-            "{} requires positive, got {}",
-            name, x
-        ))
-        .with_i18n(
-            "msg.output.requires_positive",
-            vec![
-                ("name".to_string(), name.to_string()),
-                ("value".to_string(), x.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("{} requires positive, got {}", name, x)).with_i18n(
+                "msg.output.requires_positive",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("value".to_string(), x.to_string()),
+                ],
+            ),
+        );
     }
     Ok(())
 }
@@ -362,31 +358,27 @@ fn check_positive(name: &str, x: f64) -> Result<(), CalcError> {
 fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
     // 拒绝非整数（fract != 0 表示有小数部分）
     if x.fract() != 0.0 {
-        return Err(CalcError::domain(format!(
-            "{} requires integer argument, got {}",
-            name, x
-        ))
-        .with_i18n(
-            "msg.output.requires_integer",
-            vec![
-                ("name".to_string(), name.to_string()),
-                ("value".to_string(), x.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("{} requires integer argument, got {}", name, x)).with_i18n(
+                "msg.output.requires_integer",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("value".to_string(), x.to_string()),
+                ],
+            ),
+        );
     }
     // 拒绝超出 i64 范围的值（避免饱和 cast）
     if !x.is_finite() || x < i64::MIN as f64 || x > i64::MAX as f64 {
-        return Err(CalcError::domain(format!(
-            "{} argument {} exceeds i64 range",
-            name, x
-        ))
-        .with_i18n(
-            "msg.output.integer_out_of_range",
-            vec![
-                ("name".to_string(), name.to_string()),
-                ("value".to_string(), x.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("{} argument {} exceeds i64 range", name, x)).with_i18n(
+                "msg.output.integer_out_of_range",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("value".to_string(), x.to_string()),
+                ],
+            ),
+        );
     }
     Ok(x as i64)
 }

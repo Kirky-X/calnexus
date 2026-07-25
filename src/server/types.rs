@@ -78,19 +78,12 @@ impl EvaluateRequest {
     pub fn validate(&self) -> Result<(), ApiError> {
         // BUG-O-004: expr 字段校验（空串 / 超长 / null 字节均为 DoS / 注入向量）
         if self.expr.is_empty() {
-            return Err(ApiError::validation(
-                "expr",
-                "expression must not be empty",
-            ));
+            return Err(ApiError::validation("expr", "expression must not be empty"));
         }
         if self.expr.len() > MAX_EXPR_LEN {
             return Err(ApiError::validation(
                 "expr",
-                format!(
-                    "length {} exceeds limit {}",
-                    self.expr.len(),
-                    MAX_EXPR_LEN
-                ),
+                format!("length {} exceeds limit {}", self.expr.len(), MAX_EXPR_LEN),
             ));
         }
         if self.expr.bytes().any(|b| b == 0) {

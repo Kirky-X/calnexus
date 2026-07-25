@@ -125,10 +125,7 @@ impl CacheManager {
             let key = CacheKeyGen::make_key(cf);
             if let Err(e) = runtime().block_on(self.inner.set(&key, value)) {
                 // 降级为忽略写入：避免 panic 影响请求处理（H-1 修复）
-                eprintln!(
-                    "WARN: cache insert failed (key={}), ignoring: {}",
-                    key, e
-                );
+                eprintln!("WARN: cache insert failed (key={}), ignoring: {}", key, e);
             }
         }
     }
@@ -161,10 +158,7 @@ impl CacheManager {
             Ok(n) => n,
             Err(e) => {
                 // 降级为 0：避免 panic 影响请求处理（H-1 修复）
-                eprintln!(
-                    "WARN: cache len failed, returning 0: {}",
-                    e
-                );
+                eprintln!("WARN: cache len failed, returning 0: {}", e);
                 0
             }
         }

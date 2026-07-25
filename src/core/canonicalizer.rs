@@ -860,11 +860,9 @@ mod tests {
 
         // 不论具体顺序，二者必须相反（不能同时 Equal，也不能同时 Less/Greater）
         assert_ne!(
-            ord_nan_to_one,
-            ord_one_to_nan,
+            ord_nan_to_one, ord_one_to_nan,
             "NaN comparison must be asymmetric: nan vs 1 = {:?}, 1 vs nan = {:?}",
-            ord_nan_to_one,
-            ord_one_to_nan
+            ord_nan_to_one, ord_one_to_nan
         );
 
         // NaN 与自身的比较必须 Equal（自反性）

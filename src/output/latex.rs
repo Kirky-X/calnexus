@@ -908,7 +908,10 @@ mod tests {
     fn latex_scalar_preserves_precision_for_irreducible() {
         // 确保修复不破坏完整精度表示
         assert_eq!(format_latex_scalar(1.0 / 3.0), "0.3333333333333333");
-        assert_eq!(format_latex_scalar(std::f64::consts::PI), "3.141592653589793");
+        assert_eq!(
+            format_latex_scalar(std::f64::consts::PI),
+            "3.141592653589793"
+        );
     }
 
     // ===== BUG-O-M-008: format_latex_scalar 大整数科学计数法 =====
