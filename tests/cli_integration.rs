@@ -1520,3 +1520,35 @@ fn test_batch_precision_conflict_exit_2() {
         output.status
     );
 }
+
+/// 测试矩阵 A802：`--repl --batch` 互斥。
+///
+/// 修复：此前 `repl` 与 `batch` 未声明互相 conflicts_with_all，运行时优先级链
+/// (`run()` 中 `if cli.repl { ... }` 先于 `if let Some(path) = &cli.batch`) 会导致
+/// batch 被 silent 吞掉（静默 fallback 到 REPL，隐性失败，违反规则 12 显性化）。
+/// 添加双向 conflict 后 clap 在解析阶段拒绝，退出 2。
+#[test]
+fn test_repl_batch_conflict_exit_2() {
+    let mut tmp = tempfile::NamedTempFile::new().unwrap();
+    use std::io::Write;
+    writeln!(tmp, "2+3").unwrap();
+    tmp.flush().unwrap();
+
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    // 用临时文件（非 stdin）确保走 batch 路径而非空输入；冲突在 clap 解析阶段触发，
+    // REPL 不会启动，但提供 quit 输入以防万一。
+    let assert = cmd
+        .arg("--repl")
+        .arg("--batch")
+        .arg(tmp.path())
+        .write_stdin(":quit\n")
+        .assert()
+        .failure();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--repl --batch should exit with code 2 (conflict), got: {:?}",
+        output.status
+    );
+}

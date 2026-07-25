@@ -49,11 +49,11 @@ struct Cli {
     precision: Option<usize>,
 
     /// Start interactive REPL mode (read-eval-print loop)
-    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps"])]
+    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps", "batch"])]
     repl: bool,
 
     /// Batch evaluate expressions from file ('-' for stdin), one expression per line
-    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps", "precision"])]
+    #[arg(long, conflicts_with_all = ["canonical", "latex", "steps", "precision", "repl"])]
     batch: Option<String>,
 
     /// Render result as LaTeX (e.g., matrices as `\begin{pmatrix}...`)
@@ -304,8 +304,9 @@ fn get_expression(cli: &Cli) -> Result<String, CalcError> {
     }
     let trimmed = input.trim().to_string();
     if trimmed.is_empty() {
-        return Err(CalcError::usage("empty expression on stdin")
-            .with_i18n("cli.empty_stdin", vec![]));
+        return Err(
+            CalcError::usage("empty expression on stdin").with_i18n("cli.empty_stdin", vec![])
+        );
     }
     Ok(trimmed)
 }
@@ -318,14 +319,10 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
     for v in vars {
         let parts: Vec<&str> = v.splitn(2, '=').collect();
         if parts.len() != 2 {
-            return Err(CalcError::usage(format!(
-                "invalid --var '{}', expected NAME=VALUE",
-                v
-            ))
-            .with_i18n(
-                "cli.invalid_var",
-                vec![("value".to_string(), v.clone())],
-            ));
+            return Err(
+                CalcError::usage(format!("invalid --var '{}', expected NAME=VALUE", v))
+                    .with_i18n("cli.invalid_var", vec![("value".to_string(), v.clone())]),
+            );
         }
         let value: f64 = parts[1].parse::<f64>().map_err(|e| {
             CalcError::usage(format!("invalid --var value '{}': {}", parts[1], e)).with_i18n(
