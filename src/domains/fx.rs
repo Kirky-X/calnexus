@@ -152,14 +152,12 @@ fn eval_scalar(
 ) -> Result<f64, CalcError> {
     match eval_with_provider(ast, ctx, provider)? {
         EvalResult::Scalar(v) => Ok(v),
-        _ => Err(CalcError::domain(format!(
-            "expected scalar result from: {:?}",
-            ast
-        ))
-        .with_i18n(
-            "msg.fx.expected_scalar",
-            vec![("node".to_string(), format!("{:?}", ast))],
-        )),
+        _ => Err(
+            CalcError::domain(format!("expected scalar result from: {:?}", ast)).with_i18n(
+                "msg.fx.expected_scalar",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            ),
+        ),
     }
 }
 

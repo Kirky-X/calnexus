@@ -249,14 +249,12 @@ fn eval_function(name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<Eval
 fn extract_str(node: &AstNode) -> Result<String, CalcError> {
     match node {
         AstNode::Str(s) => Ok(s.clone()),
-        _ => Err(CalcError::domain(format!(
-            "expected string argument, got {:?}",
-            node
-        ))
-        .with_i18n(
-            "msg.time.requires_string_arg",
-            vec![("node".to_string(), format!("{:?}", node))],
-        )),
+        _ => Err(
+            CalcError::domain(format!("expected string argument, got {:?}", node)).with_i18n(
+                "msg.time.requires_string_arg",
+                vec![("node".to_string(), format!("{:?}", node))],
+            ),
+        ),
     }
 }
 
@@ -264,14 +262,12 @@ fn extract_str(node: &AstNode) -> Result<String, CalcError> {
 fn extract_i64(node: &AstNode, ctx: &EvalContext) -> Result<i64, CalcError> {
     let v = eval_to_f64(node, ctx)?;
     if v.fract() != 0.0 {
-        return Err(CalcError::domain(format!(
-            "expected integer argument, got {}",
-            v
-        ))
-        .with_i18n(
-            "msg.time.requires_integer_arg",
-            vec![("value".to_string(), v.to_string())],
-        ));
+        return Err(
+            CalcError::domain(format!("expected integer argument, got {}", v)).with_i18n(
+                "msg.time.requires_integer_arg",
+                vec![("value".to_string(), v.to_string())],
+            ),
+        );
     }
     if v > i64::MAX as f64 || v < i64::MIN as f64 {
         return Err(CalcError::overflow());

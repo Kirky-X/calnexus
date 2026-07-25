@@ -4,46 +4,114 @@ on:
   push:
     tags:
       - 'v*'
-
-permissions:
-  contents: write
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.4)'
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
+
+# 架构 M-2：防止并发 release 导致缓存冲突 / crates.io 发布顺序不可控
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+    # 安全 LOW-1 / 架构 L-2：permissions 收窄到 job 级别，最小权限原则
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
+      # 架构 H-2：支持 workflow_dispatch 手动触发，publish 失败时可重试
       - name: Extract version from tag
         id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
           VERSION="${TAG#v}"
+          # 安全 H-1：版本号白名单校验，防止表达式注入（拒绝 shell 元字符）
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "ERROR: invalid version format: $VERSION"
+            exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Extracted tag: $TAG"
           echo "Extracted version: $VERSION"
 
-      - name: Create source archives
+      # 架构 M-1 / 性能 M-1：版本验证前移到打包前，fail-fast 节约 CI 资源
+      - name: Verify Cargo.toml version matches tag
+        env:
+          TAG_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag }}"
-          # 使用 git archive 基于 git 索引打包，避免 tar 报 "file changed as we read it"
-          # git archive 只包含 git 跟踪的文件，自动排除 .git/target/temp 等
-          git archive --format=tar.gz --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.tar.gz" "$TAG"
-          git archive --format=zip --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.zip" "$TAG"
+          CARGO_VERSION=$(awk -F'"' '/^version = "/{print $2; exit}' Cargo.toml)
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "ERROR: tag version ($TAG_VERSION) != Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+          echo "Version match: $TAG_VERSION"
+
+      # 安全 H-1：env 注入而非 ${{ }} 字符串展开；性能 M-3：两次 archive 并行
+      - name: Create source archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git archive --format=tar.gz --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.tar.gz" "$TAG" &
+          git archive --format=zip --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.zip" "$TAG" &
+          wait
 
       - name: Generate SHA256 checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           sha256sum "calnexus-${VERSION}.tar.gz" "calnexus-${VERSION}.zip" > "calnexus-${VERSION}-sha256sums.txt"
           echo "Checksums:"
           cat "calnexus-${VERSION}-sha256sums.txt"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 性能 H-1：用 arduino/setup-protoc@v3 替代 apt-get update（10-20s → 1-2s）
+      - name: Setup protoc
+        uses: arduino/setup-protoc@v3
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      # 安全 M-2：发布前 SAST 扫描（规则24：0 CRITICAL 才允许继续）
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit --deny warnings
+
+      # 架构 H-1 / M-3：publish 前做 dry-run 验证（包含完整构建，CI 已跑测试）
+      - name: Verify package builds
+        run: cargo publish --dry-run
+
+      # 性能 H-2：-v 提供进度反馈，避免日志黑屏 45s 像 hang 死
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -v
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

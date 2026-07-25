@@ -667,11 +667,7 @@ impl VectorDomain {
     }
 
     /// euclidean(a, b)：欧几里得距离 = sqrt(sum((a[i]-b[i])^2))，返回标量。
-    fn eval_euclidean(
-        &self,
-        args: &[AstNode],
-        ctx: &EvalContext,
-    ) -> Result<EvalResult, CalcError> {
+    fn eval_euclidean(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
             return Err(CalcError::domain(format!(
                 "euclidean() requires exactly 2 arguments, got {}",
@@ -705,11 +701,7 @@ impl VectorDomain {
     }
 
     /// manhattan(a, b)：曼哈顿距离 = sum(|a[i]-b[i]|)，返回标量。
-    fn eval_manhattan(
-        &self,
-        args: &[AstNode],
-        ctx: &EvalContext,
-    ) -> Result<EvalResult, CalcError> {
+    fn eval_manhattan(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
             return Err(CalcError::domain(format!(
                 "manhattan() requires exactly 2 arguments, got {}",
@@ -1716,7 +1708,10 @@ mod tests {
     #[test]
     fn test_cosine_similarity_opposite() {
         // 反向向量 → -1.0
-        assert_approx(eval_scalar("cosine_similarity([1,0],[-1,0])").unwrap(), -1.0);
+        assert_approx(
+            eval_scalar("cosine_similarity([1,0],[-1,0])").unwrap(),
+            -1.0,
+        );
     }
 
     #[test]
@@ -1741,7 +1736,8 @@ mod tests {
 
     #[test]
     fn test_cosine_similarity_wrong_args() {
-        let ast = AstNode::FunctionCall("cosine_similarity".to_string(), vec![AstNode::Number(1.0)]);
+        let ast =
+            AstNode::FunctionCall("cosine_similarity".to_string(), vec![AstNode::Number(1.0)]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
@@ -1947,7 +1943,10 @@ mod tests {
     fn test_outer_non_list_arg() {
         let ast = AstNode::FunctionCall(
             "outer".to_string(),
-            vec![AstNode::Number(1.0), AstNode::List(vec![AstNode::Number(2.0)])],
+            vec![
+                AstNode::Number(1.0),
+                AstNode::List(vec![AstNode::Number(2.0)]),
+            ],
         );
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
