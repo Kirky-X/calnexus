@@ -16,11 +16,11 @@
 
 </div>
 
-一个具备 11 个核心计算域与 4 个可选计算域（数值线性代数 / 时间 / 单位 / 汇率）、符号微积分、REPL 与批量处理的命令行数学表达式求值器。
+一个具备 11 个核心计算域与 3 个可选计算域（时间 / 单位 / 汇率）、符号微积分、REPL 与批量处理的命令行数学表达式求值器。
 
 | 项目信息 | 内容 |
 | --- | --- |
-| 版本 | 0.1.3 |
+| 版本 | 0.1.4 |
 | 许可证 | MIT |
 | 作者 | Kirky.X |
 | 仓库 | https://github.com/kirky-x/calnexus |
@@ -52,7 +52,7 @@
 
 ## 项目简介
 
-**CalNexus** 是一个用 Rust 编写的命令行数学表达式求值器，将 11 个核心计算域 —— 从算术、统计到符号微积分与线性代数 —— 加上 4 个可选计算域（数值线性代数 / 时间 / 单位 / 汇率）—— 统一在单一解析器与按优先级路由的计算域调度器之后。它提供三种执行模式（单表达式、交互式 REPL、并行批量），并配备 LRU 缓存、任意精度算术与面向管道集成的 JSON 输出。
+**CalNexus** 是一个用 Rust 编写的命令行数学表达式求值器，将 11 个核心计算域 —— 从算术、统计到符号微积分与线性代数 —— 加上 3 个可选计算域（时间 / 单位 / 汇率）—— 统一在单一解析器与按优先级路由的计算域调度器之后。它提供三种执行模式（单表达式、交互式 REPL、并行批量），并配备 LRU 缓存、任意精度算术与面向管道集成的 JSON 输出。
 
 ### 适用场景
 
@@ -67,7 +67,7 @@
 
 | 特性 | 说明 |
 | --- | --- |
-| 11 核心计算域 + 4 可选域 | 核心：算术、科学函数、统计、精度、数论、组合、多项式、复数、矩阵、向量、符号演算；可选：时间 / 单位 / 汇率（feature 门控） |
+| 11 核心计算域 + 3 可选域 | 核心：算术、科学函数、统计、精度、数论、组合、多项式、复数、矩阵、向量、符号演算；可选：时间 / 单位 / 汇率（feature 门控） |
 | 符号微积分 | `diff`、`integrate`、`simplify`、`limit`、`taylor` |
 | 任意精度 | `precision(N, expr)` 基于 BigRational 的任意精度计算 |
 | 数值线性代数 | `lu`、`qr`、`eig`、`svd`、`solve`（`numerical` feature，nalgebra f64 近似） |
@@ -75,22 +75,22 @@
 | 高性能缓存 | Moka L1 缓存（10000 条目，BLAKE3 哈希，线程安全） |
 | 隐式乘法 | `2x`、`3(x+1)` 等数学惯用写法自动识别 |
 | JSON 输出 | `--json` 输出 `result/domain/cache` 结构，便于管道集成 |
-| 工业级测试 | 1856 个测试，覆盖率 97.27%，release 零警告 |
+| 工业级测试 | 1925 个测试，覆盖率 97.27%，release 零警告 |
 
 ### 11 个计算域
 
 | 计算域 | 优先级 | 函数 |
 | --- | --- | --- |
 | **Arithmetic** | 10 | `+`, `-`, `*`, `/`, `^`, `factorial`, `mod`, `abs` |
-| **Scientific** | 20 | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log`, `exp`, `sinh`, `cosh`, `tanh`, `gamma`, `erf` |
-| **Statistics** | 20 | `mean`, `median`, `variance`, `stddev`, `sum`, `min`, `max` |
+| **Scientific** | 20 | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log10`, `log2`, `exp`, `sinh`, `cosh`, `tanh`, `gamma`, `erf` |
+| **Statistics** | 20 | `mean`, `median`, `variance`, `std`, `sum`, `min`, `max`, `count` |
 | **Precision** | 25 | `precision(N, expr)` — BigRational 任意精度 |
 | **NumberTheory** | 25 | `gcd`, `lcm`, `is_prime`, `prime_sieve`, `mod_inverse`, `mod_pow`, `euler_phi` |
 | **Combinatorics** | 25 | `P`, `C`, `catalan`, `stirling` |
 | **Polynomial** | 25 | `poly_add`, `poly_sub`, `poly_mul`, `poly_div`, `poly_eval`, `poly_diff`, `poly_integrate`, `roots`, `factor` |
-| **Complex** | 30 | `complex(a,b)`, `re`, `im`, `conj`, `magnitude`, `phase` |
-| **Matrix** | 30 | `det`, `transpose`, `inverse`, `identity`, `lu`/`qr`/`eig`/`svd`/`solve`（`numerical` feature） |
-| **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple` |
+| **Complex** | 30 | `complex(a,b)`, `conj`, `arg`, `abs`, `exp`, `ln` |
+| **Matrix** | 30 | `det`, `transpose`, `inverse`, `identity`；数值分解（`numerical` feature）：`lu`/`qr`/`eig`/`svd`/`solve` |
+| **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple`, `cosine_similarity`, `project`, `reflect`, `euclidean`, `manhattan`, `outer`, `lerp` + Hadamard 积 `[a,b]*[c,d]` |
 | **Symbolic** | 30 | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
 
 ### 可选计算域
@@ -303,7 +303,7 @@ CalNexus 通过命令行参数进行配置，无需配置文件：
 | `--repl` | 启动交互式 REPL，支持 `:let`、`:vars`、`:quit` |
 | `--batch <file>` | 并行求值文件中每行表达式（rayon） |
 | `--var x=3` | 为表达式预绑定变量 |
-| `--precision <N>` | 以 N 位小数 BigRational 求值 |
+| `--precision <N>` | 以 N 位小数精度求值（启用 BigRational 模式，结果受解析器 f64 精度限制；需全 BigRational 精度请用 `precision(N, expr)`） |
 | `--json` | 输出 `result/domain/cache` 结构 |
 | `--latex` | 以 LaTeX 形式输出（与 `--json`/`--repl`/`--batch`/`--precision` 互斥） |
 | `--canonical` | 输出规范形式（与 `--json`/`--repl`/`--batch`/`--precision` 互斥） |
@@ -332,8 +332,11 @@ CalNexus 是一个 Rust 库 + CLI 二进制项目，接口文档可通过以下�
 ## 测试
 
 ```bash
-# 运行全部测试（1856+ 测试）
+# 运行全部测试（1925+ 测试，含可选域时 2227+）
 cargo test --features cli
+
+# 含可选域全量测试
+cargo test --features cli,time,unit,fx
 
 # Release 构建（零警告）
 cargo build --release --features cli
@@ -343,7 +346,7 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-测试规模：1856 个测试（1553 lib + 122 CLI + 132 集成 + 6 REPL + 13 安全 + 12 属性 + 10 快照 + 6 性能），覆盖率 97.27%，release 构建零警告。
+测试规模：1925 个测试（1623 lib + 123 CLI + 132 集成 + 6 REPL + 13 安全 + 12 属性 + 10 快照 + 6 性能），覆盖率 97.27%，release 构建零警告。可选域（time/unit/fx）启用时追加 302 个测试（lib +292, 集成 +10），合计 2227。
 
 ---
 

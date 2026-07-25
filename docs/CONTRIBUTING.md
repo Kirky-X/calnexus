@@ -12,7 +12,7 @@ This document describes how to set up a development environment and the conventi
 
 ## Development Environment Setup
 
-CalNexus is a command-line math expression evaluator written in Rust.
+CalNexus is a command-line math expression evaluator written in Rust, with 11 core computation domains (arithmetic, scientific, statistics, precision, number theory, combinatorics, polynomial, complex, matrix, vector, symbolic) plus 3 optional domains (time, unit, fx), symbolic calculus, REPL, and batch processing.
 
 1. **Fork** this repository on GitHub.
 2. **Clone** your fork locally:
@@ -34,7 +34,8 @@ CalNexus is a command-line math expression evaluator written in Rust.
    ```
 6. **Run the test suite** to verify everything works:
    ```bash
-   cargo test --features cli
+   cargo test --features cli                              # 1925+ tests
+   cargo test --features cli,time,unit,fx                 # 2227+ tests (with optional domains)
    ```
 7. (Optional) Copy the environment template if you want to tweak runtime defaults:
    ```bash

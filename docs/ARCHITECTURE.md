@@ -185,7 +185,7 @@ flowchart LR
 2. **Green**：重构实现使测试通过（行为不变）
 3. **Verify**：`cargo test` 全套通过 + `cargo clippy -D warnings` 0 告警 + codenexus 复杂度复测
 
-最终测试规模：**1818 passed / 0 failed**。
+最终测试规模：**1925 passed / 0 failed（`--features cli`）；含可选域（time/unit/fx）时 2227 passed / 0 failed**。
 
 ## 4. 测试与基准结构
 

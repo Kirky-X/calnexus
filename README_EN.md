@@ -16,11 +16,11 @@
 
 </div>
 
-A command-line math expression evaluator with 11 core computation domains and 4 optional domains (numerical linear algebra / time / unit / fx), symbolic calculus, REPL, and batch processing.
+A command-line math expression evaluator with 11 core computation domains and 3 optional domains (time / unit / fx), symbolic calculus, REPL, and batch processing.
 
 | Project Info | Value |
 | --- | --- |
-| Version | 0.1.3 |
+| Version | 0.1.4 |
 | License | MIT |
 | Author | Kirky.X |
 | Repository | https://github.com/kirky-x/calnexus |
@@ -52,7 +52,7 @@ A command-line math expression evaluator with 11 core computation domains and 4 
 
 ## Overview
 
-**CalNexus** is a Rust-native command-line math expression evaluator that unifies 11 core computation domains — from arithmetic and statistics to symbolic calculus and linear algebra — plus 4 optional domains (numerical linear algebra / time / unit / fx) behind a single parser and a priority-routed domain dispatcher. It offers three execution modes (single expression, interactive REPL, and parallel batch) with an LRU cache, arbitrary-precision arithmetic, and JSON output for pipeline integration.
+**CalNexus** is a Rust-native command-line math expression evaluator that unifies 11 core computation domains — from arithmetic and statistics to symbolic calculus and linear algebra — plus 3 optional domains (time / unit / fx) behind a single parser and a priority-routed domain dispatcher. It offers three execution modes (single expression, interactive REPL, and parallel batch) with an LRU cache, arbitrary-precision arithmetic, and JSON output for pipeline integration.
 
 ### Use Cases
 
@@ -67,7 +67,7 @@ A command-line math expression evaluator with 11 core computation domains and 4 
 
 | Feature | Description |
 | --- | --- |
-| 11 core + 4 optional domains | Core: arithmetic, scientific functions, statistics, precision, number theory, combinatorics, polynomial, complex, matrix, vector, symbolic calculus; Optional: time / unit / fx (feature-gated) |
+| 11 core + 3 optional domains | Core: arithmetic, scientific functions, statistics, precision, number theory, combinatorics, polynomial, complex, matrix, vector, symbolic calculus; Optional: time / unit / fx (feature-gated) |
 | Symbolic calculus | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
 | Arbitrary precision | `precision(N, expr)` BigRational-based arbitrary precision |
 | Numerical linear algebra | `lu`, `qr`, `eig`, `svd`, `solve` (`numerical` feature, nalgebra f64 approximation) |
@@ -75,22 +75,22 @@ A command-line math expression evaluator with 11 core computation domains and 4 
 | High-performance cache | Moka L1 cache (10000 entries, BLAKE3 hash, thread-safe) |
 | Implicit multiplication | Auto-recognition of math idioms like `2x`, `3(x+1)` |
 | JSON output | `--json` emits a `result/domain/cache` structure for pipeline integration |
-| Industrial-grade testing | 1856 tests, 97.27% coverage, release build with zero warnings |
+| Industrial-grade testing | 1925 tests, 97.27% coverage, release build with zero warnings |
 
 ### 11 Computation Domains
 
 | Domain | Priority | Functions |
 | --- | --- | --- |
 | **Arithmetic** | 10 | `+`, `-`, `*`, `/`, `^`, `factorial`, `mod`, `abs` |
-| **Scientific** | 20 | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log`, `exp`, `sinh`, `cosh`, `tanh`, `gamma`, `erf` |
-| **Statistics** | 20 | `mean`, `median`, `variance`, `stddev`, `sum`, `min`, `max` |
+| **Scientific** | 20 | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log10`, `log2`, `exp`, `sinh`, `cosh`, `tanh`, `gamma`, `erf` |
+| **Statistics** | 20 | `mean`, `median`, `variance`, `std`, `sum`, `min`, `max`, `count` |
 | **Precision** | 25 | `precision(N, expr)` — BigRational arbitrary precision |
 | **NumberTheory** | 25 | `gcd`, `lcm`, `is_prime`, `prime_sieve`, `mod_inverse`, `mod_pow`, `euler_phi` |
 | **Combinatorics** | 25 | `P`, `C`, `catalan`, `stirling` |
 | **Polynomial** | 25 | `poly_add`, `poly_sub`, `poly_mul`, `poly_div`, `poly_eval`, `poly_diff`, `poly_integrate`, `roots`, `factor` |
-| **Complex** | 30 | `complex(a,b)`, `re`, `im`, `conj`, `magnitude`, `phase` |
-| **Matrix** | 30 | `det`, `transpose`, `inverse`, `identity`, `lu`/`qr`/`eig`/`svd`/`solve` (`numerical` feature) |
-| **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple` |
+| **Complex** | 30 | `complex(a,b)`, `conj`, `arg`, `abs`, `exp`, `ln` |
+| **Matrix** | 30 | `det`, `transpose`, `inverse`, `identity`; numerical decompositions (`numerical` feature): `lu`/`qr`/`eig`/`svd`/`solve` |
+| **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple`, `cosine_similarity`, `project`, `reflect`, `euclidean`, `manhattan`, `outer`, `lerp` + Hadamard product `[a,b]*[c,d]` |
 | **Symbolic** | 30 | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
 
 ### Optional Domains
@@ -204,7 +204,7 @@ $ calnexus --var x=3 'x^2 + 2*x + 1'
 
 ```bash
 $ calnexus --precision 50 '1/3'
-0.33333333333333333333333333333333333333333333333333
+0.33333333333333331482961625624739099293947219848632
 ```
 
 #### JSON Output
@@ -303,11 +303,15 @@ CalNexus is configured entirely via command-line flags; no config file is requir
 | `--repl` | Starts an interactive REPL, supports `:let`, `:vars`, `:quit` |
 | `--batch <file>` | Parallel evaluation of each line in the file (rayon) |
 | `--var x=3` | Pre-binds variables for the expression |
-| `--precision <N>` | Evaluates with N-digit BigRational precision |
+| `--precision <N>` | Evaluates with N-digit precision (BigRational mode; f64 parser precision may limit accuracy; use `precision(N, expr)` for full BigRational) |
 | `--json` | Emits a `result/domain/cache` structure |
 | `--latex` | Outputs in LaTeX form (mutually exclusive with `--json`/`--repl`/`--batch`/`--precision`) |
 | `--canonical` | Outputs the canonical form (mutually exclusive with `--json`/`--repl`/`--batch`/`--precision`) |
 | `--steps` | Outputs solving steps (mutually exclusive with `--json`/`--repl`/`--batch`/`--precision`) |
+| `--explain` | Outputs detailed error explanations (mutually exclusive with `--json`) |
+| `--lang <en\|zh>` | Language for error messages (default: `en`) |
+| `--serve-http` | Starts HTTP server mode (requires `server` feature) |
+| `--serve-mcp` | Starts MCP server mode (requires `server` feature) |
 | `--help` | Shows help information |
 
 The full set of CLI subcommands and flags is available via `calnexus --help`.
@@ -328,8 +332,11 @@ CalNexus is a Rust library + CLI binary project; the interface docs can be viewe
 ## Testing
 
 ```bash
-# Run all tests (1856+ tests)
+# Run all tests (1925+ tests, 2227+ with optional domains)
 cargo test --features cli
+
+# Full test suite with optional domains
+cargo test --features cli,time,unit,fx
 
 # Release build (zero warnings)
 cargo build --release --features cli
@@ -339,7 +346,7 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-Test scale: 1856 tests (1553 lib + 122 CLI + 132 integration + 6 REPL + 13 security + 12 property + 10 snapshot + 6 performance), 97.27% coverage, release build with zero warnings.
+Test scale: 1925 tests (1623 lib + 123 CLI + 132 integration + 6 REPL + 13 security + 12 property + 10 snapshot + 6 performance), 97.27% coverage, release build with zero warnings. Optional domains (time/unit/fx) add 302 tests (lib +292, integration +10) for a total of 2227.
 
 ---
 
