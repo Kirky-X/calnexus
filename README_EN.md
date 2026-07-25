@@ -1,10 +1,18 @@
+<a id="top"></a>
+
 <p align="center">
   <img src="./docs/asserts/logo.png" alt="CalNexus Logo" width="200">
 </p>
 
 <div align="center">
 
-[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases)[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus) [![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+
+</div>
+
+<div align="center">
+
+[中文](./README.md) | English
 
 </div>
 
@@ -384,3 +392,11 @@ Thanks to the following projects that support this work:
 - [clap](https://crates.io/crates/clap) — CLI argument parsing
 - [rustyline](https://crates.io/crates/rustyline) — REPL line editing and Tab completion
 - [rayon](https://crates.io/crates/rayon) — data-parallel batch evaluation
+
+---
+
+<div align="center">
+
+[⬆ Back to top](#top)
+
+</div>

@@ -1,10 +1,18 @@
+<a id="top"></a>
+
 <p align="center">
   <img src="./docs/asserts/logo.png" alt="CalNexus Logo" width="200">
 </p>
 
 <div align="center">
 
-[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases)[![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)[![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus)[![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus) [![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+
+</div>
+
+<div align="center">
+
+中文 | [English](./README_EN.md)
 
 </div>
 
@@ -388,3 +396,11 @@ cargo clippy --features cli    # 无警告
 - [clap](https://crates.io/crates/clap) — CLI 参数解析
 - [rustyline](https://crates.io/crates/rustyline) — REPL 行编辑与 Tab 补全
 - [rayon](https://crates.io/crates/rayon) — 数据并行批量求值
+
+---
+
+<div align="center">
+
+[⬆ 返回顶部](#top)
+
+</div>
