@@ -48,7 +48,7 @@ pub(crate) fn build_default_router() -> &'static DomainRouter {
         #[cfg(feature = "unit")]
         router.register(Box::new(UnitDomain));
         #[cfg(feature = "fx")]
-        router.register(Box::new(FxDomain));
+        router.register(Box::new(FxDomain::default()));
         router
     })
 }
@@ -109,6 +109,6 @@ mod tests {
         #[cfg(feature = "unit")]
         assert_eq!(UnitDomain.priority(), 30);
         #[cfg(feature = "fx")]
-        assert_eq!(FxDomain.priority(), 30);
+        assert_eq!(FxDomain::default().priority(), 30);
     }
 }

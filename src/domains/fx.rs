@@ -18,8 +18,6 @@
 //!
 //! 非确定性：fx/fx_rate 申报为非确定性函数（D3），永不进 L1 缓存。
 
-use std::sync::OnceLock;
-
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
@@ -40,10 +38,25 @@ const FX_EVAL_FUNCTIONS: &[&str] = &["fx", "fx_rate", "mod", "abs"];
 
 /// 汇率换算域：支持 `fx(value, "FROM", "TO")` 和 `fx_rate("FROM", "TO")`。
 ///
-/// 保持 unit struct 以兼容 `Box::new(FxDomain)` 工厂调用（factory.rs 不可修改）。
-/// 生产路径通过 OnceLock 懒加载 FrankfurterProvider；测试路径直接调用
-/// `eval_with_provider` 注入 mock provider（避免出网）。
-pub struct FxDomain;
+/// 构造函数 `new(provider)` 接受 `Box<dyn RateProvider>` 注入（R-fx-004）：
+/// 测试套件用 mock provider，CI 断网环境全绿；生产用 `default()` 注入
+/// FrankfurterProvider。
+pub struct FxDomain {
+    provider: Box<dyn RateProvider>,
+}
+
+impl FxDomain {
+    /// 注入指定 provider 构造 FxDomain（测试入口，避免出网）。
+    pub(crate) fn new(provider: Box<dyn RateProvider>) -> Self {
+        Self { provider }
+    }
+}
+
+impl Default for FxDomain {
+    fn default() -> Self {
+        Self::new(Box::new(FrankfurterProvider::new()))
+    }
+}
 
 impl CalculationDomain for FxDomain {
     fn domain_name(&self) -> &str {
@@ -55,8 +68,7 @@ impl CalculationDomain for FxDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        let provider = self.provider();
-        eval_with_provider(ast, ctx, provider)
+        eval_with_provider(ast, ctx, self.provider.as_ref())
     }
 
     fn priority(&self) -> u8 {
@@ -65,22 +77,6 @@ impl CalculationDomain for FxDomain {
 
     fn nondeterministic_functions(&self) -> &'static [&'static str] {
         FX_FUNCTIONS
-    }
-}
-
-impl Default for FxDomain {
-    fn default() -> Self {
-        Self
-    }
-}
-
-impl FxDomain {
-    /// 获取生产环境 provider（FrankfurterProvider 单例，进程级 OnceLock）。
-    fn provider(&self) -> &dyn RateProvider {
-        static PROVIDER: OnceLock<Box<dyn RateProvider>> = OnceLock::new();
-        PROVIDER
-            .get_or_init(|| Box::new(FrankfurterProvider::new()))
-            .as_ref()
     }
 }
 
@@ -129,15 +125,21 @@ fn eval_with_provider(
                 UnaryOp::Abs => Ok(EvalResult::Scalar(v.abs())),
                 UnaryOp::Factorial => Err(CalcError::domain(
                     "factorial not supported in fx domain".to_string(),
-                )),
+                )
+                .with_i18n("msg.fx.factorial_not_supported", vec![])),
             }
         }
         // Str 仅作为 FunctionCall 实参合法；此处为操作数上下文 → 报错
         AstNode::Str(_) => Err(CalcError::domain(
             "string operand not supported in fx domain".to_string(),
-        )),
+        )
+        .with_i18n("msg.fx.string_operand_not_supported", vec![])),
         AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
             format!("fx domain does not support this node type: {:?}", ast),
+        )
+        .with_i18n(
+            "msg.fx.unsupported_node",
+            vec![("node".to_string(), format!("{:?}", ast))],
         )),
     }
 }
@@ -153,7 +155,11 @@ fn eval_scalar(
         _ => Err(CalcError::domain(format!(
             "expected scalar result from: {:?}",
             ast
-        ))),
+        ))
+        .with_i18n(
+            "msg.fx.expected_scalar",
+            vec![("node".to_string(), format!("{:?}", ast))],
+        )),
     }
 }
 
@@ -173,7 +179,8 @@ fn apply_binary(op: BinaryOp, a: f64, b: f64) -> Result<f64, CalcError> {
             if a == 0.0 && b < 0.0 {
                 return Err(CalcError::domain(
                     "0 cannot be raised to a negative power".to_string(),
-                ));
+                )
+                .with_i18n("msg.fx.zero_negative_power", vec![]));
             }
             Ok(a.powf(b))
         }
@@ -332,7 +339,14 @@ fn expect_str_arg<'a>(arg: &'a AstNode, param_name: &str) -> Result<&'a str, Cal
         _ => Err(CalcError::domain(format!(
             "fx() requires string argument for '{}', got: {:?}",
             param_name, arg
-        ))),
+        ))
+        .with_i18n(
+            "msg.fx.requires_string_arg",
+            vec![
+                ("param".to_string(), param_name.to_string()),
+                ("node".to_string(), format!("{:?}", arg)),
+            ],
+        )),
     }
 }
 
@@ -453,39 +467,39 @@ mod tests {
 
     #[test]
     fn test_domain_info() {
-        let domain = FxDomain;
+        let domain = FxDomain::new(Box::new(mock_provider()));
         assert_eq!(domain.domain_name(), "fx");
         assert_eq!(domain.priority(), 30);
     }
 
     #[test]
     fn test_default_impl() {
-        let domain = FxDomain;
+        let domain = FxDomain::default();
         assert_eq!(domain.domain_name(), "fx");
     }
 
     #[test]
     fn test_nondeterministic_functions() {
-        let domain = FxDomain;
+        let domain = FxDomain::new(Box::new(mock_provider()));
         assert_eq!(domain.nondeterministic_functions(), &["fx", "fx_rate"]);
     }
 
     #[test]
     fn test_supports_fx() {
         let ast = parse(r#"fx(100,"USD","CNY")"#).unwrap();
-        assert!(FxDomain.supports(&ast));
+        assert!(FxDomain::default().supports(&ast));
     }
 
     #[test]
     fn test_supports_fx_rate() {
         let ast = parse(r#"fx_rate("USD","CNY")"#).unwrap();
-        assert!(FxDomain.supports(&ast));
+        assert!(FxDomain::default().supports(&ast));
     }
 
     #[test]
     fn test_supports_nested_in_binary() {
         let ast = parse(r#"fx(100,"USD","CNY")+1"#).unwrap();
-        assert!(FxDomain.supports(&ast));
+        assert!(FxDomain::default().supports(&ast));
     }
 
     #[test]
@@ -494,31 +508,31 @@ mod tests {
             UnaryOp::Neg,
             Box::new(parse(r#"fx(1,"USD","EUR")"#).unwrap()),
         );
-        assert!(FxDomain.supports(&ast));
+        assert!(FxDomain::default().supports(&ast));
     }
 
     #[test]
     fn test_not_supports_pure_arithmetic() {
         let ast = parse("1+2").unwrap();
-        assert!(!FxDomain.supports(&ast));
+        assert!(!FxDomain::default().supports(&ast));
     }
 
     #[test]
     fn test_not_supports_scientific() {
         let ast = parse("sin(1)").unwrap();
-        assert!(!FxDomain.supports(&ast));
+        assert!(!FxDomain::default().supports(&ast));
     }
 
     #[test]
     fn test_supports_matrix_with_fx() {
         let ast = AstNode::Matrix(vec![vec![parse(r#"fx(1,"USD","EUR")"#).unwrap()]]);
-        assert!(FxDomain.supports(&ast));
+        assert!(FxDomain::default().supports(&ast));
     }
 
     #[test]
     fn test_supports_list_with_fx() {
         let ast = AstNode::List(vec![parse(r#"fx(1,"USD","EUR")"#).unwrap()]);
-        assert!(FxDomain.supports(&ast));
+        assert!(FxDomain::default().supports(&ast));
     }
 
     // ===== R-fx-001: fx() 换算 =====

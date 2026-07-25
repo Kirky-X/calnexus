@@ -95,9 +95,12 @@ fn evaluate_time(ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcErr
         AstNode::FunctionCall(name, args) => eval_function(name, args, ctx),
         AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
         AstNode::BigNumber(s) => {
-            let n: f64 = s
-                .parse()
-                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+            let n: f64 = s.parse().map_err(|_| {
+                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                    "msg.time.invalid_bignumber",
+                    vec![("value".to_string(), s.clone())],
+                )
+            })?;
             Ok(EvalResult::Scalar(n))
         }
         AstNode::Variable(name) => {
@@ -132,7 +135,8 @@ fn evaluate_time(ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcErr
                 UnaryOp::Factorial => {
                     return Err(CalcError::domain(
                         "factorial not supported in time domain".to_string(),
-                    ))
+                    )
+                    .with_i18n("msg.time.factorial_not_supported", vec![]))
                 }
             };
             if result.is_nan() || result.is_infinite() {
@@ -142,9 +146,14 @@ fn evaluate_time(ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcErr
         }
         AstNode::Str(_) => Err(CalcError::domain(
             "string operand not supported in time domain binary/unary operations".to_string(),
-        )),
+        )
+        .with_i18n("msg.time.string_operand_not_supported", vec![])),
         AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
             format!("time domain does not support this node type: {:?}", ast),
+        )
+        .with_i18n(
+            "msg.time.unsupported_node",
+            vec![("node".to_string(), format!("{:?}", ast))],
         )),
     }
 }
@@ -191,7 +200,11 @@ fn eval_to_f64(ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         other => Err(CalcError::domain(format!(
             "time domain expected scalar or datetime, got {:?}",
             other
-        ))),
+        ))
+        .with_i18n(
+            "msg.time.expected_scalar_or_datetime",
+            vec![("got".to_string(), format!("{:?}", other))],
+        )),
     }
 }
 
@@ -239,7 +252,11 @@ fn extract_str(node: &AstNode) -> Result<String, CalcError> {
         _ => Err(CalcError::domain(format!(
             "expected string argument, got {:?}",
             node
-        ))),
+        ))
+        .with_i18n(
+            "msg.time.requires_string_arg",
+            vec![("node".to_string(), format!("{:?}", node))],
+        )),
     }
 }
 
@@ -250,7 +267,11 @@ fn extract_i64(node: &AstNode, ctx: &EvalContext) -> Result<i64, CalcError> {
         return Err(CalcError::domain(format!(
             "expected integer argument, got {}",
             v
-        )));
+        ))
+        .with_i18n(
+            "msg.time.requires_integer_arg",
+            vec![("value".to_string(), v.to_string())],
+        ));
     }
     if v > i64::MAX as f64 || v < i64::MIN as f64 {
         return Err(CalcError::overflow());
