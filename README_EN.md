@@ -20,7 +20,7 @@ A command-line math expression evaluator with 11 core computation domains and 4 
 
 | Project Info | Value |
 | --- | --- |
-| Version | 0.1.2 |
+| Version | 0.1.3 |
 | License | MIT |
 | Author | Kirky.X |
 | Repository | https://github.com/kirky-x/calnexus |

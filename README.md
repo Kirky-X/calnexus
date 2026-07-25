@@ -20,7 +20,7 @@
 
 | 项目信息 | 内容 |
 | --- | --- |
-| 版本 | 0.1.2 |
+| 版本 | 0.1.3 |
 | 许可证 | MIT |
 | 作者 | Kirky.X |
 | 仓库 | https://github.com/kirky-x/calnexus |

@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-26
+
 ### Added
 
+- **VectorDomain 8 个新向量运算**: `cosine_similarity(a,b)` / `project(a,b)` / `reflect(v,n)` / `euclidean(a,b)` / `manhattan(a,b)` / `outer(a,b)` / `lerp(a,b,t)` / Hadamard 积 `[a,b]*[c,d]`（List×List 逐元素相乘），含 57 个新测试覆盖 happy path / 错误路径 / 路由
 - **TimeDomain**: 14 date/time functions with IANA timezone support (jiff 0.2, `time` feature) — `date` / `datetime` / `timestamp` / `from_timestamp` / `date_diff` / `date_add` / `parse_date` / `format_date` / `reformat_date` / `weekday` / `day_of_year` / `is_leap_year` / `now` / `today`
 - **UnitDomain**: 8-dimension physical unit conversion with temperature affine (`unit` feature) — `convert(value, "from", "to")` covering length / mass / temperature / volume / area / speed / data / time
 - **FxDomain**: Currency exchange via frankfurter.dev API with 3-level cache (`fx` feature) — `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")`, with `CALNEXUS_FX_TTL_HOURS` and `CALNEXUS_FX_ALLOW_STALE` environment variables
@@ -22,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI feature matrix**: test 任务追加 `--features cli,time,unit,fx` 全量测试与 `time` / `unit` / `fx` 三个单 feature 编译检查
 - **README.md / README_EN.md**: 追加可选计算域章节（函数表、feature 开关、CALNEXUS_FX_* 环境变量、汇率数据来源与免责说明），更新域数量表述
 - **docs/ARCHITECTURE.md**: 更新 L2 计算域层清单至 14 域（11 核心 + 3 可选），补充非确定性函数缓存旁路机制说明
+
+### Fixed
+
+- **T035**: `fx.rs` 6 个错误路径补全 i18n key 挂接（invalid bignumber / factorial not supported / string operand / matrix operand / complex operand / unsupported binary op）
+- **T036**: `time.rs` 7 个错误路径补全 i18n key 挂接（invalid bignumber / factorial not supported / string operand / matrix operand / complex operand / unary op unsupported / invalid date format）
+- **T037**: `FxDomain` 构造函数注入 `Box<dyn RateProvider>`，消除 spec↔code 矛盾（R-fx-004）；移除 `OnceLock`，新增 `new()` 与 `default()` 构造函数，`factory.rs` 改用 `FxDomain::default()`
+
+### Testing
+
+- `cargo test --features cli,time,unit,fx --lib`：1915 passed / 0 failed
+- `cargo test --features cli,time,unit,fx --test time_unit_fx_integration`：10 passed / 0 failed
+- `cargo clippy --features cli,time,unit,fx --all-targets -- -D warnings`：零 warning
+- 覆盖率 ≥95%（tarpaulin，fail-under=95 门禁）
+- specmark `time-unit-fx-domains` change 已归档至 `specmark/archive/2026-07-25-time-unit-fx-domains/`，主 specs 已同步
 
 ## [0.1.2] - 2026-07-21
 
@@ -157,7 +174,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 缓存层（`CacheManager` + `CanonicalForm` 规范化键）
 - 超时机制（`EvalContext.timeout` + 关键节点 `check_elapsed`）
 
-[unreleased]: https://github.com/kirky-x/calnexus/compare/v0.1.2...HEAD
+[unreleased]: https://github.com/kirky-x/calnexus/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/kirky-x/calnexus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/kirky-x/calnexus/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/kirky-x/calnexus/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kirky-x/calnexus/releases/tag/v0.1.0
