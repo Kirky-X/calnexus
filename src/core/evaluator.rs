@@ -781,6 +781,7 @@ mod tests {
     //
     // 验证：precision(20, 1/3) 应返回 BigRational(1/3)，
     // 经 format_bigrational(r, Some(20)) 格式化后应输出 20 位精确的 1/3。
+    #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
     #[test]
     fn test_precision_function_preserves_exact_rational() {
         let cache = CacheManager::new();
@@ -820,6 +821,7 @@ mod tests {
     //
     // 验证：precision(10, 1/6) 应返回 BigRational(1/6)，
     // 经 10 位格式化为 0.1666666667（10 位小数）。
+    #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
     #[test]
     fn test_precision_function_preserves_exact_rational_other_fraction() {
         let cache = CacheManager::new();
