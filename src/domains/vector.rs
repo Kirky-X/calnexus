@@ -118,13 +118,16 @@ impl VectorDomain {
                 )
                 .with_i18n("msg.vector.factorial_not_supported", vec![])),
             },
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::Str(_) => Err(CalcError::domain(
-                format!("vector domain does not support this node type: {:?}", ast),
-            )
-            .with_i18n(
-                "msg.vector.unsupported_node",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            )),
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::Str(_) => {
+                Err(CalcError::domain(format!(
+                    "vector domain does not support this node type: {:?}",
+                    ast
+                ))
+                .with_i18n(
+                    "msg.vector.unsupported_node",
+                    vec![("node".to_string(), format!("{:?}", ast))],
+                ))
+            }
         }
     }
 

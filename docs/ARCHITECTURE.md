@@ -23,7 +23,7 @@ flowchart TD
 
     subgraph L2["L2 — 计算域层"]
         FACTORY["domains/factory.rs<br/>build_default_router()<br/>build_precision_domain()"]
-        DOMAINS["11 个 CalculationDomain 实现<br/>(arithmetic / scientific / complex /<br/>matrix / vector / polynomial /<br/>number_theory / combinatorics /<br/>statistics / symbolic / precision)"]
+        DOMAINS["14 个 CalculationDomain 实现<br/>(11 核心: arithmetic / scientific / complex /<br/>matrix / vector / polynomial /<br/>number_theory / combinatorics /<br/>statistics / symbolic / precision<br/>+ 3 可选: time / unit / fx)"]
     end
 
     subgraph L1["L1 — 核心基础层"]
@@ -51,29 +51,32 @@ flowchart TD
 | `parser.rs` | 表达式字符串 → `AstNode`（递归下降解析器） |
 | `canonicalizer.rs` | AST 规范化（交换律排序 + 常量折叠 + 一元归一化）+ S-表达式序列化 |
 | `cache.rs` | L1 缓存管理器（Moka + BLAKE3 哈希键） |
-| `domain.rs` | `CalculationDomain` trait + `DomainRouter`（11 域优先级路由） |
+| `domain.rs` | `CalculationDomain` trait + `DomainRouter`（14 域优先级路由） |
 | `evaluator.rs` | 顶层 `evaluate()` 编排函数（parse → canonicalize → cache → route → evaluate） — **L3 编排层**，但位于 `src/core/` 目录下 |
 
 ### 1.2 L2 — 计算域层 (`src/domains/`)
 
-11 个独立计算域，每个域实现 `CalculationDomain` trait，处理特定类别的数学运算（按 priority 升序排列，priority 越高越优先匹配）：
+11 个核心计算域 + 3 个可选计算域（feature 门控），每个域实现 `CalculationDomain` trait，处理特定类别的数学运算（按 priority 升序排列，priority 越高越优先匹配）：
 
-| 域 | priority | 覆盖运算 |
-|----|----------|----------|
-| `ArithmeticDomain` | 10 | 基础四则运算 + 幂 + 取模 |
-| `ScientificDomain` | 20 | 三角/双曲/指数/对数/特殊函数 |
-| `StatisticsDomain` | 20 | 统计函数 |
-| `NumberTheoryDomain` | 25 | 数论（素数/GCD/LCM/斐波那契） |
-| `CombinatoricsDomain` | 25 | 排列/组合/Catalan/Stirling |
-| `PolynomialDomain` | 25 | 多项式运算 |
-| `PrecisionDomain` | 25 | BigRational 高精度求值（绕过路由器） |
-| `ComplexDomain` | 30 | 复数运算 |
-| `MatrixDomain` | 30 | 矩阵运算（nalgebra） |
-| `VectorDomain` | 30 | 向量运算 |
-| `SymbolicDomain` | 30 | 符号微分/积分/化简/极限/泰勒 |
+| 域 | priority | Feature | 覆盖运算 |
+|----|----------|---------|----------|
+| `ArithmeticDomain` | 10 | — | 基础四则运算 + 幂 + 取模 |
+| `ScientificDomain` | 20 | — | 三角/双曲/指数/对数/特殊函数 |
+| `StatisticsDomain` | 20 | — | 统计函数 |
+| `NumberTheoryDomain` | 25 | — | 数论（素数/GCD/LCM/斐波那契） |
+| `CombinatoricsDomain` | 25 | — | 排列/组合/Catalan/Stirling |
+| `PolynomialDomain` | 25 | — | 多项式运算 |
+| `PrecisionDomain` | 25 | — | BigRational 高精度求值（绕过路由器） |
+| `ComplexDomain` | 30 | — | 复数运算 |
+| `MatrixDomain` | 30 | — | 矩阵运算（nalgebra） |
+| `VectorDomain` | 30 | — | 向量运算 |
+| `SymbolicDomain` | 30 | — | 符号微分/积分/化简/极限/泰勒 |
+| `TimeDomain` | 30 | `time` | 日期/时间构造、间隔算术、多格式解析（jiff 0.2 + IANA tzdb） |
+| `UnitDomain` | 30 | `unit` | 8 量纲物理单位换算 + 温度仿射 |
+| `FxDomain` | 30 | `fx` | 汇率换算（frankfurter.dev API + 三级缓存） |
 
 **工厂函数**位于 `domains/factory.rs`（规则 25 合规：`mod.rs` 仅含声明与 re-export）：
-- `build_default_router()` — 注册 11 个域到 `DomainRouter`
+- `build_default_router()` — 注册全部 14 个域（含 feature 门控的可选域）到 `DomainRouter`
 - `build_precision_domain()` — 构造 `PrecisionDomain` 实例（供 `evaluator.rs` precision 模式使用）
 
 ### 1.3 L3 — 编排层 (`src/core/evaluator.rs`)
@@ -90,6 +93,11 @@ flowchart LR
     PM --> F["5. format output（由调用者完成）"]
     RM --> F
 ```
+
+**非确定性函数缓存旁路（R-ncb-003）**：常规模式下，`eval_regular_mode` 在路由前调用
+`DomainRouter::is_nondeterministic(canonical_ast)` 检测 AST 是否含 `now` / `today` /
+`fx` / `fx_rate` 等非确定性函数。命中时**同时跳过** `cache.get` 与 `cache.insert`，
+避免时间/汇率结果被缓存污染。检测开销为 O(AST 节点数) 的 HashSet 查询。
 
 ### 1.4 L4 — 入口层
 
@@ -234,7 +242,10 @@ flowchart LR
 | `mcp` | `server/mcp.rs` | MCP tool |
 | `server` | `http` + `mcp` | 聚合特性 |
 | `icu` | ICU4X 国际化 | 本地化错误消息 |
-| `fx` | 汇率换算（规划中，P2） | 外部数据源 — 当前 `fx = []` 无模块 |<br>| `numerical` | 数值扩展（规划中，P3） | 高级数值方法 — 当前 `numerical = []` 无模块 |
+| `time` | `domains/time.rs` | 时间计算（jiff 0.2 + IANA tzdb，14 函数） |
+| `unit` | `domains/unit.rs` / `unit_table.rs` | 8 量纲物理单位换算 + 温度仿射 |
+| `fx` | `domains/fx.rs` / `fx_provider.rs` | 汇率换算（frankfurter.dev API + 三级缓存） |
+| `numerical` | 数值扩展（规划中，P3） | 高级数值方法 — 当前 `numerical = []` 无模块 |
 
 `default = []`：核心库零依赖，可作为嵌入式计算引擎被其他 crate 引用。
 

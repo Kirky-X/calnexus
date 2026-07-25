@@ -207,7 +207,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -226,7 +226,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -245,7 +245,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -264,7 +264,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -283,7 +283,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -302,7 +302,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -321,7 +321,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -340,7 +340,7 @@ impl EvalResult {
             | EvalResult::LaTeX(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -359,7 +359,7 @@ impl EvalResult {
             | EvalResult::Symbolic(_)
             | EvalResult::Steps(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 
@@ -378,7 +378,7 @@ impl EvalResult {
             | EvalResult::Symbolic(_)
             | EvalResult::LaTeX(_)
             | EvalResult::Json(_) => None,
-            | EvalResult::DateTime(_) => None,
+            EvalResult::DateTime(_) => None,
         }
     }
 }

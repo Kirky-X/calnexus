@@ -128,10 +128,7 @@ impl RateProvider for FrankfurterProvider {
         }
 
         // L2: 文件缓存（TTL 内有效）
-        let cached = self
-            .cache_path
-            .as_ref()
-            .and_then(|p| read_cache_file(p));
+        let cached = self.cache_path.as_ref().and_then(|p| read_cache_file(p));
         if let Some(ref c) = cached {
             if !is_expired(c.fetched_at) {
                 let table: RateTable = c.clone().into();
@@ -269,13 +266,10 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
                 .with_i18n("msg.fx.network_unreachable", vec![])
         })?;
 
-    let body = response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| {
-            CalcError::domain(format!("FX response read failed: {}", e))
-                .with_i18n("msg.fx.network_unreachable", vec![])
-        })?;
+    let body = response.into_body().read_to_string().map_err(|e| {
+        CalcError::domain(format!("FX response read failed: {}", e))
+            .with_i18n("msg.fx.network_unreachable", vec![])
+    })?;
 
     let parsed: FrankfurterResponse = serde_json::from_str(&body).map_err(|e| {
         CalcError::domain(format!("FX response parse failed: {}", e))

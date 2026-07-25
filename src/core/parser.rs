@@ -187,13 +187,7 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
 /// （R-esl-003）。
 fn preprocess_strings(
     input: &str,
-) -> Result<
-    (
-        String,
-        std::collections::HashMap<String, AstNode>,
-    ),
-    CalcError,
-> {
+) -> Result<(String, std::collections::HashMap<String, AstNode>), CalcError> {
     let mut result = String::with_capacity(input.len());
     let mut placeholders: std::collections::HashMap<String, AstNode> =
         std::collections::HashMap::new();
@@ -400,10 +394,7 @@ fn replace_placeholders(
                 replace_placeholders(elem, placeholders);
             }
         }
-        AstNode::Number(_)
-        | AstNode::Complex(_, _)
-        | AstNode::BigNumber(_)
-        | AstNode::Str(_) => {}
+        AstNode::Number(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) | AstNode::Str(_) => {}
     }
 }
 
@@ -2108,10 +2099,7 @@ mod tests {
         let ast = parse(r#"f("12345678901234567890")"#).unwrap();
         assert_eq!(
             ast,
-            call(
-                "f",
-                vec![AstNode::Str("12345678901234567890".to_string())]
-            )
+            call("f", vec![AstNode::Str("12345678901234567890".to_string())])
         );
     }
 
@@ -2121,10 +2109,7 @@ mod tests {
         let ast = parse(r#"f("2026-07-25 12:30:00")"#).unwrap();
         assert_eq!(
             ast,
-            call(
-                "f",
-                vec![AstNode::Str("2026-07-25 12:30:00".to_string())]
-            )
+            call("f", vec![AstNode::Str("2026-07-25 12:30:00".to_string())])
         );
     }
 

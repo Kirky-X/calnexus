@@ -152,9 +152,12 @@ impl NumberTheoryDomain {
                 let result = self.eval_node(ast, ctx)?;
                 evalresult_to_bigint(result, ast)
             }
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => Err(
-                CalcError::domain(format!("expected integer expression, got: {:?}", ast)),
-            ),
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
+                Err(CalcError::domain(format!(
+                    "expected integer expression, got: {:?}",
+                    ast
+                )))
+            }
         }
     }
 

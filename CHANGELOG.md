@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **TimeDomain**: 14 date/time functions with IANA timezone support (jiff 0.2, `time` feature) — `date` / `datetime` / `timestamp` / `from_timestamp` / `date_diff` / `date_add` / `parse_date` / `format_date` / `reformat_date` / `weekday` / `day_of_year` / `is_leap_year` / `now` / `today`
+- **UnitDomain**: 8-dimension physical unit conversion with temperature affine (`unit` feature) — `convert(value, "from", "to")` covering length / mass / temperature / volume / area / speed / data / time
+- **FxDomain**: Currency exchange via frankfurter.dev API with 3-level cache (`fx` feature) — `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")`, with `CALNEXUS_FX_TTL_HOURS` and `CALNEXUS_FX_ALLOW_STALE` environment variables
+- **AstNode::Str(String)**: String literal parsing in core parser (双引号包裹、`\"` 转义、未闭合引号报 ParseError)
+- **EvalResult::DateTime(String)**: DateTime result variant with output formatting (canonical / latex / steps / server JSON)
+- **Nondeterministic function cache bypass in evaluator**: `now` / `today` / `fx` / `fx_rate` 等非确定性函数旁路 L1 缓存读写，避免时间/汇率结果被缓存污染
+
+### Changed
+
+- **Cargo.toml description**: 从 "11 computation domains" 更新为 "11 core and 4 optional (numerical/time/unit/fx) computation domains"
+- **CI feature matrix**: test 任务追加 `--features cli,time,unit,fx` 全量测试与 `time` / `unit` / `fx` 三个单 feature 编译检查
+- **README.md / README_EN.md**: 追加可选计算域章节（函数表、feature 开关、CALNEXUS_FX_* 环境变量、汇率数据来源与免责说明），更新域数量表述
+- **docs/ARCHITECTURE.md**: 更新 L2 计算域层清单至 14 域（11 核心 + 3 可选），补充非确定性函数缓存旁路机制说明
+
 ## [0.1.2] - 2026-07-21
 
 ### Fixed

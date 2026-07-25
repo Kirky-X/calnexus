@@ -47,8 +47,16 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run tests
+      - name: Run tests (cli)
         run: cargo test --features cli
+      - name: Run tests (cli,time,unit,fx)
+        run: cargo test --features cli,time,unit,fx
+      - name: Check time feature
+        run: cargo check --features time
+      - name: Check unit feature
+        run: cargo check --features unit
+      - name: Check fx feature
+        run: cargo check --features fx
 
   build:
     name: Build (release)

@@ -66,8 +66,10 @@ impl UnitDomain {
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
             AstNode::BigNumber(s) => s.parse::<f64>().map(EvalResult::Scalar).map_err(|_| {
-                CalcError::domain(format!("invalid big number literal: {}", s))
-                    .with_i18n("msg.invalid_bignumber", vec![("value".to_string(), s.clone())])
+                CalcError::domain(format!("invalid big number literal: {}", s)).with_i18n(
+                    "msg.invalid_bignumber",
+                    vec![("value".to_string(), s.clone())],
+                )
             }),
             AstNode::Variable(name) => {
                 // 优先 ctx 变量，然后 pi/e 常量，最后 unbound 错误
@@ -78,11 +80,12 @@ impl UnitDomain {
                 } else if name == "e" {
                     Ok(EvalResult::Scalar(std::f64::consts::E))
                 } else {
-                    Err(CalcError::eval(format!("unbound variable: {}", name))
-                        .with_i18n(
+                    Err(
+                        CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
                             "msg.unbound_variable",
                             vec![("name".to_string(), name.clone())],
-                        ))
+                        ),
+                    )
                 }
             }
             AstNode::BinaryOp(op, l, r) => {
@@ -100,8 +103,10 @@ impl UnitDomain {
                     )
                     .with_i18n(
                         "msg.unit.invalid_argument",
-                        vec![("detail".to_string(),
-                              "factorial not supported in unit domain".to_string())],
+                        vec![(
+                            "detail".to_string(),
+                            "factorial not supported in unit domain".to_string(),
+                        )],
                     )),
                 }
             }
@@ -111,20 +116,24 @@ impl UnitDomain {
             )
             .with_i18n(
                 "msg.unit.invalid_argument",
-                vec![("detail".to_string(),
-                      "string operand not supported in unit domain".to_string())],
+                vec![(
+                    "detail".to_string(),
+                    "string operand not supported in unit domain".to_string(),
+                )],
             )),
-            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(
-                CalcError::domain(format!(
+            AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+                Err(CalcError::domain(format!(
                     "unit domain does not support this node type: {:?}",
                     ast
                 ))
                 .with_i18n(
                     "msg.unit.invalid_argument",
-                    vec![("detail".to_string(),
-                          format!("unit domain does not support this node type: {:?}", ast))],
-                ),
-            ),
+                    vec![(
+                        "detail".to_string(),
+                        format!("unit domain does not support this node type: {:?}", ast),
+                    )],
+                ))
+            }
         }
     }
 
@@ -132,15 +141,15 @@ impl UnitDomain {
     fn eval_scalar(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match self.eval_node(ast, ctx)? {
             EvalResult::Scalar(v) => Ok(v),
-            _ => Err(CalcError::domain(format!(
-                "expected scalar result from: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.unit.invalid_argument",
-                vec![("detail".to_string(),
-                      format!("expected scalar result from: {:?}", ast))],
-            )),
+            _ => Err(
+                CalcError::domain(format!("expected scalar result from: {:?}", ast)).with_i18n(
+                    "msg.unit.invalid_argument",
+                    vec![(
+                        "detail".to_string(),
+                        format!("expected scalar result from: {:?}", ast),
+                    )],
+                ),
+            ),
         }
     }
 
@@ -163,8 +172,10 @@ impl UnitDomain {
                     )
                     .with_i18n(
                         "msg.unit.invalid_argument",
-                        vec![("detail".to_string(),
-                              "0 cannot be raised to a negative power".to_string())],
+                        vec![(
+                            "detail".to_string(),
+                            "0 cannot be raised to a negative power".to_string(),
+                        )],
                     ));
                 }
                 Ok(a.powf(b))
@@ -213,13 +224,16 @@ impl UnitDomain {
             ))
             .with_i18n(
                 "msg.unit.invalid_argument",
-                vec![("detail".to_string(),
-                      format!("mod() requires exactly 2 arguments, got {}", args.len()))],
+                vec![(
+                    "detail".to_string(),
+                    format!("mod() requires exactly 2 arguments, got {}", args.len()),
+                )],
             ));
         }
         let a = self.eval_scalar(&args[0], ctx)?;
         let b = self.eval_scalar(&args[1], ctx)?;
-        self.apply_binary(BinaryOp::Mod, a, b).map(EvalResult::Scalar)
+        self.apply_binary(BinaryOp::Mod, a, b)
+            .map(EvalResult::Scalar)
     }
 
     /// `abs(x)`：绝对值函数（parser 将 `abs(x)` 保留为函数调用形式）。
@@ -231,8 +245,10 @@ impl UnitDomain {
             ))
             .with_i18n(
                 "msg.unit.invalid_argument",
-                vec![("detail".to_string(),
-                      format!("abs() requires exactly 1 argument, got {}", args.len()))],
+                vec![(
+                    "detail".to_string(),
+                    format!("abs() requires exactly 1 argument, got {}", args.len()),
+                )],
             ));
         }
         let v = self.eval_scalar(&args[0], ctx)?;
@@ -251,8 +267,10 @@ impl UnitDomain {
             ))
             .with_i18n(
                 "msg.unit.invalid_argument",
-                vec![("detail".to_string(),
-                      format!("convert() requires exactly 3 arguments, got {}", args.len()))],
+                vec![(
+                    "detail".to_string(),
+                    format!("convert() requires exactly 3 arguments, got {}", args.len()),
+                )],
             ));
         }
 
@@ -269,8 +287,10 @@ impl UnitDomain {
                 ))
                 .with_i18n(
                     "msg.unit.invalid_argument",
-                    vec![("detail".to_string(),
-                          "convert() 'from' unit must be a string literal".to_string())],
+                    vec![(
+                        "detail".to_string(),
+                        "convert() 'from' unit must be a string literal".to_string(),
+                    )],
                 ));
             }
         };
@@ -283,8 +303,10 @@ impl UnitDomain {
                 ))
                 .with_i18n(
                     "msg.unit.invalid_argument",
-                    vec![("detail".to_string(),
-                          "convert() 'to' unit must be a string literal".to_string())],
+                    vec![(
+                        "detail".to_string(),
+                        "convert() 'to' unit must be a string literal".to_string(),
+                    )],
                 ));
             }
         };
@@ -370,11 +392,17 @@ fn unknown_unit_error(unit: &str) -> CalcError {
     let detail = if suggestions.is_empty() {
         format!("unknown unit: {}", unit)
     } else {
-        format!("unknown unit: {}, did you mean: {}", unit, suggestions.join(", "))
+        format!(
+            "unknown unit: {}, did you mean: {}",
+            unit,
+            suggestions.join(", ")
+        )
     };
 
-    CalcError::domain(detail)
-        .with_i18n("msg.unit.unknown_unit", vec![("unit".to_string(), unit.to_string())])
+    CalcError::domain(detail).with_i18n(
+        "msg.unit.unknown_unit",
+        vec![("unit".to_string(), unit.to_string())],
+    )
 }
 
 /// 构造"量纲不匹配"错误，消息含双方量纲名。
@@ -463,7 +491,10 @@ mod tests {
 
     #[test]
     fn test_supports_unary() {
-        let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(parse(r#"convert(1,"km","m")"#).unwrap()));
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Neg,
+            Box::new(parse(r#"convert(1,"km","m")"#).unwrap()),
+        );
         assert!(UnitDomain.supports(&ast));
     }
 
@@ -701,7 +732,9 @@ mod tests {
     #[test]
     fn test_nested_convert() {
         // convert(convert(1,"m","cm"),"cm","m") = convert(100,"cm","m") = 1
-        assert!((eval_scalar(r#"convert(convert(1,"m","cm"),"cm","m")"#).unwrap() - 1.0).abs() < 1e-9);
+        assert!(
+            (eval_scalar(r#"convert(convert(1,"m","cm"),"cm","m")"#).unwrap() - 1.0).abs() < 1e-9
+        );
     }
 
     #[test]
@@ -874,9 +907,7 @@ mod tests {
                 AstNode::Str("km".to_string()),
             ],
         );
-        let result = UnitDomain
-            .evaluate(&ast, &EvalContext::new())
-            .unwrap();
+        let result = UnitDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert!((result.as_scalar().unwrap() - 1.0).abs() < 1e-9);
     }
 
@@ -898,7 +929,10 @@ mod tests {
     #[test]
     fn test_subtraction() {
         // convert(1,"km","m") - convert(500,"m","m") = 1000 - 500 = 500
-        assert!((eval_scalar(r#"convert(1,"km","m")-convert(500,"m","m")"#).unwrap() - 500.0).abs() < 1e-9);
+        assert!(
+            (eval_scalar(r#"convert(1,"km","m")-convert(500,"m","m")"#).unwrap() - 500.0).abs()
+                < 1e-9
+        );
     }
 
     #[test]
@@ -921,7 +955,10 @@ mod tests {
         let err = result.expect_err("expected error");
         assert!(err.message.contains("ZZZZ"));
         assert_eq!(err.i18n_key, Some("msg.unit.unknown_unit"));
-        assert_eq!(err.i18n_args, vec![("unit".to_string(), "ZZZZ".to_string())]);
+        assert_eq!(
+            err.i18n_args,
+            vec![("unit".to_string(), "ZZZZ".to_string())]
+        );
     }
 
     #[test]

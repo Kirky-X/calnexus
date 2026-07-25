@@ -16,7 +16,7 @@
 
 </div>
 
-A command-line math expression evaluator with 11 computation domains, symbolic calculus, REPL, and batch processing.
+A command-line math expression evaluator with 11 core computation domains and 4 optional domains (numerical linear algebra / time / unit / fx), symbolic calculus, REPL, and batch processing.
 
 | Project Info | Value |
 | --- | --- |
@@ -32,6 +32,7 @@ A command-line math expression evaluator with 11 computation domains, symbolic c
 - [Overview](#overview)
 - [Features](#features)
   - [11 Computation Domains](#11-computation-domains)
+  - [Optional Domains](#optional-domains)
   - [Three Modes](#three-modes)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
@@ -51,7 +52,7 @@ A command-line math expression evaluator with 11 computation domains, symbolic c
 
 ## Overview
 
-**CalNexus** is a Rust-native command-line math expression evaluator that unifies 11 computation domains — from arithmetic and statistics to symbolic calculus and linear algebra — behind a single parser and a priority-routed domain dispatcher. It offers three execution modes (single expression, interactive REPL, and parallel batch) with an LRU cache, arbitrary-precision arithmetic, and JSON output for pipeline integration.
+**CalNexus** is a Rust-native command-line math expression evaluator that unifies 11 core computation domains — from arithmetic and statistics to symbolic calculus and linear algebra — plus 4 optional domains (numerical linear algebra / time / unit / fx) behind a single parser and a priority-routed domain dispatcher. It offers three execution modes (single expression, interactive REPL, and parallel batch) with an LRU cache, arbitrary-precision arithmetic, and JSON output for pipeline integration.
 
 ### Use Cases
 
@@ -66,7 +67,7 @@ A command-line math expression evaluator with 11 computation domains, symbolic c
 
 | Feature | Description |
 | --- | --- |
-| 11 computation domains | Arithmetic, scientific functions, statistics, precision, number theory, combinatorics, polynomial, complex, matrix, vector, symbolic calculus |
+| 11 core + 4 optional domains | Core: arithmetic, scientific functions, statistics, precision, number theory, combinatorics, polynomial, complex, matrix, vector, symbolic calculus; Optional: time / unit / fx (feature-gated) |
 | Symbolic calculus | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
 | Arbitrary precision | `precision(N, expr)` BigRational-based arbitrary precision |
 | Numerical linear algebra | `lu`, `qr`, `eig`, `svd`, `solve` (`numerical` feature, nalgebra f64 approximation) |
@@ -91,6 +92,28 @@ A command-line math expression evaluator with 11 computation domains, symbolic c
 | **Matrix** | 30 | `det`, `transpose`, `inverse`, `identity`, `lu`/`qr`/`eig`/`svd`/`solve` (`numerical` feature) |
 | **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple` |
 | **Symbolic** | 30 | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
+
+### Optional Domains
+
+The following 3 optional domains are gated by Cargo features and enabled with `--features time,unit,fx`:
+
+| Domain | Feature | Functions | Notes |
+| --- | --- | --- | --- |
+| **TimeDomain** | `time` | `date` / `datetime` / `timestamp` / `from_timestamp` / `date_diff` / `date_add` / `parse_date` / `format_date` / `reformat_date` / `weekday` / `day_of_year` / `is_leap_year` / `now` / `today` | Built on jiff 0.2 with bundled IANA tzdb; supports cross-timezone date/time construction, arithmetic intervals, and multi-format auto-recognition (ISO 8601 / Chinese / English month names). `now` / `today` are nondeterministic and bypass the L1 cache on every evaluation. |
+| **UnitDomain** | `unit` | `convert(value, "from", "to")` | Linear conversion across 8 dimensions (length / mass / volume / area / speed / data / time) plus affine temperature conversion (C/F/K/R). Unknown units receive Levenshtein ≤2 suggestions. |
+| **FxDomain** | `fx` | `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")` | Pulls European Central Bank reference rates from the frankfurter.dev open API with a 3-level cache (memory → file → network). Honors `CALNEXUS_FX_TTL_HOURS` (default 24) and `CALNEXUS_FX_ALLOW_STALE` (whether to serve a stale snapshot on network failure). `fx` / `fx_rate` are nondeterministic and bypass the cache. |
+
+Enabling:
+
+```bash
+# Enable all optional domains
+cargo build --release --features cli,time,unit,fx
+
+# Enable only the time domain
+cargo build --features time
+```
+
+> Exchange-rate data is sourced from frankfurter.dev (ECB reference rates) and is provided for reference only — not for trading decisions.
 
 ### Three Modes
 

@@ -12,17 +12,17 @@ use std::sync::OnceLock;
 
 use crate::core::{CalculationDomain, DomainRouter};
 
-use super::{
-    ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
-    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
-    VectorDomain,
-};
 #[cfg(feature = "fx")]
 use super::FxDomain;
 #[cfg(feature = "time")]
 use super::TimeDomain;
 #[cfg(feature = "unit")]
 use super::UnitDomain;
+use super::{
+    ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
+    PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
+    VectorDomain,
+};
 
 /// 构建默认路由器：注册全部 11 个计算域（含 SymbolicDomain）。
 ///

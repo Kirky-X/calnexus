@@ -95,12 +95,12 @@ fn eval_with_provider(
     match ast {
         AstNode::FunctionCall(name, args) => eval_function(name, args, ctx, provider),
         AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
-        AstNode::BigNumber(s) => {
-            s.parse::<f64>().map(EvalResult::Scalar).map_err(|_| {
-                CalcError::domain(format!("invalid big number literal: {}", s))
-                    .with_i18n("msg.invalid_bignumber", vec![("value".to_string(), s.clone())])
-            })
-        }
+        AstNode::BigNumber(s) => s.parse::<f64>().map(EvalResult::Scalar).map_err(|_| {
+            CalcError::domain(format!("invalid big number literal: {}", s)).with_i18n(
+                "msg.invalid_bignumber",
+                vec![("value".to_string(), s.clone())],
+            )
+        }),
         AstNode::Variable(name) => {
             if let Some(v) = ctx.get_var(name) {
                 Ok(EvalResult::Scalar(v))
@@ -109,11 +109,12 @@ fn eval_with_provider(
             } else if name == "e" {
                 Ok(EvalResult::Scalar(std::f64::consts::E))
             } else {
-                Err(CalcError::eval(format!("unbound variable: {}", name))
-                    .with_i18n(
+                Err(
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
                         "msg.unbound_variable",
                         vec![("name".to_string(), name.clone())],
-                    ))
+                    ),
+                )
             }
         }
         AstNode::BinaryOp(op, l, r) => {
@@ -193,14 +194,12 @@ fn eval_function(
     provider: &dyn RateProvider,
 ) -> Result<EvalResult, CalcError> {
     if !FX_EVAL_FUNCTIONS.contains(&name) {
-        return Err(CalcError::domain(format!(
-            "unsupported function in fx domain: {}",
-            name
-        ))
-        .with_i18n(
-            "msg.unknown_function",
-            vec![("name".to_string(), name.to_string())],
-        ));
+        return Err(
+            CalcError::domain(format!("unsupported function in fx domain: {}", name)).with_i18n(
+                "msg.unknown_function",
+                vec![("name".to_string(), name.to_string())],
+            ),
+        );
     }
     match name {
         "fx" => eval_fx(args, ctx, provider),
@@ -491,7 +490,10 @@ mod tests {
 
     #[test]
     fn test_supports_unary() {
-        let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(parse(r#"fx(1,"USD","EUR")"#).unwrap()));
+        let ast = AstNode::UnaryOp(
+            UnaryOp::Neg,
+            Box::new(parse(r#"fx(1,"USD","EUR")"#).unwrap()),
+        );
         assert!(FxDomain.supports(&ast));
     }
 
@@ -526,7 +528,12 @@ mod tests {
         // fx(100, "USD", "CNY") = 100 / 1.08 * 7.85
         let result = eval_scalar(r#"fx(100,"USD","CNY")"#).unwrap();
         let expected = 100.0 / 1.08 * 7.85;
-        assert!((result - expected).abs() < 1e-9, "got {}, expected {}", result, expected);
+        assert!(
+            (result - expected).abs() < 1e-9,
+            "got {}, expected {}",
+            result,
+            expected
+        );
     }
 
     #[test]
@@ -581,10 +588,7 @@ mod tests {
     fn test_fx_wrong_arg_count() {
         let ast = AstNode::FunctionCall(
             "fx".to_string(),
-            vec![
-                AstNode::Number(100.0),
-                AstNode::Str("USD".to_string()),
-            ],
+            vec![AstNode::Number(100.0), AstNode::Str("USD".to_string())],
         );
         let result = eval_with_provider(&ast, &EvalContext::new(), &mock_provider());
         let err = result.expect_err("expected error");
@@ -641,10 +645,8 @@ mod tests {
 
     #[test]
     fn test_fx_rate_wrong_arg_count() {
-        let ast = AstNode::FunctionCall(
-            "fx_rate".to_string(),
-            vec![AstNode::Str("USD".to_string())],
-        );
+        let ast =
+            AstNode::FunctionCall("fx_rate".to_string(), vec![AstNode::Str("USD".to_string())]);
         let result = eval_with_provider(&ast, &EvalContext::new(), &mock_provider());
         let err = result.expect_err("expected error");
         assert_eq!(err.kind, ErrorKind::Domain);

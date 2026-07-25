@@ -130,9 +130,9 @@ const LINEAR_UNITS: &[(&str, Dimension, f64)] = &[
     // 二进制（IEC 前缀）— 系数预先计算为字面量（f64::powi 非 const fn）
     ("KiB", Dimension::Data, 1024.0),
     ("MiB", Dimension::Data, 1048576.0),          // 1024^2
-    ("GiB", Dimension::Data, 1073741824.0),        // 1024^3
-    ("TiB", Dimension::Data, 1099511627776.0),     // 1024^4
-    ("PiB", Dimension::Data, 1125899906842624.0),  // 1024^5
+    ("GiB", Dimension::Data, 1073741824.0),       // 1024^3
+    ("TiB", Dimension::Data, 1099511627776.0),    // 1024^4
+    ("PiB", Dimension::Data, 1125899906842624.0), // 1024^5
     ("kibibyte", Dimension::Data, 1024.0),
     ("mebibyte", Dimension::Data, 1048576.0),
     ("gibibyte", Dimension::Data, 1073741824.0),
@@ -512,7 +512,12 @@ mod tests {
         for u in units {
             let (dim, c) = lookup(u).unwrap();
             let result = 42.0 * c / c;
-            assert!((result - 42.0).abs() < 1e-9, "identity failed for {} ({:?})", u, dim);
+            assert!(
+                (result - 42.0).abs() < 1e-9,
+                "identity failed for {} ({:?})",
+                u,
+                dim
+            );
         }
     }
 

@@ -16,7 +16,7 @@
 
 </div>
 
-一个具备 11 个计算域、符号微积分、REPL 与批量处理的命令行数学表达式求值器。
+一个具备 11 个核心计算域与 4 个可选计算域（数值线性代数 / 时间 / 单位 / 汇率）、符号微积分、REPL 与批量处理的命令行数学表达式求值器。
 
 | 项目信息 | 内容 |
 | --- | --- |
@@ -32,6 +32,7 @@
 - [项目简介](#项目简介)
 - [功能特性](#功能特性)
   - [11 个计算域](#11-个计算域)
+  - [可选计算域](#可选计算域)
   - [三种模式](#三种模式)
 - [架构](#架构)
 - [快速开始](#快速开始)
@@ -51,7 +52,7 @@
 
 ## 项目简介
 
-**CalNexus** 是一个用 Rust 编写的命令行数学表达式求值器，将 11 个计算域 —— 从算术、统计到符号微积分与线性代数 —— 统一在单一解析器与按优先级路由的计算域调度器之后。它提供三种执行模式（单表达式、交互式 REPL、并行批量），并配备 LRU 缓存、任意精度算术与面向管道集成的 JSON 输出。
+**CalNexus** 是一个用 Rust 编写的命令行数学表达式求值器，将 11 个核心计算域 —— 从算术、统计到符号微积分与线性代数 —— 加上 4 个可选计算域（数值线性代数 / 时间 / 单位 / 汇率）—— 统一在单一解析器与按优先级路由的计算域调度器之后。它提供三种执行模式（单表达式、交互式 REPL、并行批量），并配备 LRU 缓存、任意精度算术与面向管道集成的 JSON 输出。
 
 ### 适用场景
 
@@ -66,7 +67,7 @@
 
 | 特性 | 说明 |
 | --- | --- |
-| 11 计算域 | 算术、科学函数、统计、精度、数论、组合、多项式、复数、矩阵、向量、符号演算 |
+| 11 核心计算域 + 4 可选域 | 核心：算术、科学函数、统计、精度、数论、组合、多项式、复数、矩阵、向量、符号演算；可选：时间 / 单位 / 汇率（feature 门控） |
 | 符号微积分 | `diff`、`integrate`、`simplify`、`limit`、`taylor` |
 | 任意精度 | `precision(N, expr)` 基于 BigRational 的任意精度计算 |
 | 数值线性代数 | `lu`、`qr`、`eig`、`svd`、`solve`（`numerical` feature，nalgebra f64 近似） |
@@ -91,6 +92,28 @@
 | **Matrix** | 30 | `det`, `transpose`, `inverse`, `identity`, `lu`/`qr`/`eig`/`svd`/`solve`（`numerical` feature） |
 | **Vector** | 30 | `dot`, `cross`, `norm`, `angle`, `normalize`, `scalar_triple` |
 | **Symbolic** | 30 | `diff`, `integrate`, `simplify`, `limit`, `taylor` |
+
+### 可选计算域
+
+以下 3 个可选域通过 Cargo feature 门控，需以 `--features time,unit,fx` 启用：
+
+| 可选域 | Feature | 函数表 | 说明 |
+| --- | --- | --- | --- |
+| **TimeDomain** | `time` | `date` / `datetime` / `timestamp` / `from_timestamp` / `date_diff` / `date_add` / `parse_date` / `format_date` / `reformat_date` / `weekday` / `day_of_year` / `is_leap_year` / `now` / `today` | 基于 jiff 0.2，内嵌 IANA tzdb，支持跨时区日期/时间构造、算术间隔与多格式自动识别（ISO 8601 / 中文 / 英文月份名）。`now` / `today` 为非确定性函数，每次求值旁路 L1 缓存。 |
+| **UnitDomain** | `unit` | `convert(value, "from", "to")` | 8 量纲线性换算（长度 / 质量 / 体积 / 面积 / 速度 / 数据 / 时间）+ 温度仿射换算（C/F/K/R）。未知单位附 Levenshtein 距离 ≤2 的相近建议。 |
+| **FxDomain** | `fx` | `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")` | 经 frankfurter.dev 开放 API 拉取欧洲央行汇率，三级缓存（内存 → 文件 → 网络），支持 `CALNEXUS_FX_TTL_HOURS`（默认 24）与 `CALNEXUS_FX_ALLOW_STALE`（网络失败时是否使用过期快照）环境变量。`fx` / `fx_rate` 为非确定性函数，旁路缓存。 |
+
+启用方式：
+
+```bash
+# 编译时启用全部可选域
+cargo build --release --features cli,time,unit,fx
+
+# 仅启用时间域
+cargo build --features time
+```
+
+> 汇率数据来源为 frankfurter.dev（欧洲央行参考汇率），仅供参考，不构成交易建议。
 
 ### 三种模式
 
