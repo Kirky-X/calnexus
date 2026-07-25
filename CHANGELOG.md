@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-26
+
+### Fixed
+
+- **CI fmt 红线修复**: `src/domains/fx.rs` / `time.rs` / `vector.rs` 多处 `CalcError::domain(...).with_i18n(...)` 链式调用与函数签名不符合 rustfmt 默认格式，导致 `cargo fmt --check` 连续 5 次 main 分支 CI 失败。本地 `cargo fmt --all` 一次性修复全部 8 处格式偏差
+- **Release pipeline 闭环（3 维度 subagent 审查 — 安全/架构/性能）**: `.github/workflows/release.yml` 设计缺陷——仅创建 GitHub Release，从未触发 `cargo publish`。本次修复整合 5 HIGH + 9 MEDIUM 全部缺陷：
+  - **安全 H-1**: GitHub Actions 表达式注入 → `${{ }}` 改为 `env:` 注入 + 版本号正则白名单 `^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$`
+  - **安全 M-2**: 缺少发布前 SAST → 新增 `cargo audit --deny warnings`（规则24）
+  - **架构 H-1**: 发布前无验证 → 新增 `cargo publish --dry-run` 包级别构建验证（CI 已跑测试）
+  - **架构 H-2**: `workflow_dispatch` 触发器缺失（注释承诺但代码未定义）→ 新增 `workflow_dispatch` inputs.tag，publish 失败可手动重试
+  - **架构 M-1**: 版本验证位置错误 → `Verify Cargo.toml version matches tag` 前移到打包前，fail-fast
+  - **架构 M-2**: 缺少 `concurrency` 控制 → 新增 `release-${{ github.ref }}` group，`cancel-in-progress: false`
+  - **架构 M-3**: publish 前无构建验证 → 新增 `cargo publish --dry-run` 步骤
+  - **性能 H-1**: `apt-get update` 每次执行（10-20s）→ 改用 `arduino/setup-protoc@v3`（1-2s）
+  - **性能 H-2**: `cargo publish` 无进度反馈 → 加 `-v` 避免日志黑屏
+  - **性能 M-3**: `git archive` 顺序执行 → 改为 `&` 并行 + `wait`
+  - **安全 LOW-1 / 架构 L-2**: `permissions` 从 workflow 级别收窄到 job 级别
+  - 调整顺序：`cargo publish` 在 `softprops/action-gh-release` 之前，publish 失败时 Release 尚未创建可无成本重试
+
+### Testing
+
+- `cargo fmt --all -- --check`：通过（修复前 8 处 diff，修复后 0 diff）
+- `cargo test --features cli`：全部通过
+- `cargo test --features cli,time,unit,fx`：全部通过（含 10 个 time_unit_fx 集成测试）
+- `cargo clippy --features cli --all-targets -- -D warnings`：零 warning
+- `cargo publish --dry-run --allow-dirty`：通过（95 files, 2.0MiB 打包 + 完整构建验证 + 依赖拉取）
+- `python3 yaml.safe_load`：release.yml YAML 语法验证通过
+
+### Notes
+
+- **v0.1.1 / v0.1.2 / v0.1.3 历史遗留**: 三个 tag 触发了 release.yml 但仅创建 GitHub Release，从未发布到 crates.io（crates.io 仍停留在 v0.1.0）。crates.io 不允许重发相同版本号，因此 v0.1.1/0.1.2/0.1.3 永久缺失。从 v0.1.4 起 release pipeline 闭环，所有新 tag 将自动 publish
+- **未修复项（LOW）**: 第三方 Action 未 pin to SHA（安全 M-1）— 需配合 Dependabot 自动更新配置，留待后续 follow-up
+
 ## [0.1.3] - 2026-07-26
 
 ### Added
