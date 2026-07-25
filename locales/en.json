@@ -246,5 +246,16 @@
   "batch.text_result": "line {line}: {expr} = {value}  [{domain}{cached}]",
   "batch.text_error": "line {line}: {expr} → error: {error}",
   "batch.summary": "summary: {total} total, {ok} ok, {errors} errors, {hits} cache hits, {elapsed}",
-  "main.feature_missing": "calnexus was compiled without the 'cli' feature. Rebuild with --features cli."
+  "main.feature_missing": "calnexus was compiled without the 'cli' feature. Rebuild with --features cli.",
+  "msg.time.invalid_date": "Invalid date: {value}",
+  "msg.time.unknown_timezone": "Unknown timezone: {tz}",
+  "msg.time.format_mismatch": "Format mismatch: input does not match format {fmt}",
+  "msg.time.invalid_unit": "Invalid time unit: {unit}",
+  "msg.time.ambiguous_format": "Ambiguous date format, use parse_date() with explicit format",
+  "msg.unit.dimension_mismatch": "Dimension mismatch: {from} is {from_dim}, {to} is {to_dim}",
+  "msg.unit.unknown_unit": "Unknown unit: {unit}",
+  "msg.unit.invalid_argument": "Invalid argument: {detail}",
+  "msg.fx.unknown_currency": "Unknown currency: {code}",
+  "msg.fx.network_unreachable": "FX network unreachable",
+  "msg.fx.stale_hint": "Use CALNEXUS_FX_ALLOW_STALE=1 to allow stale cache"
 }

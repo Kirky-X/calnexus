@@ -17,6 +17,12 @@ use super::{
     PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
     VectorDomain,
 };
+#[cfg(feature = "fx")]
+use super::FxDomain;
+#[cfg(feature = "time")]
+use super::TimeDomain;
+#[cfg(feature = "unit")]
+use super::UnitDomain;
 
 /// 构建默认路由器：注册全部 11 个计算域（含 SymbolicDomain）。
 ///
@@ -37,6 +43,12 @@ pub(crate) fn build_default_router() -> &'static DomainRouter {
         router.register(Box::new(ScientificDomain));
         router.register(Box::new(StatisticsDomain));
         router.register(Box::new(ArithmeticDomain));
+        #[cfg(feature = "time")]
+        router.register(Box::new(TimeDomain));
+        #[cfg(feature = "unit")]
+        router.register(Box::new(UnitDomain));
+        #[cfg(feature = "fx")]
+        router.register(Box::new(FxDomain));
         router
     })
 }
@@ -92,5 +104,11 @@ mod tests {
         assert_eq!(MatrixDomain.priority(), 30);
         assert_eq!(VectorDomain.priority(), 30);
         assert_eq!(SymbolicDomain.priority(), 30);
+        #[cfg(feature = "time")]
+        assert_eq!(TimeDomain.priority(), 30);
+        #[cfg(feature = "unit")]
+        assert_eq!(UnitDomain.priority(), 30);
+        #[cfg(feature = "fx")]
+        assert_eq!(FxDomain.priority(), 30);
     }
 }

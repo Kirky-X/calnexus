@@ -246,5 +246,16 @@
   "batch.text_result": "行 {line}: {expr} = {value}  [{domain}{cached}]",
   "batch.text_error": "行 {line}: {expr} → 错误: {error}",
   "batch.summary": "汇总: 共 {total} 条，成功 {ok}，错误 {errors}，缓存命中 {hits}，耗时 {elapsed}",
-  "main.feature_missing": "calnexus 编译时未启用 'cli' 特性。请用 --features cli 重新编译。"
+  "main.feature_missing": "calnexus 编译时未启用 'cli' 特性。请用 --features cli 重新编译。",
+  "msg.time.invalid_date": "无效日期: {value}",
+  "msg.time.unknown_timezone": "未知时区: {tz}",
+  "msg.time.format_mismatch": "格式不匹配: 输入与格式 {fmt} 不一致",
+  "msg.time.invalid_unit": "无效时间单位: {unit}",
+  "msg.time.ambiguous_format": "日期格式有歧义，请使用 parse_date() 指定显式格式",
+  "msg.unit.dimension_mismatch": "量纲不匹配: {from} 属于 {from_dim}，{to} 属于 {to_dim}",
+  "msg.unit.unknown_unit": "未知单位: {unit}",
+  "msg.unit.invalid_argument": "无效参数: {detail}",
+  "msg.fx.unknown_currency": "未知币种: {code}",
+  "msg.fx.network_unreachable": "汇率网络不可达",
+  "msg.fx.stale_hint": "设置 CALNEXUS_FX_ALLOW_STALE=1 以允许使用过期缓存"
 }

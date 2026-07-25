@@ -9,6 +9,10 @@ mod arithmetic;
 mod combinatorics;
 mod complex;
 mod factory;
+#[cfg(feature = "fx")]
+mod fx;
+#[cfg(feature = "fx")]
+mod fx_provider;
 mod matrix;
 mod number_theory;
 #[cfg(feature = "numerical")]
@@ -18,6 +22,12 @@ mod precision;
 mod scientific;
 mod statistics;
 mod symbolic;
+#[cfg(feature = "time")]
+mod time;
+#[cfg(feature = "unit")]
+mod unit;
+#[cfg(feature = "unit")]
+mod unit_table;
 mod vector;
 
 pub(crate) use factory::{build_default_router, build_precision_domain};
@@ -25,6 +35,8 @@ pub(crate) use factory::{build_default_router, build_precision_domain};
 pub use arithmetic::ArithmeticDomain;
 pub use combinatorics::CombinatoricsDomain;
 pub use complex::ComplexDomain;
+#[cfg(feature = "fx")]
+pub use fx::FxDomain;
 pub use matrix::MatrixDomain;
 pub use number_theory::NumberTheoryDomain;
 pub use polynomial::PolynomialDomain;
@@ -34,4 +46,8 @@ pub use precision::PrecisionDomain;
 pub use scientific::ScientificDomain;
 pub use statistics::StatisticsDomain;
 pub use symbolic::SymbolicDomain;
+#[cfg(feature = "time")]
+pub use time::TimeDomain;
+#[cfg(feature = "unit")]
+pub use unit::UnitDomain;
 pub use vector::VectorDomain;

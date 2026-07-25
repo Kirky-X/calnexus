@@ -22,8 +22,12 @@ icu = ["dep:icu"]
 http = ["dep:sdforge", "sdforge/http", "dep:axum", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
-# FX: 汇率换算（P2 实现）
-fx = []
+# Time: 时间计算（日期差、时间戳、格式解析，feature 门控）
+time = ["dep:jiff"]
+# Unit: 物理单位换算（8 量纲，feature 门控）
+unit = []
+# FX: 汇率换算（frankfurter.dev API + 本地缓存）
+fx = ["dep:ureq", "dep:dirs"]
 # Numerical: 高级数值计算（eig/SVD 等，P3 实现）
 numerical = []
 # Server: HTTP + MCP 聚合
@@ -64,6 +68,12 @@ axum = { version = "0.8", default-features = false, optional = true }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 # anyhow: 错误上下文（sdforge 0.4.2 #[forge] MCP codegen 硬依赖 anyhow::anyhow!/anyhow::Error；仅 mcp feature 启用）
 anyhow = { version = "1.0", default-features = false, features = ["std"], optional = true }
+# jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
+# ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
+ureq = { version = "3.3", default-features = false, features = ["rustls"], optional = true }
+# dirs: 跨平台缓存目录（仅 fx feature 启用）
+dirs = { version = "6.0", default-features = false, optional = true }
 
 [dev-dependencies]
 proptest = { version = "1.11", default-features = false, features = ["std"] }
