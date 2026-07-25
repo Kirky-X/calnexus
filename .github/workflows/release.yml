@@ -54,7 +54,7 @@ jobs:
           echo "Extracted tag: $TAG"
           echo "Extracted version: $VERSION"
 
-      # 架构 M-1 / 性能 M-1：版本验证前移到打包前，fail-fast 节约 CI 资源
+      # 架构 M-1 / 性能 M-1：版本验证前移，fail-fast 节约 CI 资源
       - name: Verify Cargo.toml version matches tag
         env:
           TAG_VERSION: ${{ steps.version.outputs.version }}
@@ -65,24 +65,6 @@ jobs:
             exit 1
           fi
           echo "Version match: $TAG_VERSION"
-
-      # 安全 H-1：env 注入而非 ${{ }} 字符串展开；性能 M-3：两次 archive 并行
-      - name: Create source archives
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          git archive --format=tar.gz --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.tar.gz" "$TAG" &
-          git archive --format=zip --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.zip" "$TAG" &
-          wait
-
-      - name: Generate SHA256 checksums
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          sha256sum "calnexus-${VERSION}.tar.gz" "calnexus-${VERSION}.zip" > "calnexus-${VERSION}-sha256sums.txt"
-          echo "Checksums:"
-          cat "calnexus-${VERSION}-sha256sums.txt"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -104,14 +86,35 @@ jobs:
         run: cargo audit --deny warnings
 
       # 架构 H-1 / M-3：publish 前做 dry-run 验证（包含完整构建，CI 已跑测试）
+      # 必须在 create archives 之前：cargo publish 拒绝 working directory 有未提交文件
       - name: Verify package builds
         run: cargo publish --dry-run
 
       # 性能 H-2：-v 提供进度反馈，避免日志黑屏 45s 像 hang 死
+      # crates.io 是事实发布，必须在 GitHub Release 之前
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -v
+
+      # 安全 H-1：env 注入而非 ${{ }} 字符串展开；性能 M-3：两次 archive 并行
+      # 在 publish 之后：publish 失败时不创建 archives，可无成本重试
+      - name: Create source archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git archive --format=tar.gz --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.tar.gz" "$TAG" &
+          git archive --format=zip --prefix=calnexus-${VERSION}/ -o "calnexus-${VERSION}.zip" "$TAG" &
+          wait
+
+      - name: Generate SHA256 checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sha256sum "calnexus-${VERSION}.tar.gz" "calnexus-${VERSION}.zip" > "calnexus-${VERSION}-sha256sums.txt"
+          echo "Checksums:"
+          cat "calnexus-${VERSION}-sha256sums.txt"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
