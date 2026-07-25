@@ -7,11 +7,12 @@
 //! - design.md D2（复用 AstNode::List）、D6（priority=30）
 //!
 //! 路由策略：
-//! - AST 含向量函数调用（dot/cross/norm/angle/normalize/scalar_triple）时路由至本域
-//! - AST 含 List 节点参与的 BinaryOp(Add/Sub/Mul) 时路由至本域（向量算术）
+//! - AST 含向量函数调用（dot/cross/norm/angle/normalize/scalar_triple/
+//!   cosine_similarity/project/reflect/euclidean/manhattan/outer/lerp）时路由至本域
+//! - AST 含 List 节点参与的 BinaryOp(Add/Sub/Mul) 时路由至本域（向量算术，含 Hadamard 积）
 //!
 //! 输入：AstNode::List 节点，元素必须为标量数值。
-//! 输出：EvalResult::Vector 或 EvalResult::Scalar。
+//! 输出：EvalResult::Vector / EvalResult::Scalar / EvalResult::Matrix（outer）。
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
@@ -25,6 +26,13 @@ const VECTOR_FUNCTIONS: &[&str] = &[
     "angle",
     "normalize",
     "scalar_triple",
+    "cosine_similarity",
+    "project",
+    "reflect",
+    "euclidean",
+    "manhattan",
+    "outer",
+    "lerp",
 ];
 
 /// Vector 计算域。
@@ -269,6 +277,27 @@ impl VectorDomain {
                 };
                 Ok(EvalResult::Vector(result))
             }
+            // List * List：Hadamard 积（逐元素相乘）
+            (true, true, BinaryOp::Mul) => {
+                let a = self.list_to_vector(l, ctx)?;
+                let b = self.list_to_vector(r, ctx)?;
+                if a.len() != b.len() {
+                    return Err(CalcError::domain(format!(
+                        "Hadamard product dimension mismatch: {} vs {}",
+                        a.len(),
+                        b.len()
+                    ))
+                    .with_i18n(
+                        "msg.vector.hadamard_dim_mismatch",
+                        vec![
+                            ("a".to_string(), a.len().to_string()),
+                            ("b".to_string(), b.len().to_string()),
+                        ],
+                    ));
+                }
+                let result: Vec<f64> = a.iter().zip(b.iter()).map(|(x, y)| x * y).collect();
+                Ok(EvalResult::Vector(result))
+            }
             // scalar * List / List * scalar：数乘
             (false, true, BinaryOp::Mul) => {
                 let scalar = self.eval_scalar(l, ctx)?;
@@ -316,6 +345,13 @@ impl VectorDomain {
             "angle" => self.eval_angle(args, ctx),
             "normalize" => self.eval_normalize(args, ctx),
             "scalar_triple" => self.eval_scalar_triple(args, ctx),
+            "cosine_similarity" => self.eval_cosine_similarity(args, ctx),
+            "project" => self.eval_project(args, ctx),
+            "reflect" => self.eval_reflect(args, ctx),
+            "euclidean" => self.eval_euclidean(args, ctx),
+            "manhattan" => self.eval_manhattan(args, ctx),
+            "outer" => self.eval_outer(args, ctx),
+            "lerp" => self.eval_lerp(args, ctx),
             _ => unreachable!(),
         }
     }
@@ -498,6 +534,285 @@ impl VectorDomain {
         ];
         let result = cross[0] * c[0] + cross[1] * c[1] + cross[2] * c[2];
         Ok(EvalResult::Scalar(result))
+    }
+
+    /// cosine_similarity(a, b)：余弦相似度 = dot(a,b) / (norm(a) * norm(b))，返回标量 [-1, 1]。
+    fn eval_cosine_similarity(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "cosine_similarity() requires exactly 2 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.vector.cosine_similarity_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        if a.len() != b.len() {
+            return Err(CalcError::domain(format!(
+                "cosine_similarity(): dimension mismatch {} vs {}",
+                a.len(),
+                b.len()
+            ))
+            .with_i18n(
+                "msg.vector.cosine_similarity_dim_mismatch",
+                vec![
+                    ("a".to_string(), a.len().to_string()),
+                    ("b".to_string(), b.len().to_string()),
+                ],
+            ));
+        }
+        let dv_a = DVector::from_vec(a);
+        let dv_b = DVector::from_vec(b);
+        let norm_a = dv_a.norm();
+        let norm_b = dv_b.norm();
+        if norm_a == 0.0 || norm_b == 0.0 {
+            return Err(CalcError::domain(
+                "cosine_similarity(): zero vector has no defined similarity".to_string(),
+            )
+            .with_i18n("msg.vector.cosine_similarity_zero_vector", vec![]));
+        }
+        let cos = dv_a.dot(&dv_b) / (norm_a * norm_b);
+        Ok(EvalResult::Scalar(cos.clamp(-1.0, 1.0)))
+    }
+
+    /// project(a, b)：投影 = (dot(a,b) / dot(b,b)) * b，返回向量。
+    fn eval_project(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "project() requires exactly 2 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.vector.project_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        if a.len() != b.len() {
+            return Err(CalcError::domain(format!(
+                "project(): dimension mismatch {} vs {}",
+                a.len(),
+                b.len()
+            ))
+            .with_i18n(
+                "msg.vector.project_dim_mismatch",
+                vec![
+                    ("a".to_string(), a.len().to_string()),
+                    ("b".to_string(), b.len().to_string()),
+                ],
+            ));
+        }
+        let dv_a = DVector::from_vec(a);
+        let dv_b = DVector::from_vec(b);
+        let b_dot_b = dv_b.dot(&dv_b);
+        if b_dot_b == 0.0 {
+            return Err(CalcError::domain(
+                "project(): cannot project onto zero vector".to_string(),
+            )
+            .with_i18n("msg.vector.project_zero_vector", vec![]));
+        }
+        let scalar = dv_a.dot(&dv_b) / b_dot_b;
+        let proj = &dv_b * scalar;
+        Ok(EvalResult::Vector(proj.iter().cloned().collect()))
+    }
+
+    /// reflect(v, n)：反射 = v - 2 * (dot(v,n) / dot(n,n)) * n，返回向量。
+    fn eval_reflect(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "reflect() requires exactly 2 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.vector.reflect_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
+        }
+        let v = self.list_to_vector(&args[0], ctx)?;
+        let n = self.list_to_vector(&args[1], ctx)?;
+        if v.len() != n.len() {
+            return Err(CalcError::domain(format!(
+                "reflect(): dimension mismatch {} vs {}",
+                v.len(),
+                n.len()
+            ))
+            .with_i18n(
+                "msg.vector.reflect_dim_mismatch",
+                vec![
+                    ("a".to_string(), v.len().to_string()),
+                    ("b".to_string(), n.len().to_string()),
+                ],
+            ));
+        }
+        let dv_v = DVector::from_vec(v);
+        let dv_n = DVector::from_vec(n);
+        let n_dot_n = dv_n.dot(&dv_n);
+        if n_dot_n == 0.0 {
+            return Err(CalcError::domain(
+                "reflect(): cannot reflect across zero normal vector".to_string(),
+            )
+            .with_i18n("msg.vector.reflect_zero_vector", vec![]));
+        }
+        let scalar = 2.0 * dv_v.dot(&dv_n) / n_dot_n;
+        let reflected = &dv_v - &dv_n * scalar;
+        Ok(EvalResult::Vector(reflected.iter().cloned().collect()))
+    }
+
+    /// euclidean(a, b)：欧几里得距离 = sqrt(sum((a[i]-b[i])^2))，返回标量。
+    fn eval_euclidean(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "euclidean() requires exactly 2 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.vector.euclidean_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        if a.len() != b.len() {
+            return Err(CalcError::domain(format!(
+                "euclidean(): dimension mismatch {} vs {}",
+                a.len(),
+                b.len()
+            ))
+            .with_i18n(
+                "msg.vector.euclidean_dim_mismatch",
+                vec![
+                    ("a".to_string(), a.len().to_string()),
+                    ("b".to_string(), b.len().to_string()),
+                ],
+            ));
+        }
+        let dv_a = DVector::from_vec(a);
+        let dv_b = DVector::from_vec(b);
+        let diff = &dv_a - &dv_b;
+        Ok(EvalResult::Scalar(diff.norm()))
+    }
+
+    /// manhattan(a, b)：曼哈顿距离 = sum(|a[i]-b[i]|)，返回标量。
+    fn eval_manhattan(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "manhattan() requires exactly 2 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.vector.manhattan_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        if a.len() != b.len() {
+            return Err(CalcError::domain(format!(
+                "manhattan(): dimension mismatch {} vs {}",
+                a.len(),
+                b.len()
+            ))
+            .with_i18n(
+                "msg.vector.manhattan_dim_mismatch",
+                vec![
+                    ("a".to_string(), a.len().to_string()),
+                    ("b".to_string(), b.len().to_string()),
+                ],
+            ));
+        }
+        let dist: f64 = a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum();
+        Ok(EvalResult::Scalar(dist))
+    }
+
+    /// outer(a, b)：外积 = a × b^T，返回 m×n 矩阵（M[i][j] = a[i] * b[j]）。
+    fn eval_outer(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::domain(format!(
+                "outer() requires exactly 2 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.vector.outer_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
+        }
+        let a = self.list_to_vector(&args[0], ctx)?;
+        let b = self.list_to_vector(&args[1], ctx)?;
+        let matrix: Vec<Vec<f64>> = a
+            .iter()
+            .map(|ai| b.iter().map(|bi| ai * bi).collect())
+            .collect();
+        Ok(EvalResult::Matrix(matrix))
+    }
+
+    /// lerp(a, b, t)：线性插值 = a + t * (b - a) = (1-t)*a + t*b。
+    ///
+    /// a/b 可为标量或向量（须同类型同维度），t 为标量。返回与 a/b 同类型。
+    fn eval_lerp(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        if args.len() != 3 {
+            return Err(CalcError::domain(format!(
+                "lerp() requires exactly 3 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.vector.lerp_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
+        }
+        let t = self.eval_scalar(&args[2], ctx)?;
+        let is_a_list = is_list_node(&args[0]);
+        let is_b_list = is_list_node(&args[1]);
+        match (is_a_list, is_b_list) {
+            (true, true) => {
+                let a = self.list_to_vector(&args[0], ctx)?;
+                let b = self.list_to_vector(&args[1], ctx)?;
+                if a.len() != b.len() {
+                    return Err(CalcError::domain(format!(
+                        "lerp(): dimension mismatch {} vs {}",
+                        a.len(),
+                        b.len()
+                    ))
+                    .with_i18n(
+                        "msg.vector.lerp_dim_mismatch",
+                        vec![
+                            ("a".to_string(), a.len().to_string()),
+                            ("b".to_string(), b.len().to_string()),
+                        ],
+                    ));
+                }
+                let result: Vec<f64> = a
+                    .iter()
+                    .zip(b.iter())
+                    .map(|(ai, bi)| ai + t * (bi - ai))
+                    .collect();
+                Ok(EvalResult::Vector(result))
+            }
+            (false, false) => {
+                let a = self.eval_scalar(&args[0], ctx)?;
+                let b = self.eval_scalar(&args[1], ctx)?;
+                Ok(EvalResult::Scalar(a + t * (b - a)))
+            }
+            _ => Err(CalcError::domain(
+                "lerp(): arguments must be both scalars or both vectors".to_string(),
+            )
+            .with_i18n("msg.vector.lerp_dim_mismatch", vec![])),
+        }
     }
 
     /// 将 AstNode::List 转为 Vec<f64>。非数值元素返回 DomainError。
@@ -1352,6 +1667,403 @@ mod tests {
     fn test_contains_vector_arithmetic_in_matrix() {
         // contains_vector_arithmetic Matrix 分支（line 431）
         let ast = AstNode::Matrix(vec![vec![parse("[1,2]+[3,4]").unwrap()]]);
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    // ===== 新增向量运算测试 =====
+
+    // --- Hadamard 积（List * List 逐元素乘）---
+
+    #[test]
+    fn test_hadamard_product() {
+        let result = eval_vector("[1,2,3]*[4,5,6]").unwrap();
+        assert_eq!(result, vec![4.0, 10.0, 18.0]);
+    }
+
+    #[test]
+    fn test_hadamard_product_2d() {
+        let result = eval_vector("[1,2]*[3,4]").unwrap();
+        assert_eq!(result, vec![3.0, 8.0]);
+    }
+
+    #[test]
+    fn test_hadamard_product_dim_mismatch() {
+        let result = eval("[1,2]*[1,2,3]");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_hadamard_product_with_negatives() {
+        // [-1,2]*[3,-4] = [-3,-8]
+        let result = eval_vector("[-1,2]*[3,-4]").unwrap();
+        assert_eq!(result, vec![-3.0, -8.0]);
+    }
+
+    // --- cosine_similarity ---
+
+    #[test]
+    fn test_cosine_similarity_parallel() {
+        // 平行向量 → 1.0
+        assert_approx(eval_scalar("cosine_similarity([1,0],[2,0])").unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_orthogonal() {
+        // 正交向量 → 0.0
+        assert_approx(eval_scalar("cosine_similarity([1,0],[0,1])").unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_opposite() {
+        // 反向向量 → -1.0
+        assert_approx(eval_scalar("cosine_similarity([1,0],[-1,0])").unwrap(), -1.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_3d() {
+        // cosine_similarity([1,2,3],[4,5,6]) = (4+10+18)/(sqrt(14)*sqrt(77))
+        let result = eval_scalar("cosine_similarity([1,2,3],[4,5,6])").unwrap();
+        let expected = 32.0 / (14f64.sqrt() * 77f64.sqrt());
+        assert_approx(result, expected);
+    }
+
+    #[test]
+    fn test_cosine_similarity_zero_vector() {
+        let result = eval("cosine_similarity([0,0],[1,0])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_cosine_similarity_dim_mismatch() {
+        let result = eval("cosine_similarity([1,2],[1,2,3])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_cosine_similarity_wrong_args() {
+        let ast = AstNode::FunctionCall("cosine_similarity".to_string(), vec![AstNode::Number(1.0)]);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    // --- project ---
+
+    #[test]
+    fn test_project_onto_axis() {
+        // project([3,4],[1,0]) = (3*1+4*0)/(1*1+0*0) * [1,0] = 3 * [1,0] = [3,0]
+        let result = eval_vector("project([3,4],[1,0])").unwrap();
+        assert_eq!(result, vec![3.0, 0.0]);
+    }
+
+    #[test]
+    fn test_project_onto_diagonal() {
+        // project([1,1],[1,1]) = (1+1)/(1+1) * [1,1] = [1,1]
+        let result = eval_vector("project([1,1],[1,1])").unwrap();
+        assert_eq!(result, vec![1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_project_3d() {
+        // project([1,2,3],[0,0,1]) = (3)/(1) * [0,0,1] = [0,0,3]
+        let result = eval_vector("project([1,2,3],[0,0,1])").unwrap();
+        assert_eq!(result, vec![0.0, 0.0, 3.0]);
+    }
+
+    #[test]
+    fn test_project_zero_vector() {
+        let result = eval("project([1,2],[0,0])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_project_dim_mismatch() {
+        let result = eval("project([1,2],[1,2,3])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_project_wrong_args() {
+        let ast = AstNode::FunctionCall("project".to_string(), vec![AstNode::Number(1.0)]);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    // --- reflect ---
+
+    #[test]
+    fn test_reflect_across_x_axis() {
+        // reflect([1,1],[1,0]) = [1,1] - 2*(1/1)*[1,0] = [1,1] - [2,0] = [-1,1]
+        let result = eval_vector("reflect([1,1],[1,0])").unwrap();
+        assert_eq!(result, vec![-1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_reflect_across_y_axis() {
+        // reflect([1,1],[0,1]) = [1,1] - 2*(1/1)*[0,1] = [1,-1]
+        let result = eval_vector("reflect([1,1],[0,1])").unwrap();
+        assert_eq!(result, vec![1.0, -1.0]);
+    }
+
+    #[test]
+    fn test_reflect_across_diagonal() {
+        // reflect([2,0],[1,1]) = [2,0] - 2*(2/2)*[1,1] = [2,0] - [2,2] = [0,-2]
+        let result = eval_vector("reflect([2,0],[1,1])").unwrap();
+        assert_eq!(result, vec![0.0, -2.0]);
+    }
+
+    #[test]
+    fn test_reflect_3d() {
+        // reflect([1,1,1],[0,0,1]) = [1,1,1] - 2*(1/1)*[0,0,1] = [1,1,-1]
+        let result = eval_vector("reflect([1,1,1],[0,0,1])").unwrap();
+        assert_eq!(result, vec![1.0, 1.0, -1.0]);
+    }
+
+    #[test]
+    fn test_reflect_zero_normal() {
+        let result = eval("reflect([1,2],[0,0])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_reflect_dim_mismatch() {
+        let result = eval("reflect([1,2],[1,2,3])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_reflect_wrong_args() {
+        let ast = AstNode::FunctionCall("reflect".to_string(), vec![AstNode::Number(1.0)]);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    // --- euclidean ---
+
+    #[test]
+    fn test_euclidean_same_point() {
+        assert_approx(eval_scalar("euclidean([1,2],[1,2])").unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_euclidean_2d() {
+        // euclidean([0,0],[3,4]) = 5
+        assert_approx(eval_scalar("euclidean([0,0],[3,4])").unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_euclidean_3d() {
+        // euclidean([0,0,0],[1,2,2]) = 3
+        assert_approx(eval_scalar("euclidean([0,0,0],[1,2,2])").unwrap(), 3.0);
+    }
+
+    #[test]
+    fn test_euclidean_dim_mismatch() {
+        let result = eval("euclidean([1,2],[1,2,3])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_euclidean_wrong_args() {
+        let ast = AstNode::FunctionCall("euclidean".to_string(), vec![AstNode::Number(1.0)]);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    // --- manhattan ---
+
+    #[test]
+    fn test_manhattan_same_point() {
+        assert_approx(eval_scalar("manhattan([1,2],[1,2])").unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_manhattan_2d() {
+        // manhattan([0,0],[3,4]) = 3 + 4 = 7
+        assert_approx(eval_scalar("manhattan([0,0],[3,4])").unwrap(), 7.0);
+    }
+
+    #[test]
+    fn test_manhattan_3d() {
+        // manhattan([0,0,0],[1,2,3]) = 1 + 2 + 3 = 6
+        assert_approx(eval_scalar("manhattan([0,0,0],[1,2,3])").unwrap(), 6.0);
+    }
+
+    #[test]
+    fn test_manhattan_negative_diffs() {
+        // manhattan([5,5],[2,1]) = |5-2| + |5-1| = 3 + 4 = 7
+        assert_approx(eval_scalar("manhattan([5,5],[2,1])").unwrap(), 7.0);
+    }
+
+    #[test]
+    fn test_manhattan_dim_mismatch() {
+        let result = eval("manhattan([1,2],[1,2,3])");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_manhattan_wrong_args() {
+        let ast = AstNode::FunctionCall("manhattan".to_string(), vec![AstNode::Number(1.0)]);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    // --- outer ---
+
+    #[test]
+    fn test_outer_2x2() {
+        // outer([1,2],[3,4]) = [[1*3, 1*4],[2*3, 2*4]] = [[3,4],[6,8]]
+        let result = eval("outer([1,2],[3,4])").unwrap();
+        let matrix = result.as_matrix().expect("expected matrix result");
+        assert_eq!(matrix, &vec![vec![3.0, 4.0], vec![6.0, 8.0]]);
+    }
+
+    #[test]
+    fn test_outer_3x2() {
+        // outer([1,2,3],[4,5]) = [[4,5],[8,10],[12,15]]
+        let result = eval("outer([1,2,3],[4,5])").unwrap();
+        let matrix = result.as_matrix().expect("expected matrix result");
+        assert_eq!(
+            matrix,
+            &vec![vec![4.0, 5.0], vec![8.0, 10.0], vec![12.0, 15.0]]
+        );
+    }
+
+    #[test]
+    fn test_outer_with_zeros() {
+        // outer([0,1],[1,0]) = [[0,0],[1,0]]
+        let result = eval("outer([0,1],[1,0])").unwrap();
+        let matrix = result.as_matrix().expect("expected matrix result");
+        assert_eq!(matrix, &vec![vec![0.0, 0.0], vec![1.0, 0.0]]);
+    }
+
+    #[test]
+    fn test_outer_wrong_args() {
+        let ast = AstNode::FunctionCall("outer".to_string(), vec![AstNode::Number(1.0)]);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_outer_non_list_arg() {
+        let ast = AstNode::FunctionCall(
+            "outer".to_string(),
+            vec![AstNode::Number(1.0), AstNode::List(vec![AstNode::Number(2.0)])],
+        );
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    // --- lerp ---
+
+    #[test]
+    fn test_lerp_vector_t0() {
+        // lerp([1,2],[3,4],0) = [1,2] (起点)
+        let result = eval_vector("lerp([1,2],[3,4],0)").unwrap();
+        assert_eq!(result, vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn test_lerp_vector_t1() {
+        // lerp([1,2],[3,4],1) = [3,4] (终点)
+        let result = eval_vector("lerp([1,2],[3,4],1)").unwrap();
+        assert_eq!(result, vec![3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_lerp_vector_t_half() {
+        // lerp([1,2],[3,4],0.5) = [2,3] (中点)
+        let result = eval_vector("lerp([1,2],[3,4],0.5)").unwrap();
+        assert_eq!(result, vec![2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_lerp_scalar_t_quarter() {
+        // lerp(0, 10, 0.25) = 2.5
+        assert_approx(eval_scalar("lerp(0,10,0.25)").unwrap(), 2.5);
+    }
+
+    #[test]
+    fn test_lerp_scalar_negative_t() {
+        // lerp(5, 10, -1) = 5 + (-1)*(10-5) = 0
+        assert_approx(eval_scalar("lerp(5,10,-1)").unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_lerp_3d_vector() {
+        // lerp([0,0,0],[3,6,9],0.5) = [1.5, 3, 4.5]
+        let result = eval_vector("lerp([0,0,0],[3,6,9],0.5)").unwrap();
+        assert_approx(result[0], 1.5);
+        assert_approx(result[1], 3.0);
+        assert_approx(result[2], 4.5);
+    }
+
+    #[test]
+    fn test_lerp_vector_dim_mismatch() {
+        let result = eval("lerp([1,2],[1,2,3],0.5)");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_lerp_mixed_types() {
+        // lerp(1,[2,3],0.5) — 标量与向量混合 → 错误
+        let result = eval("lerp(1,[2,3],0.5)");
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn test_lerp_wrong_args() {
+        let ast = AstNode::FunctionCall("lerp".to_string(), vec![AstNode::Number(1.0)]);
+        let result = VectorDomain.evaluate(&ast, &EvalContext::new());
+        assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    // --- 路由测试 ---
+
+    #[test]
+    fn test_supports_cosine_similarity() {
+        let ast = parse("cosine_similarity([1,2],[3,4])").unwrap();
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_project() {
+        let ast = parse("project([1,2],[3,4])").unwrap();
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_reflect() {
+        let ast = parse("reflect([1,2],[3,4])").unwrap();
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_euclidean() {
+        let ast = parse("euclidean([1,2],[3,4])").unwrap();
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_manhattan() {
+        let ast = parse("manhattan([1,2],[3,4])").unwrap();
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_outer() {
+        let ast = parse("outer([1,2],[3,4])").unwrap();
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_lerp() {
+        let ast = parse("lerp([1,2],[3,4],0.5)").unwrap();
+        assert!(VectorDomain.supports(&ast));
+    }
+
+    #[test]
+    fn test_supports_hadamard_product() {
+        let ast = parse("[1,2]*[3,4]").unwrap();
         assert!(VectorDomain.supports(&ast));
     }
 
