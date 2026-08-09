@@ -2,10 +2,10 @@
 
 //! 符号演算核心函数：微分/积分/化简/极限/泰勒展开。
 //!
-//! 从 `domains/symbolic.rs` 提取的纯数学逻辑，
-//! 不含 AST 转换（`ast_to_symbolic` 依赖 `AstNode`，留在域层）。
+//! 包含 AST → SymbolicExpr 转换（`ast_to_symbolic`），
+//! 供 `domains/symbolic.rs`（AST 求值路径）和 `api/symbolic_api.rs`（直接 API 路径）共用。
 
-use crate::core::{CalcError, EvalResult};
+use crate::core::{AstNode, BinaryOp, CalcError, EvalResult, UnaryOp};
 use std::collections::HashMap;
 
 /// 符号表达式：符号变换的中间表示。
@@ -148,6 +148,86 @@ fn format_number(n: f64) -> String {
     } else {
         format!("{}", n)
     }
+}
+
+// ============================ AST → SymbolicExpr 转换 ============================
+
+/// 将 [`AstNode`] 转换为 [`SymbolicExpr`]。
+///
+/// 支持 Number/Variable/BinaryOp/UnaryOp/FunctionCall(sin/cos/tan/ln/exp)。
+/// 不支持的节点返回 DomainError。
+pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
+    match ast {
+        AstNode::Number(n) => Ok(SymbolicExpr::Const(*n)),
+        AstNode::BigNumber(s) => {
+            let n: f64 = s.parse().map_err(|_| {
+                CalcError::domain(format!("invalid big number: {}", s))
+            })?;
+            Ok(SymbolicExpr::Const(n))
+        }
+        AstNode::Variable(name) => match name.as_str() {
+            "pi" => Ok(SymbolicExpr::Const(std::f64::consts::PI)),
+            "e" => Ok(SymbolicExpr::Const(std::f64::consts::E)),
+            _ => Ok(SymbolicExpr::Var(name.clone())),
+        },
+        AstNode::BinaryOp(op, l, r) => {
+            let l = ast_to_symbolic(l)?;
+            let r = ast_to_symbolic(r)?;
+            Ok(match op {
+                BinaryOp::Add => SymbolicExpr::Add(Box::new(l), Box::new(r)),
+                BinaryOp::Sub => SymbolicExpr::Sub(Box::new(l), Box::new(r)),
+                BinaryOp::Mul => SymbolicExpr::Mul(Box::new(l), Box::new(r)),
+                BinaryOp::Div => SymbolicExpr::Div(Box::new(l), Box::new(r)),
+                BinaryOp::Pow => SymbolicExpr::Pow(Box::new(l), Box::new(r)),
+                BinaryOp::Mod => {
+                    return Err(CalcError::domain(
+                        "modulo not supported in symbolic expressions".to_string(),
+                    ));
+                }
+            })
+        }
+        AstNode::UnaryOp(UnaryOp::Neg, e) => {
+            Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?)))
+        }
+        AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
+            Err(CalcError::domain(format!(
+                "unary op not supported in symbolic expressions: {:?}",
+                ast
+            )))
+        }
+        AstNode::FunctionCall(name, args) => {
+            let unary = unary_symbolic_arg(name, args)?;
+            match name.as_str() {
+                "sin" => Ok(SymbolicExpr::Sin(unary)),
+                "cos" => Ok(SymbolicExpr::Cos(unary)),
+                "tan" => Ok(SymbolicExpr::Tan(unary)),
+                "ln" | "log" => Ok(SymbolicExpr::Ln(unary)),
+                "exp" => Ok(SymbolicExpr::Exp(unary)),
+                _ => Err(CalcError::domain(format!(
+                    "function not supported in symbolic expressions: {}",
+                    name
+                ))),
+            }
+        }
+        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
+            Err(CalcError::domain(format!(
+                "node type not supported in symbolic expressions: {:?}",
+                ast
+            )))
+        }
+    }
+}
+
+/// 提取单参数函数的符号化参数。
+fn unary_symbolic_arg(name: &str, args: &[AstNode]) -> Result<Box<SymbolicExpr>, CalcError> {
+    if args.len() != 1 {
+        return Err(CalcError::domain(format!(
+            "{}() requires exactly 1 argument, got {}",
+            name,
+            args.len()
+        )));
+    }
+    Ok(Box::new(ast_to_symbolic(&args[0])?))
 }
 
 // ============================ 符号求导 diff (TG3.2) ============================
