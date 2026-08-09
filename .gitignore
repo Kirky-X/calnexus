@@ -57,6 +57,8 @@ Desktop.ini
 **/specmark/
 # codenexus knowledge graph DB (runtime artifact, not source)
 .codenexus/
+# fuzz testing build artifacts
+/fuzz/target
 # runtime logs
 /logs
 # reference templates
