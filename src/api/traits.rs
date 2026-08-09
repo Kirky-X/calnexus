@@ -145,15 +145,37 @@ pub trait SymbolicMath {
 
 /// 应用数学 trait：时间 + 单位 + 汇率（feature-gated）。
 pub trait AppliedMath {
-    // ── 时间 ──
+    // ── 时间：构造 ──
     #[cfg(feature = "time")]
-    fn now(&self) -> Result<EvalResult, CalcError>;
+    fn date(&self, date_str: &str) -> Result<EvalResult, CalcError>;
     #[cfg(feature = "time")]
-    fn today(&self) -> Result<EvalResult, CalcError>;
+    fn datetime(&self, datetime_str: &str, tz: Option<&str>) -> Result<EvalResult, CalcError>;
     #[cfg(feature = "time")]
-    fn date_add(&self, date: &str, expr: &str) -> Result<EvalResult, CalcError>;
+    fn timestamp(&self, datetime_str: &str) -> Result<EvalResult, CalcError>;
     #[cfg(feature = "time")]
-    fn date_diff(&self, a: &str, b: &str) -> Result<EvalResult, CalcError>;
+    fn from_timestamp(&self, secs: i64, tz: Option<&str>) -> Result<EvalResult, CalcError>;
+
+    // ── 时间：算术 ──
+    #[cfg(feature = "time")]
+    fn now(&self, tz: Option<&str>) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "time")]
+    fn today(&self, tz: Option<&str>) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "time")]
+    fn date_add(&self, date: &str, n: i64, unit: &str) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "time")]
+    fn date_diff(&self, a: &str, b: &str, unit: Option<&str>) -> Result<EvalResult, CalcError>;
+
+    // ── 时间：格式与日历 ──
+    #[cfg(feature = "time")]
+    fn format_date(&self, date: &str, fmt: &str, tz: Option<&str>) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "time")]
+    fn reformat_date(&self, input: &str, from_fmt: &str, to_fmt: &str) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "time")]
+    fn weekday(&self, date: &str) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "time")]
+    fn day_of_year(&self, date: &str) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "time")]
+    fn is_leap_year(&self, year: i64) -> Result<EvalResult, CalcError>;
 
     // ── 单位 ──
     #[cfg(feature = "unit")]

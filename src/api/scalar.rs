@@ -124,10 +124,11 @@ impl<'a> ScalarMathImpl<'a> {
 
     // ── 精度 ──
 
-    pub fn precision_eval(&self, _digits: usize, _expr: &str) -> Result<EvalResult, CalcError> {
-        Err(CalcError::domain(
-            "precision_eval not yet available via direct API; use evaluate() with --precision".to_string(),
-        ))
+    pub fn precision_eval(&self, digits: usize, expr: &str) -> Result<EvalResult, CalcError> {
+        let ctx = self.cn.ctx.read().unwrap();
+        let cache = crate::core::CacheManager::new();
+        let (result, _, _, _) = crate::core::evaluate(expr, &ctx, Some(digits), &cache)?;
+        Ok(result)
     }
 
     // ── 数论 ──
@@ -194,11 +195,10 @@ impl<'a> ScalarMathImpl<'a> {
         math::combinatorics::catalan(&bn).map(big)
     }
 
-    pub fn stirling_first(&self, _n: u64, _k: u64) -> Result<EvalResult, CalcError> {
-        // math::combinatorics 仅提取了 stirling_second；stirling_first 待后续补充
-        Err(CalcError::domain(
-            "stirling_first not yet available via direct API".to_string(),
-        ))
+    pub fn stirling_first(&self, n: u64, k: u64) -> Result<EvalResult, CalcError> {
+        let bn = BigInt::from(n);
+        let bk = BigInt::from(k);
+        math::combinatorics::stirling_first(&bn, &bk).map(big)
     }
 
     pub fn stirling_second(&self, n: u64, k: u64) -> Result<EvalResult, CalcError> {

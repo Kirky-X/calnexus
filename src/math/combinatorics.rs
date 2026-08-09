@@ -85,6 +85,43 @@ pub fn catalan(n: &BigInt) -> Result<BigInt, CalcError> {
     Ok(c_2n_n / (n + 1))
 }
 
+/// 第一类 Stirling 数（无符号）$\\left\\[{n \\atop k}\\right]$：
+/// n 个元素形成 k 个轮换的排列数。
+///
+/// 递推：$\\left\\[{n \\atop k}\\right] = (n-1)\\left\\[{n-1 \\atop k}\\right] + \\left\\[{n-1 \\atop k-1}\\right]$
+/// 边界：$\\left\\[{0 \\atop 0}\\right]=1$, $\\left\\[{n \\atop 0}\\right]=0$ (n>0), $\\left\\[{0 \\atop k}\\right]=0$ (k>0), $\\left\\[{n \\atop k}\\right]=0$ (k>n)
+/// n/k > 5000 → `Overflow`（DoS 防护）
+pub fn stirling_first(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
+    if n.is_zero() && k.is_zero() {
+        return Ok(BigInt::one());
+    }
+    if n.is_zero() || k.is_zero() {
+        return Ok(BigInt::zero());
+    }
+    if k > n {
+        return Ok(BigInt::zero());
+    }
+    const MAX_STIRLING_N: u64 = 5000;
+    let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
+    let k_u64 = k.to_u64().ok_or(CalcError::overflow())?;
+    if n_u64 > MAX_STIRLING_N || k_u64 > MAX_STIRLING_N {
+        return Err(CalcError::overflow());
+    }
+    // DP 表
+    let mut dp: Vec<Vec<BigInt>> =
+        vec![vec![BigInt::zero(); k_u64 as usize + 1]; n_u64 as usize + 1];
+    dp[0][0] = BigInt::one();
+    for i in 1..=n_u64 as usize {
+        for j in 1..=k_u64 as usize {
+            if j > i {
+                break;
+            }
+            dp[i][j] = BigInt::from(i - 1) * &dp[i - 1][j] + &dp[i - 1][j - 1];
+        }
+    }
+    Ok(dp[n_u64 as usize][k_u64 as usize].clone())
+}
+
 /// 第二类 Stirling 数 S(n, k)：将 n 个元素划分为 k 个非空子集的方式数。
 ///
 /// 递推：S(n,k) = k*S(n-1,k) + S(n-1,k-1)
