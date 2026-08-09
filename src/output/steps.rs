@@ -261,7 +261,6 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
             check_positive(name, x)?;
             x.ln()
         }
-        // MEDIUM #25 修复：单参数 log 视为 log10（与数学惯例一致）
         ("log", &[x]) => {
             check_positive(name, x)?;
             x.log10()
@@ -379,7 +378,7 @@ fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
             ),
         );
     }
-    // MEDIUM #27 修复：用 i128 中间转换确保边界精确
+    // 用 i128 中间转换确保边界精确
     if !x.is_finite() {
         return Err(
             CalcError::domain(format!("{} argument {} exceeds i64 range", name, x)).with_i18n(
@@ -407,7 +406,7 @@ fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
 }
 
 fn gcd(a: i64, b: i64) -> i64 {
-    // HIGH #26 修复：i64::MIN.abs() 会溢出，用 i128 中间计算
+    // i64::MIN.abs() 会溢出，用 i128 中间计算
     let mut a = (a as i128).abs();
     let mut b = (b as i128).abs();
     while b != 0 {
@@ -422,7 +421,7 @@ fn lcm(a: i64, b: i64) -> i64 {
     if a == 0 || b == 0 {
         return 0;
     }
-    // HIGH #23 修复：用 i128 中间计算防止溢出
+    // 用 i128 中间计算防止溢出
     let a_abs = (a as i128).abs();
     let b_abs = (b as i128).abs();
     let g = gcd(a, b) as i128;
@@ -475,8 +474,6 @@ fn format_value(v: f64) -> String {
     // 整数：避免科学计数法
     if v.fract() == 0.0 {
         if v.abs() <= i64::MAX as f64 {
-            // LOW #30 修复：与 canonicalizer 统一用 i64::MAX 作为阈值
-            // 安全整数范围（|v| <= i64::MAX）：用 i64 精确表示
             return format!("{}", v as i64);
         }
         // 大整数：用 {:.0} 避免科学计数法（f64::Display 在大数时可能输出 "1e21"）

@@ -321,7 +321,6 @@ impl VectorDomain {
             return Err(CalcError::domain(format!("norm() requires exactly 1 argument, got {}", args.len())));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
-        // MEDIUM #95 修复：空向量范数无意义，返回错误
         if v.is_empty() {
             return Err(CalcError::domain("norm() requires non-empty vector".to_string()));
         }

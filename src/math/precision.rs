@@ -54,7 +54,7 @@ pub fn format_bigrational(value: &BigRational, precision: Option<usize>) -> Stri
 /// 格式化 BigRational 为指定精度的十进制小数。
 ///
 /// 例如 `1/3` 精度 5 → `0.33333`，`1/2` 精度 3 → `0.500`。
-/// MEDIUM #46 修复：四舍五入而非截断。
+/// 四舍五入到指定精度。
 fn format_decimal(value: &BigRational, precision: usize) -> String {
     let ten = BigInt::from(10);
     let neg = value.is_negative();
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn test_format_decimal_precision_zero() {
         let r = BigRational::new(BigInt::from(7), BigInt::from(2));
-        // MEDIUM #46 修复：四舍五入 3.5 → 4（而非截断为 3）
+        // 四舍五入 3.5 → 4
         assert_eq!(format_bigrational(&r, Some(0)), "4");
     }
 

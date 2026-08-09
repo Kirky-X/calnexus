@@ -44,7 +44,6 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
     }
     let decomp = SymmetricEigen::new(matrix.clone());
     let mut indexed: Vec<(usize, f64)> = decomp.eigenvalues.iter().copied().enumerate().collect();
-    // MEDIUM #82 修复：NaN 特征值返回错误而非静默视为相等
     indexed.sort_by(|a, b| {
         a.1.partial_cmp(&b.1).unwrap_or_else(|| {
             // NaN 无法比较，按 f64 总序定义处理：NaN 排最后
@@ -72,7 +71,6 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
 pub fn svd(matrix: &DMatrix<f64>) -> Result<(DMatrix<f64>, Vec<f64>, DMatrix<f64>), CalcError> {
     require_finite(matrix.iter().copied())?;
     let decomp = SVD::new(matrix.clone(), true, true);
-    // HIGH #81 修复：将 .expect() 转为 .ok_or_else() 保持错误可恢复
     let u = decomp.u.ok_or_else(|| CalcError::domain("SVD decomposition failed: U not available"))?;
     let vt = decomp.v_t.ok_or_else(|| CalcError::domain("SVD decomposition failed: Vt not available"))?;
     let s: Vec<f64> = decomp.singular_values.iter().copied().collect();

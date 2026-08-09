@@ -840,7 +840,7 @@ mod tests {
         );
 
         let formatted = crate::domains::format_bigrational(r, Some(10));
-        // MEDIUM #46 修复：四舍五入 1/6 = 0.16666666666... → 0.1666666667（10 位）
+        // 1/6 = 0.16666666666...，10 位小数四舍五入为 0.1666666667
         assert_eq!(formatted, "0.1666666667", "got {}", formatted);
     }
 }

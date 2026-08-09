@@ -41,7 +41,7 @@ pub fn mul(a: f64, b: f64) -> Result<f64, CalcError> {
 /// - `b == 0.0 && a != 0.0` → `DivisionByZero`
 /// - 结果溢出 → `NaNOrInf`
 pub fn div(a: f64, b: f64) -> Result<f64, CalcError> {
-    // MEDIUM #30 修复：NaN 输入优先检查，避免 NaN/0.0 被误报为 DivisionByZero
+    // NaN 输入优先检查，避免 NaN/0.0 被误报为 DivisionByZero
     if a.is_nan() || b.is_nan() {
         return Err(CalcError::nan_or_inf());
     }
@@ -68,7 +68,7 @@ pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
     if a == 0.0 && b == 0.0 {
         return Ok(1.0);
     }
-    // MEDIUM #31 修复：负底数 + 非整数指数是域错误，不是 NaNOrInf
+    // 负底数 + 非整数指数是域错误，不是 NaNOrInf
     if a < 0.0 && b.fract() != 0.0 {
         return Err(
             CalcError::domain(format!(
@@ -94,7 +94,6 @@ pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
 
 /// 取模：`a % b`。`b == 0.0` 返回 `DivisionByZero`。
 pub fn rem(a: f64, b: f64) -> Result<f64, CalcError> {
-    // MEDIUM #30 修复：NaN 输入优先检查
     if a.is_nan() || b.is_nan() {
         return Err(CalcError::nan_or_inf());
     }

@@ -37,7 +37,6 @@ pub fn magnitude(v: &[f64]) -> f64 {
 /// 归一化为单位向量。零向量返回错误。
 pub fn normalize(v: &[f64]) -> Result<Vec<f64>, CalcError> {
     let norm = magnitude(v);
-    // MEDIUM #67 修复：用 epsilon 阈值代替精确零比较
     if norm < 1e-15 {
         return Err(CalcError::domain("cannot normalize zero vector".to_string()));
     }
