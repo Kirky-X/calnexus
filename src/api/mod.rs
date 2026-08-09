@@ -127,6 +127,8 @@ impl ScalarMath for ScalarMathImpl<'_> {
     fn mod_pow(&self, base: &BigNumber, exp: &BigNumber, m: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::mod_pow(self, base, exp, m) }
     fn mod_inverse(&self, a: &BigNumber, m: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::mod_inverse(self, a, m) }
     fn euler_phi(&self, n: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::euler_phi(self, n) }
+    fn crt(&self, remainders: &[BigNumber], moduli: &[BigNumber]) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::crt(self, remainders, moduli) }
+    fn discrete_log(&self, g: &BigNumber, h: &BigNumber, p: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::discrete_log(self, g, h, p) }
     fn perm(&self, n: u64, k: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::perm(self, n, k) }
     fn comb(&self, n: u64, k: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::comb(self, n, k) }
     fn catalan(&self, n: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::catalan(self, n) }

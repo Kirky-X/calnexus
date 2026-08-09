@@ -44,6 +44,8 @@ pub trait ScalarMath {
     fn mod_pow(&self, base: &BigNumber, exp: &BigNumber, m: &BigNumber) -> Result<EvalResult, CalcError>;
     fn mod_inverse(&self, a: &BigNumber, m: &BigNumber) -> Result<EvalResult, CalcError>;
     fn euler_phi(&self, n: &BigNumber) -> Result<EvalResult, CalcError>;
+    fn crt(&self, remainders: &[BigNumber], moduli: &[BigNumber]) -> Result<EvalResult, CalcError>;
+    fn discrete_log(&self, g: &BigNumber, h: &BigNumber, p: &BigNumber) -> Result<EvalResult, CalcError>;
 
     // ── 组合 ──
     fn perm(&self, n: u64, k: u64) -> Result<EvalResult, CalcError>;
