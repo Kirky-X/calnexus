@@ -21,6 +21,9 @@ mod polynomial;
 mod precision;
 mod scientific;
 mod statistics;
+mod stats_distributions;
+mod stats_special;
+mod stats_tests;
 mod symbolic;
 #[cfg(feature = "time")]
 mod time;
