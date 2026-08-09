@@ -5,10 +5,14 @@
 
 ## 1. 模块层次
 
-CalNexus 采用**四层分层架构**，依赖方向严格自上而下（上层依赖下层，下层不感知上层）：
+CalNexus 采用**五层分层架构**，依赖方向严格自上而下（上层依赖下层，下层不感知上层）：
 
 ```mermaid
 flowchart TD
+    subgraph L4b["L4b — 直接 API 层"]
+        API["api/<br/>CalNexus 门面 / 5 分组访问器 / 类型包装器"]
+    end
+
     subgraph L4["L4 — 入口层 (feature-gated)"]
         CLI["cli.rs (cli)"]
         REPL["repl.rs (cli)"]
@@ -23,13 +27,18 @@ flowchart TD
 
     subgraph L2["L2 — 计算域层"]
         FACTORY["domains/factory.rs<br/>build_default_router()<br/>build_precision_domain()"]
-        DOMAINS["14 个 CalculationDomain 实现<br/>(11 核心: arithmetic / scientific / complex /<br/>matrix / vector / polynomial /<br/>number_theory / combinatorics /<br/>statistics / symbolic / precision<br/>+ 3 可选: time / unit / fx)"]
+        DOMAINS["14 个 CalculationDomain 实现<br/>(11 核心 + 3 可选)"]
+    end
+
+    subgraph Lmath["Lmath — 核心数学函数层"]
+        MATH["math/<br/>14 个纯函数模块<br/>(arithmetic / scientific / ...)"]
     end
 
     subgraph L1["L1 — 核心基础层"]
         CORE["core/<br/>parser / canonicalizer / cache /<br/>domain trait / types"]
     end
 
+    API --> MATH
     CLI --> EVAL
     REPL --> EVAL
     BATCH --> EVAL
@@ -38,7 +47,9 @@ flowchart TD
     EVAL --> FACTORY
     EVAL --> CORE
     FACTORY --> DOMAINS
+    DOMAINS --> MATH
     DOMAINS --> CORE
+    MATH --> CORE
 ```
 
 ### 1.1 L1 — 核心基础层 (`src/core/`)
@@ -79,7 +90,30 @@ flowchart TD
 - `build_default_router()` — 注册全部 14 个域（含 feature 门控的可选域）到 `DomainRouter`
 - `build_precision_domain()` — 构造 `PrecisionDomain` 实例（供 `evaluator.rs` precision 模式使用）
 
-### 1.3 L3 — 编排层 (`src/core/evaluator.rs`)
+### 1.3 Lmath — 核心数学函数层 (`src/math/`)
+
+从计算域层提取的纯数学函数集合，无表达式解析/域路由依赖。14 个模块对应 14 个计算域的数学核心：
+
+| 模块 | 职责 |
+|------|------|
+| `arithmetic.rs` | 四则运算 + 幂 + 取模 + 阶乘 + 绝对值 |
+| `scientific.rs` | 三角/双曲/指数/对数/特殊函数（gamma/erf） |
+| `statistics.rs` | mean/variance/std/median + 分布/检验/相关函数 |
+| `number_theory.rs` | GCD/LCM/素数判定/素数筛/模逆/模幂/欧拉函数 |
+| `combinatorics.rs` | 排列/组合/Catalan/Stirling |
+| `matrix.rs` | det/inverse/transpose/identity/mat_mul（nalgebra DMatrix） |
+| `vector.rs` | dot/cross/normalize/magnitude |
+| `complex.rs` | 复数四则/模/幅角/共轭/复指数/复对数 |
+| `polynomial.rs` | poly_add/sub/mul/div/roots/eval |
+| `symbolic.rs` | 符号微分/积分/化简/极限/泰勒展开 |
+| `precision.rs` | BigRational 求值 + format_bigrational |
+| `time.rs` | now/today/date_add/date_diff/parse_date（feature = "time"） |
+| `unit.rs` + `unit_table.rs` | 8 量纲单位换算 + 温度仿射（feature = "unit"） |
+| `fx.rs` | 汇率换算 RateTable + convert/get_rate（feature = "fx"） |
+
+**依赖方向**：`math/` → `core/`（仅依赖 types），不依赖 `domains/`。
+
+### 1.4 L3 — 编排层 (`src/core/evaluator.rs`)
 
 `evaluate()` 是唯一的顶层入口，编排五阶段流水线：
 
@@ -99,7 +133,27 @@ flowchart LR
 `fx` / `fx_rate` 等非确定性函数。命中时**同时跳过** `cache.get` 与 `cache.insert`，
 避免时间/汇率结果被缓存污染。检测开销为 O(AST 节点数) 的 HashSet 查询。
 
-### 1.4 L4 — 入口层
+### 1.5 L4b — 直接 API 层 (`src/api/`)
+
+`CalNexus` 门面结构体提供绕过表达式解析的直接 API 入口，适用于嵌入式/程序化调用场景：
+
+| 组件 | 职责 |
+|------|------|
+| `mod.rs` | `CalNexus` 门面（`RwLock<EvalContext>` + 5 个分组访问器） |
+| `types.rs` | 5 个类型包装器（Matrix/Vector/Complex/Polynomial/BigNumber）+ From/TryFrom |
+| `traits.rs` | 5 个分组 trait 定义（ScalarMath/LinearAlgebra/DataAnalysis/SymbolicMath/AppliedMath） |
+| `scalar.rs` | ScalarMathImpl — add/sub/mul/div/sin/cos |
+| `linalg.rs` | LinearAlgebraImpl — det/dot |
+| `stats.rs` | DataAnalysisImpl — mean/std |
+| `symbolic_api.rs` | SymbolicMathImpl — 占位 |
+| `applied.rs` | AppliedMathImpl — convert（feature = "unit"） |
+| `cache.rs` | build_api_cache_key 基础实现 |
+
+**依赖方向**：`api/` → `math/` → `core/`，不依赖 `domains/`。
+
+**规则 25 合规**：`api/mod.rs` 仅含 `CalNexus` struct 定义 + `pub use` re-export + `mod` 声明。
+
+### 1.6 L4 — 入口层
 
 - **CLI** (`src/cli.rs`)：clap 命令行入口，`--latex`/`--steps`/`--canonical`/`--json`/`--precision` 等标志
 - **REPL** (`src/repl.rs`)：rustyline 交互式求值
@@ -202,6 +256,7 @@ flowchart LR
 | `snapshot_tests.rs` | 快照测试 | `insta` 输出快照 |
 | `security_tests.rs` | 安全测试 | DoS 向量 + 边界攻击 |
 | `performance_tests.rs` | 性能测试 | 基准回归守护 |
+| `api_integration.rs` | API 集成 | 直接 API 端到端验证 |
 | `common/mod.rs` | 共享工具 | 测试辅助函数 |
 
 **设计预期**：`tests/common/` 凝聚力较低（含多种测试辅助工具），这是测试代码的合理设计——它服务于多个测试文件的共享需求，不纳入生产代码复杂度治理范围。
@@ -212,6 +267,7 @@ flowchart LR
 |------|----------|
 | `cache_bench.rs` | L1 缓存命中/未命中性能 |
 | `domain_bench.rs` | 域路由 + 求值性能 |
+| `api_bench.rs` | 直接 API vs 表达式路径性能对比 |
 | `parser_bench.rs` | 解析器吞吐量 |
 
 **设计预期**：`benches/` 各文件独立测量一个子系统，文件间无共享代码（每个 bench 文件自包含），这是 criterion 基准的惯例结构。
@@ -220,7 +276,9 @@ flowchart LR
 
 ### 5.1 依赖方向铁律
 
-- **L4 → L3 → L2 → L1**：单向依赖，禁止反向
+- **L4b → Lmath → L1**：直接 API 路径，不经过域路由
+- **L4 → L3 → L2 → Lmath → L1**：表达式求值路径
+- **L2 → Lmath**：计算域委托数学核心
 - **L2 → L1**：计算域依赖核心类型，但不依赖编排层
 - **L1 内部**：`evaluator.rs` 可调用 `domains/factory.rs` 的抽象入口，但**禁止**直接 `use` 具体域类型
 
@@ -231,7 +289,12 @@ flowchart LR
 - `pub use` re-export
 - `pub struct` / `pub enum` / `pub trait` / `pub type` 定义
 
-具体实现函数必须拆到独立文件（如 `domains/factory.rs` 承载工厂函数实现）。
+具体实现函数必须拆到独立文件（如 `domains/factory.rs` 承载工厂函数实现，`api/scalar.rs` 承载 ScalarMath 实现）。
+
+合规清单：
+- `api/mod.rs` — CalNexus struct + mod 声明 + pub use ✓
+- `domains/mod.rs` — mod 声明 + pub use + 工厂函数 re-export ✓
+- `math/mod.rs` — mod 声明 + pub use re-export ✓
 
 ### 5.3 Feature Gate 策略
 
@@ -243,8 +306,8 @@ flowchart LR
 | `server` | `http` + `mcp` | 聚合特性 |
 | `icu` | ICU4X 国际化 | 本地化错误消息 |
 | `time` | `domains/time.rs` | 时间计算（jiff 0.2 + IANA tzdb，14 函数） |
-| `unit` | `domains/unit.rs` / `unit_table.rs` | 8 量纲物理单位换算 + 温度仿射 |
-| `fx` | `domains/fx.rs` / `fx_provider.rs` | 汇率换算（frankfurter.dev API + 三级缓存） |
+| `unit` | `math/unit.rs` / `math/unit_table.rs` → `domains/unit.rs` | 8 量纲物理单位换算 + 温度仿射 |
+| `fx` | `math/fx.rs` → `domains/fx.rs` / `fx_provider.rs` | 汇率换算（frankfurter.dev API + 三级缓存） |
 | `numerical` | 数值扩展（规划中，P3） | 高级数值方法 — 当前 `numerical = []` 无模块 |
 
 `default = []`：核心库零依赖，可作为嵌入式计算引擎被其他 crate 引用。
