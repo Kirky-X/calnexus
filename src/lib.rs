@@ -24,6 +24,7 @@ mod repl;
 mod server;
 
 pub use api::{CalNexus, AppliedMathImpl, DataAnalysisImpl, LinearAlgebraImpl, ScalarMathImpl, SymbolicMathImpl};
+pub use api::traits::{AppliedMath, DataAnalysis, LinearAlgebra, ScalarMath, SymbolicMath};
 pub use api::types::{BigNumber, Complex, Matrix, Polynomial, Vector};
 pub use core::evaluate;
 pub use core::{
