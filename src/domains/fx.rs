@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(err.kind, ErrorKind::Domain);
         assert!(err.message.contains("XYZ"), "msg: {}", err.message);
         assert_eq!(err.i18n_key, Some("msg.fx.unknown_currency"));
-        // 消息含支持币种数量（MEDIUM #35 修复：+1 包含 base 币种）
+        // 消息含支持币种数量（+1 包含 base 币种）
         assert!(err.message.contains("5 currencies"), "msg: {}", err.message);
     }
 

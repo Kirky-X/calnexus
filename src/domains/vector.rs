@@ -191,7 +191,7 @@ impl VectorDomain {
                 a / b
             }
             BinaryOp::Pow => {
-                // BUG-D-M-001: 显式处理 0^0=1（与 arithmetic/scientific/statistics 域一致，
+                // 显式处理 0^0=1（与 arithmetic/scientific/statistics 域一致，
                 // 组合数学约定）。Rust powf(0,0) 虽返回 1.0，但显式化以便跨域一致。
                 if a == 0.0 && b == 0.0 {
                     return Ok(1.0);

@@ -529,7 +529,7 @@ fn split_top_level_commas(input: &str) -> Vec<String> {
 /// mathexpr 依赖 `nom::number::complete::double`，该解析器接受 `+3` 作为数字字面量，
 /// 导致 `2++3` 被静默接受为 `2 + 3.0`。此函数在解析前显式拒绝 `++` 模式。
 ///
-/// BUG-C-M-005 修复：原 `validate_no_consecutive_plus` 只检查 `++`，对 `**`、`//`、`^^`
+/// 原 `validate_no_consecutive_plus` 只检查 `++`，对 `**`、`//`、`^^`
 /// 给出 mathexpr 的通用 "Unexpected trailing input" 错误，用户体验差且不一致。
 /// 扩展为检查所有四种非法连续运算符，提供统一的 "illegal consecutive operators 'XX'" 错误消息。
 ///
@@ -1130,7 +1130,7 @@ mod tests {
         assert!(err.kind == ErrorKind::Parse && err.message.contains("consecutive operators"));
     }
 
-    // ===== BUG-C-M-005 回归测试：扩展连续运算符检查至 **, //, ^^ =====
+    // ===== 回归测试：扩展连续运算符检查至 **, //, ^^ =====
     //
     // 原始 bug：`validate_no_consecutive_plus` 只检查 `++`，未检查其他非法连续运算符。
     // `**`、`//`、`^^` 是非法的数学语法（合法运算符是单字符 *, /, ^）。

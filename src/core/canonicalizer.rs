@@ -142,7 +142,7 @@ impl AstCanonicalizer {
 
     /// 变换 FunctionCall：递归变换所有参数。
     ///
-    /// **precision 函数白名单**（BUG-C-002 修复）：
+    /// **precision 函数白名单**：
     /// 当 `name == "precision"` 且 `args.len() == 2` 时，对 `args[1]`（expr）
     /// 跳过常量折叠，保留 `BinaryOp` 结构交由 Precision 域内部 `BigRational` 求值。
     ///
@@ -232,7 +232,7 @@ impl AstCanonicalizer {
                 }
                 a / b
             }
-            // BUG-C-M-004 修复：显式处理 0^0 → 1.0（IEEE 754 约定）。
+            // 显式处理 0^0 → 1.0（IEEE 754 约定）。
             // 原代码 `a.powf(b)` 隐式依赖 f64 的 0^0=1.0 行为，意图不显式，
             // 且与 scientific.rs/statistics.rs 的显式处理不一致。
             // 此处显式 case 使意图清晰，与所有 domain 行为统一。
@@ -256,13 +256,13 @@ impl AstCanonicalizer {
     ///
     /// 排序规则：
     /// - 两 Number：按数值升序（使用 `f64::total_cmp` 提供 IEEE 754 totalOrder 全序，
-    ///   保证 NaN 排序稳定，BUG-C-M-003 修复）
+    ///   保证 NaN 排序稳定）
     /// - 两 Variable：按字典序
     /// - Number 与非 Number：Number 优先（Less）
     /// - 其他组合（如 Variable 与复合表达式）：保持原始顺序（Equal，不交换）
     fn compare_nodes(a: &AstNode, b: &AstNode) -> Ordering {
         match (a, b) {
-            // BUG-C-M-003 修复：用 total_cmp 替代 partial_cmp + unwrap_or(Equal)。
+            // 用 total_cmp 替代 partial_cmp + unwrap_or(Equal)。
             // 原代码对 NaN 返回 Equal（因 partial_cmp 返回 None），违反全序的反对称性。
             // total_cmp 遵循 IEEE 754 totalOrder：NaN 排在所有数值之前（负 NaN < 负 Inf < ... < 正 NaN）。
             (AstNode::Number(x), AstNode::Number(y)) => x.total_cmp(y),
@@ -853,7 +853,7 @@ mod tests {
         assert_eq!(AstCanonicalizer::compare_nodes(&a, &a), Ordering::Equal);
     }
 
-    // ===== BUG-C-M-003 回归测试：NaN 比较必须稳定 =====
+    // ===== 回归测试：NaN 比较必须稳定 =====
     //
     // 原始 bug：`x.partial_cmp(y).unwrap_or(Ordering::Equal)` 对 NaN 返回 Equal，
     // 导致 NaN 与任何数比较都"相等"，违反全序关系。
@@ -884,7 +884,7 @@ mod tests {
         );
     }
 
-    // ===== BUG-C-M-004 回归测试：0^0 显式处理为 1.0 =====
+    // ===== 回归测试：0^0 显式处理为 1.0 =====
     //
     // 原始代码：`BinaryOp::Pow => a.powf(b)` 隐式依赖 f64::powf(0.0, 0.0) = 1.0。
     // 虽然结果正确，但意图不显式，且与 scientific.rs/statistics.rs 的显式处理不一致。

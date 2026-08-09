@@ -633,7 +633,7 @@ mod tests {
 
     #[test]
     fn steps_unbound_variable_returns_error() {
-        // BUG-O-003: 未绑定变量应返回 Err（与 ArithmeticDomain 行为一致）
+        // 未绑定变量应返回 Err（与 ArithmeticDomain 行为一致）
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Variable("y".to_string())),
@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn steps_complex_leaf_node_returns_error() {
-        // BUG-O-001: Complex 节点不应在 steps 模式返回实部（丢弃虚部）
+        // Complex 节点不应在 steps 模式返回实部（丢弃虚部）
         let ast = AstNode::Complex(3.0, 4.0);
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
         assert!(err.kind == ErrorKind::Domain);
@@ -726,7 +726,7 @@ mod tests {
 
     #[test]
     fn steps_complex_in_binary_op_returns_error() {
-        // BUG-O-001: Complex 作为 BinaryOp 子节点必须返回 Err（不再丢弃虚部）
+        // Complex 作为 BinaryOp 子节点必须返回 Err（不再丢弃虚部）
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Complex(3.0, 4.0)),
@@ -738,7 +738,7 @@ mod tests {
 
     #[test]
     fn steps_matrix_leaf_no_step_emitted() {
-        // BUG-O-M-004 修复后：Matrix 叶节点返回 DomainError（不再静默 Ok(0.0)）
+        // Matrix 叶节点返回 DomainError（不再静默 Ok(0.0)）
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
         assert!(err.kind == ErrorKind::Domain);
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn steps_list_in_binary_op_returns_error() {
-        // BUG-O-002: List 作为 BinaryOp 子节点必须返回 Err（不再错误求和）
+        // List 作为 BinaryOp 子节点必须返回 Err（不再错误求和）
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::List(vec![
@@ -781,7 +781,7 @@ mod tests {
 
     #[test]
     fn steps_list_in_unary_op_returns_error() {
-        // BUG-O-002: List 作为 UnaryOp 子节点也必须返回 Err
+        // List 作为 UnaryOp 子节点也必须返回 Err
         let ast = AstNode::UnaryOp(
             UnaryOp::Neg,
             Box::new(AstNode::List(vec![AstNode::Number(1.0)])),
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn steps_unbound_variable_returns_error_repeated() {
-        // BUG-O-003: 未绑定变量（非 pi/e）必须返回 Err（与 ArithmeticDomain 一致，不再默认 0.0）
+        // 未绑定变量（非 pi/e）必须返回 Err（与 ArithmeticDomain 一致，不再默认 0.0）
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Variable("y".to_string())),
@@ -887,17 +887,17 @@ mod tests {
         assert_eq!(format_value(-7.0), "-7");
     }
 
-    // ===== BUG-O-M-001 ~ M-003: format_value 精度、大数、负零问题 =====
+    // ===== format_value 精度、大数、负零问题 =====
 
     #[test]
     fn steps_format_value_floating_point_noise() {
-        // BUG-O-M-001: 0.1+0.2 = 0.30000000000000004，应显示为 0.3
+        // 0.1+0.2 = 0.30000000000000004，应显示为 0.3
         assert_eq!(format_value(0.1 + 0.2), "0.3");
     }
 
     #[test]
     fn steps_format_value_large_integer_no_scientific() {
-        // BUG-O-M-002: 超大整数不应输出科学计数法（Rust f64 Display 在 >= 1e21 时用科学计数法）
+        // 超大整数不应输出科学计数法（Rust f64 Display 在 >= 1e21 时用科学计数法）
         assert_eq!(format_value(1e15), "1000000000000000");
         assert_eq!(format_value(1e20), "100000000000000000000");
         assert_eq!(format_value(1e21), "1000000000000000000000");
@@ -905,13 +905,13 @@ mod tests {
 
     #[test]
     fn steps_format_value_negative_zero_preserves_sign() {
-        // BUG-O-M-003: -0.0 应保留负号（与 f64 的 to_string 一致）
+        // -0.0 应保留负号（与 f64 的 to_string 一致）
         assert_eq!(format_value(-0.0), "-0");
     }
 
     #[test]
     fn steps_format_value_nan_and_inf() {
-        // BUG-O-M-001 扩展：NaN/Inf 应有可读表示
+        // NaN/Inf 应有可读表示
         assert_eq!(format_value(f64::NAN), "NaN");
         assert_eq!(format_value(f64::INFINITY), "inf");
         assert_eq!(format_value(f64::NEG_INFINITY), "-inf");
@@ -1081,11 +1081,11 @@ mod tests {
         assert_eq!(result, 0.0);
     }
 
-    // ===== BUG-O-M-004: Matrix 节点静默返回 Ok(0.0) 违反 Rule 12 =====
+    // ===== Matrix 节点静默返回 Ok(0.0) 违反 Rule 12 =====
 
     #[test]
     fn steps_matrix_leaf_returns_error_not_silent_zero() {
-        // BUG-O-M-004: Matrix 节点不应静默返回 Ok(0.0)，应显式报错（Rule 12: 失败显性化）
+        // Matrix 节点不应静默返回 Ok(0.0)，应显式报错（Rule 12: 失败显性化）
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
         assert!(
@@ -1097,7 +1097,7 @@ mod tests {
 
     #[test]
     fn steps_matrix_in_binary_op_returns_error() {
-        // BUG-O-M-004 扩展：Matrix 作为 BinaryOp 子节点也应返回 Err
+        // Matrix 作为 BinaryOp 子节点也应返回 Err
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Matrix(vec![vec![AstNode::Number(1.0)]])),
@@ -1107,11 +1107,11 @@ mod tests {
         assert!(err.kind == ErrorKind::Domain);
     }
 
-    // ===== BUG-O-M-005: BigNumber 精度丢失 =====
+    // ===== BigNumber 精度丢失 =====
 
     #[test]
     fn steps_bignumber_exceeds_f64_precision_returns_error() {
-        // BUG-O-M-005: BigNumber("12345678901234567890") 超过 f64 安全整数范围（2^53 ≈ 9e15），
+        // BigNumber("12345678901234567890") 超过 f64 安全整数范围（2^53 ≈ 9e15），
         // parse::<f64>() 会丢失精度，应返回 Err 而非静默丢失精度
         let ast = AstNode::BigNumber("12345678901234567890".to_string());
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
@@ -1124,17 +1124,17 @@ mod tests {
 
     #[test]
     fn steps_bignumber_within_f64_range_succeeds() {
-        // BUG-O-M-005 验证：小 BigNumber 仍能正常工作
+        // 小 BigNumber 仍能正常工作
         let ast = AstNode::BigNumber("42".to_string());
         let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
         assert!(steps.is_empty()); // 叶节点不输出步骤
     }
 
-    // ===== BUG-O-M-006: gcd/lcm 输入未验证 =====
+    // ===== gcd/lcm 输入未验证 =====
 
     #[test]
     fn steps_gcd_non_integer_returns_error() {
-        // BUG-O-M-006: gcd(3.5, 5) 应报错（非整数输入），而非静默 cast 丢失小数
+        // gcd(3.5, 5) 应报错（非整数输入），而非静默 cast 丢失小数
         let err = eval_function("gcd", &[3.5, 5.0]).unwrap_err();
         assert!(
             err.kind == ErrorKind::Domain,
@@ -1145,14 +1145,14 @@ mod tests {
 
     #[test]
     fn steps_lcm_non_integer_returns_error() {
-        // BUG-O-M-006: lcm(4.2, 6) 应报错
+        // lcm(4.2, 6) 应报错
         let err = eval_function("lcm", &[4.2, 6.0]).unwrap_err();
         assert!(err.kind == ErrorKind::Domain);
     }
 
     #[test]
     fn steps_gcd_exceeds_i64_returns_error() {
-        // BUG-O-M-006: gcd(1e20, 5) 超过 i64 范围，应报错而非溢出
+        // gcd(1e20, 5) 超过 i64 范围，应报错而非溢出
         let err = eval_function("gcd", &[1e20, 5.0]).unwrap_err();
         assert!(err.kind == ErrorKind::Domain || err.kind == ErrorKind::Overflow);
     }

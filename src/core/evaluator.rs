@@ -92,7 +92,7 @@ fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), Ca
 /// 2. **precision 模式前缀**：`precision:` 前缀避免 BigRational 与 Scalar 污染
 ///    （tiangang SAST CRITICAL + kueiku bug 分析）
 /// 3. **EvalContext.vars 哈希**：按 key 字典序排序后 BLAKE3 哈希
-///    （BUG-C-001 修复：原实现仅基于 CanonicalForm + precision，
+///    （原实现仅基于 CanonicalForm + precision，
 ///    未包含 vars，导致 REPL 中 `:let x=1; x` → 1.0 后再 `:let x=2; x`
 ///    仍错误命中缓存返回 1.0）
 /// 4. **EvalContext.timeout**：不同 timeout 应产生不同 cache 键
@@ -379,7 +379,7 @@ mod tests {
 
     // 常规模式缓存命中路径：预填充缓存后，evaluate 应直接返回缓存值
     //
-    // BUG-C-001 修复后，缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout，
+    // 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout，
     // 故预填充时也必须用 build_cache_key 构造正确键。
     #[test]
     fn test_evaluate_regular_mode_cache_hit() {
@@ -445,7 +445,7 @@ mod tests {
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
 
         let ctx = EvalContext::new();
-        // BUG-C-001: 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout
+        // 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout
         let cache_cf = build_cache_key(&cf, &ctx, None);
         cache.insert(&cache_cf, &Ok(EvalResult::Scalar(6.0)));
 
@@ -462,7 +462,7 @@ mod tests {
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
 
         let ctx = EvalContext::new();
-        // BUG-C-001: 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout
+        // 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout
         let cache_cf = build_cache_key(&cf, &ctx, None);
         cache.insert(&cache_cf, &Ok(EvalResult::Scalar(120.0)));
 
@@ -685,7 +685,7 @@ mod tests {
         }
     }
 
-    // ===== BUG-C-001 回归测试：cache 键必须包含 EvalContext.vars 与 timeout =====
+    // ===== 回归测试：cache 键必须包含 EvalContext.vars 与 timeout =====
     //
     // 背景：原 build_cache_key 仅基于 CanonicalForm + precision，未包含 EvalContext.vars。
     // REPL 中 `:let x=1; x` → 1.0，再 `:let x=2; x` 仍返回 1.0（cache 命中错误结果）。
@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(key_x1, key_x1_again, "same ctx must produce same key");
     }
 
-    // 测试 4：precision 模式前缀仍然生效（与 BUG-C-001 修复共存）。
+    // 测试 4：precision 模式前缀仍然生效（与 cache 键修复共存）。
     #[test]
     fn test_build_cache_key_precision_prefix_preserved() {
         let cf = CanonicalForm::new("(+ 2 3)");
@@ -771,7 +771,7 @@ mod tests {
         );
     }
 
-    // ===== BUG-C-002 回归测试：precision(N, 1/3) 必须返回 N 位精确的 1/3 =====
+    // ===== 回归测试：precision(N, 1/3) 必须返回 N 位精确的 1/3 =====
     //
     // 背景：canonicalizer.transform_function 对所有函数参数做常量折叠，
     // 导致 precision(20, 1/3) 的 args[1]=1/3 被折叠为 f64 的 0.333...，
@@ -817,7 +817,7 @@ mod tests {
         );
     }
 
-    // BUG-C-002 边界场景：precision 函数嵌套调用时仍需保留精确分数语义。
+    // precision 函数嵌套调用时仍需保留精确分数语义。
     //
     // 验证：precision(10, 1/6) 应返回 BigRational(1/6)，
     // 经 10 位格式化为 0.1666666667（10 位小数）。

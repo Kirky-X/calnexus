@@ -48,7 +48,7 @@ impl CalculationDomain for PrecisionDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        // BUG-D-L-002: 预绑定 pi/e（若上下文未提供），与其他域保持一致。
+        // 预绑定 pi/e（若上下文未提供），与其他域保持一致。
         let ctx = ensure_math_constants(ctx);
 
         // 处理 precision(N, expr) 函数：求值 expr，N 仅供 CLI 格式化使用
@@ -787,7 +787,7 @@ mod tests {
 
     #[test]
     fn test_factorial_negative() {
-        // factorial(-1) → DomainError（负数阶乘未定义，BUG-D-008 修复）
+        // factorial(-1) → DomainError（负数阶乘未定义）
         let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(-1.0)]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());

@@ -9,7 +9,7 @@
 //! - 3：超时
 //! - 101：panic（Rust 约定，由 `std::process::abort` 或未捕获 panic 触发）
 //!
-//! BUG-E-L-001: 设置 panic hook 打印用户友好的简短错误消息到 stderr，
+//! 设置 panic hook 打印用户友好的简短错误消息到 stderr，
 //! 同时保留默认 backtrace（由 `RUST_BACKTRACE` 环境变量控制）。
 //! 此前 panic 直接打印 `thread 'main' panicked at ...` 对终端用户不友好。
 
@@ -19,7 +19,7 @@
 /// - 保留默认 backtrace 行为（开发者调试需要，由 RUST_BACKTRACE 控制）
 /// - 在默认输出前追加用户友好的简短错误前缀（"calnexus: internal error"）
 /// - 全局生效（影响所有线程的 panic 行为）
-/// - HIGH #13 修复：使用 Once 保证幂等，多次调用不叠加 hook
+/// - 使用 Once 保证幂等，多次调用不叠加 hook
 fn setup_panic_hook() {
     use std::sync::Once;
     static ONCE: Once = Once::new();
@@ -54,13 +54,13 @@ fn main() {
 mod tests {
     use super::*;
 
-    /// BUG-E-L-001: 验证 setup_panic_hook 调用不 panic。
+    /// 验证 setup_panic_hook 调用不 panic。
     #[test]
     fn test_setup_panic_hook_does_not_panic() {
         setup_panic_hook();
     }
 
-    /// BUG-E-L-001: 验证 setup_panic_hook 幂等（多次调用不 panic，不叠加 hook）。
+    /// 验证 setup_panic_hook 幂等（多次调用不 panic，不叠加 hook）。
     #[test]
     fn test_setup_panic_hook_idempotent() {
         setup_panic_hook();

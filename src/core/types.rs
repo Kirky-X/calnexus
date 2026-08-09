@@ -623,7 +623,7 @@ impl CalcError {
 
     /// JSON 机器可读（--json）。手动构造避免 serde_json 运行时依赖。
     pub fn to_json(&self) -> String {
-        // 条件拼接 span/hint，避免 None 时产生无效 JSON（CRITICAL #103 修复）
+        // 条件拼接 span/hint，避免 None 时产生无效 JSON
         let mut inner = String::new();
         inner.push_str(&format!("{{\"kind\":\"{:?}\",\"message\":\"{}\"",
             self.kind, escape_json_string(&self.message)));

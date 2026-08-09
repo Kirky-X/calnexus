@@ -121,7 +121,7 @@ impl ComplexDomain {
                     }
                     av / bv
                 }
-                // BUG-D-M-002: 显式处理 0^0=1（与其他域一致），并检查 NaN/Inf
+                // 显式处理 0^0=1（与其他域一致），并检查 NaN/Inf
                 BinaryOp::Pow => {
                     if *av == 0.0 && *bv == 0.0 {
                         return Ok(ComplexValue::Scalar(1.0));
@@ -186,7 +186,7 @@ impl ComplexDomain {
                         vec![("actual".to_string(), args.len().to_string())],
                     ));
                 }
-                // BUG-D-016 修复：re/im 必须为标量，丢弃虚部会掩盖用户错误
+                // re/im 必须为标量，丢弃虚部会掩盖用户错误
                 let re = match self.eval(&args[0], ctx)? {
                     ComplexValue::Scalar(v) => v,
                     _ => {
@@ -932,7 +932,7 @@ mod tests {
 
     #[test]
     fn test_complex_function_rejects_complex_argument() {
-        // BUG-D-016：complex(1+2i, 3) → DomainError（re 含虚部，禁止丢弃）
+        // complex(1+2i, 3) → DomainError（re 含虚部，禁止丢弃）
         let ast_re_complex = AstNode::FunctionCall(
             "complex".to_string(),
             vec![AstNode::Complex(1.0, 2.0), AstNode::Number(3.0)],

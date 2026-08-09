@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_negative_base_fractional_power() {
-        // (-2)^0.5 → Domain 错误（MEDIUM #31 修复：负底数+非整数指数是域错误）
+        // (-2)^0.5 → Domain 错误（负底数+非整数指数是域错误）
         let result = eval("(-2)^0.5");
         assert!(result.is_err());
         assert!(
