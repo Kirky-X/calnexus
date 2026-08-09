@@ -72,6 +72,20 @@ pub trait LinearAlgebra {
     fn magnitude(&self, a: &Vector) -> Result<EvalResult, CalcError>;
     fn vector_add(&self, a: &Vector, b: &Vector) -> Result<EvalResult, CalcError>;
     fn vector_sub(&self, a: &Vector, b: &Vector) -> Result<EvalResult, CalcError>;
+
+    // ── 数值分解（feature-gated）──
+    #[cfg(feature = "numerical")]
+    fn eig(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    fn svd(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    fn lu(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    fn qr(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    fn solve(&self, a: &Matrix, b: &Vector) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    fn matrix_exp(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
 }
 
 /// 数据分析 trait：统计。
@@ -112,6 +126,11 @@ pub trait DataAnalysis {
     // ── 相关 ──
     fn pearson(&self, x: &[f64], y: &[f64]) -> Result<EvalResult, CalcError>;
     fn spearman(&self, x: &[f64], y: &[f64]) -> Result<EvalResult, CalcError>;
+
+    // ── 回归 ──
+    fn lin_reg(&self, x: &[f64], y: &[f64]) -> Result<EvalResult, CalcError>;
+    fn poly_reg(&self, x: &[f64], y: &[f64], degree: usize) -> Result<EvalResult, CalcError>;
+    fn multi_reg(&self, x: &[Vec<f64>], y: &[f64]) -> Result<EvalResult, CalcError>;
 }
 
 /// 符号数学 trait：符号演算 + 多项式 + 复数。

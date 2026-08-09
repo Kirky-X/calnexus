@@ -28,6 +28,8 @@ const MAX_ITER: usize = 300;
 const TINY: f64 = 1e-30;
 
 use std::collections::HashMap;
+use nalgebra::DMatrix;
+use crate::core::CalcError;
 
 // ===== 基础统计函数 =====
 
@@ -498,6 +500,135 @@ fn rank(data: &[f64]) -> Vec<f64> {
     ranks
 }
 
+// ===== 回归分析 =====
+
+/// 简单线性回归 y = slope*x + intercept，返回 (slope, intercept, r_squared)。
+///
+/// x.len() < 2 时返回 (0.0, 0.0, 0.0)。
+pub fn linear_regression(x: &[f64], y: &[f64]) -> (f64, f64, f64) {
+    let n = x.len();
+    if n < 2 || n != y.len() {
+        return (0.0, 0.0, 0.0);
+    }
+    let x_mean = mean(x);
+    let y_mean = mean(y);
+    let mut ss_xy = 0.0;
+    let mut ss_xx = 0.0;
+    let mut ss_yy = 0.0;
+    for i in 0..n {
+        let dx = x[i] - x_mean;
+        let dy = y[i] - y_mean;
+        ss_xy += dx * dy;
+        ss_xx += dx * dx;
+        ss_yy += dy * dy;
+    }
+    if ss_xx.abs() < 1e-30 {
+        return (0.0, y_mean, 0.0);
+    }
+    let slope = ss_xy / ss_xx;
+    let intercept = y_mean - slope * x_mean;
+    let r_squared = if ss_yy.abs() < 1e-30 {
+        1.0
+    } else {
+        (ss_xy * ss_xy) / (ss_xx * ss_yy)
+    };
+    (slope, intercept, r_squared)
+}
+
+/// 多项式回归：拟合 y = c0 + c1*x + c2*x^2 + ... + cd*x^d。
+///
+/// 返回 (coefficients升幂, r_squared)。构造 Vandermonde 矩阵 → (XᵀX)⁻¹Xᵀy。
+pub fn polynomial_regression(
+    x: &[f64],
+    y: &[f64],
+    degree: usize,
+) -> Result<(Vec<f64>, f64), CalcError> {
+    let n = x.len();
+    if degree == 0 || degree >= n {
+        return Err(CalcError::domain(format!(
+            "polynomial_regression(): degree {} invalid for {} data points",
+            degree, n
+        )));
+    }
+    if n != y.len() {
+        return Err(CalcError::domain(
+            "polynomial_regression(): x and y length mismatch".to_string(),
+        ));
+    }
+    // 构造 Vandermonde 矩阵 X (n × (degree+1))
+    let cols = degree + 1;
+    let data: Vec<f64> = (0..n)
+        .flat_map(|i| (0..cols).map(move |j| x[i].powi(j as i32)))
+        .collect();
+    let x_mat = DMatrix::from_row_slice(n, cols, &data);
+    let y_vec = nalgebra::DVector::from_row_slice(y);
+    // β = (XᵀX)⁻¹Xᵀy
+    let xtx = x_mat.transpose() * &x_mat;
+    let xty = x_mat.transpose() * &y_vec;
+    let xtx_inv = xtx.try_inverse().ok_or_else(|| {
+        CalcError::domain("polynomial_regression(): singular matrix (XᵀX not invertible)".to_string())
+    })?;
+    let beta = xtx_inv * xty;
+    let coeffs: Vec<f64> = beta.iter().copied().collect();
+    // R²
+    let y_pred = &x_mat * &beta;
+    let y_mean = mean(y);
+    let ss_res: f64 = y.iter().zip(y_pred.iter()).map(|(yi, pi)| (yi - pi).powi(2)).sum();
+    let ss_tot: f64 = y.iter().map(|yi| (yi - y_mean).powi(2)).sum();
+    let r_squared = if ss_tot.abs() < 1e-30 { 1.0 } else { 1.0 - ss_res / ss_tot };
+    Ok((coeffs, r_squared))
+}
+
+/// 多元回归：y = c0 + c1*x1 + c2*x2 + ...。x 为 &[Vec<f64>]，每个内向量是一个特征。
+///
+/// 返回 (coefficients含截距, r_squared)。
+pub fn multiple_regression(
+    x: &[Vec<f64>],
+    y: &[f64],
+) -> Result<(Vec<f64>, f64), CalcError> {
+    if x.is_empty() || y.is_empty() {
+        return Err(CalcError::domain(
+            "multiple_regression(): empty input".to_string(),
+        ));
+    }
+    let n = y.len();
+    let p = x.len(); // 特征数
+    if x.iter().any(|xi| xi.len() != n) {
+        return Err(CalcError::domain(
+            "multiple_regression(): feature vector length mismatch".to_string(),
+        ));
+    }
+    if p >= n {
+        return Err(CalcError::domain(
+            "multiple_regression(): underdetermined system (features >= samples)".to_string(),
+        ));
+    }
+    // 构造设计矩阵 X (n × (p+1))，第一列为 1（截距）
+    let cols = p + 1;
+    let data: Vec<f64> = (0..n)
+        .flat_map(|i| {
+            std::iter::once(1.0).chain((0..p).map(move |j| x[j][i]))
+        })
+        .collect();
+    let x_mat = DMatrix::from_row_slice(n, cols, &data);
+    let y_vec = nalgebra::DVector::from_row_slice(y);
+    // β = (XᵀX)⁻¹Xᵀy
+    let xtx = x_mat.transpose() * &x_mat;
+    let xty = x_mat.transpose() * &y_vec;
+    let xtx_inv = xtx.try_inverse().ok_or_else(|| {
+        CalcError::domain("multiple_regression(): singular matrix".to_string())
+    })?;
+    let beta = xtx_inv * xty;
+    let coeffs: Vec<f64> = beta.iter().copied().collect();
+    // R²
+    let y_pred = &x_mat * &beta;
+    let y_mean = mean(y);
+    let ss_res: f64 = y.iter().zip(y_pred.iter()).map(|(yi, pi)| (yi - pi).powi(2)).sum();
+    let ss_tot: f64 = y.iter().map(|yi| (yi - y_mean).powi(2)).sum();
+    let r_squared = if ss_tot.abs() < 1e-30 { 1.0 } else { 1.0 - ss_res / ss_tot };
+    Ok((coeffs, r_squared))
+}
+
 // ===== 测试 =====
 
 #[cfg(test)]
@@ -729,5 +860,59 @@ mod tests {
         assert_approx(r[1], 2.5, 1e-15, "rank[1]");
         assert_approx(r[2], 2.5, 1e-15, "rank[2]");
         assert_approx(r[3], 4.0, 1e-15, "rank[3]");
+    }
+
+    // ===== 回归分析 =====
+
+    #[test]
+    fn test_linear_regression_perfect() {
+        let x = vec![1.0, 2.0, 3.0];
+        let y = vec![2.0, 4.0, 6.0];
+        let (slope, intercept, r_sq) = linear_regression(&x, &y);
+        assert_approx(slope, 2.0, 1e-12, "slope");
+        assert_approx(intercept, 0.0, 1e-12, "intercept");
+        assert_approx(r_sq, 1.0, 1e-12, "r_squared");
+    }
+
+    #[test]
+    fn test_linear_regression_short() {
+        let (s, i, r) = linear_regression(&[1.0], &[2.0]);
+        assert_eq!((s, i, r), (0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn test_polynomial_regression_quadratic() {
+        let x = vec![0.0, 1.0, 2.0, 3.0, 4.0];
+        let y = vec![1.0, 0.0, 1.0, 4.0, 9.0]; // (x-1)² = x²-2x+1
+        let (coeffs, r_sq) = polynomial_regression(&x, &y, 2).unwrap();
+        assert_approx(coeffs[0], 1.0, 1e-9, "c0");
+        assert_approx(coeffs[1], -2.0, 1e-9, "c1");
+        assert_approx(coeffs[2], 1.0, 1e-9, "c2");
+        assert!(r_sq > 0.99, "r_squared too low: {}", r_sq);
+    }
+
+    #[test]
+    fn test_polynomial_regression_invalid_degree() {
+        assert!(polynomial_regression(&[1.0, 2.0], &[1.0, 2.0], 0).is_err());
+        assert!(polynomial_regression(&[1.0, 2.0], &[1.0, 2.0], 2).is_err());
+    }
+
+    #[test]
+    fn test_multiple_regression_basic() {
+        // y = 1 + 2*x1 + 3*x2
+        let x1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let x2 = vec![2.0, 1.0, 3.0, 2.0, 4.0];
+        let y: Vec<f64> = x1.iter().zip(x2.iter())
+            .map(|(a, b)| 1.0 + 2.0 * a + 3.0 * b).collect();
+        let (coeffs, r_sq) = multiple_regression(&[x1, x2], &y).unwrap();
+        assert_approx(coeffs[0], 1.0, 1e-9, "intercept");
+        assert_approx(coeffs[1], 2.0, 1e-9, "c1");
+        assert_approx(coeffs[2], 3.0, 1e-9, "c2");
+        assert_approx(r_sq, 1.0, 1e-9, "r_squared");
+    }
+
+    #[test]
+    fn test_multiple_regression_empty() {
+        assert!(multiple_regression(&[], &[]).is_err());
     }
 }
