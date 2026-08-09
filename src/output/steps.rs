@@ -257,9 +257,14 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
             x.sqrt()
         }
         ("exp", &[x]) => x.exp(),
-        ("ln", &[x]) | ("log", &[x]) => {
+        ("ln", &[x]) => {
             check_positive(name, x)?;
             x.ln()
+        }
+        // MEDIUM #25 修复：单参数 log 视为 log10（与数学惯例一致）
+        ("log", &[x]) => {
+            check_positive(name, x)?;
+            x.log10()
         }
         ("log10", &[x]) => {
             check_positive(name, x)?;
@@ -374,8 +379,8 @@ fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
             ),
         );
     }
-    // 拒绝超出 i64 范围的值（避免饱和 cast）
-    if !x.is_finite() || x < i64::MIN as f64 || x > i64::MAX as f64 {
+    // MEDIUM #27 修复：用 i128 中间转换确保边界精确
+    if !x.is_finite() {
         return Err(
             CalcError::domain(format!("{} argument {} exceeds i64 range", name, x)).with_i18n(
                 "msg.output.integer_out_of_range",
@@ -386,7 +391,19 @@ fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
             ),
         );
     }
-    Ok(x as i64)
+    let ix = x as i128;
+    if ix < i64::MIN as i128 || ix > i64::MAX as i128 {
+        return Err(
+            CalcError::domain(format!("{} argument {} exceeds i64 range", name, x)).with_i18n(
+                "msg.output.integer_out_of_range",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("value".to_string(), x.to_string()),
+                ],
+            ),
+        );
+    }
+    Ok(ix as i64)
 }
 
 fn gcd(a: i64, b: i64) -> i64 {
@@ -457,8 +474,9 @@ fn format_value(v: f64) -> String {
     }
     // 整数：避免科学计数法
     if v.fract() == 0.0 {
-        if v.abs() < 9e15 {
-            // 安全整数范围（|v| < 2^53 ≈ 9e15）：用 i64 精确表示
+        if v.abs() <= i64::MAX as f64 {
+            // LOW #30 修复：与 canonicalizer 统一用 i64::MAX 作为阈值
+            // 安全整数范围（|v| <= i64::MAX）：用 i64 精确表示
             return format!("{}", v as i64);
         }
         // 大整数：用 {:.0} 避免科学计数法（f64::Display 在大数时可能输出 "1e21"）

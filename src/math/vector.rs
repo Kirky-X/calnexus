@@ -37,7 +37,8 @@ pub fn magnitude(v: &[f64]) -> f64 {
 /// 归一化为单位向量。零向量返回错误。
 pub fn normalize(v: &[f64]) -> Result<Vec<f64>, CalcError> {
     let norm = magnitude(v);
-    if norm == 0.0 {
+    // MEDIUM #67 修复：用 epsilon 阈值代替精确零比较
+    if norm < 1e-15 {
         return Err(CalcError::domain("cannot normalize zero vector".to_string()));
     }
     Ok(v.iter().map(|x| x / norm).collect())
@@ -77,7 +78,7 @@ pub fn angle(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     }
     let norm_a = magnitude(a);
     let norm_b = magnitude(b);
-    if norm_a == 0.0 || norm_b == 0.0 {
+    if norm_a < 1e-15 || norm_b < 1e-15 {
         return Err(CalcError::domain("angle(): zero vector has no angle".to_string()));
     }
     let cos_theta = dot(a, b)? / (norm_a * norm_b);
@@ -102,7 +103,7 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     }
     let norm_a = magnitude(a);
     let norm_b = magnitude(b);
-    if norm_a == 0.0 || norm_b == 0.0 {
+    if norm_a < 1e-15 || norm_b < 1e-15 {
         return Err(CalcError::domain("cosine_similarity(): zero vector".to_string()));
     }
     let cos = dot(a, b)? / (norm_a * norm_b);

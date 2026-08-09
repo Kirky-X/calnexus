@@ -390,12 +390,12 @@ mod tests {
 
     #[test]
     fn test_negative_base_fractional_power() {
-        // (-2)^0.5 → NaNOrInf (Req 9 Scen 2, 非实数复数)
+        // (-2)^0.5 → Domain 错误（MEDIUM #31 修复：负底数+非整数指数是域错误）
         let result = eval("(-2)^0.5");
         assert!(result.is_err());
         assert!(
-            matches!(&result, Err(e) if e.kind == ErrorKind::NaNOrInf),
-            "expected NaNOrInf, got {:?}",
+            matches!(&result, Err(e) if e.kind == ErrorKind::Domain),
+            "expected Domain, got {:?}",
             result
         );
     }

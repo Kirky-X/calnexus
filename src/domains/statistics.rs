@@ -384,7 +384,8 @@ fn contains_statistics_function(ast: &AstNode) -> bool {
             contains_statistics_function(l) || contains_statistics_function(r)
         }
         AstNode::UnaryOp(_, e) => contains_statistics_function(e),
-        AstNode::Matrix(rows) => rows.iter().flatten().any(contains_statistics_function),
+        // MEDIUM #85/#86 修复：移除 Matrix 路由，因为 eval_node 不支持 Matrix
+        AstNode::Matrix(_) => false,
         AstNode::List(elements) => elements.iter().any(contains_statistics_function),
         AstNode::Number(_)
         | AstNode::Variable(_)
@@ -863,13 +864,13 @@ mod tests {
 
     #[test]
     fn test_contains_statistics_matrix() {
-        // line 217: contains_statistics_function for Matrix
+        // MEDIUM #85/#86 修复：Matrix 不再路由到 statistics 域（eval_node 不支持 Matrix）
         let ast = AstNode::Matrix(vec![vec![AstNode::FunctionCall(
             "sum".to_string(),
             vec![AstNode::List(vec![AstNode::Number(1.0)])],
         )]]);
         let domain = StatisticsDomain;
-        assert!(domain.supports(&ast));
+        assert!(!domain.supports(&ast));
     }
 
     #[test]

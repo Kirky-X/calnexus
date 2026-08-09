@@ -189,7 +189,12 @@ pub fn build_span_for_unit(unit: Unit, n: i64) -> Result<Span, CalcError> {
         Unit::Week => span.try_weeks(n),
         Unit::Month => span.try_months(n),
         Unit::Year => span.try_years(n),
-        _ => unreachable!(),
+        _ => {
+            return Err(CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
+                "msg.time.invalid_unit",
+                vec![("unit".to_string(), format!("{:?}", unit))],
+            ));
+        }
     }
     .map_err(|_| {
         CalcError::domain(format!("span out of range: {} {:?}", n, unit)).with_i18n(
@@ -209,7 +214,12 @@ pub fn span_total_in_unit(span: &Span, unit: Unit, a: &Zoned) -> Result<f64, Cal
         Unit::Week => span.total((Unit::Week, a)),
         Unit::Month => span.total((Unit::Month, a)),
         Unit::Year => span.total((Unit::Year, a)),
-        _ => unreachable!(),
+        _ => {
+            return Err(CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
+                "msg.time.invalid_unit",
+                vec![("unit".to_string(), format!("{:?}", unit))],
+            ));
+        }
     };
     result.map_err(|_| {
         CalcError::domain(format!("span total failed for {:?}", unit)).with_i18n(
@@ -261,10 +271,11 @@ fn parse_chinese_date(input: &str) -> Result<Date, ()> {
         return Ok(d);
     }
     let caps = chinese_date_regex().captures(input).ok_or(())?;
-    let year: i16 = caps[1].parse().map_err(|_| ())?;
+    let year: i32 = caps[1].parse().map_err(|_| ())?;
     let month: i8 = caps[2].parse().map_err(|_| ())?;
     let day: i8 = caps[3].parse().map_err(|_| ())?;
-    Date::new(year, month, day).map_err(|_| ())
+    let year_i16: i16 = year.try_into().map_err(|_| ())?;
+    Date::new(year_i16, month, day).map_err(|_| ())
 }
 
 /// 中文 datetime 解析：2026年7月25日 12:30:00
@@ -323,13 +334,13 @@ fn ambiguous_date_regex() -> &'static regex::Regex {
 /// 获取中文日期 regex（缓存）。
 fn chinese_date_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(\d{4})年(\d{1,2})月(\d{1,2})日").expect("valid regex"))
+    RE.get_or_init(|| regex::Regex::new(r"^(\d{4})年(\d{1,2})月(\d{1,2})日$").expect("valid regex"))
 }
 
 /// 获取时间部分 regex（缓存）。
 fn time_part_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(\d{1,2}):(\d{2})(?::(\d{2}))?").expect("valid regex"))
+    RE.get_or_init(|| regex::Regex::new(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$").expect("valid regex"))
 }
 
 // ============================ 单元测试 ============================

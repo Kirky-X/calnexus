@@ -53,12 +53,13 @@ pub fn get_rate(code: &str, table: &RateTable) -> Result<f64, CalcError> {
         .ok_or_else(|| unknown_currency_error(code, table))
 }
 
-/// 构造"未知币种"错误，消息含支持币种数量。
+/// 构造“未知币种”错误，消息含支持币种数量。
+/// MEDIUM #35 修复：rates.len() + 1 以包含 base 币种本身。
 pub fn unknown_currency_error(code: &str, table: &RateTable) -> CalcError {
     CalcError::domain(format!(
         "unknown currency: {}, {} currencies supported (base: {})",
         code,
-        table.rates.len(),
+        table.rates.len() + 1,
         table.base
     ))
     .with_i18n(
@@ -153,7 +154,7 @@ mod tests {
         let table = eur_table();
         let err = unknown_currency_error("XYZ", &table);
         assert!(err.message.contains("XYZ"));
-        assert!(err.message.contains("4 currencies"));
+        assert!(err.message.contains("5 currencies"));
         assert_eq!(err.i18n_key, Some("msg.fx.unknown_currency"));
     }
 
@@ -165,7 +166,7 @@ mod tests {
             rates: HashMap::new(),
         };
         let err = unknown_currency_error("XYZ", &table);
-        assert!(err.message.contains("0 currencies"));
+        assert!(err.message.contains("1 currencies"));
     }
 
     // ===== RateTable =====

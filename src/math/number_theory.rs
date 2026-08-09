@@ -411,7 +411,12 @@ fn euler_phi_impl(n: &BigInt) -> BigInt {
             }
             result -= &result / &p;
         }
-        p += 1;
+        // MEDIUM #18 修复：处理 2 后只检查奇数，减少一半迭代
+        if p == BigInt::from(2) {
+            p = BigInt::from(3);
+        } else {
+            p += 2;
+        }
     }
     if m > BigInt::one() {
         result -= &result / &m;

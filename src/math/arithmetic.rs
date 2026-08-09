@@ -36,10 +36,15 @@ pub fn mul(a: f64, b: f64) -> Result<f64, CalcError> {
 
 /// 除法：`a / b`。
 ///
+/// - NaN 输入 → `NaNOrInf`
 /// - `b == 0.0 && a == 0.0` → `NaNOrInf`（0/0 = NaN）
 /// - `b == 0.0 && a != 0.0` → `DivisionByZero`
 /// - 结果溢出 → `NaNOrInf`
 pub fn div(a: f64, b: f64) -> Result<f64, CalcError> {
+    // MEDIUM #30 修复：NaN 输入优先检查，避免 NaN/0.0 被误报为 DivisionByZero
+    if a.is_nan() || b.is_nan() {
+        return Err(CalcError::nan_or_inf());
+    }
     if b == 0.0 {
         if a == 0.0 {
             return Err(CalcError::nan_or_inf());
@@ -56,11 +61,29 @@ pub fn div(a: f64, b: f64) -> Result<f64, CalcError> {
 /// 幂运算：`a ^ b`。
 ///
 /// - `0.0^0.0 = 1.0`（组合数学约定）
+/// - 负底数 + 非整数指数 → `Domain`
 /// - 结果溢出 → `NaNOrInf`
 pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
     // 0^0 = 1 (spec Req 2 Scen 3，组合数学约定)
     if a == 0.0 && b == 0.0 {
         return Ok(1.0);
+    }
+    // MEDIUM #31 修复：负底数 + 非整数指数是域错误，不是 NaNOrInf
+    if a < 0.0 && b.fract() != 0.0 {
+        return Err(
+            CalcError::domain(format!(
+                "negative base with non-integer exponent: {}^{}",
+                a, b
+            ))
+            .with_hint("use complex numbers for negative base with fractional exponent")
+            .with_i18n(
+                "msg.arithmetic.neg_base_frac_exp",
+                vec![
+                    ("base".to_string(), a.to_string()),
+                    ("exponent".to_string(), b.to_string()),
+                ],
+            ),
+        );
     }
     let r = a.powf(b);
     if !r.is_finite() {
@@ -71,6 +94,10 @@ pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
 
 /// 取模：`a % b`。`b == 0.0` 返回 `DivisionByZero`。
 pub fn rem(a: f64, b: f64) -> Result<f64, CalcError> {
+    // MEDIUM #30 修复：NaN 输入优先检查
+    if a.is_nan() || b.is_nan() {
+        return Err(CalcError::nan_or_inf());
+    }
     if b == 0.0 {
         return Err(CalcError::division_by_zero());
     }

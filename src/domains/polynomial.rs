@@ -555,6 +555,10 @@ fn coeffs_from_div(
     let (a, var_a) = expr_to_coeffs(l, ctx)?;
     let (b, var_b) = expr_to_coeffs(r, ctx)?;
     let var = merge_var(&var_a, &var_b)?;
+    // MEDIUM #1 修复：显式检查零多项式除数，避免 math_poly::div 返回 NaN
+    if math_poly::is_zero(&b) {
+        return Err(CalcError::division_by_zero());
+    }
     let (quotient, remainder) = math_poly::div(&a, &b);
     if math_poly::is_zero(&remainder) {
         Ok((quotient, var))

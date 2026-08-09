@@ -152,8 +152,9 @@ impl ComplexDomain {
             BinaryOp::Div => math_complex::div(ac, bc)?,
             BinaryOp::Pow => {
                 // 0^0=1 返回 Scalar（与标量分支约定一致）
-                let zero = Complex64::new(0.0, 0.0);
-                if ac == zero && bc == zero {
+                // MEDIUM #71 修复：用分量比较代替 Complex64 精确等式
+                // -0.0 == 0.0 在 f64 中成立，但分量比较更明确
+                if ac.re == 0.0 && ac.im == 0.0 && bc.re == 0.0 && bc.im == 0.0 {
                     return Ok(ComplexValue::Scalar(1.0));
                 }
                 math_complex::pow(ac, bc)?

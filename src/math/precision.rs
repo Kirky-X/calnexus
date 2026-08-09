@@ -54,6 +54,7 @@ pub fn format_bigrational(value: &BigRational, precision: Option<usize>) -> Stri
 /// 格式化 BigRational 为指定精度的十进制小数。
 ///
 /// 例如 `1/3` 精度 5 → `0.33333`，`1/2` 精度 3 → `0.500`。
+/// MEDIUM #46 修复：四舍五入而非截断。
 fn format_decimal(value: &BigRational, precision: usize) -> String {
     let ten = BigInt::from(10);
     let neg = value.is_negative();
@@ -61,25 +62,25 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
     let numer = abs.numer();
     let denom = abs.denom();
 
-    // 整数部分
-    let int_part = numer / denom;
-    let remainder = numer % denom;
-
-    // 小数部分：remainder * 10^precision / denom
+    // 计算 value * 10^precision，然后四舍五入到整数
     let mut scale = BigInt::one();
     for _ in 0..precision {
         scale *= &ten;
     }
-    let scaled = remainder * &scale;
-    let frac_digits = scaled / denom;
+    // scaled_value = floor(value * 10^precision + 0.5) 实现四舍五入
+    // = (2 * numer * scale + denom) / (2 * denom)
+    let rounded = (&BigInt::from(2) * numer * &scale + denom) / (&BigInt::from(2) * denom);
 
-    let int_str = int_part.to_string();
-    let frac_str = format!("{:0>width$}", frac_digits.to_string(), width = precision);
-
-    let sign = if neg { "-" } else { "" };
     if precision == 0 {
-        format!("{}{}", sign, int_str)
+        let sign = if neg { "-" } else { "" };
+        format!("{}{}", sign, rounded)
     } else {
+        // 分离整数部分和小数部分
+        let int_part = &rounded / &scale;
+        let frac_part = &rounded % &scale;
+        let int_str = int_part.to_string();
+        let frac_str = format!("{:0>width$}", frac_part, width = precision);
+        let sign = if neg { "-" } else { "" };
         format!("{}{}.{}", sign, int_str, frac_str)
     }
 }
@@ -89,7 +90,7 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
 /// 整数且范围在 i64 内：精确转换为整数 BigRational；
 /// 否则：尝试 `BigRational::from_float`，失败时返回错误。
 pub fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
-    if n.fract() == 0.0 && n.abs() < 9e15 {
+    if n.fract() == 0.0 && n.abs() <= i64::MAX as f64 {
         Ok(BigRational::from_integer(BigInt::from(n as i64)))
     } else {
         BigRational::from_float(n).ok_or_else(|| {
@@ -178,7 +179,8 @@ mod tests {
     #[test]
     fn test_format_decimal_precision_zero() {
         let r = BigRational::new(BigInt::from(7), BigInt::from(2));
-        assert_eq!(format_bigrational(&r, Some(0)), "3");
+        // MEDIUM #46 修复：四舍五入 3.5 → 4（而非截断为 3）
+        assert_eq!(format_bigrational(&r, Some(0)), "4");
     }
 
     #[test]

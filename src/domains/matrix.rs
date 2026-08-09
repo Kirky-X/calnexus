@@ -325,7 +325,8 @@ impl MatrixDomain {
                     "qr" => numerical::qr(m)?,
                     "eig" => numerical::eig(m)?,
                     "svd" => numerical::svd(m)?,
-                    _ => unreachable!(),
+                    // MEDIUM #60 修复：unreachable!() 改为安全 fallback
+                    _ => return Ok(None),
                 }))
             }
             "solve" => {
