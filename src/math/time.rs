@@ -107,6 +107,7 @@ pub fn parse_datetime_multi_format(input: &str) -> Result<DateTime, CalcError> {
 }
 
 /// 用 strptime 尝试解析 timestamp 字符串（带偏移量）。
+#[allow(clippy::result_unit_err)]
 pub fn parse_timestamp_strptime(input: &str) -> Result<Timestamp, ()> {
     let formats: &[&str] = &[
         "%Y-%m-%dT%H:%M:%S%:z",

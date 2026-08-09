@@ -10,6 +10,7 @@ use crate::math;
 
 /// DataAnalysis API 访问器。
 pub struct DataAnalysisImpl<'a> {
+    #[allow(dead_code)]
     pub(crate) cn: &'a CalNexus,
 }
 

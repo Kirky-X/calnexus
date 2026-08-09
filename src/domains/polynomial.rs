@@ -14,6 +14,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
 use crate::math::polynomial as math_poly;
 
@@ -50,13 +51,7 @@ impl CalculationDomain for PolynomialDomain {
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         // 预绑定 pi/e（若上下文未提供），避免常量被当作多项式变量
-        let mut ctx = ctx.clone();
-        if ctx.get_var("pi").is_none() {
-            ctx = ctx.with_var("pi", std::f64::consts::PI);
-        }
-        if ctx.get_var("e").is_none() {
-            ctx = ctx.with_var("e", std::f64::consts::E);
-        }
+        let ctx = ensure_math_constants(ctx);
         self.eval_node(ast, &ctx)
     }
 }
@@ -73,12 +68,7 @@ impl PolynomialDomain {
         match ast {
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
-            AstNode::Variable(name) => ctx.get_var(name).map(EvalResult::Scalar).ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+            AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
             AstNode::BinaryOp(_, _, _) => {
                 // 尝试作为多项式表达式求值
                 let (coeffs, _var) = expr_to_coeffs(ast, ctx)?;
@@ -99,14 +89,7 @@ impl PolynomialDomain {
                 Ok(EvalResult::Scalar(n))
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "polynomial domain does not support this node type: {:?}",
-                    ast
-                ))
-                .with_i18n(
-                    "msg.polynomial.unsupported_node",
-                    vec![("node".to_string(), format!("{:?}", ast))],
-                ))
+                Err(unsupported_node_error("polynomial", ast))
             }
             AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
                 Err(CalcError::domain(format!(
@@ -129,14 +112,7 @@ impl PolynomialDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !POLYNOMIAL_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in polynomial domain: {}",
-                name
-            ))
-            .with_i18n(
-                "msg.polynomial.unsupported_function",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(unsupported_function_error("polynomial", name));
         }
         match name {
             "poly_add" => self.eval_poly_add(args, ctx),
@@ -350,12 +326,7 @@ impl PolynomialDomain {
                     vec![("value".to_string(), s.to_string())],
                 )
             }),
-            AstNode::Variable(name) => ctx.get_var(name).ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+            AstNode::Variable(name) => resolve_variable(ctx, name),
             AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(-self.eval_scalar(e, ctx)?),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_scalar(l, ctx)?;

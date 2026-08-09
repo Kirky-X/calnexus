@@ -15,6 +15,7 @@ use crate::core::CalculationDomain;
 use crate::core::{
     AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
 };
+use super::common::{resolve_variable, unsupported_node_error};
 
 /// 算术函数白名单（parser 预处理后的函数名）。
 const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
@@ -49,12 +50,7 @@ impl ArithmeticDomain {
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(*n),
-            AstNode::Variable(name) => ctx.get_var(name).ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+            AstNode::Variable(name) => resolve_variable(ctx, name),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -73,14 +69,7 @@ impl ArithmeticDomain {
             | AstNode::Matrix(_)
             | AstNode::List(_)
             | AstNode::BigNumber(_)
-            | AstNode::Str(_) => Err(CalcError::domain(format!(
-                "arithmetic domain does not support this node type: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.arithmetic.unsupported_node",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            )),
+            | AstNode::Str(_) => Err(unsupported_node_error("arithmetic", ast)),
         }
     }
 

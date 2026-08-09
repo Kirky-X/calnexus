@@ -11,6 +11,7 @@ use crate::math;
 
 /// ScalarMath API 访问器。
 pub struct ScalarMathImpl<'a> {
+    #[allow(dead_code)]
     pub(crate) cn: &'a CalNexus,
 }
 

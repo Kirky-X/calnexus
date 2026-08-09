@@ -16,6 +16,7 @@ use crate::core::{
     check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
     MAX_POW_EXPONENT,
 };
+use super::common::{unsupported_node_error, unsupported_function_error};
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
@@ -102,10 +103,7 @@ impl NumberTheoryDomain {
                 }
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "number theory domain does not support this node type: {:?}",
-                    ast
-                )))
+                Err(unsupported_node_error("number_theory", ast))
             }
         }
     }
@@ -212,10 +210,7 @@ impl NumberTheoryDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !NUMBER_THEORY_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in number theory domain: {}",
-                name
-            )));
+            return Err(unsupported_function_error("number_theory", name));
         }
         match name {
             "gcd" => self.eval_gcd(args, ctx),

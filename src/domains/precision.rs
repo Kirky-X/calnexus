@@ -15,10 +15,10 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{
-    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
-    MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION,
+    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_POW_EXPONENT, MAX_PRECISION,
 };
 use crate::math::precision as math_prec;
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{Signed, Zero};
@@ -49,26 +49,7 @@ impl CalculationDomain for PrecisionDomain {
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         // BUG-D-L-002: 预绑定 pi/e（若上下文未提供），与其他域保持一致。
-        // pi/e 为无理数，此处使用 f64 近似值（与 scientific/statistics 域一致）。
-        //
-        // M2 修复：性能优化——vars 已含 pi/e 时跳过 clone
-        // 修复前：每次 evaluate 无条件 ctx.clone() 注入 pi/e，即使 vars 已含 pi/e
-        // 修复后：仅在缺 pi/e 时 clone，避免常见情况的堆分配
-        let needs_pi = ctx.get_var("pi").is_none();
-        let needs_e = ctx.get_var("e").is_none();
-        let owned_ctx: Option<EvalContext> = if needs_pi || needs_e {
-            let mut new_ctx = ctx.clone();
-            if needs_pi {
-                new_ctx = new_ctx.with_var("pi", std::f64::consts::PI);
-            }
-            if needs_e {
-                new_ctx = new_ctx.with_var("e", std::f64::consts::E);
-            }
-            Some(new_ctx)
-        } else {
-            None
-        };
-        let ctx: &EvalContext = owned_ctx.as_ref().unwrap_or(ctx);
+        let ctx = ensure_math_constants(ctx);
 
         // 处理 precision(N, expr) 函数：求值 expr，N 仅供 CLI 格式化使用
         if let AstNode::FunctionCall(name, args) = ast {
@@ -85,12 +66,12 @@ impl CalculationDomain for PrecisionDomain {
                 }
                 // 验证 N 为正整数
                 let _n = extract_precision_value(&args[0])?;
-                let value = self.eval(&args[1], ctx)?;
+                let value = self.eval(&args[1], &ctx)?;
                 return Ok(math_prec::rational_to_result(value));
             }
         }
 
-        let value = self.eval(ast, ctx)?;
+        let value = self.eval(ast, &ctx)?;
         Ok(math_prec::rational_to_result(value))
     }
 }
@@ -110,12 +91,7 @@ impl PrecisionDomain {
                 Ok(BigRational::from_integer(big))
             }
             AstNode::Variable(name) => {
-                let v = ctx.get_var(name).ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                })?;
+                let v = resolve_variable(ctx, name)?;
                 math_prec::f64_to_rational(v)
             }
             AstNode::BinaryOp(op, l, r) => {
@@ -143,14 +119,7 @@ impl PrecisionDomain {
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "precision domain does not support this node type: {:?}",
-                    ast
-                ))
-                .with_i18n(
-                    "msg.precision.unsupported_node",
-                    vec![("node".to_string(), format!("{:?}", ast))],
-                ))
+                Err(unsupported_node_error("precision", ast))
             }
         }
     }
@@ -266,14 +235,7 @@ impl PrecisionDomain {
                 let b_int = math_prec::rational_to_int(&b, "mod operand")?;
                 Ok(BigRational::from_integer(a_int % b_int))
             }
-            _ => Err(CalcError::domain(format!(
-                "unsupported function in precision domain: {}",
-                name
-            ))
-            .with_i18n(
-                "msg.precision.unsupported_function",
-                vec![("name".to_string(), name.to_string())],
-            )),
+            _ => Err(unsupported_function_error("precision", name)),
         }
     }
 
@@ -457,6 +419,7 @@ mod tests {
     use super::*;
     use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::MAX_FACTORIAL_INPUT;
 
     /// 创建默认上下文。
     fn default_ctx() -> EvalContext {

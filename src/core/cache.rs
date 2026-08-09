@@ -150,7 +150,7 @@ impl CacheManager {
                     eprintln!("WARN: cache get_or_option failed: {}", e);
                     // compute 未被调用（缓存后端先失败），无法降级
                     // 返回缓存错误而非计算错误
-                    Err(CalcError::new(ErrorKind::Eval, &format!("cache backend error: {}", e)))
+                    Err(CalcError::new(ErrorKind::Eval, format!("cache backend error: {}", e)))
                 }
             }
         }

@@ -15,12 +15,10 @@
 //! T021 重构：纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
 
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::core::{AstNode, CalcError, EvalContext, EvalResult, UnaryOp};
 use crate::math::symbolic as math_sym;
-use std::collections::HashMap;
 
-// Re-export SymbolicExpr and ast_to_symbolic for tests and other modules.
-pub use crate::math::symbolic::SymbolicExpr;
+// Re-export ast_to_symbolic for tests and other modules.
 pub use crate::math::symbolic::ast_to_symbolic;
 
 /// 符号函数白名单。
@@ -243,7 +241,10 @@ mod tests {
     use super::*;
     use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::BinaryOp;
+    use crate::math::symbolic::SymbolicExpr;
     use crate::math::symbolic as math_sym;
+    use std::collections::HashMap;
 
     // ----- TG3.1 转换测试 -----
 
