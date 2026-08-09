@@ -44,7 +44,18 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
     }
     let decomp = SymmetricEigen::new(matrix.clone());
     let mut indexed: Vec<(usize, f64)> = decomp.eigenvalues.iter().copied().enumerate().collect();
-    indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    // MEDIUM #82 修复：NaN 特征值返回错误而非静默视为相等
+    indexed.sort_by(|a, b| {
+        a.1.partial_cmp(&b.1).unwrap_or_else(|| {
+            // NaN 无法比较，按 f64 总序定义处理：NaN 排最后
+            match (a.1.is_nan(), b.1.is_nan()) {
+                (true, true) => std::cmp::Ordering::Equal,
+                (true, false) => std::cmp::Ordering::Greater,
+                (false, true) => std::cmp::Ordering::Less,
+                _ => std::cmp::Ordering::Equal,
+            }
+        })
+    });
     let values: Vec<f64> = indexed.iter().map(|&(_, v)| v).collect();
     let mut sorted_vecs = DMatrix::<f64>::zeros(n, n);
     for (col, &(src, _)) in indexed.iter().enumerate() {

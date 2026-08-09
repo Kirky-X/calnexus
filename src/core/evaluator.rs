@@ -840,7 +840,7 @@ mod tests {
         );
 
         let formatted = crate::domains::format_bigrational(r, Some(10));
-        // 1/6 = 0.166666...（无限循环 6），10 位小数为 0.1666666666（10 个 6，无舍入）
-        assert_eq!(formatted, "0.1666666666", "got {}", formatted);
+        // MEDIUM #46 修复：四舍五入 1/6 = 0.16666666666... → 0.1666666667（10 位）
+        assert_eq!(formatted, "0.1666666667", "got {}", formatted);
     }
 }

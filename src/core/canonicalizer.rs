@@ -64,9 +64,15 @@ impl AstCanonicalizer {
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
         match ast {
-            // Leaf 节点：直接克隆（无变换）
-            AstNode::Number(_)
-            | AstNode::Variable(_)
+            // MEDIUM #101 修复：Number 叶节点验证 NaN/Inf
+            AstNode::Number(n) => {
+                if n.is_nan() || n.is_infinite() {
+                    return Err(CalcError::nan_or_inf());
+                }
+                Ok(ast.clone())
+            }
+            // 其他 Leaf 节点：直接克隆
+            AstNode::Variable(_)
             | AstNode::Complex(_, _)
             | AstNode::BigNumber(_)
             | AstNode::Str(_) => Ok(ast.clone()),
@@ -332,8 +338,10 @@ impl AstCanonicalizer {
     }
 
     /// 格式化数字：整数输出无小数点，浮点数保留原样。
+    /// MEDIUM #100 修复：将阈值从 9e15 提高到 i64::MAX as f64，
+    /// 覆盖 f64 精确整数表示的全范围（2^53 ≈ 9.007e15 到 i64::MAX ≈ 9.22e18）。
     fn format_number(n: f64) -> String {
-        if n.fract() == 0.0 && n.abs() < 9e15 {
+        if n.fract() == 0.0 && n.abs() <= i64::MAX as f64 {
             format!("{}", n as i64)
         } else {
             format!("{}", n)

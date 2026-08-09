@@ -221,7 +221,11 @@ impl CombinatoricsDomain {
             "C" => self.eval_combination(args, ctx),
             "catalan" => self.eval_catalan(args, ctx),
             "stirling" => self.eval_stirling(args, ctx),
-            _ => unreachable!(),
+            // LOW #54 修复：unreachable!() 改为安全错误返回
+            _ => Err(CalcError::eval(format!("unknown combinatorics function: {}", name)).with_i18n(
+                "msg.unknown_function",
+                vec![("name".to_string(), name.to_string())],
+            )),
         }
     }
 

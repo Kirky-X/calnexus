@@ -147,7 +147,7 @@ pub fn log(value: f64, base: f64) -> Result<f64, CalcError> {
             ),
         );
     }
-    if base <= 0.0 || base == 1.0 {
+    if base <= 0.0 || (base - 1.0).abs() < f64::EPSILON {
         return Err(CalcError::domain(format!(
             "log requires positive base != 1, got {}",
             base
@@ -189,7 +189,19 @@ pub fn tanh(x: f64) -> Result<f64, CalcError> {
 /// Lanczos 逼近计算 gamma 函数。
 ///
 /// 对 x > 0.5 使用 Lanczos 逼近；对 x < 0.5 使用反射公式 Γ(z)Γ(1-z) = π/sin(πz)。
+/// MEDIUM #2 修复：非正整数是 gamma 函数的极点，显式拒绝为 Domain 错误。
 pub fn gamma(x: f64) -> Result<f64, CalcError> {
+    // 非正整数（0, -1, -2, …）是 gamma 函数的极点
+    if x <= 0.0 && x == x.floor() && x.is_finite() {
+        return Err(
+            CalcError::domain(format!("gamma({}) is undefined: pole at non-positive integer", x))
+                .with_hint("gamma is defined for positive reals and non-integer negatives")
+                .with_i18n(
+                    "msg.scientific.gamma_pole",
+                    vec![("value".to_string(), x.to_string())],
+                ),
+        );
+    }
     check_finite(lanczos_gamma(x))
 }
 

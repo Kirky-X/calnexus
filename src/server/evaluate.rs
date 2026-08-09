@@ -106,7 +106,7 @@ pub(crate) async fn evaluate_with_timeout(
 /// 如 `"DivisionByZero: ..."`）；原始 message 追加其后（规则12 失败显性化）。
 pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
     match e.kind {
-        ErrorKind::Timeout => ApiError::service_unavailable("evaluate", Some(30)),
+        ErrorKind::Timeout => ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS)),
         kind => ApiError::invalid_input(
             format!("{}: {}", error_kind_prefix(kind), e.message),
             None,

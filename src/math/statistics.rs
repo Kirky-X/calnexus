@@ -81,7 +81,11 @@ pub fn count(values: &[f64]) -> f64 {
 // ===== 特殊函数（原 stats_special.rs）=====
 
 /// 计算 ln(Γ(z))，z > 0。Lanczos 近似（g=7, 9 系数）。
+/// MEDIUM #51 修复：z <= 0 时返回 f64::NAN 而非产生误导性结果。
 pub fn ln_gamma(z: f64) -> f64 {
+    if z <= 0.0 {
+        return f64::NAN;
+    }
     if z < 0.5 {
         std::f64::consts::PI.ln() - (std::f64::consts::PI * z).sin().ln() - ln_gamma(1.0 - z)
     } else {
@@ -516,7 +520,7 @@ fn rank(data: &[f64]) -> Vec<f64> {
     let mut i = 0;
     while i < n {
         let mut j = i;
-        while j < n && (indexed[j].1 - indexed[i].1).abs() < 1e-15 { j += 1; }
+        while j < n && (indexed[j].1 - indexed[i].1).abs() < 1e-15 * (indexed[i].1.abs() + indexed[j].1.abs()).max(1.0) { j += 1; }
         let avg_rank = (i + 1 + j) as f64 / 2.0;
         for k in i..j { ranks[indexed[k].0] = avg_rank; }
         i = j;

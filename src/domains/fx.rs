@@ -190,7 +190,11 @@ fn eval_function(
         "fx_rate" => eval_fx_rate(args, ctx, provider),
         "mod" => eval_mod(args, ctx, provider),
         "abs" => eval_abs(args, ctx, provider),
-        _ => unreachable!(),
+        // MEDIUM #72 修复：unreachable!() 改为安全错误返回
+        _ => Err(CalcError::eval(format!("unknown fx function: {}", name)).with_i18n(
+            "msg.unknown_function",
+            vec![("name".to_string(), name.to_string())],
+        )),
     }
 }
 
@@ -522,8 +526,8 @@ mod tests {
         assert_eq!(err.kind, ErrorKind::Domain);
         assert!(err.message.contains("XYZ"), "msg: {}", err.message);
         assert_eq!(err.i18n_key, Some("msg.fx.unknown_currency"));
-        // 消息含支持币种数量
-        assert!(err.message.contains("4 currencies"), "msg: {}", err.message);
+        // 消息含支持币种数量（MEDIUM #35 修复：+1 包含 base 币种）
+        assert!(err.message.contains("5 currencies"), "msg: {}", err.message);
     }
 
     #[test]

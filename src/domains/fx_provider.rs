@@ -75,6 +75,7 @@ impl From<CachedRateTable> for RateTable {
 /// FrankfurterProvider：生产环境汇率数据提供者。
 ///
 /// 三级缓存读取链 + stale 策略。线程安全（Send + Sync）。
+#[derive(Debug)]
 pub struct FrankfurterProvider {
     /// 缓存文件路径（None 时降级为仅内存缓存）。
     cache_path: Option<PathBuf>,
