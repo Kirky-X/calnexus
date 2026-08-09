@@ -9,12 +9,29 @@
 //! 路由策略：AST 含统计函数调用（mean/variance/std/median/min/max/sum/count）时路由至本域。
 //! 输入为 List 节点；空列表与非数值元素（含嵌套 List/Matrix/Complex）返回 DomainError。
 
+use std::collections::HashMap;
+
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
-/// 统计函数白名单。
+use super::stats_distributions;
+use super::stats_tests;
+
+/// 扩展统计函数白名单：基础 8 + 分布 16 + 检验 3 + 相关 2 = 29。
 const STATISTICS_FUNCTIONS: &[&str] = &[
+    // 基础统计
     "mean", "variance", "std", "median", "min", "max", "sum", "count",
+    // 分布函数
+    "norm_pdf", "norm_cdf", "norm_inv",
+    "t_pdf", "t_cdf", "t_inv",
+    "chi2_pdf", "chi2_cdf", "chi2_inv",
+    "f_pdf", "f_cdf", "f_inv",
+    "poisson_pmf", "poisson_cdf",
+    "binom_pmf", "binom_cdf",
+    // 假设检验
+    "t_test_one", "t_test_two", "chi2_test",
+    // 相关系数
+    "pearson", "spearman",
 ];
 
 /// Statistics 计算域。
@@ -45,35 +62,43 @@ impl CalculationDomain for StatisticsDomain {
             ctx = ctx.with_var("e", std::f64::consts::E);
         }
 
-        let value = self.eval_node(ast, &ctx)?;
-        if !value.is_finite() {
-            return Err(CalcError::nan_or_inf());
+        let result = self.eval_node(ast, &ctx)?;
+        match result {
+            EvalResult::Scalar(v) if !v.is_finite() => Err(CalcError::nan_or_inf()),
+            other => Ok(other),
         }
-        Ok(EvalResult::Scalar(value))
     }
 }
 
 impl StatisticsDomain {
-    /// 递归求值 AST 节点，返回标量。
-    fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
+    /// 递归求值 AST 节点，返回 EvalResult（支持标量和 JSON）。
+    fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
-            AstNode::Number(n) => Ok(*n),
-            AstNode::Variable(name) => ctx.get_var(name).ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+            AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
+            AstNode::Variable(name) => ctx.get_var(name)
+                .map(EvalResult::Scalar)
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::BinaryOp(op, l, r) => {
-                let a = self.eval_node(l, ctx)?;
-                let b = self.eval_node(r, ctx)?;
-                self.eval_binary(*op, a, b)
+                let a = self.eval_node(l, ctx)?.as_scalar().ok_or_else(|| {
+                    CalcError::domain("binary op requires scalar operands".to_string())
+                })?;
+                let b = self.eval_node(r, ctx)?.as_scalar().ok_or_else(|| {
+                    CalcError::domain("binary op requires scalar operands".to_string())
+                })?;
+                self.eval_binary(*op, a, b).map(EvalResult::Scalar)
             }
             AstNode::UnaryOp(op, e) => {
-                let v = self.eval_node(e, ctx)?;
+                let v = self.eval_node(e, ctx)?.as_scalar().ok_or_else(|| {
+                    CalcError::domain("unary op requires scalar operand".to_string())
+                })?;
                 match op {
-                    UnaryOp::Neg => Ok(-v),
-                    UnaryOp::Abs => Ok(v.abs()),
+                    UnaryOp::Neg => Ok(EvalResult::Scalar(-v)),
+                    UnaryOp::Abs => Ok(EvalResult::Scalar(v.abs())),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in statistics domain".to_string(),
                     )
@@ -131,13 +156,13 @@ impl StatisticsDomain {
         Ok(result)
     }
 
-    /// 求值统计函数调用。
+    /// 求值函数调用（支持标量和 JSON 结果）。
     fn eval_function(
         &self,
         name: &str,
         args: &[AstNode],
         ctx: &EvalContext,
-    ) -> Result<f64, CalcError> {
+    ) -> Result<EvalResult, CalcError> {
         if !STATISTICS_FUNCTIONS.contains(&name) {
             return Err(CalcError::domain(format!(
                 "unsupported function in statistics domain: {}",
@@ -148,46 +173,58 @@ impl StatisticsDomain {
                 vec![("name".to_string(), name.to_string())],
             ));
         }
-        if args.len() != 1 {
-            return Err(CalcError::domain(format!(
-                "{}() requires exactly 1 argument, got {}",
-                name,
-                args.len()
-            ))
-            .with_i18n(
-                "msg.statistics.arg_count",
-                vec![
-                    ("name".to_string(), name.to_string()),
-                    ("actual".to_string(), args.len().to_string()),
-                ],
-            ));
+
+        // 基础统计函数：单列表参数
+        if matches!(name, "mean" | "variance" | "std" | "median" | "min" | "max" | "sum" | "count") {
+            if args.len() != 1 {
+                return Err(CalcError::domain(format!(
+                    "{}() requires exactly 1 argument, got {}",
+                    name, args.len()
+                )).with_i18n("msg.statistics.arg_count",
+                    vec![("name".to_string(), name.to_string()), ("actual".to_string(), args.len().to_string())]));
+            }
+            let values = self.extract_list(&args[0], ctx)?;
+            if values.is_empty() {
+                return Err(CalcError::domain(format!("{}() requires a non-empty list", name))
+                    .with_i18n("msg.statistics.requires_non_empty_list",
+                        vec![("name".to_string(), name.to_string())]));
+            }
+            return self.eval_basic_stat(name, &values).map(EvalResult::Scalar);
         }
-        let values = self.extract_list(&args[0], ctx)?;
-        // 空列表 → DomainError（spec Req 8）
-        if values.is_empty() {
-            return Err(
-                CalcError::domain(format!("{}() requires a non-empty list", name)).with_i18n(
-                    "msg.statistics.requires_non_empty_list",
-                    vec![("name".to_string(), name.to_string())],
-                ),
-            );
+
+        // 分布函数：全部标量参数
+        if let Some(v) = self.try_eval_distribution(name, args, ctx)? {
+            return Ok(EvalResult::Scalar(v));
         }
+
+        // 假设检验函数：返回列表 + 标量混合参数 → JSON
+        if let Some(result) = self.try_eval_test(name, args, ctx)? {
+            return Ok(result);
+        }
+
+        // 相关系数函数：双列表参数
+        if let Some(v) = self.try_eval_correlation(name, args, ctx)? {
+            return Ok(EvalResult::Scalar(v));
+        }
+
+        unreachable!("function {} in STATISTICS_FUNCTIONS but not handled", name)
+    }
+
+    /// 基础统计函数求值。
+    fn eval_basic_stat(&self, name: &str, values: &[f64]) -> Result<f64, CalcError> {
         match name {
             "mean" => Ok(values.iter().sum::<f64>() / values.len() as f64),
             "variance" => {
                 let mean = values.iter().sum::<f64>() / values.len() as f64;
-                let var =
-                    values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
-                Ok(var)
+                Ok(values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64)
             }
             "std" => {
                 let mean = values.iter().sum::<f64>() / values.len() as f64;
-                let var =
-                    values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
+                let var = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
                 Ok(var.sqrt())
             }
             "median" => {
-                let mut sorted = values.clone();
+                let mut sorted = values.to_vec();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let n = sorted.len();
                 if n % 2 == 1 {
@@ -204,14 +241,158 @@ impl StatisticsDomain {
         }
     }
 
+    /// 求值标量参数（从 AST 参数列表提取第 idx 个标量）。
+    fn eval_scalar_arg(&self, arg: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
+        self.eval_node(arg, ctx)?.as_scalar().ok_or_else(|| {
+            CalcError::domain("expected scalar argument".to_string())
+        })
+    }
+
+    /// 尝试求值分布函数。返回 Ok(None) 表示不是分布函数。
+    fn try_eval_distribution(
+        &self, name: &str, args: &[AstNode], ctx: &EvalContext,
+    ) -> Result<Option<f64>, CalcError> {
+        let scalars = || -> Result<Vec<f64>, CalcError> {
+            args.iter().map(|a| self.eval_scalar_arg(a, ctx)).collect()
+        };
+        let v = match name {
+            "norm_pdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::norm_pdf(s[0], s[1], s[2]) }
+            "norm_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::norm_cdf(s[0], s[1], s[2]) }
+            "norm_inv" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::norm_inv(s[0], s[1], s[2]) }
+            "t_pdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::t_pdf(s[0], s[1]) }
+            "t_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::t_cdf(s[0], s[1]) }
+            "t_inv" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::t_inv(s[0], s[1]) }
+            "chi2_pdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::chi2_pdf(s[0], s[1]) }
+            "chi2_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::chi2_cdf(s[0], s[1]) }
+            "chi2_inv" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::chi2_inv(s[0], s[1]) }
+            "f_pdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::f_pdf(s[0], s[1], s[2]) }
+            "f_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::f_cdf(s[0], s[1], s[2]) }
+            "f_inv" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::f_inv(s[0], s[1], s[2]) }
+            "poisson_pmf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::poisson_pmf(s[0], s[1]) }
+            "poisson_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::poisson_cdf(s[0], s[1]) }
+            "binom_pmf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::binom_pmf(s[0], s[1], s[2]) }
+            "binom_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::binom_cdf(s[0], s[1], s[2]) }
+            _ => return Ok(None),
+        };
+        Ok(Some(v))
+    }
+
+    /// 尝试求值假设检验函数。返回 Ok(None) 表示不是检验函数。
+    fn try_eval_test(
+        &self, name: &str, args: &[AstNode], ctx: &EvalContext,
+    ) -> Result<Option<EvalResult>, CalcError> {
+        let result = match name {
+            "t_test_one" => {
+                self.check_arg_count(name, args, 2)?;
+                let data = self.extract_list(&args[0], ctx)?;
+                let mu = self.eval_scalar_arg(&args[1], ctx)?;
+                if data.is_empty() {
+                    return Err(CalcError::domain("t_test_one requires non-empty data".to_string()));
+                }
+                let map = stats_tests::t_test_one(&data, mu);
+                EvalResult::Json(serde_json::to_value(&map).unwrap())
+            }
+            "t_test_two" => {
+                self.check_arg_count(name, args, 2)?;
+                let a = self.extract_list(&args[0], ctx)?;
+                let b = self.extract_list(&args[1], ctx)?;
+                if a.is_empty() || b.is_empty() {
+                    return Err(CalcError::domain("t_test_two requires non-empty data".to_string()));
+                }
+                let map = stats_tests::t_test_two(&a, &b);
+                EvalResult::Json(serde_json::to_value(&map).unwrap())
+            }
+            "chi2_test" => {
+                self.check_arg_count(name, args, 2)?;
+                let observed = self.extract_list(&args[0], ctx)?;
+                let expected = self.extract_list(&args[1], ctx)?;
+                if observed.is_empty() || expected.is_empty() {
+                    return Err(CalcError::domain("chi2_test requires non-empty data".to_string()));
+                }
+                if observed.len() != expected.len() {
+                    return Err(CalcError::domain(format!(
+                        "chi2_test: observed ({}) and expected ({}) must have same length",
+                        observed.len(), expected.len()
+                    )));
+                }
+                let map = stats_tests::chi2_test(&observed, &expected);
+                EvalResult::Json(serde_json::to_value(&map).unwrap())
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(result))
+    }
+
+    /// 尝试求值相关系数函数。返回 Ok(None) 表示不是相关函数。
+    fn try_eval_correlation(
+        &self, name: &str, args: &[AstNode], ctx: &EvalContext,
+    ) -> Result<Option<f64>, CalcError> {
+        let v = match name {
+            "pearson" => {
+                self.check_arg_count(name, args, 2)?;
+                let x = self.extract_list(&args[0], ctx)?;
+                let y = self.extract_list(&args[1], ctx)?;
+                if x.len() != y.len() {
+                    return Err(CalcError::domain(format!(
+                        "pearson: x ({}) and y ({}) must have same length",
+                        x.len(), y.len()
+                    )));
+                }
+                if x.len() < 2 {
+                    return Err(CalcError::domain("pearson requires at least 2 data points".to_string()));
+                }
+                stats_tests::pearson(&x, &y)
+            }
+            "spearman" => {
+                self.check_arg_count(name, args, 2)?;
+                let x = self.extract_list(&args[0], ctx)?;
+                let y = self.extract_list(&args[1], ctx)?;
+                if x.len() != y.len() {
+                    return Err(CalcError::domain(format!(
+                        "spearman: x ({}) and y ({}) must have same length",
+                        x.len(), y.len()
+                    )));
+                }
+                if x.len() < 2 {
+                    return Err(CalcError::domain("spearman requires at least 2 data points".to_string()));
+                }
+                stats_tests::spearman(&x, &y)
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(v))
+    }
+
+    /// 检查参数数量。
+    fn check_arg_count(&self, name: &str, args: &[AstNode], expected: usize) -> Result<(), CalcError> {
+        if args.len() != expected {
+            return Err(CalcError::domain(format!(
+                "{}() requires {} arguments, got {}", name, expected, args.len()
+            )).with_i18n("msg.statistics.arg_count",
+                vec![("name".to_string(), name.to_string()), ("actual".to_string(), args.len().to_string())]));
+        }
+        Ok(())
+    }
+
+    /// 检查标量参数数量。
+    fn check_len(&self, name: &str, s: &[f64], expected: usize) -> Result<(), CalcError> {
+        if s.len() != expected {
+            return Err(CalcError::domain(format!(
+                "{}() requires {} arguments, got {}", name, expected, s.len()
+            )));
+        }
+        Ok(())
+    }
+
     /// 从 List 节点提取数值列表。
-    /// 元素递归求值，必须为标量；List/Matrix/Complex 节点 → DomainError（spec Req 9）。
     fn extract_list(&self, ast: &AstNode, ctx: &EvalContext) -> Result<Vec<f64>, CalcError> {
         match ast {
             AstNode::List(elements) => {
                 let mut values = Vec::with_capacity(elements.len());
                 for elem in elements {
-                    let v = self.eval_node(elem, ctx)?;
+                    let v = self.eval_node(elem, ctx)?.as_scalar().ok_or_else(|| {
+                        CalcError::domain("list elements must be scalar".to_string())
+                    })?;
                     values.push(v);
                 }
                 Ok(values)
@@ -807,5 +988,121 @@ mod tests {
             prop_assert!(med_v >= min_v - 1e-9, "median {} < min {}", med_v, min_v);
             prop_assert!(med_v <= max_v + 1e-9, "median {} > max {}", med_v, max_v);
         }
+    }
+
+    // ===== Phase 4 集成测试：分布函数、检验函数、相关函数 =====
+
+    fn eval_to_result(input: &str) -> Result<EvalResult, CalcError> {
+        let ast = parse(input).unwrap();
+        let domain = StatisticsDomain;
+        let ctx = EvalContext::new()
+            .with_var("pi", std::f64::consts::PI)
+            .with_var("e", std::f64::consts::E);
+        domain.evaluate(&ast, &ctx)
+    }
+
+    fn eval_scalar(input: &str) -> f64 {
+        eval_to_result(input).unwrap().as_scalar().expect("expected scalar")
+    }
+
+    #[test]
+    fn test_norm_cdf_integration() {
+        let v = eval_scalar("norm_cdf(1.96, 0, 1)");
+        assert!((v - 0.975).abs() < 0.001, "norm_cdf(1.96,0,1) = {}", v);
+    }
+
+    #[test]
+    fn test_norm_pdf_integration() {
+        let v = eval_scalar("norm_pdf(0, 0, 1)");
+        assert!((v - 0.3989).abs() < 0.001, "norm_pdf(0,0,1) = {}", v);
+    }
+
+    #[test]
+    fn test_t_cdf_integration() {
+        let v = eval_scalar("t_cdf(2.228, 10)");
+        assert!((v - 0.975).abs() < 0.001, "t_cdf(2.228,10) = {}", v);
+    }
+
+    #[test]
+    fn test_chi2_cdf_integration() {
+        let v = eval_scalar("chi2_cdf(5.991, 5)");
+        assert!((v - 0.6929).abs() < 0.001, "chi2_cdf(5.991,5) = {}", v);
+    }
+
+    #[test]
+    fn test_f_cdf_integration() {
+        let v = eval_scalar("f_cdf(4.24, 5, 10)");
+        assert!((v - 0.975).abs() < 0.01, "f_cdf(4.24,5,10) = {}", v);
+    }
+
+    #[test]
+    fn test_poisson_pmf_integration() {
+        let v = eval_scalar("poisson_pmf(3, 2)");
+        assert!((v - 0.1804).abs() < 0.001, "poisson_pmf(3,2) = {}", v);
+    }
+
+    #[test]
+    fn test_binom_cdf_integration() {
+        let v = eval_scalar("binom_cdf(5, 10, 0.5)");
+        assert!((v - 0.6230).abs() < 0.001, "binom_cdf(5,10,0.5) = {}", v);
+    }
+
+    #[test]
+    fn test_t_test_one_integration() {
+        let result = eval_to_result("t_test_one([1,2,3,4,5], 3)").unwrap();
+        match result {
+            EvalResult::Json(ref v) => {
+                let t = v["t"].as_f64().unwrap();
+                let p = v["p"].as_f64().unwrap();
+                assert!(t.abs() < 1e-10, "t should be 0, got {}", t);
+                assert!((p - 1.0).abs() < 1e-10, "p should be 1, got {}", p);
+            }
+            _ => panic!("expected Json result from t_test_one"),
+        }
+    }
+
+    #[test]
+    fn test_chi2_test_integration() {
+        let result = eval_to_result("chi2_test([16,18,16,14,12,12], [16,16,16,16,16,16])").unwrap();
+        match result {
+            EvalResult::Json(ref v) => {
+                let chi2 = v["chi2"].as_f64().unwrap();
+                assert!((chi2 - 2.5).abs() < 1e-10, "chi2 should be 2.5, got {}", chi2);
+            }
+            _ => panic!("expected Json result from chi2_test"),
+        }
+    }
+
+    #[test]
+    fn test_pearson_integration() {
+        let v = eval_scalar("pearson([1,2,3,4,5], [2,4,6,8,10])");
+        assert!((v - 1.0).abs() < 1e-10, "pearson perfect positive = {}", v);
+    }
+
+    #[test]
+    fn test_spearman_integration() {
+        let v = eval_scalar("spearman([1,2,3,4,5], [5,4,3,2,1])");
+        assert!((v - (-1.0)).abs() < 1e-10, "spearman perfect negative = {}", v);
+    }
+
+    #[test]
+    fn test_route_distribution_function() {
+        let ast = parse("norm_cdf(1.96, 0, 1)").unwrap();
+        let domain = StatisticsDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_route_test_function() {
+        let ast = parse("t_test_one([1,2,3], 2)").unwrap();
+        let domain = StatisticsDomain;
+        assert!(domain.supports(&ast));
+    }
+
+    #[test]
+    fn test_route_correlation_function() {
+        let ast = parse("pearson([1,2,3], [4,5,6])").unwrap();
+        let domain = StatisticsDomain;
+        assert!(domain.supports(&ast));
     }
 }
