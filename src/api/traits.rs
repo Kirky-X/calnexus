@@ -162,6 +162,9 @@ pub trait SymbolicMath {
     fn complex_conj(&self, z: &Complex) -> Result<EvalResult, CalcError>;
     fn complex_exp(&self, z: &Complex) -> Result<EvalResult, CalcError>;
     fn complex_ln(&self, z: &Complex) -> Result<EvalResult, CalcError>;
+
+    // ── 方程求解 ──
+    fn solve_equation(&self, expr: &str, var: &str, method: &str, options: Option<&[f64]>) -> Result<EvalResult, CalcError>;
 }
 
 /// 应用数学 trait：时间 + 单位 + 汇率（feature-gated）。
