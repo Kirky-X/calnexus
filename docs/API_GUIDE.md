@@ -397,6 +397,8 @@ let m2 = Matrix::try_from(result).unwrap();
 
 `default = []`：核心库零依赖，可作为嵌入式计算引擎。
 
+> 注：上表仅列出与直接 API 相关的 feature。服务端 feature（`cli`/`http`/`mcp`/`server`/`icu`/`ratelimit`/`docs`/`graceful-shutdown`/`observability`）请参阅 ARCHITECTURE.md §5.3。
+
 ## 7. 架构概览
 
 ```mermaid

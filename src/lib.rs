@@ -37,6 +37,12 @@ pub use domains::{
     PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain, SymbolicDomain,
     VectorDomain,
 };
+#[cfg(feature = "time")]
+pub use domains::TimeDomain;
+#[cfg(feature = "unit")]
+pub use domains::UnitDomain;
+#[cfg(feature = "fx")]
+pub use domains::FxDomain;
 pub use i18n::{I18n, Lang};
 
 #[cfg(feature = "cli")]

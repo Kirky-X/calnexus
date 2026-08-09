@@ -24,10 +24,10 @@ use super::{
     VectorDomain,
 };
 
-/// 构建默认路由器：注册全部 11 个计算域（含 SymbolicDomain）。
+/// 构建默认路由器：注册全部 14 个计算域（11 核心 + 3 可选，含 SymbolicDomain）。
 ///
 /// 供 `crate::core::evaluate` 与 REPL 共用。进程级缓存（OnceLock），只构建一次，
-/// 避免每次请求重复分配 11 个 Box。
+/// 避免每次请求重复分配 14 个 Box。
 pub(crate) fn build_default_router() -> &'static DomainRouter {
     static DEFAULT_ROUTER: OnceLock<DomainRouter> = OnceLock::new();
     DEFAULT_ROUTER.get_or_init(|| {

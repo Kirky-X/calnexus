@@ -195,7 +195,7 @@ graph TD
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
-| Rust | >= 1.70 | 工具链（推荐使用 `rustup` 安装） |
+| Rust | >= 1.85 | 工具链（推荐使用 `rustup` 安装） |
 | Cargo | 随 Rust | 构建与包管理 |
 | `cli` feature | 可选 | 启用 CLI / REPL / batch（含 `clap`、`rustyline`、`rayon`） |
 | `numerical` feature | 可选 | 启用数值线性代数分解（`lu`/`qr`/`eig`/`svd`/`solve`，含 `nalgebra`） |
