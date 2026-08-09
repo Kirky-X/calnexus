@@ -176,6 +176,16 @@ impl<'a> ScalarMathImpl<'a> {
         Ok(big(math::number_theory::euler_phi(to_bigint(n))))
     }
 
+    pub fn crt(&self, remainders: &[BigNumber], moduli: &[BigNumber]) -> Result<EvalResult, CalcError> {
+        let r: Vec<BigInt> = remainders.iter().map(|b| b.value().clone()).collect();
+        let m: Vec<BigInt> = moduli.iter().map(|b| b.value().clone()).collect();
+        math::number_theory::crt(&r, &m).map(big)
+    }
+
+    pub fn discrete_log(&self, g: &BigNumber, h: &BigNumber, p: &BigNumber) -> Result<EvalResult, CalcError> {
+        math::number_theory::discrete_log(to_bigint(g), to_bigint(h), to_bigint(p)).map(big)
+    }
+
     // ── 组合 ──
 
     pub fn perm(&self, n: u64, k: u64) -> Result<EvalResult, CalcError> {

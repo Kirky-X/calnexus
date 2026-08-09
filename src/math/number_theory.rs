@@ -97,6 +97,128 @@ pub fn euler_phi(n: &BigInt) -> BigInt {
     euler_phi_impl(&n.abs())
 }
 
+/// 中国剩余定理：求解同余方程组 x ≡ rᵢ (mod mᵢ)。
+///
+/// 返回最小非负解。模数不必两两互素——不兼容时返回 `DomainError`。
+pub fn crt(remainders: &[BigInt], moduli: &[BigInt]) -> Result<BigInt, CalcError> {
+    if remainders.is_empty() || moduli.is_empty() {
+        return Err(CalcError::domain(
+            "crt(): empty input".to_string(),
+        ));
+    }
+    if remainders.len() != moduli.len() {
+        return Err(CalcError::domain(
+            "crt(): remainders and moduli length mismatch".to_string(),
+        ));
+    }
+    if moduli.iter().any(|m| m.is_zero()) {
+        return Err(CalcError::domain(
+            "crt(): zero modulus".to_string(),
+        ));
+    }
+    // 迭代两两合并
+    let mut cur_r = ((&remainders[0] % &moduli[0]) + &moduli[0]) % &moduli[0];
+    let mut cur_m = moduli[0].abs();
+    for i in 1..remainders.len() {
+        let r_i = ((&remainders[i] % &moduli[i]) + &moduli[i]) % &moduli[i];
+        let m_i = moduli[i].abs();
+        let (g, s, _) = extended_gcd(&cur_m, &m_i);
+        let diff = &r_i - &cur_r;
+        if !(&diff % &g).is_zero() {
+            return Err(CalcError::domain(format!(
+                "crt(): incompatible congruences at index {} (gcd={} does not divide diff={})",
+                i, g, diff
+            )));
+        }
+        let lcm = &cur_m / &g * &m_i;
+        // cur_r + cur_m * ((diff/g * s) mod (lcm/cur_m))
+        let step = (&diff / &g * &s) % &m_i;
+        cur_r = ((&cur_r + &cur_m * &step) % &lcm + &lcm) % &lcm;
+        cur_m = lcm;
+    }
+    Ok(cur_r)
+}
+
+/// 离散对数（Baby-step Giant-step）：求最小非负 x 使得 g^x ≡ h (mod p)。
+///
+/// - p 须为素数，g ≠ 0
+/// - O(√p) 时间和空间
+pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcError> {
+    if p.is_zero() {
+        return Err(CalcError::division_by_zero());
+    }
+    if !is_prime(p) {
+        return Err(CalcError::domain(format!(
+            "discrete_log(): modulus {} is not prime", p
+        )));
+    }
+    if g.is_zero() {
+        return Err(CalcError::domain(
+            "discrete_log(): base g must not be zero".to_string(),
+        ));
+    }
+    let p_abs = p.abs();
+    let one = BigInt::one();
+    let h_mod = ((h % &p_abs) + &p_abs) % &p_abs;
+    let g_mod = ((g % &p_abs) + &p_abs) % &p_abs;
+
+    // m = ⌈√p⌉
+    let m = sqrt_bigint(&p_abs) + &one;
+    let m_usize = m.to_usize().ok_or_else(|| {
+        CalcError::overflow()
+    })?;
+
+    // Baby step: table[g^j mod p] = j for j in 0..m
+    let mut table = std::collections::HashMap::new();
+    let mut power = BigInt::one();
+    for j in 0..m_usize {
+        table.insert(power.clone(), j);
+        power = (&power * &g_mod) % &p_abs;
+    }
+    // Giant step factor: g^(-m) mod p
+    let g_m = mod_pow_bigint(&g_mod, &m, &p_abs);
+    let g_m_inv = mod_inverse_impl(&g_m, &p_abs).ok_or_else(|| {
+        CalcError::domain("discrete_log(): base not invertible mod p".to_string())
+    })?;
+
+    // Giant step: check h * (g^(-m))^i for i in 0..m
+    let mut gamma = h_mod.clone();
+    for i in 0..m_usize {
+        if let Some(&j) = table.get(&gamma) {
+            return Ok(BigInt::from(i) * &m + BigInt::from(j));
+        }
+        gamma = (&gamma * &g_m_inv) % &p_abs;
+    }
+    Err(CalcError::domain(
+        "discrete_log(): no solution found".to_string(),
+    ))
+}
+
+/// BigInt 整数平方根（⌊√n⌋）。
+fn sqrt_bigint(n: &BigInt) -> BigInt {
+    if n.is_negative() {
+        return BigInt::zero();
+    }
+    if n < &BigInt::from(2) {
+        return n.clone();
+    }
+    // 牛顿法
+    let mut x = BigInt::from((n.to_u64().unwrap_or(u64::MAX) as f64).sqrt() as u64);
+    let two = BigInt::from(2);
+    loop {
+        let x1 = (&x + n / &x) / &two;
+        if x1 >= x {
+            break;
+        }
+        x = x1;
+    }
+    // 确保 x² ≤ n < (x+1)²
+    while &x * &x > *n {
+        x -= 1;
+    }
+    x
+}
+
 // ===== 内部实现 =====
 
 /// BigInt Miller-Rabin 素数判定。
@@ -510,5 +632,70 @@ mod tests {
     #[test]
     fn test_euler_phi_zero() {
         assert_eq!(euler_phi(&BigInt::from(0)), BigInt::from(0));
+    }
+
+    // ===== crt =====
+
+    #[test]
+    fn test_crt_classic() {
+        // x ≡ 2 (mod 3), x ≡ 3 (mod 5), x ≡ 2 (mod 7) → x = 23
+        let r = vec![BigInt::from(2), BigInt::from(3), BigInt::from(2)];
+        let m = vec![BigInt::from(3), BigInt::from(5), BigInt::from(7)];
+        assert_eq!(crt(&r, &m).unwrap(), BigInt::from(23));
+    }
+
+    #[test]
+    fn test_crt_single() {
+        let r = vec![BigInt::from(3)];
+        let m = vec![BigInt::from(7)];
+        assert_eq!(crt(&r, &m).unwrap(), BigInt::from(3));
+    }
+
+    #[test]
+    fn test_crt_non_coprime_compatible() {
+        // x ≡ 1 (mod 2), x ≡ 3 (mod 4) → x = 3 (compatible: gcd(2,4)=2 divides 3-1=2)
+        let r = vec![BigInt::from(1), BigInt::from(3)];
+        let m = vec![BigInt::from(2), BigInt::from(4)];
+        assert_eq!(crt(&r, &m).unwrap(), BigInt::from(3));
+    }
+
+    #[test]
+    fn test_crt_incompatible() {
+        // x ≡ 0 (mod 2), x ≡ 1 (mod 4) → no solution
+        let r = vec![BigInt::from(0), BigInt::from(1)];
+        let m = vec![BigInt::from(2), BigInt::from(4)];
+        assert!(crt(&r, &m).is_err());
+    }
+
+    #[test]
+    fn test_crt_empty() {
+        assert!(crt(&[], &[]).is_err());
+    }
+
+    // ===== discrete_log =====
+
+    #[test]
+    fn test_discrete_log_basic() {
+        // 2^x ≡ 8 (mod 11) → x = 3
+        let x = discrete_log(&BigInt::from(2), &BigInt::from(8), &BigInt::from(11)).unwrap();
+        assert_eq!(x, BigInt::from(3));
+    }
+
+    #[test]
+    fn test_discrete_log_large() {
+        // 2^x ≡ 5 (mod 13)
+        let x = discrete_log(&BigInt::from(2), &BigInt::from(5), &BigInt::from(13)).unwrap();
+        // verify: 2^x mod 13 == 5
+        assert_eq!(mod_pow(&BigInt::from(2), &x, &BigInt::from(13)).unwrap(), BigInt::from(5));
+    }
+
+    #[test]
+    fn test_discrete_log_zero_base() {
+        assert!(discrete_log(&BigInt::from(0), &BigInt::from(1), &BigInt::from(7)).is_err());
+    }
+
+    #[test]
+    fn test_discrete_log_non_prime_mod() {
+        assert!(discrete_log(&BigInt::from(2), &BigInt::from(1), &BigInt::from(4)).is_err());
     }
 }
