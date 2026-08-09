@@ -8,6 +8,7 @@
 // 无 CLI feature 时，output/symbolic 中仅 CLI 调用的函数不构成 dead code
 #![cfg_attr(not(feature = "cli"), allow(dead_code))]
 
+mod api;
 #[cfg(feature = "cli")]
 mod batch;
 #[cfg(feature = "cli")]
@@ -15,12 +16,15 @@ mod cli;
 mod core;
 pub mod domains;
 mod i18n;
+pub mod math;
 mod output;
 #[cfg(feature = "cli")]
 mod repl;
 #[cfg(any(feature = "http", feature = "mcp"))]
 mod server;
 
+pub use api::{CalNexus, AppliedMathImpl, DataAnalysisImpl, LinearAlgebraImpl, ScalarMathImpl, SymbolicMathImpl};
+pub use api::types::{BigNumber, Complex, Matrix, Polynomial, Vector};
 pub use core::evaluate;
 pub use core::{
     parse, AstCanonicalizer, AstNode, BinaryOp, CacheKeyGen, CacheManager, CalcError,

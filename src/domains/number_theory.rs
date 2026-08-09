@@ -17,8 +17,7 @@ use crate::core::{
     MAX_POW_EXPONENT,
 };
 use num_bigint::BigInt;
-use num_integer::Integer as _;
-use num_traits::{One, Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive, Zero};
 
 /// 数论函数白名单。
 const NUMBER_THEORY_FUNCTIONS: &[&str] = &[
@@ -31,8 +30,7 @@ const NUMBER_THEORY_FUNCTIONS: &[&str] = &[
     "euler_phi",
 ];
 
-/// Miller-Rabin 确定性基（n < 3.3×10^24 时确定性判定）。
-const MR_BASES: &[u64] = &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+// MR_BASES 已迁移到 `math/number_theory.rs`。
 
 /// NumberTheory 计算域。
 ///
@@ -231,7 +229,7 @@ impl NumberTheoryDomain {
         }
     }
 
-    /// gcd(a, b)：最大公约数。
+    /// gcd(a, b)：最大公约数（委托给 `math::number_theory::gcd`）。
     fn eval_gcd(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
             return Err(CalcError::domain(format!(
@@ -241,11 +239,10 @@ impl NumberTheoryDomain {
         }
         let a = self.eval_int(&args[0], ctx)?;
         let b = self.eval_int(&args[1], ctx)?;
-        let result = a.abs().gcd(&b.abs());
-        Ok(bigint_to_result(result))
+        Ok(bigint_to_result(crate::math::number_theory::gcd(&a, &b)))
     }
 
-    /// lcm(a, b)：最小公倍数。任一为 0 则结果为 0。
+    /// lcm(a, b)：最小公倍数（委托给 `math::number_theory::lcm`）。
     fn eval_lcm(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
             return Err(CalcError::domain(format!(
@@ -255,14 +252,10 @@ impl NumberTheoryDomain {
         }
         let a = self.eval_int(&args[0], ctx)?;
         let b = self.eval_int(&args[1], ctx)?;
-        if a.is_zero() || b.is_zero() {
-            return Ok(EvalResult::Scalar(0.0));
-        }
-        let result = a.abs().lcm(&b.abs());
-        Ok(bigint_to_result(result))
+        Ok(bigint_to_result(crate::math::number_theory::lcm(&a, &b)))
     }
 
-    /// is_prime(n)：Miller-Rabin 素数判定，返回 1.0（素数）或 0.0（合数）。
+    /// is_prime(n)：素数判定（委托给 `math::number_theory::is_prime`）。
     fn eval_is_prime(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
@@ -271,11 +264,11 @@ impl NumberTheoryDomain {
             )));
         }
         let n = self.eval_int(&args[0], ctx)?;
-        let prime = is_prime_bigint(&n);
+        let prime = crate::math::number_theory::is_prime(&n);
         Ok(EvalResult::Scalar(if prime { 1.0 } else { 0.0 }))
     }
 
-    /// prime_sieve(n)：埃拉托斯特尼筛法，返回 ≤ n 的所有素数列表。
+    /// prime_sieve(n)：素数筛（委托给 `math::number_theory::prime_sieve`）。
     fn eval_prime_sieve(
         &self,
         args: &[AstNode],
@@ -288,24 +281,13 @@ impl NumberTheoryDomain {
             )));
         }
         let n = self.eval_int(&args[0], ctx)?;
-        if n.is_negative() {
-            return Err(CalcError::domain(
-                "prime_sieve() requires non-negative argument".to_string(),
-            ));
-        }
-        let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
-        // DoS 防护：筛子数组大小 = n+1 字节，上界 10^7（~10MB）
-        const MAX_SIEVE_N: u64 = 10_000_000;
-        if n_u64 > MAX_SIEVE_N {
-            return Err(CalcError::overflow());
-        }
-        let primes = prime_sieve_u64(n_u64);
+        let primes = crate::math::number_theory::prime_sieve(&n)?;
         Ok(EvalResult::Vector(
             primes.into_iter().map(|p| p as f64).collect(),
         ))
     }
 
-    /// mod_inverse(a, m)：模逆元，要求 gcd(a, m) = 1。
+    /// mod_inverse(a, m)：模逆元（委托给 `math::number_theory::mod_inverse`）。
     fn eval_mod_inverse(
         &self,
         args: &[AstNode],
@@ -319,20 +301,11 @@ impl NumberTheoryDomain {
         }
         let a = self.eval_int(&args[0], ctx)?;
         let m = self.eval_int(&args[1], ctx)?;
-        if m.is_zero() {
-            return Err(CalcError::division_by_zero());
-        }
-        let m_abs = m.abs();
-        match mod_inverse(&a, &m_abs) {
-            Some(inv) => Ok(bigint_to_result(inv)),
-            None => Err(CalcError::domain(format!(
-                "mod_inverse: {} and {} are not coprime",
-                a, m
-            ))),
-        }
+        let inv = crate::math::number_theory::mod_inverse(&a, &m)?;
+        Ok(bigint_to_result(inv))
     }
 
-    /// mod_pow(base, exp, m)：模幂运算 base^exp mod m，要求 exp ≥ 0。
+    /// mod_pow(base, exp, m)：模幂运算（委托给 `math::number_theory::mod_pow`）。
     fn eval_mod_pow(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 3 {
             return Err(CalcError::domain(format!(
@@ -343,20 +316,11 @@ impl NumberTheoryDomain {
         let base = self.eval_int(&args[0], ctx)?;
         let exp = self.eval_int(&args[1], ctx)?;
         let m = self.eval_int(&args[2], ctx)?;
-        if m.is_zero() {
-            return Err(CalcError::division_by_zero());
-        }
-        if exp.is_negative() {
-            return Err(CalcError::domain(
-                "mod_pow() requires non-negative exponent".to_string(),
-            ));
-        }
-        let m_abs = m.abs();
-        let result = mod_pow_bigint(&base, &exp, &m_abs);
+        let result = crate::math::number_theory::mod_pow(&base, &exp, &m)?;
         Ok(bigint_to_result(result))
     }
 
-    /// euler_phi(n)：欧拉函数 φ(n)，n=0 时返回 0。
+    /// euler_phi(n)：欧拉函数（委托给 `math::number_theory::euler_phi`）。
     fn eval_euler_phi(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
@@ -365,11 +329,7 @@ impl NumberTheoryDomain {
             )));
         }
         let n = self.eval_int(&args[0], ctx)?;
-        if n.is_zero() {
-            return Ok(EvalResult::Scalar(0.0));
-        }
-        let result = euler_phi(&n.abs());
-        Ok(bigint_to_result(result))
+        Ok(bigint_to_result(crate::math::number_theory::euler_phi(&n)))
     }
 }
 
@@ -411,226 +371,7 @@ fn evalresult_to_bigint(result: EvalResult, ast: &AstNode) -> Result<BigInt, Cal
     }
 }
 
-/// BigInt Miller-Rabin 素数判定。
-/// n < 2^64 使用确定性基，n >= 2^64 使用 25 轮概率判定。
-fn is_prime_bigint(n: &BigInt) -> bool {
-    if n < &BigInt::from(2) {
-        return false;
-    }
-    if n == &BigInt::from(2) {
-        return true;
-    }
-    if n.is_even() {
-        return false;
-    }
-
-    // 尝试 u64 快速路径（确定性 12 基）
-    if let Some(n_u64) = n.to_u64() {
-        return is_prime_u64(n_u64);
-    }
-
-    // BigInt 路径：确定性基 + 额外轮次
-    let two = BigInt::from(2);
-    let one = BigInt::one();
-    let n_minus_1 = n - &one;
-
-    // 写 n-1 = 2^r * d
-    let mut d = n_minus_1.clone();
-    let mut r = 0u32;
-    while d.is_even() {
-        d /= &two;
-        r += 1;
-    }
-
-    // 使用确定性基（对 n < 3.3e24 确定），额外补 13 轮共 25 轮
-    for &base in MR_BASES.iter() {
-        let a = BigInt::from(base);
-        if a >= *n {
-            continue;
-        }
-        if !miller_rabin_witness(&a, &d, r, &n_minus_1, n) {
-            return false;
-        }
-    }
-    // 额外 13 轮用确定性基 + 偏移（简化：复用前 13 基）
-    for i in 0..13u64 {
-        let a = BigInt::from(MR_BASES[i as usize % MR_BASES.len()] + i * 1000);
-        if a >= *n || a.is_zero() || a.is_one() {
-            continue;
-        }
-        if !miller_rabin_witness(&a, &d, r, &n_minus_1, n) {
-            return false;
-        }
-    }
-    true
-}
-
-/// 单次 Miller-Rabin 见证测试。
-/// 返回 true 如果 a 不是合数见证（即 n 可能是素数），false 如果 a 证明 n 是合数。
-fn miller_rabin_witness(a: &BigInt, d: &BigInt, r: u32, n_minus_1: &BigInt, n: &BigInt) -> bool {
-    let one = BigInt::one();
-    let mut x = mod_pow_bigint(a, d, n);
-    if x == one || x == *n_minus_1 {
-        return true;
-    }
-    for _ in 0..r.saturating_sub(1) {
-        x = (&x * &x) % n;
-        if x == *n_minus_1 {
-            return true;
-        }
-    }
-    false
-}
-
-/// u64 确定性 Miller-Rabin（12 基，对 n < 3.3×10^24 确定）。
-fn is_prime_u64(n: u64) -> bool {
-    if n < 2 {
-        return false;
-    }
-    if n == 2 {
-        return true;
-    }
-    if n % 2 == 0 {
-        return false;
-    }
-
-    let mut d = n - 1;
-    let mut r = 0u32;
-    while d % 2 == 0 {
-        d /= 2;
-        r += 1;
-    }
-
-    for &a in MR_BASES {
-        if a >= n {
-            continue;
-        }
-        let mut x = mod_pow_u64(a, d, n);
-        if x == 1 || x == n - 1 {
-            continue;
-        }
-        let mut composite = true;
-        let n128 = n as u128;
-        for _ in 0..r.saturating_sub(1) {
-            x = (((x as u128) * (x as u128)) % n128) as u64;
-            if x == n - 1 {
-                composite = false;
-                break;
-            }
-        }
-        if composite {
-            return false;
-        }
-    }
-    true
-}
-
-/// u64 快速模幂（平方-乘法）。
-fn mod_pow_u64(base: u64, exp: u64, m: u64) -> u64 {
-    if m == 1 {
-        return 0;
-    }
-    let mut result = 1u128;
-    let mut base = (base % m) as u128;
-    let m128 = m as u128;
-    let mut exp = exp;
-    while exp > 0 {
-        if exp % 2 == 1 {
-            result = (result * base) % m128;
-        }
-        exp /= 2;
-        base = (base * base) % m128;
-    }
-    result as u64
-}
-
-/// BigInt 快速模幂（平方-乘法）。
-fn mod_pow_bigint(base: &BigInt, exp: &BigInt, m: &BigInt) -> BigInt {
-    if m.is_one() {
-        return BigInt::zero();
-    }
-    let mut result = BigInt::one();
-    let mut base = base % m;
-    let mut exp = exp.clone();
-    while exp.is_positive() {
-        if exp.is_odd() {
-            result = (&result * &base) % m;
-        }
-        exp >>= 1;
-        base = (&base * &base) % m;
-    }
-    result
-}
-
-/// 扩展欧几里得算法，返回 (gcd, x, y) 使得 a*x + b*y = gcd。
-fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
-    if b.is_zero() {
-        return (a.clone(), BigInt::one(), BigInt::zero());
-    }
-    let (g, x1, y1) = extended_gcd(b, &(a % b));
-    (g, y1.clone(), &x1 - &(a / b) * &y1)
-}
-
-/// 模逆：求 x 使得 a*x ≡ 1 (mod m)。返回 None 如果不存在（gcd(a,m)≠1）。
-fn mod_inverse(a: &BigInt, m: &BigInt) -> Option<BigInt> {
-    let a_mod = if a.is_negative() {
-        ((a % m) + m) % m
-    } else {
-        a % m
-    };
-    let (g, x, _) = extended_gcd(&a_mod, m);
-    if !g.is_one() {
-        return None;
-    }
-    let result = ((x % m) + m) % m;
-    Some(result)
-}
-
-/// 欧拉函数 φ(n)：≤ n 且与 n 互素的正整数个数。
-fn euler_phi(n: &BigInt) -> BigInt {
-    if n.is_one() {
-        return BigInt::one();
-    }
-    let mut result = n.clone();
-    let mut m = n.clone();
-    let mut p = BigInt::from(2);
-    while &p * &p <= m {
-        if (&m % &p).is_zero() {
-            while (&m % &p).is_zero() {
-                m /= &p;
-            }
-            result -= &result / &p;
-        }
-        p += 1;
-    }
-    if m > BigInt::one() {
-        result -= &result / &m;
-    }
-    result
-}
-
-/// 埃拉托斯特尼筛法，返回 ≤ n 的所有素数。
-fn prime_sieve_u64(n: u64) -> Vec<u64> {
-    if n < 2 {
-        return Vec::new();
-    }
-    let n = n as usize;
-    let mut is_prime = vec![true; n + 1];
-    is_prime[0] = false;
-    is_prime[1] = false;
-    let mut i = 2;
-    while i * i <= n {
-        if is_prime[i] {
-            let mut j = i * i;
-            while j <= n {
-                is_prime[j] = false;
-                j += i;
-            }
-        }
-        i += 1;
-    }
-    (2..=n).filter(|&i| is_prime[i]).map(|i| i as u64).collect()
-}
+// 数论算法已迁移到 `math/number_theory.rs`。
 
 /// 递归检查 AST 是否含数论函数调用。
 fn contains_number_theory_function(ast: &AstNode) -> bool {
@@ -1103,84 +844,7 @@ mod tests {
         assert!(matches!(result, EvalResult::BigInt(_)));
     }
 
-    // ===== 底层算法单元测试 =====
-
-    #[test]
-    fn test_is_prime_u64_known() {
-        assert!(!is_prime_u64(0));
-        assert!(!is_prime_u64(1));
-        assert!(is_prime_u64(2));
-        assert!(is_prime_u64(3));
-        assert!(!is_prime_u64(4));
-        assert!(is_prime_u64(5));
-        assert!(!is_prime_u64(9));
-        assert!(is_prime_u64(1000000007));
-        assert!(!is_prime_u64(1000000008));
-    }
-
-    #[test]
-    fn test_mod_pow_u64_known() {
-        assert_eq!(mod_pow_u64(2, 10, 1000), 24);
-        assert_eq!(mod_pow_u64(5, 0, 7), 1);
-        assert_eq!(mod_pow_u64(3, 5, 1), 0);
-    }
-
-    #[test]
-    fn test_extended_gcd() {
-        let (g, x, y) = extended_gcd(&BigInt::from(3), &BigInt::from(11));
-        assert_eq!(g, BigInt::from(1));
-        assert_eq!(&x * 3 + &y * 11, BigInt::from(1));
-    }
-
-    #[test]
-    fn test_mod_inverse_known() {
-        let inv = mod_inverse(&BigInt::from(3), &BigInt::from(11)).unwrap();
-        assert_eq!((&inv * 3) % 11, BigInt::from(1));
-    }
-
-    #[test]
-    fn test_mod_inverse_none() {
-        assert!(mod_inverse(&BigInt::from(2), &BigInt::from(4)).is_none());
-    }
-
-    #[test]
-    fn test_euler_phi_known() {
-        assert_eq!(euler_phi(&BigInt::from(1)), BigInt::from(1));
-        assert_eq!(euler_phi(&BigInt::from(10)), BigInt::from(4));
-        assert_eq!(euler_phi(&BigInt::from(7)), BigInt::from(6));
-        assert_eq!(euler_phi(&BigInt::from(12)), BigInt::from(4));
-    }
-
-    #[test]
-    fn test_prime_sieve_u64_known() {
-        assert!(prime_sieve_u64(1).is_empty());
-        assert_eq!(prime_sieve_u64(2), vec![2]);
-        assert_eq!(prime_sieve_u64(10), vec![2, 3, 5, 7]);
-        assert_eq!(prime_sieve_u64(20), vec![2, 3, 5, 7, 11, 13, 17, 19]);
-    }
-
-    #[test]
-    fn test_is_prime_bigint_large() {
-        // 大素数测试
-        let p = BigInt::from(1000000007);
-        assert!(is_prime_bigint(&p));
-        // 大合数
-        let c = BigInt::from(1000000008);
-        assert!(!is_prime_bigint(&c));
-    }
-
-    #[test]
-    fn test_is_prime_bigint_huge() {
-        // 超大素数（> 2^64）：2^127 - 1 是 Mersenne 素数
-        let p = BigInt::from(2).pow(127) - BigInt::from(1);
-        assert!(is_prime_bigint(&p));
-    }
-
-    #[test]
-    fn test_mod_pow_bigint_known() {
-        let result = mod_pow_bigint(&BigInt::from(2), &BigInt::from(10), &BigInt::from(1000));
-        assert_eq!(result, BigInt::from(24));
-    }
+    // 底层算法测试已迁移到 `math/number_theory.rs`。
 
     #[test]
     fn test_bigint_to_result_small() {
@@ -1419,46 +1083,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    #[test]
-    fn test_is_prime_bigint_composite_huge() {
-        // BigInt composite > 2^64: 2^127-1 is prime, (2^127-1)*3 is ODD composite
-        // Must use odd composite to bypass is_even() early exit and reach BigInt Miller-Rabin
-        let composite = BigInt::from(2).pow(127) - BigInt::from(1);
-        let composite = &composite * BigInt::from(3);
-        assert!(!is_prime_bigint(&composite));
-    }
-
-    #[test]
-    fn test_is_prime_bigint_small() {
-        // Small BigInt where base >= n (e.g., n=3, bases start at 2)
-        // MR_BASES[0] = 2, for n=3: 2 < 3, so it's tested
-        // For n=2: u64 path handles it. Use n=5 to ensure base >= n for some bases
-        assert!(is_prime_bigint(&BigInt::from(5)));
-    }
-
-    #[test]
-    fn test_miller_rabin_witness_loop() {
-        // Test miller_rabin_witness with a composite where the squaring loop runs
-        // n = 15 (composite), n-1 = 14 = 2^1 * 7, d=7, r=1
-        // r-1 = 0, so the loop doesn't run. Need r > 1.
-        // n = 9: n-1 = 8 = 2^3 * 1, d=1, r=3. Base=2: 2^1 % 9 = 2, not 1 or 8.
-        // Loop: x = 4, not 8. x = 16%9=7, not 8. Return false (witness proves composite).
-        let n = BigInt::from(9);
-        let one = BigInt::one();
-        let n_minus_1 = &n - &one;
-        let d = BigInt::one(); // 9-1=8=2^3*1
-        let r = 3u32;
-        let a = BigInt::from(2);
-        // 2 is a witness for 9 being composite
-        assert!(!miller_rabin_witness(&a, &d, r, &n_minus_1, &n));
-    }
-
-    #[test]
-    fn test_mod_pow_bigint_modulus_one() {
-        // mod_pow_bigint with modulus = 1 returns 0
-        let result = mod_pow_bigint(&BigInt::from(5), &BigInt::from(3), &BigInt::from(1));
-        assert_eq!(result, BigInt::zero());
-    }
+    // 底层算法测试（is_prime_bigint/miller_rabin/mod_pow_bigint）已迁移到 `math/number_theory.rs`。
 
     #[test]
     fn test_eval_int_function_call_returns_vector() {
@@ -1475,25 +1100,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    #[test]
-    fn test_miller_rabin_witness_prime_loop() {
-        // n=13 (prime), n-1=12=2^2*3, d=3, r=2
-        // a=2: 2^3 % 13 = 8, not 1 or 12. Loop: x = 8^2 % 13 = 12 = n-1 → return true (line 422)
-        let n = BigInt::from(13);
-        let one = BigInt::one();
-        let n_minus_1 = &n - &one;
-        let d = BigInt::from(3);
-        let r = 2u32;
-        let a = BigInt::from(2);
-        assert!(miller_rabin_witness(&a, &d, r, &n_minus_1, &n));
-    }
-
-    #[test]
-    fn test_is_prime_bigint_prime_huge() {
-        // 2^127-1 is a known Mersenne prime (M127), exercises BigInt Miller-Rabin prime path
-        let prime = BigInt::from(2).pow(127) - BigInt::from(1);
-        assert!(is_prime_bigint(&prime));
-    }
+    // proptest 属性测试继续。
 
     // ===== proptest 属性测试 =====
 

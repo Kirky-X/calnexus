@@ -13,7 +13,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{
-    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_FACTORIAL_INPUT,
+    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
 };
 
 /// 算术函数白名单（parser 预处理后的函数名）。
@@ -65,7 +65,7 @@ impl ArithmeticDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Factorial => self.eval_factorial(v),
-                    UnaryOp::Abs => Ok(v.abs()),
+                    UnaryOp::Abs => Ok(crate::math::arithmetic::abs(v)),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
@@ -84,74 +84,21 @@ impl ArithmeticDomain {
         }
     }
 
-    /// 求值二元运算。
+    /// 求值二元运算（委托给 `math::arithmetic::*`）。
     fn eval_binary(&self, op: BinaryOp, a: f64, b: f64) -> Result<f64, CalcError> {
-        let result = match op {
-            BinaryOp::Add => a + b,
-            BinaryOp::Sub => a - b,
-            BinaryOp::Mul => a * b,
-            BinaryOp::Div => {
-                if b == 0.0 {
-                    if a == 0.0 {
-                        // 0/0 = NaN (Req 8 Scen 1)
-                        return Err(CalcError::nan_or_inf());
-                    }
-                    // x/0 for x≠0 (Req 7 Scen 1)
-                    return Err(CalcError::division_by_zero());
-                }
-                a / b
-            }
-            BinaryOp::Pow => {
-                // 0^0 = 1 (spec Req 2 Scen 3，组合数学约定)
-                if a == 0.0 && b == 0.0 {
-                    return Ok(1.0);
-                }
-                // f64 域无需显式指数上界检查（与 precision.rs BigRational 域不同）：
-                // f64::powf 超大正指数返回 inf（被下方 is_finite() 捕获），
-                // 超大负指数下溢为 0.0，均不会产生 DoS（f64 固定 8 字节，无大整数分配）。
-                a.powf(b)
-            }
-            BinaryOp::Mod => {
-                if b == 0.0 {
-                    // Rust % by zero panics，必须预检查 (Req 7 Scen 2)
-                    return Err(CalcError::division_by_zero());
-                }
-                a % b
-            }
-        };
-        if !result.is_finite() {
-            return Err(CalcError::nan_or_inf());
+        match op {
+            BinaryOp::Add => crate::math::arithmetic::add(a, b),
+            BinaryOp::Sub => crate::math::arithmetic::sub(a, b),
+            BinaryOp::Mul => crate::math::arithmetic::mul(a, b),
+            BinaryOp::Div => crate::math::arithmetic::div(a, b),
+            BinaryOp::Pow => crate::math::arithmetic::pow(a, b),
+            BinaryOp::Mod => crate::math::arithmetic::rem(a, b),
         }
-        Ok(result)
     }
 
-    /// 求值阶乘。
-    ///
-    /// 输入必须为非负整数。上限 10000（spec Req 3）。
-    /// 超过 f64 表示范围时返回 `Overflow`。
+    /// 求值阶乘（委托给 `math::arithmetic::factorial`）。
     fn eval_factorial(&self, n: f64) -> Result<f64, CalcError> {
-        if n < 0.0 || n.fract() != 0.0 {
-            return Err(CalcError::domain(format!(
-                "factorial requires non-negative integer, got {}",
-                n
-            ))
-            .with_i18n(
-                "msg.core.factorial_negative",
-                vec![("value".to_string(), n.to_string())],
-            ));
-        }
-        let n = n as u64;
-        if n > MAX_FACTORIAL_INPUT {
-            return Err(CalcError::overflow());
-        }
-        let mut result: f64 = 1.0;
-        for i in 2..=n {
-            result *= i as f64;
-            if result.is_infinite() {
-                return Err(CalcError::overflow());
-            }
-        }
-        Ok(result)
+        crate::math::arithmetic::factorial(n)
     }
 
     /// 求值函数调用（factorial/mod/abs）。
@@ -203,7 +150,7 @@ impl ArithmeticDomain {
                     ));
                 }
                 let v = self.eval_node(&args[0], ctx)?;
-                Ok(v.abs())
+                Ok(crate::math::arithmetic::abs(v))
             }
             _ => Err(
                 CalcError::eval(format!("unknown function: {}", name)).with_i18n(

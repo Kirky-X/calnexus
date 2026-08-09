@@ -21,7 +21,9 @@
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
-use super::fx_provider::{FrankfurterProvider, RateProvider, RateTable};
+use crate::math::fx as math_fx;
+use super::fx_provider::{FrankfurterProvider, RateProvider};
+use crate::math::fx::RateTable;
 
 /// fx 域函数白名单（用于路由 supports() 和非确定性申报）。
 ///
@@ -297,7 +299,7 @@ fn eval_fx(
     let to = expect_str_arg(&args[2], "to")?;
 
     let table = provider.rates()?;
-    let result = convert(value, from, to, &table)?;
+    let result = math_fx::convert(value, from, to, &table)?;
     Ok(EvalResult::Scalar(result))
 }
 
@@ -326,7 +328,7 @@ fn eval_fx_rate(
     let to = expect_str_arg(&args[1], "to")?;
 
     let table = provider.rates()?;
-    let result = convert(1.0, from, to, &table)?;
+    let result = math_fx::convert(1.0, from, to, &table)?;
     Ok(EvalResult::Scalar(result))
 }
 
@@ -348,49 +350,6 @@ fn expect_str_arg<'a>(arg: &'a AstNode, param_name: &str) -> Result<&'a str, Cal
     }
 }
 
-/// 汇率换算核心逻辑：经 base 三角计算。
-///
-/// - 同币种（from == to）→ 恒等返回 value（不查表）
-/// - base 币种汇率视为 1.0（如 EUR 在 EUR-base 表中不出现）
-/// - 未知币种 → DomainError（含支持币种数量提示，i18n msg.fx.unknown_currency）
-fn convert(value: f64, from: &str, to: &str, table: &RateTable) -> Result<f64, CalcError> {
-    // 同币种恒等（避免不必要的查表与除零风险）
-    if from == to {
-        return Ok(value);
-    }
-
-    let rate_from = get_rate(from, table)?;
-    let rate_to = get_rate(to, table)?;
-
-    // 三角换算：value / rate[FROM] * rate[TO]
-    Ok(value / rate_from * rate_to)
-}
-
-/// 获取币种对 base 的汇率。base 币种返回 1.0。
-fn get_rate(code: &str, table: &RateTable) -> Result<f64, CalcError> {
-    if code == table.base {
-        return Ok(1.0);
-    }
-    table
-        .rates
-        .get(code)
-        .copied()
-        .ok_or_else(|| unknown_currency_error(code, table))
-}
-
-/// 构造"未知币种"错误，消息含支持币种数量。
-fn unknown_currency_error(code: &str, table: &RateTable) -> CalcError {
-    CalcError::domain(format!(
-        "unknown currency: {}, {} currencies supported (base: {})",
-        code,
-        table.rates.len(),
-        table.base
-    ))
-    .with_i18n(
-        "msg.fx.unknown_currency",
-        vec![("code".to_string(), code.to_string())],
-    )
-}
 
 /// 递归检查 AST 是否含 fx/fx_rate 函数调用。
 fn contains_fx_function(ast: &AstNode) -> bool {
@@ -919,108 +878,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== 底层函数单元测试 =====
-
-    #[test]
-    fn test_convert_same_currency() {
-        let table = RateTable {
-            base: "EUR".to_string(),
-            date: "2026-07-25".to_string(),
-            rates: {
-                let mut m = HashMap::new();
-                m.insert("USD".to_string(), 1.08);
-                m
-            },
-        };
-        assert_eq!(convert(100.0, "USD", "USD", &table).unwrap(), 100.0);
-    }
-
-    #[test]
-    fn test_convert_triangle() {
-        let table = RateTable {
-            base: "EUR".to_string(),
-            date: "2026-07-25".to_string(),
-            rates: {
-                let mut m = HashMap::new();
-                m.insert("USD".to_string(), 1.08);
-                m.insert("CNY".to_string(), 7.85);
-                m
-            },
-        };
-        let r = convert(100.0, "USD", "CNY", &table).unwrap();
-        assert!((r - 100.0 / 1.08 * 7.85).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_convert_with_base() {
-        let table = RateTable {
-            base: "EUR".to_string(),
-            date: "2026-07-25".to_string(),
-            rates: {
-                let mut m = HashMap::new();
-                m.insert("USD".to_string(), 1.08);
-                m
-            },
-        };
-        // EUR → USD = 100 / 1.0 * 1.08 = 108
-        let r = convert(100.0, "EUR", "USD", &table).unwrap();
-        assert!((r - 108.0).abs() < 1e-9);
-        // USD → EUR = 108 / 1.08 * 1.0 = 100
-        let r = convert(108.0, "USD", "EUR", &table).unwrap();
-        assert!((r - 100.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_convert_unknown_currency() {
-        let table = RateTable {
-            base: "EUR".to_string(),
-            date: "2026-07-25".to_string(),
-            rates: HashMap::new(),
-        };
-        let err = convert(100.0, "XYZ", "USD", &table).expect_err("expected error");
-        assert_eq!(err.kind, ErrorKind::Domain);
-        assert_eq!(err.i18n_key, Some("msg.fx.unknown_currency"));
-    }
-
-    #[test]
-    fn test_get_rate_base_currency() {
-        let table = RateTable {
-            base: "EUR".to_string(),
-            date: "2026-07-25".to_string(),
-            rates: HashMap::new(),
-        };
-        assert_eq!(get_rate("EUR", &table).unwrap(), 1.0);
-    }
-
-    #[test]
-    fn test_get_rate_unknown_currency() {
-        let table = RateTable {
-            base: "EUR".to_string(),
-            date: "2026-07-25".to_string(),
-            rates: HashMap::new(),
-        };
-        let err = get_rate("XYZ", &table).expect_err("expected error");
-        assert_eq!(err.kind, ErrorKind::Domain);
-        assert_eq!(err.i18n_key, Some("msg.fx.unknown_currency"));
-    }
-
-    #[test]
-    fn test_unknown_currency_error_message_includes_count() {
-        let table = RateTable {
-            base: "EUR".to_string(),
-            date: "2026-07-25".to_string(),
-            rates: {
-                let mut m = HashMap::new();
-                m.insert("USD".to_string(), 1.08);
-                m.insert("CNY".to_string(), 7.85);
-                m
-            },
-        };
-        let err = unknown_currency_error("XYZ", &table);
-        assert!(err.message.contains("XYZ"));
-        assert!(err.message.contains("2 currencies"));
-        assert_eq!(err.i18n_key, Some("msg.fx.unknown_currency"));
-    }
+    // ===== 底层函数单元测试已迁移至 math::fx =====
 
     #[test]
     fn test_expect_str_arg_with_string() {

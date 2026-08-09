@@ -21,16 +21,12 @@ mod polynomial;
 mod precision;
 mod scientific;
 mod statistics;
-mod stats_distributions;
-mod stats_special;
-mod stats_tests;
 mod symbolic;
 #[cfg(feature = "time")]
 mod time;
 #[cfg(feature = "unit")]
 mod unit;
-#[cfg(feature = "unit")]
-mod unit_table;
+
 mod vector;
 
 pub(crate) use factory::{build_default_router, build_precision_domain};

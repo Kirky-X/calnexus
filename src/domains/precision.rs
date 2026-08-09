@@ -18,9 +18,13 @@ use crate::core::{
     check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
     MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION,
 };
+use crate::math::precision as math_prec;
 use num_bigint::BigInt;
 use num_rational::BigRational;
-use num_traits::{One, Signed, Zero};
+use num_traits::{Signed, Zero};
+
+// Re-export format_bigrational for use by other modules.
+pub use crate::math::precision::format_bigrational;
 
 /// Precision 计算域。
 ///
@@ -82,12 +86,12 @@ impl CalculationDomain for PrecisionDomain {
                 // 验证 N 为正整数
                 let _n = extract_precision_value(&args[0])?;
                 let value = self.eval(&args[1], ctx)?;
-                return Ok(rational_to_result(value));
+                return Ok(math_prec::rational_to_result(value));
             }
         }
 
         let value = self.eval(ast, ctx)?;
-        Ok(rational_to_result(value))
+        Ok(math_prec::rational_to_result(value))
     }
 }
 
@@ -95,7 +99,7 @@ impl PrecisionDomain {
     /// 递归求值 AST 节点为 `BigRational`。
     fn eval(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigRational, CalcError> {
         match ast {
-            AstNode::Number(n) => f64_to_rational(*n),
+            AstNode::Number(n) => math_prec::f64_to_rational(*n),
             AstNode::BigNumber(s) => {
                 let big = BigInt::parse_bytes(s.as_bytes(), 10).ok_or_else(|| {
                     CalcError::parse(format!("invalid big integer literal: {}", s)).with_i18n(
@@ -112,7 +116,7 @@ impl PrecisionDomain {
                         vec![("name".to_string(), name.to_string())],
                     )
                 })?;
-                f64_to_rational(v)
+                math_prec::f64_to_rational(v)
             }
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval(l, ctx)?;
@@ -125,8 +129,15 @@ impl PrecisionDomain {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Abs => Ok(v.abs()),
                     UnaryOp::Factorial => {
-                        let n = rational_to_int(&v, "factorial")?;
-                        Ok(BigRational::from_integer(factorial(&n)?))
+                        let n = math_prec::rational_to_int(&v, "factorial")?;
+                        Ok(BigRational::from_integer(
+                            math_prec::factorial(&n).map_err(|e| {
+                                e.with_i18n(
+                                    "msg.core.factorial_negative",
+                                    vec![("value".to_string(), n.to_string())],
+                                )
+                            })?,
+                        ))
                     }
                 }
             }
@@ -162,7 +173,7 @@ impl PrecisionDomain {
                 Ok(a / b)
             }
             BinaryOp::Pow => {
-                let exp = rational_to_int(&b, "power exponent")?;
+                let exp = math_prec::rational_to_int(&b, "power exponent")?;
                 // 安全约束1：拒绝超大指数（绝对值），防止 DoS。
                 // tiangang SAST CRITICAL 修复 + 复审 C-1 修复：
                 // `BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
@@ -207,8 +218,8 @@ impl PrecisionDomain {
                     return Err(CalcError::division_by_zero());
                 }
                 // 大整数取模：提取整数部分计算
-                let a_int = rational_to_int(&a, "mod operand")?;
-                let b_int = rational_to_int(&b, "mod operand")?;
+                let a_int = math_prec::rational_to_int(&a, "mod operand")?;
+                let b_int = math_prec::rational_to_int(&b, "mod operand")?;
                 Ok(BigRational::from_integer(a_int % b_int))
             }
         }
@@ -224,8 +235,15 @@ impl PrecisionDomain {
         match name {
             "factorial" => {
                 let v = self.eval_one_arg(name, args, ctx)?;
-                let n = rational_to_int(&v, "factorial")?;
-                Ok(BigRational::from_integer(factorial(&n)?))
+                let n = math_prec::rational_to_int(&v, "factorial")?;
+                Ok(BigRational::from_integer(
+                    math_prec::factorial(&n).map_err(|e| {
+                        e.with_i18n(
+                            "msg.core.factorial_negative",
+                            vec![("value".to_string(), n.to_string())],
+                        )
+                    })?,
+                ))
             }
             "abs" => {
                 let v = self.eval_one_arg(name, args, ctx)?;
@@ -244,8 +262,8 @@ impl PrecisionDomain {
                 if b.is_zero() {
                     return Err(CalcError::division_by_zero());
                 }
-                let a_int = rational_to_int(&a, "mod operand")?;
-                let b_int = rational_to_int(&b, "mod operand")?;
+                let a_int = math_prec::rational_to_int(&a, "mod operand")?;
+                let b_int = math_prec::rational_to_int(&b, "mod operand")?;
                 Ok(BigRational::from_integer(a_int % b_int))
             }
             _ => Err(CalcError::domain(format!(
@@ -433,140 +451,6 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
     Ok(v)
 }
 
-/// 将 BigRational 转换为 EvalResult。
-///
-/// 分母为 1 → BigInt；否则 → BigRational。
-fn rational_to_result(value: BigRational) -> EvalResult {
-    if value.is_integer() {
-        EvalResult::BigInt(value.numer().clone())
-    } else {
-        EvalResult::BigRational(value)
-    }
-}
-
-/// 从 BigRational 提取 BigInt（要求为整数）。
-///
-/// 返回 BigInt 形式的操作数（可为负数，由调用方负责范围检查）。
-/// 例如 pow 的负指数由此返回，再由 `BinaryOp::Pow` 分支的 `abs()` 检查约束。
-fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
-    if !r.is_integer() {
-        return Err(
-            CalcError::domain(format!("{} requires integer operand, got {}", ctx, r)).with_i18n(
-                "msg.precision.requires_integer_operand",
-                vec![
-                    ("ctx".to_string(), ctx.to_string()),
-                    ("value".to_string(), r.to_string()),
-                ],
-            ),
-        );
-    }
-    Ok(r.numer().clone())
-}
-
-/// 将 f64 转换为 BigRational。
-///
-/// 整数且范围在 i64 内：精确转换为整数 BigRational；
-/// 否则：尝试 `BigRational::from_float`，失败时返回错误。
-/// 复用于 `Number` 和 `Variable` 节点求值，消除重复分支。
-fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
-    if n.fract() == 0.0 && n.abs() < 9e15 {
-        Ok(BigRational::from_integer(BigInt::from(n as i64)))
-    } else {
-        // 非整数 f64：近似转换（仅用于混合表达式中的小数）
-        BigRational::from_float(n).ok_or_else(|| {
-            CalcError::eval(format!("cannot convert {} to BigRational", n)).with_i18n(
-                "msg.precision.cannot_convert_rational",
-                vec![("value".to_string(), n.to_string())],
-            )
-        })
-    }
-}
-
-/// 计算大整数阶乘。
-///
-/// 安全约束：拒绝超过 `MAX_FACTORIAL_INPUT` 的输入，防止循环 DoS
-/// （tiangang SAST CRITICAL 修复：`factorial(1000000000)` 可在 24 字节请求内永久挂死服务器）。
-/// 负数输入返回 DomainError（阶乘定义域为非负整数）。
-fn factorial(n: &BigInt) -> Result<BigInt, CalcError> {
-    if n < &BigInt::zero() {
-        return Err(CalcError::domain(format!(
-            "factorial requires non-negative integer, got {}",
-            n
-        ))
-        .with_i18n(
-            "msg.core.factorial_negative",
-            vec![("value".to_string(), n.to_string())],
-        ));
-    }
-    if n > &BigInt::from(MAX_FACTORIAL_INPUT) {
-        return Err(CalcError::domain(format!(
-            "factorial input must not exceed {} (got {})",
-            MAX_FACTORIAL_INPUT, n
-        ))
-        .with_i18n(
-            "msg.precision.factorial_exceeds_max",
-            vec![
-                ("max".to_string(), MAX_FACTORIAL_INPUT.to_string()),
-                ("value".to_string(), n.to_string()),
-            ],
-        ));
-    }
-    let mut result = BigInt::one();
-    let mut i = BigInt::one();
-    let one = BigInt::one();
-    while &i <= n {
-        result *= &i;
-        i += &one;
-    }
-    Ok(result)
-}
-
-/// 格式化 BigRational 为输出字符串。
-///
-/// - `precision = None`：分数形式 `num/den`，分母为 1 时输出整数
-/// - `precision = Some(N)`：N 位小数（不含前导 `0.`）
-pub fn format_bigrational(value: &BigRational, precision: Option<usize>) -> String {
-    if let Some(n) = precision {
-        format_decimal(value, n)
-    } else if value.is_integer() {
-        value.numer().to_string()
-    } else {
-        format!("{}/{}", value.numer(), value.denom())
-    }
-}
-
-/// 格式化 BigRational 为指定精度的十进制小数。
-///
-/// 例如 `1/3` 精度 5 → `0.33333`，`1/2` 精度 3 → `0.500`。
-fn format_decimal(value: &BigRational, precision: usize) -> String {
-    let ten = BigInt::from(10);
-    let neg = value.is_negative();
-    let abs = value.abs();
-    let numer = abs.numer();
-    let denom = abs.denom();
-
-    // 整数部分
-    let int_part = numer / denom;
-    let remainder = numer % denom;
-
-    // 小数部分：remainder * 10^precision / denom
-    let mut scale = BigInt::one();
-    for _ in 0..precision {
-        scale *= &ten;
-    }
-    let scaled = remainder * &scale;
-    let frac_digits = scaled / denom;
-
-    let int_str = int_part.to_string();
-    let frac_str = format!("{:0>width$}", frac_digits.to_string(), width = precision);
-
-    let sign = if neg { "-" } else { "" };
-    if precision == 0 {
-        format!("{}{}", sign, int_str)
-    } else {
-        format!("{}{}.{}", sign, int_str, frac_str)
-    }
-}
 
 #[cfg(test)]
 mod tests {

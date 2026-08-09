@@ -19,18 +19,13 @@
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
-use super::unit_table::{
-    all_unit_names, from_kelvin, is_temperature_unit, levenshtein, lookup, to_kelvin, Dimension,
-};
+use crate::math::unit as math_unit;
 
 /// 单位换算函数白名单。
 ///
 /// `mod`/`abs` 由 parser 将 `x%y`/`abs(x)` 转换为函数调用形式（见 parser.rs），
 /// 当它们包围 `convert` 结果时需路由至本域处理（算术包围语义，对齐 design.md D8）。
 const UNIT_FUNCTIONS: &[&str] = &["convert", "mod", "abs"];
-
-/// 温度单位候选集（用于 "did you mean" 建议）。
-const TEMPERATURE_UNIT_NAMES: &[&str] = &["C", "F", "K", "R"];
 
 /// 单位换算域：支持 `convert(value, "from", "to")` 覆盖 8 个量纲。
 pub struct UnitDomain;
@@ -311,121 +306,10 @@ impl UnitDomain {
             }
         };
 
-        convert_value(value, from, to).map(EvalResult::Scalar)
+        math_unit::convert_value(value, from, to).map(EvalResult::Scalar)
     }
 }
 
-/// 单位换算核心逻辑：分流线性路径与温度仿射路径。
-///
-/// 返回换算后的 f64 值。错误类型：
-/// - 未知单位（含 Levenshtein ≤2 的相近建议）
-/// - 量纲不匹配（消息含双方量纲名）
-fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError> {
-    let from_is_temp = is_temperature_unit(from).unwrap_or(false);
-    let to_is_temp = is_temperature_unit(to).unwrap_or(false);
-
-    // 路径 1：from 和 to 均为温度 → 仿射换算
-    if from_is_temp && to_is_temp {
-        let kelvin = to_kelvin(value, from);
-        return Ok(from_kelvin(kelvin, to));
-    }
-
-    // 路径 2：仅一个为温度 → 量纲不匹配
-    if from_is_temp || to_is_temp {
-        let from_dim = if from_is_temp {
-            Dimension::Temperature
-        } else {
-            // from 非温度；若 lookup 失败则报未知单位
-            match lookup(from) {
-                Some((d, _)) => d,
-                None => return Err(unknown_unit_error(from)),
-            }
-        };
-        let to_dim = if to_is_temp {
-            Dimension::Temperature
-        } else {
-            match lookup(to) {
-                Some((d, _)) => d,
-                None => return Err(unknown_unit_error(to)),
-            }
-        };
-        return Err(dimension_mismatch_error(from, from_dim, to, to_dim));
-    }
-
-    // 路径 3：均为线性单位 → 系数换算
-    let (from_dim, from_coeff) = match lookup(from) {
-        Some(x) => x,
-        None => return Err(unknown_unit_error(from)),
-    };
-    let (to_dim, to_coeff) = match lookup(to) {
-        Some(x) => x,
-        None => return Err(unknown_unit_error(to)),
-    };
-
-    if from_dim != to_dim {
-        return Err(dimension_mismatch_error(from, from_dim, to, to_dim));
-    }
-
-    Ok(value * from_coeff / to_coeff)
-}
-
-/// 构造"未知单位"错误，附带 Levenshtein 距离 ≤2 的相近单位建议。
-///
-/// 候选集 = 全部线性单位名 + 温度单位名（C/F/K/R）。
-fn unknown_unit_error(unit: &str) -> CalcError {
-    let linear = all_unit_names();
-    let mut suggestions: Vec<&str> = linear
-        .iter()
-        .copied()
-        .filter(|c| {
-            let d = levenshtein(unit, c);
-            d > 0 && d <= 2
-        })
-        .collect();
-    for c in TEMPERATURE_UNIT_NAMES {
-        let d = levenshtein(unit, c);
-        if d > 0 && d <= 2 {
-            suggestions.push(c);
-        }
-    }
-
-    let detail = if suggestions.is_empty() {
-        format!("unknown unit: {}", unit)
-    } else {
-        format!(
-            "unknown unit: {}, did you mean: {}",
-            unit,
-            suggestions.join(", ")
-        )
-    };
-
-    CalcError::domain(detail).with_i18n(
-        "msg.unit.unknown_unit",
-        vec![("unit".to_string(), unit.to_string())],
-    )
-}
-
-/// 构造"量纲不匹配"错误，消息含双方量纲名。
-fn dimension_mismatch_error(
-    from: &str,
-    from_dim: Dimension,
-    to: &str,
-    to_dim: Dimension,
-) -> CalcError {
-    CalcError::domain(format!(
-        "dimension mismatch: {} is {:?}, {} is {:?}",
-        from, from_dim, to, to_dim
-    ))
-    .with_i18n(
-        "msg.unit.dimension_mismatch",
-        vec![
-            ("from".to_string(), from.to_string()),
-            ("from_dim".to_string(), format!("{:?}", from_dim)),
-            ("to".to_string(), to.to_string()),
-            ("to_dim".to_string(), format!("{:?}", to_dim)),
-        ],
-    )
-}
 
 /// 递归检查 AST 是否含 `convert` 函数调用。
 fn contains_unit_function(ast: &AstNode) -> bool {
@@ -1009,63 +893,7 @@ mod tests {
         assert!((eval_scalar(r#"convert(1,"h","s")"#).unwrap() - 3600.0).abs() < 1e-9);
     }
 
-    // ===== 底层函数单元测试 =====
-
-    #[test]
-    fn test_convert_value_linear() {
-        let r = convert_value(1000.0, "m", "km").unwrap();
-        assert!((r - 1.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_convert_value_temperature() {
-        let r = convert_value(100.0, "C", "F").unwrap();
-        assert!((r - 212.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_convert_value_dimension_mismatch() {
-        let err = convert_value(1.0, "m", "kg").expect_err("expected error");
-        assert_eq!(err.kind, ErrorKind::Domain);
-    }
-
-    #[test]
-    fn test_convert_value_unknown_unit() {
-        let err = convert_value(1.0, "XYZ", "m").expect_err("expected error");
-        assert_eq!(err.kind, ErrorKind::Domain);
-    }
-
-    #[test]
-    fn test_convert_value_temperature_to_linear_mismatch() {
-        let err = convert_value(100.0, "C", "m").expect_err("expected error");
-        assert_eq!(err.kind, ErrorKind::Domain);
-        assert!(err.message.contains("Temperature"));
-        assert!(err.message.contains("Length"));
-    }
-
-    #[test]
-    fn test_unknown_unit_error_no_suggestion_for_far_unit() {
-        let err = unknown_unit_error("ZZZZZZ");
-        assert_eq!(err.kind, ErrorKind::Domain);
-        assert!(!err.message.contains("did you mean"));
-    }
-
-    #[test]
-    fn test_unknown_unit_error_with_suggestion() {
-        // "metr" 距离 "meter"=1, "metre"=1
-        let err = unknown_unit_error("metr");
-        assert!(err.message.contains("did you mean"));
-        assert!(err.message.contains("meter") || err.message.contains("metre"));
-    }
-
-    #[test]
-    fn test_dimension_mismatch_error_message() {
-        let err = dimension_mismatch_error("m", Dimension::Length, "kg", Dimension::Mass);
-        assert_eq!(err.kind, ErrorKind::Domain);
-        assert!(err.message.contains("Length"));
-        assert!(err.message.contains("Mass"));
-        assert_eq!(err.i18n_key, Some("msg.unit.dimension_mismatch"));
-    }
+    // ===== 底层函数单元测试已迁移至 math::unit =====
 
     #[test]
     fn test_contains_unit_function_str_returns_false() {
