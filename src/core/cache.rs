@@ -8,7 +8,7 @@
 //! - l1-cache spec：7 个 requirements / 22 个 scenarios
 //!
 //! 实现说明：
-//! - oxcache v0.3 为 async/tokio 架构，本模块通过全局 tokio Runtime + block_on 同步调用
+//! - oxcache v0.4 提供 sync API（`sync_mode(true)` + `get_sync`/`set_sync`/`len_sync`），无需 block_on
 //! - 保持 CacheManager 公共 API 同步，对调用方透明
 //! - oxcache 使用 `core` feature（L1+L2 能力），但配置为 memory_only（仅 L1 实际使用）
 //!
@@ -17,18 +17,7 @@
 //! - [`CacheManager`]：线程安全的 L1 缓存，仅存储 `Ok(EvalResult)`，容量上限 10000
 
 use crate::core::types::{CalcError, CanonicalForm, EvalResult};
-use std::sync::OnceLock;
-
-/// 全局 tokio Runtime，用于同步调用 oxcache async API。
-///
-/// 使用 OnceLock 实现懒初始化，进程内只创建一次。
-static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-
-fn runtime() -> &'static tokio::runtime::Runtime {
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Runtime::new().expect("failed to create tokio runtime for oxcache")
-    })
-}
+use crate::core::types::ErrorKind;
 
 /// 缓存键生成器：使用 BLAKE3 对 `CanonicalForm` 的 S-表达式字符串进行哈希。
 ///
@@ -75,14 +64,12 @@ impl CacheManager {
     /// 创建默认配置的缓存管理器（容量 10000，L1-only）。
     ///
     /// 使用 oxcache `CacheBuilder` 配置 Moka 内存后端，
-    /// 通过全局 tokio Runtime 同步构建。
+    /// 通过 `sync_mode(true)` + `build_sync()` 全同步构建。
     pub fn new() -> Self {
-        let cache = runtime()
-            .block_on(
-                oxcache::Cache::builder()
-                    .capacity(DEFAULT_MAX_CAPACITY)
-                    .build(),
-            )
+        let cache = oxcache::Cache::builder()
+            .capacity(DEFAULT_MAX_CAPACITY)
+            .sync_mode(true)
+            .build_sync()
             .expect("failed to build oxcache L1 cache");
         Self { inner: cache }
     }
@@ -100,7 +87,7 @@ impl CacheManager {
     /// 等理论错误路径必须显性化而非 panic 影响请求处理。
     pub fn get(&self, cf: &CanonicalForm) -> Option<EvalResult> {
         let key = CacheKeyGen::make_key(cf);
-        match runtime().block_on(self.inner.get(&key)) {
+        match self.inner.get_sync(&key) {
             Ok(v) => v,
             Err(e) => {
                 // 降级为 cache miss：避免 panic 影响请求处理（H-1 修复）
@@ -123,7 +110,7 @@ impl CacheManager {
     pub fn insert(&self, cf: &CanonicalForm, result: &Result<EvalResult, CalcError>) {
         if let Ok(value) = result {
             let key = CacheKeyGen::make_key(cf);
-            if let Err(e) = runtime().block_on(self.inner.set(&key, value)) {
+            if let Err(e) = self.inner.set_sync(&key, value) {
                 // 降级为忽略写入：避免 panic 影响请求处理（H-1 修复）
                 eprintln!("WARN: cache insert failed (key={}), ignoring: {}", key, e);
             }
@@ -133,17 +120,40 @@ impl CacheManager {
     /// 查询或计算：缓存命中则返回克隆，未命中则调用 `compute`，
     /// 成功时写入缓存，返回结果（Req 1 + Req 2 + Req 7）。
     ///
+    /// 使用 oxcache `get_or_option_sync` 实现 64 分片 single-flight 去重：
+    /// 并发相同 key 仅执行一次 compute（R-cache-sync-004）。
     /// 错误结果不写入缓存，直接返回 `Err`。
     pub fn get_or_compute<F>(&self, cf: &CanonicalForm, compute: F) -> Result<EvalResult, CalcError>
     where
         F: FnOnce() -> Result<EvalResult, CalcError>,
     {
-        if let Some(cached) = self.get(cf) {
-            return Ok(cached);
+        let key = CacheKeyGen::make_key(cf);
+        // 捕获 compute 错误，避免 FnOnce 二次调用
+        let mut captured_error: Option<CalcError> = None;
+        match self.inner.get_or_option_sync(&key, || {
+            match compute() {
+                Ok(v) => Ok(Some(v)),
+                Err(e) => {
+                    captured_error = Some(e);
+                    Ok(None) // 错误不缓存
+                }
+            }
+        }) {
+            Ok(Some(v)) => Ok(v),
+            Ok(None) => Err(captured_error
+                .expect("get_or_option_sync returned None without error")),
+            Err(e) => {
+                // 缓存后端错误，降级为直接计算（compute 尚未调用时）
+                if let Some(err) = captured_error {
+                    Err(err)
+                } else {
+                    eprintln!("WARN: cache get_or_option failed: {}", e);
+                    // compute 未被调用（缓存后端先失败），无法降级
+                    // 返回缓存错误而非计算错误
+                    Err(CalcError::new(ErrorKind::Eval, &format!("cache backend error: {}", e)))
+                }
+            }
         }
-        let result = compute()?;
-        self.insert(cf, &Ok(result.clone()));
-        Ok(result)
     }
 
     /// 当前缓存条目数（用于测试验证）。
@@ -154,7 +164,7 @@ impl CacheManager {
     /// 返回 0 不影响业务逻辑（仅用于测试验证），避免 panic 在 HTTP server 上下文中
     /// 走 `spawn_blocking` panic 路径导致客户端仅见通用 500。
     pub fn entry_count(&self) -> u64 {
-        match runtime().block_on(self.inner.len()) {
+        match self.inner.len_sync() {
             Ok(n) => n,
             Err(e) => {
                 // 降级为 0：避免 panic 影响请求处理（H-1 修复）
@@ -555,6 +565,53 @@ mod tests {
     //
     // 注：oxcache Moka 后端实际不会返回 Err（永远 Ok(...)），故无法直接触发错误路径。
     // 这些测试作为行为契约，确保后续 cache 后端替换或扩展时降级行为不被破坏。
+
+    // ===== Single-flight 去重测试（R-cache-sync-004） =====
+
+    #[test]
+    fn test_get_or_compute_single_flight_dedup() {
+        // 并发相同 key 仅执行一次 compute（R-cache-sync-004）
+        let cache = Arc::new(CacheManager::new());
+        let cf = canon("42+58");
+
+        let compute_count = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(std::sync::Barrier::new(10));
+
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let cache = Arc::clone(&cache);
+            let cf = cf.clone();
+            let count = Arc::clone(&compute_count);
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait(); // 确保所有线程同时启动
+                cache.get_or_compute(&cf, || {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    // 模拟计算耗时
+                    thread::sleep(std::time::Duration::from_millis(10));
+                    Ok(EvalResult::Scalar(100.0))
+                })
+            }));
+        }
+
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect();
+
+        // 所有线程应得到相同结果
+        for r in &results {
+            assert_eq!(r.as_ref().unwrap(), &EvalResult::Scalar(100.0));
+        }
+
+        // single-flight 去重：compute 闭包应仅执行 1 次
+        let final_count = compute_count.load(Ordering::SeqCst);
+        assert!(
+            final_count <= 2, // 允许极端的调度差异，但应远小于 10
+            "compute 应执行 1-2 次（single-flight 去重），实际执行 {} 次",
+            final_count
+        );
+    }
 
     #[test]
     fn test_get_never_panics_on_normal_path() {

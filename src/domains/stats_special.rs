@@ -168,6 +168,7 @@ fn beta_series(a: f64, b: f64, x: f64) -> f64 {
 /// 每个迭代处理两个连分数系数（even + odd step）：
 /// - even: a_{2m} = m*(b-m)*x / ((a-1+2m)*(a+2m))
 /// - odd:  a_{2m+1} = -(a+m)*(a+b+m)*x / ((a+2m)*(a+1+2m))
+#[allow(dead_code)] // 保留用于后续 incomplete beta 函数实现
 fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
     let qab = a + b;
     let qap = a + 1.0;

@@ -9,8 +9,6 @@
 //! 路由策略：AST 含统计函数调用（mean/variance/std/median/min/max/sum/count）时路由至本域。
 //! 输入为 List 节点；空列表与非数值元素（含嵌套 List/Matrix/Complex）返回 DomainError。
 
-use std::collections::HashMap;
-
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 

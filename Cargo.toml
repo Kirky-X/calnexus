@@ -19,7 +19,7 @@ cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
 # tokio/signal: BUG-S-M-003 graceful shutdown（Ctrl+C / SIGTERM）
-http = ["dep:sdforge", "sdforge/http", "dep:axum", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
+http = ["dep:sdforge", "sdforge/http", "sdforge/health-check", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # Time: 时间计算（日期差、时间戳、格式解析，feature 门控）
@@ -32,6 +32,14 @@ fx = ["dep:ureq", "dep:dirs"]
 numerical = []
 # Server: HTTP + MCP 聚合
 server = ["http", "mcp"]
+# Ratelimit: HTTP 限流中间件（sdforge/ratelimit-http）
+ratelimit = ["dep:sdforge", "sdforge/ratelimit-http"]
+# Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
+docs = ["dep:sdforge", "sdforge/docs"]
+# Graceful shutdown: 优雅关闭（sdforge/graceful-shutdown）
+graceful-shutdown = ["dep:sdforge", "sdforge/graceful-shutdown"]
+# Observability: OpenTelemetry 分布式追踪（sdforge/observability）
+observability = ["dep:sdforge", "sdforge/observability", "dep:tracing"]
 
 [dependencies]
 # 解析器
@@ -68,6 +76,10 @@ axum = { version = "0.8", default-features = false, optional = true }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 # anyhow: 错误上下文（sdforge 0.4.2 #[forge] MCP codegen 硬依赖 anyhow::anyhow!/anyhow::Error；仅 mcp feature 启用）
 anyhow = { version = "1.0", default-features = false, features = ["std"], optional = true }
+# async-trait: HealthChecker trait 实现（sdforge health-check 依赖 async_trait 宏；仅 http feature 启用）
+async-trait = { version = "0.1", optional = true }
+# tracing: observability 支持（#[forge] 宏在 observability feature 下生成 tracing 调用；仅 observability feature 启用）
+tracing = { version = "0.1", optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
