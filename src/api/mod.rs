@@ -207,16 +207,43 @@ impl SymbolicMath for SymbolicMathImpl<'_> {
 }
 
 impl AppliedMath for AppliedMathImpl<'_> {
+    // ── 时间：构造 ──
     #[cfg(feature = "time")]
-    fn now(&self) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::now(self) }
+    fn date(&self, date_str: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::date(self, date_str) }
     #[cfg(feature = "time")]
-    fn today(&self) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::today(self) }
+    fn datetime(&self, datetime_str: &str, tz: Option<&str>) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::datetime(self, datetime_str, tz) }
     #[cfg(feature = "time")]
-    fn date_add(&self, date: &str, expr: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::date_add(self, date, expr) }
+    fn timestamp(&self, datetime_str: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::timestamp(self, datetime_str) }
     #[cfg(feature = "time")]
-    fn date_diff(&self, a: &str, b: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::date_diff(self, a, b) }
+    fn from_timestamp(&self, secs: i64, tz: Option<&str>) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::from_timestamp(self, secs, tz) }
+
+    // ── 时间：算术 ──
+    #[cfg(feature = "time")]
+    fn now(&self, tz: Option<&str>) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::now(self, tz) }
+    #[cfg(feature = "time")]
+    fn today(&self, tz: Option<&str>) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::today(self, tz) }
+    #[cfg(feature = "time")]
+    fn date_add(&self, date: &str, n: i64, unit: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::date_add(self, date, n, unit) }
+    #[cfg(feature = "time")]
+    fn date_diff(&self, a: &str, b: &str, unit: Option<&str>) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::date_diff(self, a, b, unit) }
+
+    // ── 时间：格式与日历 ──
+    #[cfg(feature = "time")]
+    fn format_date(&self, date: &str, fmt: &str, tz: Option<&str>) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::format_date(self, date, fmt, tz) }
+    #[cfg(feature = "time")]
+    fn reformat_date(&self, input: &str, from_fmt: &str, to_fmt: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::reformat_date(self, input, from_fmt, to_fmt) }
+    #[cfg(feature = "time")]
+    fn weekday(&self, date: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::weekday(self, date) }
+    #[cfg(feature = "time")]
+    fn day_of_year(&self, date: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::day_of_year(self, date) }
+    #[cfg(feature = "time")]
+    fn is_leap_year(&self, year: i64) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::is_leap_year(self, year) }
+
+    // ── 单位 ──
     #[cfg(feature = "unit")]
     fn convert(&self, value: f64, from: &str, to: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::convert(self, value, from, to) }
+
+    // ── 汇率 ──
     #[cfg(feature = "fx")]
     fn fx(&self, amount: f64, from: &str, to: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::fx(self, amount, from, to) }
     #[cfg(feature = "fx")]

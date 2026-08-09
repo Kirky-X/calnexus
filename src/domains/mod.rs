@@ -13,7 +13,7 @@ mod factory;
 #[cfg(feature = "fx")]
 mod fx;
 #[cfg(feature = "fx")]
-mod fx_provider;
+pub(crate) mod fx_provider;
 mod matrix;
 mod number_theory;
 #[cfg(feature = "numerical")]
