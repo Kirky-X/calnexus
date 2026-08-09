@@ -130,6 +130,10 @@ name = "domain_bench"
 harness = false
 required-features = ["cli"]
 
+[[bench]]
+name = "api_bench"
+harness = false
+
 [[test]]
 name = "cli_integration"
 required-features = ["cli"]
