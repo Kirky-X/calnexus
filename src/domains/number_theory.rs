@@ -126,7 +126,8 @@ impl NumberTheoryDomain {
                         name, v
                     )));
                 }
-                Ok(BigInt::from(v as i64))
+                // HIGH #77 修复：使用 f64_to_bigint 代替直接 as i64，防止大值 panic
+                f64_to_bigint(v, &format!("variable {} out of range", name))
             }
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;

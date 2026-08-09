@@ -178,7 +178,8 @@ impl StatisticsDomain {
             return Ok(EvalResult::Scalar(v));
         }
 
-        unreachable!("function {} in STATISTICS_FUNCTIONS but not handled", name)
+        // HIGH #83 修复：将 unreachable! 转为错误返回
+        Err(CalcError::domain(format!("unhandled statistics function: {}", name)))
     }
 
     /// 基础统计函数求值。
@@ -192,7 +193,8 @@ impl StatisticsDomain {
             "max" => math_stats::max(values),
             "sum" => math_stats::sum(values),
             "count" => math_stats::count(values),
-            _ => unreachable!(),
+            // HIGH #83 修复：将 unreachable! 转为错误返回
+            _ => return Err(CalcError::domain(format!("unknown basic stat function: {}", name))),
         })
     }
 
@@ -245,7 +247,8 @@ impl StatisticsDomain {
                     return Err(CalcError::domain("t_test_one requires non-empty data".to_string()));
                 }
                 let map = math_stats::t_test_one(&data, mu);
-                EvalResult::Json(serde_json::to_value(&map).unwrap())
+                // HIGH #88 修复：将 .unwrap() 转为 .map_err()? 防止 panic
+                EvalResult::Json(serde_json::to_value(&map).map_err(|e| CalcError::domain(format!("failed to serialize t_test_one result: {e}")))?)
             }
             "t_test_two" => {
                 self.check_arg_count(name, args, 2)?;
@@ -255,7 +258,8 @@ impl StatisticsDomain {
                     return Err(CalcError::domain("t_test_two requires non-empty data".to_string()));
                 }
                 let map = math_stats::t_test_two(&a, &b);
-                EvalResult::Json(serde_json::to_value(&map).unwrap())
+                // HIGH #88 修复
+                EvalResult::Json(serde_json::to_value(&map).map_err(|e| CalcError::domain(format!("failed to serialize t_test_two result: {e}")))?)
             }
             "chi2_test" => {
                 self.check_arg_count(name, args, 2)?;
@@ -271,7 +275,8 @@ impl StatisticsDomain {
                     )));
                 }
                 let map = math_stats::chi2_test(&observed, &expected);
-                EvalResult::Json(serde_json::to_value(&map).unwrap())
+                // HIGH #88 修复
+                EvalResult::Json(serde_json::to_value(&map).map_err(|e| CalcError::domain(format!("failed to serialize chi2_test result: {e}")))?)
             }
             _ => return Ok(None),
         };

@@ -34,10 +34,12 @@ use crate::core::CalcError;
 // ===== 基础统计函数 =====
 
 pub fn mean(values: &[f64]) -> f64 {
+    if values.is_empty() { return f64::NAN; }
     values.iter().sum::<f64>() / values.len() as f64
 }
 
 pub fn variance(values: &[f64]) -> f64 {
+    if values.is_empty() { return f64::NAN; }
     let m = mean(values);
     values.iter().map(|x| (x - m).powi(2)).sum::<f64>() / values.len() as f64
 }
@@ -47,6 +49,7 @@ pub fn std(values: &[f64]) -> f64 {
 }
 
 pub fn median(values: &[f64]) -> f64 {
+    if values.is_empty() { return f64::NAN; }
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = sorted.len();
@@ -58,10 +61,12 @@ pub fn median(values: &[f64]) -> f64 {
 }
 
 pub fn min(values: &[f64]) -> f64 {
+    if values.is_empty() { return f64::NAN; }
     values.iter().cloned().fold(f64::INFINITY, f64::min)
 }
 
 pub fn max(values: &[f64]) -> f64 {
+    if values.is_empty() { return f64::NAN; }
     values.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
 }
 
@@ -405,6 +410,15 @@ pub fn binom_cdf(k: f64, n: f64, p: f64) -> f64 {
 
 /// 单样本 t 检验（双尾）。返回 {"t", "df", "p", "mean"}。
 pub fn t_test_one(data: &[f64], mu: f64) -> HashMap<String, f64> {
+    // HIGH #49 修复：n <= 1 时方差除以零，返回 NaN 结果
+    if data.len() <= 1 {
+        let mut result = HashMap::new();
+        result.insert("t".into(), f64::NAN);
+        result.insert("df".into(), f64::NAN);
+        result.insert("p".into(), f64::NAN);
+        result.insert("mean".into(), if data.is_empty() { f64::NAN } else { data[0] });
+        return result;
+    }
     let n = data.len() as f64;
     let mean = data.iter().sum::<f64>() / n;
     let var = data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
@@ -422,6 +436,16 @@ pub fn t_test_one(data: &[f64], mu: f64) -> HashMap<String, f64> {
 
 /// 双样本 Welch t 检验（双尾）。返回 {"t", "df", "p", "mean1", "mean2"}。
 pub fn t_test_two(a: &[f64], b: &[f64]) -> HashMap<String, f64> {
+    // HIGH #50 修复：n <= 1 时方差除以零
+    if a.len() <= 1 || b.len() <= 1 {
+        let mut result = HashMap::new();
+        result.insert("t".into(), f64::NAN);
+        result.insert("df".into(), f64::NAN);
+        result.insert("p".into(), f64::NAN);
+        result.insert("mean1".into(), mean(a));
+        result.insert("mean2".into(), mean(b));
+        return result;
+    }
     let n1 = a.len() as f64;
     let n2 = b.len() as f64;
     let mean1 = a.iter().sum::<f64>() / n1;

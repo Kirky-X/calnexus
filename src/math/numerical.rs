@@ -61,8 +61,9 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
 pub fn svd(matrix: &DMatrix<f64>) -> Result<(DMatrix<f64>, Vec<f64>, DMatrix<f64>), CalcError> {
     require_finite(matrix.iter().copied())?;
     let decomp = SVD::new(matrix.clone(), true, true);
-    let u = decomp.u.expect("compute_u=true guarantees U");
-    let vt = decomp.v_t.expect("compute_v=true guarantees Vt");
+    // HIGH #81 修复：将 .expect() 转为 .ok_or_else() 保持错误可恢复
+    let u = decomp.u.ok_or_else(|| CalcError::domain("SVD decomposition failed: U not available"))?;
+    let vt = decomp.v_t.ok_or_else(|| CalcError::domain("SVD decomposition failed: Vt not available"))?;
     let s: Vec<f64> = decomp.singular_values.iter().copied().collect();
     Ok((u, s, vt))
 }
