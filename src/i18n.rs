@@ -169,7 +169,7 @@ fn parse_lang_icu(s: &str) -> Lang {
 
 /// 使用简单字符串匹配解析语言标签（无 `icu` feature 时的回退）。
 ///
-/// BUG-I-M-001 修复：按 BCP-47 标准以 `-` 分割子标签，取第一段作为 language primary subtag。
+/// 按 BCP-47 标准以 `-` 分割子标签，取第一段作为 language primary subtag。
 /// 此前仅精确匹配 `zh`/`zh-CN`/`zh-TW`，不识别 `zh-Hans`/`zh-Hant`/`zh-Hans-CN` 等
 /// 带脚本子标签的标准标签。现按 primary subtag 识别，覆盖所有 `zh-*` 变体
 /// （包括 `zh-Hans`/`zh-Hant`/`zh-Hans-CN`/`zh-Latn-pinyin`/`zh-x-*` 私有用标签）。
@@ -283,7 +283,7 @@ mod tests {
         );
     }
 
-    // ===== BUG-I-M-001: BCP-47 脚本子标签解析 =====
+    // ===== BCP-47 脚本子标签解析 =====
     // parse_lang_simple 此前仅精确匹配 "zh"/"zh-CN"/"zh-TW"，
     // 不识别 "zh-Hans"/"zh-Hant"/"zh-Hans-CN" 等带脚本的标准 BCP-47 标签。
 

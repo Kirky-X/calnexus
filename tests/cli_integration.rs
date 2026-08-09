@@ -1491,7 +1491,7 @@ fn test_serve_http_without_server_feature() {
     );
 }
 
-/// BUG-007 修复：`--batch --precision` 组合应显式冲突退出码 2。
+/// `--batch --precision` 组合应显式冲突退出码 2。
 ///
 /// 原行为：`batch.rs:88` 硬编码 `None` 忽略 precision，违反规则 12（失败必须显性化）。
 /// 修复：添加 `conflicts_with_all` 互斥，clap 在参数解析阶段拒绝组合。

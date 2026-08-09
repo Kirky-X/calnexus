@@ -687,7 +687,7 @@ mod tests {
 
     #[test]
     fn latex_polynomial_negative_term_concatenation() {
-        // BUG-O-M-011 修复后：非首项以 '-' 开头时用 " - " 分隔（与 " + " 对称）
+        // 非首项以 '-' 开头时用 " - " 分隔（与 " + " 对称）
         // [1, -2, 1] → "x^{2} - 2x + 1"
         assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2} - 2x + 1");
     }
@@ -899,11 +899,11 @@ mod tests {
         assert_eq!(format_latex(&r, &ast, "", None), "2 \\cdot x");
     }
 
-    // ===== BUG-O-M-007: format_latex_scalar 浮点精度噪声 =====
+    // ===== format_latex_scalar 浮点精度噪声 =====
 
     #[test]
     fn latex_scalar_floating_point_noise() {
-        // BUG-O-M-007: 0.1+0.2 = 0.30000000000000004，应显示为 0.3
+        // 0.1+0.2 = 0.30000000000000004，应显示为 0.3
         assert_eq!(format_latex_scalar(0.1 + 0.2), "0.3");
     }
 
@@ -917,28 +917,28 @@ mod tests {
         );
     }
 
-    // ===== BUG-O-M-008: format_latex_scalar 大整数科学计数法 =====
+    // ===== format_latex_scalar 大整数科学计数法 =====
 
     #[test]
     fn latex_scalar_large_integer_no_scientific() {
-        // BUG-O-M-008: 大整数不应输出科学计数法
+        // 大整数不应输出科学计数法
         assert_eq!(format_latex_scalar(1e15), "1000000000000000");
         assert_eq!(format_latex_scalar(1e20), "100000000000000000000");
         assert_eq!(format_latex_scalar(1e21), "1000000000000000000000");
     }
 
-    // ===== BUG-O-M-009 / M-010: format_latex_complex 简化 =====
+    // ===== format_latex_complex 简化 =====
 
     #[test]
     fn latex_complex_zero_imaginary_simplified() {
-        // BUG-O-M-009: 虚部为 0 时应简化为实部（不输出 "+ 0i"）
+        // 虚部为 0 时应简化为实部（不输出 "+ 0i"）
         assert_eq!(format_latex_complex(3.0, 0.0), "3");
         assert_eq!(format_latex_complex(-3.0, 0.0), "-3");
     }
 
     #[test]
     fn latex_complex_zero_real_simplified() {
-        // BUG-O-M-010: 实部为 0 时应简化为虚部（不输出 "0 + 4i"）
+        // 实部为 0 时应简化为虚部（不输出 "0 + 4i"）
         assert_eq!(format_latex_complex(0.0, 4.0), "4i");
         assert_eq!(format_latex_complex(0.0, -4.0), "-4i");
     }
@@ -965,22 +965,22 @@ mod tests {
         assert_eq!(format_latex_complex(3.0, -4.0), "3 - 4i");
     }
 
-    // ===== BUG-O-M-011: join_latex_polynomial_terms 负项空格 =====
+    // ===== join_latex_polynomial_terms 负项空格 =====
 
     #[test]
     fn latex_polynomial_negative_terms_with_spaces() {
-        // BUG-O-M-011: 负项应统一用 " - " 分隔（与正项 " + " 对称）
+        // 负项应统一用 " - " 分隔（与正项 " + " 对称）
         // [1, -2, 1] → "x^{2} - 2x + 1"（不是 "x^{2}-2x + 1"）
         assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2} - 2x + 1");
         // [-1, 2] → "2x - 1"
         assert_eq!(format_latex_polynomial(&[-1.0, 2.0]), "2x - 1");
     }
 
-    // ===== BUG-O-M-012: symbolic_str_to_latex 幂运算 =====
+    // ===== symbolic_str_to_latex 幂运算 =====
 
     #[test]
     fn latex_symbolic_str_to_latex_pow() {
-        // BUG-O-M-012: "x^2" 应转换为 "x^{2}"（LaTeX 规范）
+        // "x^2" 应转换为 "x^{2}"（LaTeX 规范）
         assert_eq!(symbolic_str_to_latex("x^2"), "x^{2}");
         assert_eq!(symbolic_str_to_latex("x^10"), "x^{10}");
     }

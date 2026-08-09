@@ -107,7 +107,7 @@ impl DomainRouter {
         let detail = if functions.is_empty() {
             "no functions".to_string()
         } else {
-            // BUG-C-L-008 修复：限制 functions 列表显示数量，防止无界长度错误消息。
+            // 限制 functions 列表显示数量，防止无界长度错误消息。
             // 原代码 `format!("functions: {:?}", functions)` 对含大量函数的 AST
             // 产生超长错误消息（50 个函数 ~1KB），污染日志、影响 UI。
             // 截断策略：显示前 MAX_DISPLAY_FUNCTIONS 个，超过则追加 "... and N more"。
@@ -173,7 +173,7 @@ fn collect_function_names(ast: &AstNode) -> Vec<String> {
     names
 }
 
-/// 错误消息中最多显示的函数名数量（BUG-C-L-008 修复）。
+/// 错误消息中最多显示的函数名数量。
 ///
 /// 超过此数量时截断并追加 `... and N more` 提示。
 /// 阈值 5 兼顾信息量与简洁性：用户能识别主要函数，又不会被超长列表淹没。
@@ -186,7 +186,7 @@ const MAX_DISPLAY_FUNCTIONS: usize = 5;
 /// - 1-5 个函数：`functions: ["foo", "bar"]`（与原 `{:?}` 格式一致）
 /// - 6+ 个函数：`functions: ["foo", "bar", "baz", "qux", "quux", ... and 45 more]`
 ///
-/// BUG-C-L-008 修复：原 `format!("functions: {:?}", functions)` 对含大量函数的
+/// 原 `format!("functions: {:?}", functions)` 对含大量函数的
 /// AST 产生无界长度错误消息，污染日志、影响 UI 显示。
 fn format_functions_list(functions: &[String]) -> String {
     if functions.len() <= MAX_DISPLAY_FUNCTIONS {
@@ -688,7 +688,7 @@ mod tests {
         );
     }
 
-    // ===== BUG-C-L-008 回归测试：长函数列表必须截断 =====
+    // ===== 回归测试：长函数列表必须截断 =====
     //
     // 原始 bug：`format!("functions: {:?}", functions)` 对包含大量函数的 AST
     // 产生无界长度的错误消息。如 `foo1(x) + foo2(x) + ... + foo1000(x)` 会产生

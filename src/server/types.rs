@@ -76,7 +76,7 @@ impl EvaluateRequest {
     // 校验错误路径罕见，Box 化会令所有 `validate()?` 调用点被迫 `map_err` 解包，得不偿失。
     #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<(), ApiError> {
-        // BUG-O-004: expr 字段校验（空串 / 超长 / null 字节均为 DoS / 注入向量）
+        // expr 字段校验（空串 / 超长 / null 字节均为 DoS / 注入向量）
         if self.expr.is_empty() {
             return Err(ApiError::validation("expr", "expression must not be empty"));
         }
@@ -95,7 +95,7 @@ impl EvaluateRequest {
                 format!("size {} exceeds limit {}", self.vars.len(), MAX_VARS),
             ));
         }
-        // BUG-S-M-002: vars 键名校验（长度 / null 字节）
+        // vars 键名校验（长度 / null 字节）
         // 单个键名超长或含 null 字节是内存攻击 / 注入向量，与 expr 校验对齐。
         for name in self.vars.keys() {
             if name.len() > MAX_VAR_NAME_LEN {
@@ -139,10 +139,10 @@ impl EvaluateRequest {
 /// `vars` 最大键数（T016 安全前置任务：防止内存耗尽攻击）。
 const MAX_VARS: usize = 1024;
 
-/// `vars` 单个键名最大长度（BUG-S-M-002：防止键名注入 / 内存攻击）。
+/// `vars` 单个键名最大长度（防止键名注入 / 内存攻击）。
 const MAX_VAR_NAME_LEN: usize = 64;
 
-/// `expr` 最大长度（BUG-O-004：防止超长表达式导致 DoS）。
+/// `expr` 最大长度（防止超长表达式导致 DoS）。
 const MAX_EXPR_LEN: usize = 4096;
 
 impl EvaluateResponse {
@@ -524,7 +524,7 @@ mod tests {
         }
     }
 
-    // === BUG-O-004: expr 字段校验 ===
+    // === expr 字段校验 ===
     // validate() 此前完全不校验 expr，导致空串、超长串、含 null 字节串全部通过。
     // 这些都是 DoS / 注入向量，必须在入口拦截。
 
@@ -570,7 +570,7 @@ mod tests {
         );
     }
 
-    // === BUG-S-M-002: vars 键名长度 / 内容校验 ===
+    // === vars 键名长度 / 内容校验 ===
     // validate() 此前仅校验 vars 总数，未校验单个键名长度和内容，
     // 单个超长键名或含 null 字节键名可被滥用做内存攻击或注入向量。
 

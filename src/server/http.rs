@@ -110,7 +110,7 @@ async fn metrics_handler(
 
 /// 优雅关闭信号：监听 Ctrl+C（SIGINT），返回时 axum 停止接受新连接、等待已有连接完成。
 ///
-/// BUG-S-M-003: 此前 `axum::serve` 无 `with_graceful_shutdown`，收到 SIGINT 时
+/// 此前 `axum::serve` 无 `with_graceful_shutdown`，收到 SIGINT 时
 /// 立即终止所有连接，可能导致正在执行的 evaluate 请求被中断、响应丢失。
 /// 现通过 `with_graceful_shutdown(shutdown_signal())` 让 server 在收到 Ctrl+C 后
 /// 进入 drain 阶段（停止 accept、等待 in-flight 请求完成）。
@@ -185,7 +185,7 @@ impl HttpServer {
 
     /// 内部 async 启动逻辑：bind TcpListener + axum::serve（含 graceful shutdown）。
     ///
-    /// BUG-S-M-003: `with_graceful_shutdown(shutdown_signal())` 让 server 收到
+    /// `with_graceful_shutdown(shutdown_signal())` 让 server 收到
     /// Ctrl+C / SIGTERM 后进入 drain 阶段，等待 in-flight 请求完成再退出。
     ///
     /// lib-feature-absorption: `graceful-shutdown` feature 启用时使用 sdforge GracefulShutdown
@@ -263,7 +263,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), ServerError::Http(_)));
     }
 
-    /// BUG-S-M-003: 验证 `shutdown_signal` 返回的 future 为 `Send`。
+    /// 验证 `shutdown_signal` 返回的 future 为 `Send`。
     /// axum `with_graceful_shutdown` 要求 signal future 为 `Send`，编译期检查。
     /// 此测试在编译期捕获 Send 约束违规（若 future 非 Send，编译失败）。
     #[cfg(not(feature = "graceful-shutdown"))]
@@ -274,7 +274,7 @@ mod tests {
         assert_send(fut);
     }
 
-    /// BUG-S-M-003: 验证 `shutdown_signal` 函数存在且可调用（构造即不 panic）。
+    /// 验证 `shutdown_signal` 函数存在且可调用（构造即不 panic）。
     /// 不实际 await（await 需要真实信号，单元测试环境难以注入）。
     #[cfg(not(feature = "graceful-shutdown"))]
     #[test]

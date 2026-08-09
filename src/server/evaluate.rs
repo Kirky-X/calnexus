@@ -32,7 +32,7 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// 函数体内保留 `spawn_blocking` 隔离 oxcache 同步 `block_on`（与 p1 手写 handler 等价）：
 /// `#[forge]` 只生成外层路由/tool 外壳，函数体仍是 CalNexus 代码，隔离策略不变。
 ///
-/// BUG-S-M-001: 用 `tokio::time::timeout` 包裹 `spawn_blocking`，超时返回 503
+/// 用 `tokio::time::timeout` 包裹 `spawn_blocking`，超时返回 503
 /// ServiceUnavailable（`retry_after=REQUEST_TIMEOUT_SECS`），防止慢攻击。
 #[forge(
     name = "evaluate",
@@ -69,7 +69,7 @@ pub(crate) async fn evaluate_with_timeout(
         let cache = shared_cache();
         eval_expr(&expr, &ctx, precision, cache)
     });
-    // BUG-S-M-001: 请求级超时兜底，覆盖 spawn_blocking 启动 / evaluate 内部任何意外延迟。
+    // 请求级超时兜底，覆盖 spawn_blocking 启动 / evaluate 内部任何意外延迟。
     // 计算层 Alarm 已在 evaluate 内部精确中断循环，此处仅作慢攻击防御。
     let (result, domain, cache_hit, fmt_prec) =
         match tokio::time::timeout(timeout, join_handle).await {
@@ -212,7 +212,7 @@ mod tests {
         }
     }
 
-    // === BUG-S-M-001: 请求级超时（防止慢攻击 / slowloris）===
+    // === 请求级超时（防止慢攻击 / slowloris）===
     // evaluate_with_timeout 是 evaluate 的可测试入口，注入短超时验证 503 路径。
 
     /// 简单表达式 + 充足超时 → 成功返回 EvaluateResponse（基线）。

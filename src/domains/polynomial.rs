@@ -148,7 +148,7 @@ impl PolynomialDomain {
     /// poly_sub(a, b)：多项式减法（a + (-b)）。
     fn eval_poly_sub(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            // BUG-E-001: 必须带 i18n key，否则 locales/*.json 中
+            // 必须带 i18n key，否则 locales/*.json 中
             // `msg.polynomial.poly_sub_arg_count` 成为死键，中文用户看到英文错误。
             return Err(CalcError::domain(format!(
                 "poly_sub() requires exactly 2 arguments, got {}",
@@ -342,7 +342,7 @@ impl PolynomialDomain {
                         Ok(a / b)
                     }
                     BinaryOp::Pow => {
-                        // BUG-D-M-003: 显式处理 0^0=1，并检查 NaN/Inf（与其他域一致）
+                        // 显式处理 0^0=1，并检查 NaN/Inf（与其他域一致）
                         if a == 0.0 && b == 0.0 {
                             return Ok(1.0);
                         }
@@ -459,7 +459,7 @@ fn coeffs_from_pow(
     }
     // Number ^ Number → 常数
     if let (AstNode::Number(a), AstNode::Number(b)) = (l, r) {
-        // BUG-D-M-004: 检查 NaN/Inf（如 (-1)^0.5 = NaN），失败显性化（规则 12）
+        // 检查 NaN/Inf（如 (-1)^0.5 = NaN），失败显性化（规则 12）
         if *a == 0.0 && *b == 0.0 {
             return Ok((vec![1.0], String::new()));
         }
@@ -730,7 +730,7 @@ mod tests {
 
     #[test]
     fn test_poly_eval_with_pi_e_constants() {
-        // BUG-D-002 修复：pi/e 应被识别为常量而非多项式变量
+        // pi/e 应被识别为常量而非多项式变量
         // poly_eval(x^2+pi, 1) = 1 + π ≈ 4.14159
         let result = eval_scalar("poly_eval(x^2+pi, 1)").unwrap();
         assert_approx(result, 1.0 + std::f64::consts::PI);
@@ -1736,7 +1736,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// BUG-E-001: poly_sub 参数数量错误必须带 i18n key，否则 locales/*.json 中
+    /// poly_sub 参数数量错误必须带 i18n key，否则 locales/*.json 中
     /// `msg.polynomial.poly_sub_arg_count` 成为死键，中文用户看到英文错误。
     #[test]
     fn test_poly_sub_wrong_args_has_i18n() {
