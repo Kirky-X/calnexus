@@ -34,8 +34,8 @@ CalNexus is a command-line math expression evaluator written in Rust, with 11 co
    ```
 6. **Run the test suite** to verify everything works:
    ```bash
-   cargo test --features cli                              # 1925+ tests
-   cargo test --features cli,time,unit,fx                 # 2227+ tests (with optional domains)
+   cargo test --features cli                              # 1940+ tests
+   cargo test --features cli,time,unit,fx                 # 2288+ tests (with optional domains)
    ```
 7. (Optional) Copy the environment template if you want to tweak runtime defaults:
    ```bash

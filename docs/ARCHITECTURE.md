@@ -92,7 +92,7 @@ flowchart TD
 
 ### 1.3 Lmath — 核心数学函数层 (`src/math/`)
 
-从计算域层提取的纯数学函数集合，无表达式解析/域路由依赖。16 个模块对应各计算域的数学核心：
+从计算域层提取的纯数学函数集合，无表达式解析/域路由依赖。17 个模块（18 个文件）对应各计算域的数学核心：
 
 | 模块 | 职责 |
 |------|------|
@@ -241,7 +241,7 @@ flowchart LR
 2. **Green**：重构实现使测试通过（行为不变）
 3. **Verify**：`cargo test` 全套通过 + `cargo clippy -D warnings` 0 告警 + codenexus 复杂度复测
 
-最终测试规模：**1925 passed / 0 failed（`--features cli`）；含可选域（time/unit/fx）时 2227 passed / 0 failed**。
+最终测试规模：**1940 passed / 0 failed（`--features cli` lib）；含可选域（time/unit/fx）时 2288 passed / 0 failed（lib）；全量（含 server + 集成测试）2693 passed / 0 failed**。
 
 ## 4. 测试与基准结构
 

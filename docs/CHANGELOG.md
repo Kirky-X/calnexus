@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Cargo.toml description**: 从 "11 computation domains" 更新为 "11 core and 4 optional (numerical/time/unit/fx) computation domains"
+- **Cargo.toml description**: 从 "11 computation domains" 更新为 "11 core and 4 optional (numerical/time/unit/fx) computation domains"（注：numerical 为 feature-gated 可选域，但 Cargo.toml 曾短暂写为 3 optional，已修正）
 - **CI feature matrix**: test 任务追加 `--features cli,time,unit,fx` 全量测试与 `time` / `unit` / `fx` 三个单 feature 编译检查
 - **README.md / README_EN.md**: 追加可选计算域章节（函数表、feature 开关、CALNEXUS_FX_* 环境变量、汇率数据来源与免责说明），更新域数量表述
 - **docs/ARCHITECTURE.md**: 更新 L2 计算域层清单至 14 域（11 核心 + 3 可选），补充非确定性函数缓存旁路机制说明
@@ -198,7 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - 初始发布：11 个计算域（arithmetic / statistics / numerical / scientific / matrix / symbolic / polynomial / number_theory / combinatorics / precision / domain router）
-- 命令行接口（`--expr` / `--var` / `--precision` / `--steps` / `--json` / `--domain`）
+- 命令行接口（`--expr` / `--var` / `--precision` / `--steps` / `--json` / `--latex` / `--canonical` / `--explain` / `--lang` / `--repl` / `--batch`）
 - REPL 交互模式（`:let` / `:vars` / `:clear` / `:help` / `:quit`）
 - 批处理模式（stdin 读取 + `--count` / `--max-line` 限制）
 - HTTP API（`/evaluate` 端点，axum 框架）
