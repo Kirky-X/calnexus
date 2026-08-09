@@ -152,4 +152,31 @@ impl<'a> DataAnalysisImpl<'a> {
     pub fn spearman(&self, x: &[f64], y: &[f64]) -> Result<EvalResult, CalcError> {
         Ok(scalar(math::statistics::spearman(x, y)))
     }
+
+    // ── 回归 ──
+
+    pub fn lin_reg(&self, x: &[f64], y: &[f64]) -> Result<EvalResult, CalcError> {
+        let (slope, intercept, r_squared) = math::statistics::linear_regression(x, y);
+        Ok(EvalResult::Json(serde_json::json!({
+            "slope": slope,
+            "intercept": intercept,
+            "r_squared": r_squared,
+        })))
+    }
+
+    pub fn poly_reg(&self, x: &[f64], y: &[f64], degree: usize) -> Result<EvalResult, CalcError> {
+        let (coeffs, r_squared) = math::statistics::polynomial_regression(x, y, degree)?;
+        Ok(EvalResult::Json(serde_json::json!({
+            "coefficients": coeffs,
+            "r_squared": r_squared,
+        })))
+    }
+
+    pub fn multi_reg(&self, x: &[Vec<f64>], y: &[f64]) -> Result<EvalResult, CalcError> {
+        let (coeffs, r_squared) = math::statistics::multiple_regression(x, y)?;
+        Ok(EvalResult::Json(serde_json::json!({
+            "coefficients": coeffs,
+            "r_squared": r_squared,
+        })))
+    }
 }

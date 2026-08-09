@@ -149,6 +149,18 @@ impl LinearAlgebra for LinearAlgebraImpl<'_> {
     fn magnitude(&self, a: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::magnitude(self, a) }
     fn vector_add(&self, a: &Vector, b: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::vector_add(self, a, b) }
     fn vector_sub(&self, a: &Vector, b: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::vector_sub(self, a, b) }
+    #[cfg(feature = "numerical")]
+    fn eig(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::eig(self, m) }
+    #[cfg(feature = "numerical")]
+    fn svd(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::svd(self, m) }
+    #[cfg(feature = "numerical")]
+    fn lu(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::lu(self, m) }
+    #[cfg(feature = "numerical")]
+    fn qr(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::qr(self, m) }
+    #[cfg(feature = "numerical")]
+    fn solve(&self, a: &Matrix, b: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::solve(self, a, b) }
+    #[cfg(feature = "numerical")]
+    fn matrix_exp(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::matrix_exp(self, m) }
 }
 
 impl DataAnalysis for DataAnalysisImpl<'_> {
@@ -181,6 +193,9 @@ impl DataAnalysis for DataAnalysisImpl<'_> {
     fn chi2_test(&self, observed: &[f64], expected: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::chi2_test(self, observed, expected) }
     fn pearson(&self, x: &[f64], y: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::pearson(self, x, y) }
     fn spearman(&self, x: &[f64], y: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::spearman(self, x, y) }
+    fn lin_reg(&self, x: &[f64], y: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::lin_reg(self, x, y) }
+    fn poly_reg(&self, x: &[f64], y: &[f64], degree: usize) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::poly_reg(self, x, y, degree) }
+    fn multi_reg(&self, x: &[Vec<f64>], y: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::multi_reg(self, x, y) }
 }
 
 impl SymbolicMath for SymbolicMathImpl<'_> {

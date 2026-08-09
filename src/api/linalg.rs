@@ -94,4 +94,81 @@ impl<'a> LinearAlgebraImpl<'a> {
     pub fn vector_sub(&self, a: &Vector, b: &Vector) -> Result<EvalResult, CalcError> {
         math::vector::vector_sub(a.as_slice(), b.as_slice()).map(EvalResult::Vector)
     }
+
+    // ── 数值分解（feature-gated）──
+
+    #[cfg(feature = "numerical")]
+    pub fn eig(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
+        let dm = to_dmatrix(m);
+        let (values, vectors) = math::numerical::eig(&dm)?;
+        let rows: Vec<Vec<f64>> = (0..vectors.nrows())
+            .map(|r| (0..vectors.ncols()).map(|c| vectors[(r, c)]).collect())
+            .collect();
+        Ok(EvalResult::Json(serde_json::json!({
+            "values": values,
+            "vectors": rows,
+        })))
+    }
+
+    #[cfg(feature = "numerical")]
+    pub fn svd(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
+        let dm = to_dmatrix(m);
+        let (u, s, vt) = math::numerical::svd(&dm)?;
+        let u_rows: Vec<Vec<f64>> = (0..u.nrows())
+            .map(|r| (0..u.ncols()).map(|c| u[(r, c)]).collect())
+            .collect();
+        let vt_rows: Vec<Vec<f64>> = (0..vt.nrows())
+            .map(|r| (0..vt.ncols()).map(|c| vt[(r, c)]).collect())
+            .collect();
+        Ok(EvalResult::Json(serde_json::json!({
+            "U": u_rows,
+            "S": s,
+            "Vt": vt_rows,
+        })))
+    }
+
+    #[cfg(feature = "numerical")]
+    pub fn lu(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
+        let dm = to_dmatrix(m);
+        let (l, u, p) = math::numerical::lu(&dm)?;
+        let to_rows = |m: &nalgebra::DMatrix<f64>| -> Vec<Vec<f64>> {
+            (0..m.nrows())
+                .map(|r| (0..m.ncols()).map(|c| m[(r, c)]).collect())
+                .collect()
+        };
+        Ok(EvalResult::Json(serde_json::json!({
+            "L": to_rows(&l),
+            "U": to_rows(&u),
+            "P": to_rows(&p),
+        })))
+    }
+
+    #[cfg(feature = "numerical")]
+    pub fn qr(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
+        let dm = to_dmatrix(m);
+        let (q, r) = math::numerical::qr(&dm)?;
+        let to_rows = |m: &nalgebra::DMatrix<f64>| -> Vec<Vec<f64>> {
+            (0..m.nrows())
+                .map(|r| (0..m.ncols()).map(|c| m[(r, c)]).collect())
+                .collect()
+        };
+        Ok(EvalResult::Json(serde_json::json!({
+            "Q": to_rows(&q),
+            "R": to_rows(&r),
+        })))
+    }
+
+    #[cfg(feature = "numerical")]
+    pub fn solve(&self, a: &Matrix, b: &Vector) -> Result<EvalResult, CalcError> {
+        let da = to_dmatrix(a);
+        let db = nalgebra::DVector::from_row_slice(b.as_slice());
+        let x = math::numerical::solve(&da, &db)?;
+        Ok(EvalResult::Vector(x.iter().copied().collect()))
+    }
+
+    #[cfg(feature = "numerical")]
+    pub fn matrix_exp(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
+        let dm = to_dmatrix(m);
+        math::numerical::matrix_exp(&dm).map(dmatrix_to_result)
+    }
 }

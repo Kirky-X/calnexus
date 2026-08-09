@@ -2,138 +2,46 @@
 
 //! Numerical 线性代数分解（feature-gated，`numerical` feature 启用）。
 //!
-//! 提供 eig / SVD / LU / QR / solve(Ax=b) 五个分解函数，基于 nalgebra 分解 API。
+//! 委托层：调用 `math::numerical::*` 获取纯数学结果，包装为 `EvalResult`。
 //! 由 MatrixDomain 委托调用（design D2）；路由入口仍是 MatrixDomain（priority=30）。
-//!
-//! design.md：
-//! - D1：复用 nalgebra（不引入新依赖）
-//! - D2：实现拆到本文件（控制 matrix.rs 行数），MatrixDomain 委托
-//! - D3：复合返回走 `EvalResult::Json`；各函数接收**已求值的 `DMatrix<f64>`**（MatrixDomain
-//!   eval_node 已从 AST 提取），返回 `Result<EvalResult, CalcError>`。
-//!
-//! nalgebra 0.35 分解 API 真相（T002 闭环）：
-//! - `LU::new(m)`：partial row pivoting，满足 P·A = L·U；`p().permute_rows(&mut id)` 得 P 矩阵
-//! - `SVD::new(m, compute_u, compute_v)`：三参数
-//!
-//! 输入净化（规则 12）：所有函数入口先 `require_finite` 拦截 NaN/Inf——NaN 会绕过 eig 对称校验
-//! （`(NaN-NaN).abs() > tol` 恒 false）并触发 nalgebra 分解内部 panic。
 
 #![cfg(feature = "numerical")]
 
 use crate::core::{CalcError, EvalResult};
-use nalgebra::{DMatrix, DVector, SymmetricEigen, LU, QR, SVD};
+use nalgebra::{DMatrix, DVector};
 use serde_json::{json, Value};
 
-/// T003: LU 分解 → `{"L":[[..]], "U":[[..]], "P":[[..]]}`，满足 P·A = L·U。
-///
-/// 方阵要求；非方阵返回 DomainError。L 为单位下三角（对角线 1），U 为上三角，
-/// P 为置换矩阵（由 nalgebra `PermutationSequence::permute_rows` 应用到单位矩阵构造）。
+/// LU 分解 → `{"L":[[..]], "U":[[..]], "P":[[..]]}`，满足 P·A = L·U。
 pub fn lu(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
-    require_finite(matrix.iter().copied())?;
-    if !matrix.is_square() {
-        return Err(CalcError::domain(format!(
-            "lu() requires a square matrix, got {}x{}",
-            matrix.nrows(),
-            matrix.ncols()
-        ))
-        .with_i18n(
-            "msg.numerical.lu_requires_square",
-            vec![
-                ("rows".to_string(), matrix.nrows().to_string()),
-                ("cols".to_string(), matrix.ncols().to_string()),
-            ],
-        ));
-    }
-    let n = matrix.nrows();
-    let decomp = LU::new(matrix);
-    let l = decomp.l();
-    let u = decomp.u();
-    let mut p_mat = DMatrix::<f64>::identity(n, n);
-    decomp.p().permute_rows(&mut p_mat);
+    let (l, u, p) = crate::math::numerical::lu(&matrix)?;
     Ok(EvalResult::Json(json!({
         "L": dmatrix_to_json(&l),
         "U": dmatrix_to_json(&u),
-        "P": dmatrix_to_json(&p_mat),
+        "P": dmatrix_to_json(&p),
     })))
 }
 
-/// T004: QR 分解 → `{"Q":[[..]], "R":[[..]]}`，满足 A = Q·R。
-///
-/// nalgebra 瘦 QR（Householder），对任意形状成立（无 m≥n 要求）。Q 列正交（Q^T·Q=I），
-/// R 上三角。Q 形状 m×min(m,n)，R 形状 min(m,n)×n。
+/// QR 分解 → `{"Q":[[..]], "R":[[..]]}`，满足 A = Q·R。
 pub fn qr(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
-    require_finite(matrix.iter().copied())?;
-    let decomp = QR::new(matrix);
-    let q = decomp.q();
-    let r = decomp.r();
+    let (q, r) = crate::math::numerical::qr(&matrix)?;
     Ok(EvalResult::Json(json!({
         "Q": dmatrix_to_json(&q),
         "R": dmatrix_to_json(&r),
     })))
 }
 
-/// T005: 实对称矩阵特征分解 → `{"values":[..], "vectors":[[..]]}`（特征值升序，vectors 列对应）。
-///
-/// 仅支持实对称矩阵（nalgebra `SymmetricEigen`）。非方阵或非对称返回 DomainError——
-/// `SymmetricEigen::new` 内部 `try_new().unwrap()` 对收敛失败会 panic 且**不校验对称性**，
-/// 必须调用前显式校验（规则 12：失败显性化，禁止用户输入触发 panic 或默默返回错误结果）。
-/// `eigenvalues` 原始未排序，本函数按升序重排（连同 `eigenvectors` 对应列）。
+/// 实对称矩阵特征分解 → `{"values":[..], "vectors":[[..]]}`（特征值升序）。
 pub fn eig(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
-    require_finite(matrix.iter().copied())?;
-    if !matrix.is_square() {
-        return Err(CalcError::domain(format!(
-            "eig() requires a square matrix, got {}x{}",
-            matrix.nrows(),
-            matrix.ncols()
-        ))
-        .with_i18n(
-            "msg.numerical.eig_requires_square",
-            vec![
-                ("rows".to_string(), matrix.nrows().to_string()),
-                ("cols".to_string(), matrix.ncols().to_string()),
-            ],
-        ));
-    }
-    const SYMMETRY_TOL: f64 = 1e-10; // 相对容差系数（避免大数值对称矩阵被绝对容差误判）
-    let n = matrix.nrows();
-    for i in 0..n {
-        for j in (i + 1)..n {
-            let scale = matrix[(i, j)].abs().max(matrix[(j, i)].abs()).max(1.0);
-            if (matrix[(i, j)] - matrix[(j, i)]).abs() > SYMMETRY_TOL * scale {
-                return Err(CalcError::domain(
-                    "eig() requires a real symmetric matrix".to_string(),
-                )
-                .with_i18n("msg.numerical.eig_requires_symmetric", vec![]));
-            }
-        }
-    }
-    let decomp = SymmetricEigen::new(matrix);
-    // eigenvalues 未排序 → 按升序重排（连带 eigenvectors 列）
-    let mut indexed: Vec<(usize, f64)> = decomp.eigenvalues.iter().copied().enumerate().collect();
-    indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-    let values: Vec<f64> = indexed.iter().map(|&(_, v)| v).collect();
-    let mut sorted_vecs = DMatrix::<f64>::zeros(n, n);
-    for (col, &(src, _)) in indexed.iter().enumerate() {
-        for row in 0..n {
-            sorted_vecs[(row, col)] = decomp.eigenvectors[(row, src)];
-        }
-    }
+    let (values, vectors) = crate::math::numerical::eig(&matrix)?;
     Ok(EvalResult::Json(json!({
         "values": values,
-        "vectors": dmatrix_to_json(&sorted_vecs),
+        "vectors": dmatrix_to_json(&vectors),
     })))
 }
 
-/// T006: 奇异值分解 → `{"U":[[..]], "S":[..], "Vt":[[..]]}`，满足 A = U·diag(S)·Vt（S 降序）。
-///
-/// `SVD::new(m, true, true)` 内部已 `sort_by_singular_values` → 字段降序；`compute_u/v=true`
-/// 保证 `u`/`v_t` 为 `Some`（nalgebra 不变式，`expect` 文档化而非吞错）。
+/// 奇异值分解 → `{"U":[[..]], "S":[..], "Vt":[[..]]}`（S 降序）。
 pub fn svd(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
-    require_finite(matrix.iter().copied())?;
-    let decomp = SVD::new(matrix, true, true);
-    let u = decomp.u.expect("compute_u=true guarantees U");
-    let vt = decomp.v_t.expect("compute_v=true guarantees Vt");
-    let s: Vec<f64> = decomp.singular_values.iter().copied().collect();
+    let (u, s, vt) = crate::math::numerical::svd(&matrix)?;
     Ok(EvalResult::Json(json!({
         "U": dmatrix_to_json(&u),
         "S": s,
@@ -141,52 +49,13 @@ pub fn svd(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
     })))
 }
 
-/// T007: 解线性方程组 A·x = b → `Vector([..])`（nalgebra LU solve）。
-///
-/// A 须方阵且与 b 行数匹配，否则 DomainError；A 奇异（`LU::solve` 返回 `None`）→ DomainError
-/// （规则 12：失败显性化，禁止静默返回伪解）。
+/// 解线性方程组 A·x = b → `Vector([..])`。
 pub fn solve(matrix: DMatrix<f64>, b: DVector<f64>) -> Result<EvalResult, CalcError> {
-    require_finite(matrix.iter().copied())?;
-    require_finite(b.iter().copied())?;
-    if !matrix.is_square() {
-        return Err(CalcError::domain(format!(
-            "solve() requires a square coefficient matrix, got {}x{}",
-            matrix.nrows(),
-            matrix.ncols()
-        ))
-        .with_i18n(
-            "msg.numerical.solve_requires_square",
-            vec![
-                ("rows".to_string(), matrix.nrows().to_string()),
-                ("cols".to_string(), matrix.ncols().to_string()),
-            ],
-        ));
-    }
-    if b.len() != matrix.nrows() {
-        return Err(CalcError::domain(format!(
-            "solve() dimension mismatch: A is {}x{} but b has {} entries",
-            matrix.nrows(),
-            matrix.ncols(),
-            b.len()
-        ))
-        .with_i18n(
-            "msg.numerical.solve_dim_mismatch",
-            vec![
-                ("rows".to_string(), matrix.nrows().to_string()),
-                ("cols".to_string(), matrix.ncols().to_string()),
-                ("len".to_string(), b.len().to_string()),
-            ],
-        ));
-    }
-    let lu = LU::new(matrix);
-    let x = lu.solve(&b).ok_or_else(|| {
-        CalcError::domain("solve(): coefficient matrix is singular".to_string())
-            .with_i18n("msg.numerical.solve_singular", vec![])
-    })?;
+    let x = crate::math::numerical::solve(&matrix, &b)?;
     Ok(EvalResult::Vector(x.iter().copied().collect()))
 }
 
-/// DMatrix → JSON 二维数组（行优先）。复用 matrix.rs evaluate 的 rows 收集模式（规则 8）。
+/// DMatrix → JSON 二维数组（行优先）。
 fn dmatrix_to_json(m: &DMatrix<f64>) -> Value {
     let rows: Vec<Vec<f64>> = (0..m.nrows())
         .map(|i| (0..m.ncols()).map(|j| m[(i, j)]).collect())
@@ -194,23 +63,11 @@ fn dmatrix_to_json(m: &DMatrix<f64>) -> Value {
     json!(rows)
 }
 
-/// 校验元素全部有限（非 NaN/Inf）。
-///
-/// NaN 会绕过 eig 对称校验（`(NaN-NaN).abs() > tol` 恒 false）并可能触发 nalgebra 分解内部
-/// `unwrap()` panic；Inf 污染 LU/SVD 迭代产生伪解。须在每函数入口拦截（规则 12）。
-fn require_finite(values: impl IntoIterator<Item = f64>) -> Result<(), CalcError> {
-    if values.into_iter().all(|x| x.is_finite()) {
-        Ok(())
-    } else {
-        Err(CalcError::nan_or_inf())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::ErrorKind;
-    use nalgebra::{SymmetricEigen, QR, SVD};
+    use nalgebra::{SymmetricEigen, LU, QR, SVD};
 
     /// 测试辅助：JSON 二维数组 → DMatrix。
     fn matrix_from_json(v: &Value) -> DMatrix<f64> {
