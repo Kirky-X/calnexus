@@ -37,7 +37,7 @@ server = ["http", "mcp"]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
-oxcache = { version = "0.3", features = ["core"], default-features = false }
+oxcache = { version = "0.4", features = ["core"], default-features = false }
 # 错误派生（仅 std，禁用默认特性）
 thiserror = { version = "2.0", default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
@@ -89,10 +89,15 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 # http-body-util: 读取 HTTP response body（集成测试用）
 http-body-util = { version = "0.1", default-features = false }
 
+# 本地 patch：使用 base/ 下自研库最新版本
+[patch.crates-io]
+oxcache = { path = "../base/oxcache" }
+sdforge = { path = "../base/sdforge" }
+
 [lints.rust]
-# check-cfg: sdforge 0.4.2 #[forge] 宏总会 emit `#[cfg(feature="openapi")]` gate，
-# 但 CalNexus 不启用 openapi feature。声明该值为合法 cfg 以消除 unexpected_cfgs warning。
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("openapi"))'] }
+# check-cfg: sdforge #[forge] 宏总会 emit `#[cfg(feature="openapi")]` / `#[cfg(feature="observability")]` gate，
+# 但 CalNexus 不启用这些 feature。声明这些值为合法 cfg 以消除 unexpected_cfgs warning。
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("openapi"))', 'cfg(feature, values("observability"))'] }
 
 [package.metadata.tarpaulin]
 fail-under = 95
