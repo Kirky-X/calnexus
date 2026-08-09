@@ -78,7 +78,6 @@ impl DomainRouter {
     /// 注册后按 `priority()` 降序稳定排序（同优先级保持注册顺序）。
     /// 同时聚合该域申报的非确定性函数名到内部 HashSet（R-ncb-002）。
     pub fn register(&mut self, domain: Box<dyn CalculationDomain>) {
-        // MEDIUM #101 修复：检查是否已存在同名域，避免重复注册
         let name = domain.domain_name().to_string();
         if self.domains.iter().any(|d| d.domain_name() == name) {
             return;

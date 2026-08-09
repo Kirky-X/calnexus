@@ -54,7 +54,7 @@ pub fn get_rate(code: &str, table: &RateTable) -> Result<f64, CalcError> {
 }
 
 /// 构造“未知币种”错误，消息含支持币种数量。
-/// MEDIUM #35 修复：rates.len() + 1 以包含 base 币种本身。
+/// rates.len() + 1 以包含 base 币种本身。
 pub fn unknown_currency_error(code: &str, table: &RateTable) -> CalcError {
     CalcError::domain(format!(
         "unknown currency: {}, {} currencies supported (base: {})",

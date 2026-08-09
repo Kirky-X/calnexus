@@ -81,7 +81,7 @@ pub fn count(values: &[f64]) -> f64 {
 // ===== 特殊函数（原 stats_special.rs）=====
 
 /// 计算 ln(Γ(z))，z > 0。Lanczos 近似（g=7, 9 系数）。
-/// MEDIUM #51 修复：z <= 0 时返回 f64::NAN 而非产生误导性结果。
+/// z <= 0 时返回 f64::NAN 而非产生误导性结果。
 pub fn ln_gamma(z: f64) -> f64 {
     if z <= 0.0 {
         return f64::NAN;
@@ -414,7 +414,7 @@ pub fn binom_cdf(k: f64, n: f64, p: f64) -> f64 {
 
 /// 单样本 t 检验（双尾）。返回 {"t", "df", "p", "mean"}。
 pub fn t_test_one(data: &[f64], mu: f64) -> HashMap<String, f64> {
-    // HIGH #49 修复：n <= 1 时方差除以零，返回 NaN 结果
+    // n <= 1 时方差除以零，返回 NaN 结果
     if data.len() <= 1 {
         let mut result = HashMap::new();
         result.insert("t".into(), f64::NAN);
@@ -440,7 +440,7 @@ pub fn t_test_one(data: &[f64], mu: f64) -> HashMap<String, f64> {
 
 /// 双样本 Welch t 检验（双尾）。返回 {"t", "df", "p", "mean1", "mean2"}。
 pub fn t_test_two(a: &[f64], b: &[f64]) -> HashMap<String, f64> {
-    // HIGH #50 修复：n <= 1 时方差除以零
+    // n <= 1 时方差除以零
     if a.len() <= 1 || b.len() <= 1 {
         let mut result = HashMap::new();
         result.insert("t".into(), f64::NAN);

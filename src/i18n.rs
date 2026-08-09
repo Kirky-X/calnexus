@@ -102,7 +102,7 @@ impl I18n {
         if args.is_empty() {
             return template.to_string();
         }
-        // HIGH #12 修复：单次扫描替换，避免交叉占位符污染
+        // 单次扫描替换，避免交叉占位符污染
         // 旧实现顺序替换，若 args 值含其他占位符模式（如 {b}），会被后续迭代二次替换
         let mut result = String::with_capacity(template.len());
         let mut remaining = template;

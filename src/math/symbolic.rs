@@ -322,7 +322,7 @@ fn diff_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> SymbolicExpr {
             Box::new(diff(f, var)),
         )
     } else {
-        // MEDIUM #54 修复：当 f 为零常量时，g*f'/f 会产生除零，提前检测
+        // 当 f 为零常量时，g*f'/f 会产生除零，提前检测
         if let SymbolicExpr::Const(0.0) = f {
             return SymbolicExpr::Const(f64::NAN);
         }

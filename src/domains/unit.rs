@@ -175,7 +175,6 @@ impl UnitDomain {
             "convert" => self.eval_convert(args, ctx),
             "mod" => self.eval_mod(args, ctx),
             "abs" => self.eval_abs(args, ctx),
-            // LOW #95 修复：unreachable!() 改为安全错误返回
             _ => Err(CalcError::eval(format!("unknown unit function: {}", name)).with_i18n(
                 "msg.unknown_function",
                 vec![("name".to_string(), name.to_string())],

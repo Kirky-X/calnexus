@@ -190,7 +190,6 @@ fn eval_function(
         "fx_rate" => eval_fx_rate(args, ctx, provider),
         "mod" => eval_mod(args, ctx, provider),
         "abs" => eval_abs(args, ctx, provider),
-        // MEDIUM #72 修复：unreachable!() 改为安全错误返回
         _ => Err(CalcError::eval(format!("unknown fx function: {}", name)).with_i18n(
             "msg.unknown_function",
             vec![("name".to_string(), name.to_string())],

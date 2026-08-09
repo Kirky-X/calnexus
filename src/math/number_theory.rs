@@ -359,7 +359,7 @@ fn mod_pow_bigint(base: &BigInt, exp: &BigInt, m: &BigInt) -> BigInt {
         return BigInt::zero();
     }
     let mut result = BigInt::one();
-    // HIGH #36 修复：归一化 base 为非负值，防止负数模幂结果错误
+    // 归一化 base 为非负值，防止负数模幂结果错误
     let mut base = ((base % m) + m) % m;
     let mut exp = exp.clone();
     while exp.is_positive() {
@@ -411,7 +411,7 @@ fn euler_phi_impl(n: &BigInt) -> BigInt {
             }
             result -= &result / &p;
         }
-        // MEDIUM #18 修复：处理 2 后只检查奇数，减少一半迭代
+        // 处理 2 后只检查奇数，减少一半迭代
         if p == BigInt::from(2) {
             p = BigInt::from(3);
         } else {

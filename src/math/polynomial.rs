@@ -40,7 +40,7 @@ pub fn mul(a: &[f64], b: &[f64]) -> Vec<f64> {
 }
 
 /// 多项式长除法，返回 `(quotient, remainder)`。
-/// HIGH #38 修复：检查零多项式除数，返回 Inf/NaN 而非静默错误结果
+/// 检查零多项式除数，返回 Inf/NaN 而非静默错误结果
 pub fn div(a: &[f64], b: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let a = trim(a);
     let b = trim(b);
@@ -324,7 +324,7 @@ fn solve_quartic(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<(f64, f64)> {
             .map(|(re, _)| *re)
         {
             Some(v) => v,
-            // HIGH #39 修复：将 .expect() 转为空结果返回，避免 panic
+            // 将 .expect() 转为空结果返回，避免 panic
             None => return Vec::new(),
         };
 

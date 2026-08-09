@@ -285,7 +285,7 @@ fn test_precision_flag_with_integer_result() {
 
 #[test]
 fn test_precision_flag_zero_decimals() {
-    // MEDIUM #46 修复：--precision 0 "1/2" → "1"（四舍五入 0.5 → 1）
+    // --precision 0 "1/2" → "1"（四舍五入 0.5 → 1）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--precision")
         .arg("0")
@@ -452,7 +452,7 @@ fn test_bigrational_output_fraction_form() {
     // 无 --precision 时 precision(0, 1/3) 应当走 precision 域
     // 但 precision(N, expr) 中 N 必须为正整数，N=0 会报错；
     // 改用 precision(5, 2/3) 验证非整数 BigRational 输出
-    // MEDIUM #46 修复：四舍五入 0.666666... → 0.66667
+    // 四舍五入 0.666666... → 0.66667
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("precision(5, 2/3)")
         .assert()

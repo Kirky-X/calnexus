@@ -257,7 +257,7 @@ fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
         let mut input = String::new();
         io::stdin().read_to_string(&mut input)?;
         for (i, line) in input.lines().enumerate() {
-            // MEDIUM #5 修复：剥离 UTF-8 BOM（仅首行）
+            // 剥离 UTF-8 BOM（仅首行）
             let line = if i == 0 {
                 line.strip_prefix('\u{FEFF}').unwrap_or(line)
             } else {
@@ -270,7 +270,7 @@ fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
         let reader = io::BufReader::new(file);
         for (i, line) in reader.lines().enumerate() {
             let line = line?;
-            // MEDIUM #5 修复：剥离 UTF-8 BOM（仅首行）
+            // 剥离 UTF-8 BOM（仅首行）
             let line = if i == 0 {
                 line.strip_prefix('\u{FEFF}').unwrap_or(&line).to_string()
             } else {

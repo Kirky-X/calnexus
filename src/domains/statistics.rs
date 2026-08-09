@@ -178,7 +178,6 @@ impl StatisticsDomain {
             return Ok(EvalResult::Scalar(v));
         }
 
-        // HIGH #83 修复：将 unreachable! 转为错误返回
         Err(CalcError::domain(format!("unhandled statistics function: {}", name)))
     }
 
@@ -193,7 +192,6 @@ impl StatisticsDomain {
             "max" => math_stats::max(values),
             "sum" => math_stats::sum(values),
             "count" => math_stats::count(values),
-            // HIGH #83 修复：将 unreachable! 转为错误返回
             _ => return Err(CalcError::domain(format!("unknown basic stat function: {}", name))),
         })
     }
@@ -247,7 +245,6 @@ impl StatisticsDomain {
                     return Err(CalcError::domain("t_test_one requires non-empty data".to_string()));
                 }
                 let map = math_stats::t_test_one(&data, mu);
-                // HIGH #88 修复：将 .unwrap() 转为 .map_err()? 防止 panic
                 EvalResult::Json(serde_json::to_value(&map).map_err(|e| CalcError::domain(format!("failed to serialize t_test_one result: {e}")))?)
             }
             "t_test_two" => {
@@ -258,7 +255,6 @@ impl StatisticsDomain {
                     return Err(CalcError::domain("t_test_two requires non-empty data".to_string()));
                 }
                 let map = math_stats::t_test_two(&a, &b);
-                // HIGH #88 修复
                 EvalResult::Json(serde_json::to_value(&map).map_err(|e| CalcError::domain(format!("failed to serialize t_test_two result: {e}")))?)
             }
             "chi2_test" => {
@@ -275,7 +271,6 @@ impl StatisticsDomain {
                     )));
                 }
                 let map = math_stats::chi2_test(&observed, &expected);
-                // HIGH #88 修复
                 EvalResult::Json(serde_json::to_value(&map).map_err(|e| CalcError::domain(format!("failed to serialize chi2_test result: {e}")))?)
             }
             _ => return Ok(None),
@@ -384,7 +379,6 @@ fn contains_statistics_function(ast: &AstNode) -> bool {
             contains_statistics_function(l) || contains_statistics_function(r)
         }
         AstNode::UnaryOp(_, e) => contains_statistics_function(e),
-        // MEDIUM #85/#86 修复：移除 Matrix 路由，因为 eval_node 不支持 Matrix
         AstNode::Matrix(_) => false,
         AstNode::List(elements) => elements.iter().any(contains_statistics_function),
         AstNode::Number(_)
@@ -864,7 +858,7 @@ mod tests {
 
     #[test]
     fn test_contains_statistics_matrix() {
-        // MEDIUM #85/#86 修复：Matrix 不再路由到 statistics 域（eval_node 不支持 Matrix）
+        // Matrix 不支持，eval_node 会拒绝
         let ast = AstNode::Matrix(vec![vec![AstNode::FunctionCall(
             "sum".to_string(),
             vec![AstNode::List(vec![AstNode::Number(1.0)])],

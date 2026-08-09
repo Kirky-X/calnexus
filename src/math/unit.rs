@@ -23,7 +23,7 @@ const TEMPERATURE_UNIT_NAMES: &[&str] = &["C", "F", "K", "R"];
 /// - 未知单位（含 Levenshtein ≤2 的相近建议）
 /// - 量纲不匹配（消息含双方量纲名）
 pub fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError> {
-    // MEDIUM #64 修复：拒绝 NaN/Inf 输入，防止静默传播
+    // 拒绝 NaN/Inf 输入，防止静默传播
     if !value.is_finite() {
         return Err(CalcError::domain(format!(
             "convert_value requires finite value, got {}",

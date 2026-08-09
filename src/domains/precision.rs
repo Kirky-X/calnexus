@@ -865,7 +865,7 @@ mod tests {
     fn test_format_decimal_precision_zero() {
         let r = BigRational::new(BigInt::from(7), BigInt::from(2)); // 3.5
         let formatted = format_bigrational(&r, Some(0));
-        // MEDIUM #46 修复：四舍五入 3.5 → 4
+        // 四舍五入 3.5 → 4
         assert_eq!(formatted, "4");
     }
 

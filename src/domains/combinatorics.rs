@@ -124,7 +124,6 @@ impl CombinatoricsDomain {
                         name, v
                     )));
                 }
-                // HIGH #69 修复：添加与 Number 分支一致的边界检查
                 if v > i64::MAX as f64 || v < i64::MIN as f64 {
                     return Err(CalcError::overflow());
                 }
@@ -221,7 +220,6 @@ impl CombinatoricsDomain {
             "C" => self.eval_combination(args, ctx),
             "catalan" => self.eval_catalan(args, ctx),
             "stirling" => self.eval_stirling(args, ctx),
-            // LOW #54 修复：unreachable!() 改为安全错误返回
             _ => Err(CalcError::eval(format!("unknown combinatorics function: {}", name)).with_i18n(
                 "msg.unknown_function",
                 vec![("name".to_string(), name.to_string())],

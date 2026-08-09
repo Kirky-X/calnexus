@@ -400,7 +400,7 @@ impl Span {
     pub fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
-    /// LOW #106 修复：使用 saturating_add 防止 usize::MAX 溢出。
+    /// 使用 saturating_add 防止 usize::MAX 溢出。
     pub fn point(pos: usize) -> Self {
         Self {
             start: pos,
