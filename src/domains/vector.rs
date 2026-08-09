@@ -18,6 +18,8 @@ use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use nalgebra::DVector;
 
+use crate::math::vector as math_vec;
+
 /// 向量函数白名单。
 const VECTOR_FUNCTIONS: &[&str] = &[
     "dot",
@@ -256,24 +258,10 @@ impl VectorDomain {
             (true, true, BinaryOp::Add) | (true, true, BinaryOp::Sub) => {
                 let a = self.list_to_vector(l, ctx)?;
                 let b = self.list_to_vector(r, ctx)?;
-                if a.len() != b.len() {
-                    return Err(CalcError::domain(format!(
-                        "vector dimension mismatch: {} vs {}",
-                        a.len(),
-                        b.len()
-                    ))
-                    .with_i18n(
-                        "msg.vector.dim_mismatch",
-                        vec![
-                            ("a".to_string(), a.len().to_string()),
-                            ("b".to_string(), b.len().to_string()),
-                        ],
-                    ));
-                }
-                let result: Vec<f64> = match op {
-                    BinaryOp::Add => a.iter().zip(b.iter()).map(|(x, y)| x + y).collect(),
-                    BinaryOp::Sub => a.iter().zip(b.iter()).map(|(x, y)| x - y).collect(),
-                    _ => unreachable!(),
+                let result = if op == BinaryOp::Add {
+                    math_vec::vector_add(&a, &b)?
+                } else {
+                    math_vec::vector_sub(&a, &b)?
                 };
                 Ok(EvalResult::Vector(result))
             }
@@ -283,17 +271,8 @@ impl VectorDomain {
                 let b = self.list_to_vector(r, ctx)?;
                 if a.len() != b.len() {
                     return Err(CalcError::domain(format!(
-                        "Hadamard product dimension mismatch: {} vs {}",
-                        a.len(),
-                        b.len()
-                    ))
-                    .with_i18n(
-                        "msg.vector.hadamard_dim_mismatch",
-                        vec![
-                            ("a".to_string(), a.len().to_string()),
-                            ("b".to_string(), b.len().to_string()),
-                        ],
-                    ));
+                        "Hadamard product dimension mismatch: {} vs {}", a.len(), b.len()
+                    )));
                 }
                 let result: Vec<f64> = a.iter().zip(b.iter()).map(|(x, y)| x * y).collect();
                 Ok(EvalResult::Vector(result))
@@ -302,14 +281,12 @@ impl VectorDomain {
             (false, true, BinaryOp::Mul) => {
                 let scalar = self.eval_scalar(l, ctx)?;
                 let v = self.list_to_vector(r, ctx)?;
-                let result: Vec<f64> = v.iter().map(|x| scalar * x).collect();
-                Ok(EvalResult::Vector(result))
+                Ok(EvalResult::Vector(math_vec::scalar_mul_vec(&v, scalar)))
             }
             (true, false, BinaryOp::Mul) => {
                 let scalar = self.eval_scalar(r, ctx)?;
                 let v = self.list_to_vector(l, ctx)?;
-                let result: Vec<f64> = v.iter().map(|x| scalar * x).collect();
-                Ok(EvalResult::Vector(result))
+                Ok(EvalResult::Vector(math_vec::scalar_mul_vec(&v, scalar)))
             }
             _ => Err(
                 CalcError::domain(format!("unsupported vector binary operation: {:?}", op))
@@ -356,404 +333,134 @@ impl VectorDomain {
         }
     }
 
-    /// dot(a, b)：向量点积，返回标量。
+    /// dot(a, b)：委托 math_vec::dot。
     fn eval_dot(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "dot() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.dot_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("dot() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        if a.len() != b.len() {
-            return Err(CalcError::domain(format!(
-                "dot(): dimension mismatch {} vs {}",
-                a.len(),
-                b.len()
-            ))
-            .with_i18n(
-                "msg.vector.dot_dim_mismatch",
-                vec![
-                    ("a".to_string(), a.len().to_string()),
-                    ("b".to_string(), b.len().to_string()),
-                ],
-            ));
-        }
-        let dv_a = DVector::from_vec(a);
-        let dv_b = DVector::from_vec(b);
-        Ok(EvalResult::Scalar(dv_a.dot(&dv_b)))
+        Ok(EvalResult::Scalar(math_vec::dot(&a, &b)?))
     }
 
-    /// cross(a, b)：三维向量叉积，返回向量。
+    /// cross(a, b)：委托 math_vec::cross。
     fn eval_cross(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "cross() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.cross_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("cross() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        if a.len() != 3 || b.len() != 3 {
-            return Err(
-                CalcError::domain("cross() requires 3-dimensional vectors".to_string())
-                    .with_i18n("msg.vector.cross_3d_only", vec![]),
-            );
-        }
-        let cross = vec![
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ];
-        Ok(EvalResult::Vector(cross))
+        Ok(EvalResult::Vector(math_vec::cross(&a, &b)?))
     }
 
-    /// norm(v)：向量模长（L2 范数），返回标量。
+    /// norm(v)：委托 math_vec::magnitude。
     fn eval_norm(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!(
-                "norm() requires exactly 1 argument, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.norm_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("norm() requires exactly 1 argument, got {}", args.len())));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
-        let dv = DVector::from_vec(v);
-        Ok(EvalResult::Scalar(dv.norm()))
+        Ok(EvalResult::Scalar(math_vec::magnitude(&v)))
     }
 
-    /// angle(a, b)：两向量夹角（弧度），返回标量。
+    /// angle(a, b)：委托 math_vec::angle。
     fn eval_angle(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "angle() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.angle_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("angle() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        if a.len() != b.len() {
-            return Err(CalcError::domain(format!(
-                "angle(): dimension mismatch {} vs {}",
-                a.len(),
-                b.len()
-            ))
-            .with_i18n(
-                "msg.vector.angle_dim_mismatch",
-                vec![
-                    ("a".to_string(), a.len().to_string()),
-                    ("b".to_string(), b.len().to_string()),
-                ],
-            ));
-        }
-        let dv_a = DVector::from_vec(a);
-        let dv_b = DVector::from_vec(b);
-        let norm_a = dv_a.norm();
-        let norm_b = dv_b.norm();
-        if norm_a == 0.0 || norm_b == 0.0 {
-            return Err(
-                CalcError::domain("angle(): zero vector has no angle".to_string())
-                    .with_i18n("msg.vector.angle_zero_vector", vec![]),
-            );
-        }
-        let cos_theta = dv_a.dot(&dv_b) / (norm_a * norm_b);
-        let cos_clamped = cos_theta.clamp(-1.0, 1.0);
-        Ok(EvalResult::Scalar(cos_clamped.acos()))
+        Ok(EvalResult::Scalar(math_vec::angle(&a, &b)?))
     }
 
-    /// normalize(v)：向量归一化为单位向量，返回向量。
+    /// normalize(v)：委托 math_vec::normalize。
     fn eval_normalize(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!(
-                "normalize() requires exactly 1 argument, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.normalize_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("normalize() requires exactly 1 argument, got {}", args.len())));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
-        let dv = DVector::from_vec(v);
-        let norm = dv.norm();
-        if norm == 0.0 {
-            return Err(
-                CalcError::domain("normalize(): cannot normalize zero vector".to_string())
-                    .with_i18n("msg.vector.normalize_zero_vector", vec![]),
-            );
-        }
-        let normalized = &dv / norm;
-        Ok(EvalResult::Vector(normalized.iter().cloned().collect()))
+        Ok(EvalResult::Vector(math_vec::normalize(&v)?))
     }
 
-    /// scalar_triple(a, b, c)：三维向量混合积 a·(b×c)，返回标量。
+    /// scalar_triple(a, b, c)：委托 math_vec::scalar_triple。
     fn eval_scalar_triple(
         &self,
         args: &[AstNode],
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if args.len() != 3 {
-            return Err(CalcError::domain(format!(
-                "scalar_triple() requires exactly 3 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.scalar_triple_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("scalar_triple() requires exactly 3 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
         let c = self.list_to_vector(&args[2], ctx)?;
-        if a.len() != 3 || b.len() != 3 || c.len() != 3 {
-            return Err(CalcError::domain(
-                "scalar_triple() requires 3-dimensional vectors".to_string(),
-            )
-            .with_i18n("msg.vector.scalar_triple_3d_only", vec![]));
-        }
-        let cross = [
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ];
-        let result = cross[0] * c[0] + cross[1] * c[1] + cross[2] * c[2];
-        Ok(EvalResult::Scalar(result))
+        Ok(EvalResult::Scalar(math_vec::scalar_triple(&a, &b, &c)?))
     }
 
-    /// cosine_similarity(a, b)：余弦相似度 = dot(a,b) / (norm(a) * norm(b))，返回标量 [-1, 1]。
+    /// cosine_similarity(a, b)：委托 math_vec::cosine_similarity。
     fn eval_cosine_similarity(
         &self,
         args: &[AstNode],
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "cosine_similarity() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.cosine_similarity_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("cosine_similarity() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        if a.len() != b.len() {
-            return Err(CalcError::domain(format!(
-                "cosine_similarity(): dimension mismatch {} vs {}",
-                a.len(),
-                b.len()
-            ))
-            .with_i18n(
-                "msg.vector.cosine_similarity_dim_mismatch",
-                vec![
-                    ("a".to_string(), a.len().to_string()),
-                    ("b".to_string(), b.len().to_string()),
-                ],
-            ));
-        }
-        let dv_a = DVector::from_vec(a);
-        let dv_b = DVector::from_vec(b);
-        let norm_a = dv_a.norm();
-        let norm_b = dv_b.norm();
-        if norm_a == 0.0 || norm_b == 0.0 {
-            return Err(CalcError::domain(
-                "cosine_similarity(): zero vector has no defined similarity".to_string(),
-            )
-            .with_i18n("msg.vector.cosine_similarity_zero_vector", vec![]));
-        }
-        let cos = dv_a.dot(&dv_b) / (norm_a * norm_b);
-        Ok(EvalResult::Scalar(cos.clamp(-1.0, 1.0)))
+        Ok(EvalResult::Scalar(math_vec::cosine_similarity(&a, &b)?))
     }
 
-    /// project(a, b)：投影 = (dot(a,b) / dot(b,b)) * b，返回向量。
+    /// project(a, b)：委托 math_vec::project。
     fn eval_project(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "project() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.project_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("project() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        if a.len() != b.len() {
-            return Err(CalcError::domain(format!(
-                "project(): dimension mismatch {} vs {}",
-                a.len(),
-                b.len()
-            ))
-            .with_i18n(
-                "msg.vector.project_dim_mismatch",
-                vec![
-                    ("a".to_string(), a.len().to_string()),
-                    ("b".to_string(), b.len().to_string()),
-                ],
-            ));
-        }
-        let dv_a = DVector::from_vec(a);
-        let dv_b = DVector::from_vec(b);
-        let b_dot_b = dv_b.dot(&dv_b);
-        if b_dot_b == 0.0 {
-            return Err(CalcError::domain(
-                "project(): cannot project onto zero vector".to_string(),
-            )
-            .with_i18n("msg.vector.project_zero_vector", vec![]));
-        }
-        let scalar = dv_a.dot(&dv_b) / b_dot_b;
-        let proj = &dv_b * scalar;
-        Ok(EvalResult::Vector(proj.iter().cloned().collect()))
+        Ok(EvalResult::Vector(math_vec::project(&a, &b)?))
     }
 
-    /// reflect(v, n)：反射 = v - 2 * (dot(v,n) / dot(n,n)) * n，返回向量。
+    /// reflect(v, n)：委托 math_vec::reflect。
     fn eval_reflect(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "reflect() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.reflect_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("reflect() requires exactly 2 arguments, got {}", args.len())));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
         let n = self.list_to_vector(&args[1], ctx)?;
-        if v.len() != n.len() {
-            return Err(CalcError::domain(format!(
-                "reflect(): dimension mismatch {} vs {}",
-                v.len(),
-                n.len()
-            ))
-            .with_i18n(
-                "msg.vector.reflect_dim_mismatch",
-                vec![
-                    ("a".to_string(), v.len().to_string()),
-                    ("b".to_string(), n.len().to_string()),
-                ],
-            ));
-        }
-        let dv_v = DVector::from_vec(v);
-        let dv_n = DVector::from_vec(n);
-        let n_dot_n = dv_n.dot(&dv_n);
-        if n_dot_n == 0.0 {
-            return Err(CalcError::domain(
-                "reflect(): cannot reflect across zero normal vector".to_string(),
-            )
-            .with_i18n("msg.vector.reflect_zero_vector", vec![]));
-        }
-        let scalar = 2.0 * dv_v.dot(&dv_n) / n_dot_n;
-        let reflected = &dv_v - &dv_n * scalar;
-        Ok(EvalResult::Vector(reflected.iter().cloned().collect()))
+        Ok(EvalResult::Vector(math_vec::reflect(&v, &n)?))
     }
 
-    /// euclidean(a, b)：欧几里得距离 = sqrt(sum((a[i]-b[i])^2))，返回标量。
+    /// euclidean(a, b)：委托 math_vec::euclidean。
     fn eval_euclidean(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "euclidean() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.euclidean_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("euclidean() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        if a.len() != b.len() {
-            return Err(CalcError::domain(format!(
-                "euclidean(): dimension mismatch {} vs {}",
-                a.len(),
-                b.len()
-            ))
-            .with_i18n(
-                "msg.vector.euclidean_dim_mismatch",
-                vec![
-                    ("a".to_string(), a.len().to_string()),
-                    ("b".to_string(), b.len().to_string()),
-                ],
-            ));
-        }
-        let dv_a = DVector::from_vec(a);
-        let dv_b = DVector::from_vec(b);
-        let diff = &dv_a - &dv_b;
-        Ok(EvalResult::Scalar(diff.norm()))
+        Ok(EvalResult::Scalar(math_vec::euclidean(&a, &b)?))
     }
 
-    /// manhattan(a, b)：曼哈顿距离 = sum(|a[i]-b[i]|)，返回标量。
+    /// manhattan(a, b)：委托 math_vec::manhattan。
     fn eval_manhattan(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "manhattan() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.manhattan_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("manhattan() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        if a.len() != b.len() {
-            return Err(CalcError::domain(format!(
-                "manhattan(): dimension mismatch {} vs {}",
-                a.len(),
-                b.len()
-            ))
-            .with_i18n(
-                "msg.vector.manhattan_dim_mismatch",
-                vec![
-                    ("a".to_string(), a.len().to_string()),
-                    ("b".to_string(), b.len().to_string()),
-                ],
-            ));
-        }
-        let dist: f64 = a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum();
-        Ok(EvalResult::Scalar(dist))
+        Ok(EvalResult::Scalar(math_vec::manhattan(&a, &b)?))
     }
 
-    /// outer(a, b)：外积 = a × b^T，返回 m×n 矩阵（M[i][j] = a[i] * b[j]）。
+    /// outer(a, b)：委托 math_vec::outer。
     fn eval_outer(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!(
-                "outer() requires exactly 2 arguments, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.vector.outer_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            return Err(CalcError::domain(format!("outer() requires exactly 2 arguments, got {}", args.len())));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
-        let matrix: Vec<Vec<f64>> = a
-            .iter()
-            .map(|ai| b.iter().map(|bi| ai * bi).collect())
-            .collect();
-        Ok(EvalResult::Matrix(matrix))
+        Ok(EvalResult::Matrix(math_vec::outer(&a, &b)))
     }
 
-    /// lerp(a, b, t)：线性插值 = a + t * (b - a) = (1-t)*a + t*b。
+    /// lerp(a, b, t)：线性插值，委托 math_vec::lerp_vec / lerp_scalar。
     ///
     /// a/b 可为标量或向量（须同类型同维度），t 为标量。返回与 a/b 同类型。
     fn eval_lerp(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
@@ -761,11 +468,7 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "lerp() requires exactly 3 arguments, got {}",
                 args.len()
-            ))
-            .with_i18n(
-                "msg.vector.lerp_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+            )));
         }
         let t = self.eval_scalar(&args[2], ctx)?;
         let is_a_list = is_list_node(&args[0]);
@@ -774,36 +477,16 @@ impl VectorDomain {
             (true, true) => {
                 let a = self.list_to_vector(&args[0], ctx)?;
                 let b = self.list_to_vector(&args[1], ctx)?;
-                if a.len() != b.len() {
-                    return Err(CalcError::domain(format!(
-                        "lerp(): dimension mismatch {} vs {}",
-                        a.len(),
-                        b.len()
-                    ))
-                    .with_i18n(
-                        "msg.vector.lerp_dim_mismatch",
-                        vec![
-                            ("a".to_string(), a.len().to_string()),
-                            ("b".to_string(), b.len().to_string()),
-                        ],
-                    ));
-                }
-                let result: Vec<f64> = a
-                    .iter()
-                    .zip(b.iter())
-                    .map(|(ai, bi)| ai + t * (bi - ai))
-                    .collect();
-                Ok(EvalResult::Vector(result))
+                Ok(EvalResult::Vector(math_vec::lerp_vec(&a, &b, t)?))
             }
             (false, false) => {
                 let a = self.eval_scalar(&args[0], ctx)?;
                 let b = self.eval_scalar(&args[1], ctx)?;
-                Ok(EvalResult::Scalar(a + t * (b - a)))
+                Ok(EvalResult::Scalar(math_vec::lerp_scalar(a, b, t)))
             }
             _ => Err(CalcError::domain(
                 "lerp(): arguments must be both scalars or both vectors".to_string(),
-            )
-            .with_i18n("msg.vector.lerp_dim_mismatch", vec![])),
+            )),
         }
     }
 

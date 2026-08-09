@@ -13,6 +13,8 @@ use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 use num_complex::Complex64;
 
+use crate::math::complex as math_complex;
+
 /// Complex 计算域。
 ///
 /// priority=30，高于 Scientific（20）与 Arithmetic（10）。
@@ -158,34 +160,21 @@ impl ComplexDomain {
             return Ok(ComplexValue::Scalar(result));
         }
 
-        // 任一为复数 → 复数运算
+        // 任一为复数 → 复数运算（委托 math_complex）
         let ac = a.to_complex();
         let bc = b.to_complex();
         let result = match op {
-            BinaryOp::Add => ac + bc,
-            BinaryOp::Sub => ac - bc,
-            BinaryOp::Mul => ac * bc,
-            BinaryOp::Div => {
-                if bc.norm() == 0.0 {
-                    return Err(CalcError::division_by_zero());
-                }
-                ac / bc
-            }
+            BinaryOp::Add => math_complex::add(ac, bc),
+            BinaryOp::Sub => math_complex::sub(ac, bc),
+            BinaryOp::Mul => math_complex::mul(ac, bc),
+            BinaryOp::Div => math_complex::div(ac, bc)?,
             BinaryOp::Pow => {
-                // M-1 修复：显式处理 0^0=1（与标量分支 line 138-141 一致，与所有域约定一致）
-                // 修复前：直接 ac.powc(bc) 返回 Complex(1.0, 0.0)，类型与标量分支不一致
-                // 修复后：显式返回 Scalar(1.0)，与标量分支保持一致
-                if ac == Complex64::new(0.0, 0.0) && bc == Complex64::new(0.0, 0.0) {
+                // 0^0=1 返回 Scalar（与标量分支约定一致）
+                let zero = Complex64::new(0.0, 0.0);
+                if ac == zero && bc == zero {
                     return Ok(ComplexValue::Scalar(1.0));
                 }
-                let r = ac.powc(bc);
-                // 规则 12：NaN/Inf 必须显性化（M-1 修复）
-                // 修复前：复数 Pow 路径未检查 is_finite，可能返回包含 Inf/NaN 的复数
-                // 修复后：在 eval_binary 中显式检查 is_finite，返回 NaNOrInf 错误
-                if !r.is_finite() {
-                    return Err(CalcError::nan_or_inf());
-                }
-                r
+                math_complex::pow(ac, bc)?
             }
             BinaryOp::Mod => {
                 return Err(
@@ -239,30 +228,23 @@ impl ComplexDomain {
             }
             "conj" => {
                 let c = self.expect_one_arg(name, args, ctx)?;
-                Ok(ComplexValue::Complex(c.conj()))
+                Ok(ComplexValue::Complex(math_complex::conj(c)))
             }
             "arg" => {
                 let c = self.expect_one_arg(name, args, ctx)?;
-                // BUG-D-M-009: arg(0+0i) 未定义（atan2(0,0) 不确定），返回错误而非静默 0.0
-                if c.re == 0.0 && c.im == 0.0 {
-                    return Err(CalcError::domain(
-                        "arg(0+0i) is undefined (atan2(0,0) is indeterminate)".to_string(),
-                    )
-                    .with_i18n("msg.complex.arg_zero_undefined", vec![]));
-                }
-                Ok(ComplexValue::Scalar(c.arg()))
+                Ok(ComplexValue::Scalar(math_complex::arg(c)?))
             }
             "abs" => {
                 let c = self.expect_one_arg(name, args, ctx)?;
-                Ok(ComplexValue::Scalar(c.norm()))
+                Ok(ComplexValue::Scalar(math_complex::norm(c)))
             }
             "exp" => {
                 let c = self.expect_one_arg(name, args, ctx)?;
-                Ok(ComplexValue::Complex(c.exp()))
+                Ok(ComplexValue::Complex(math_complex::exp(c)))
             }
             "ln" => {
                 let c = self.expect_one_arg(name, args, ctx)?;
-                Ok(ComplexValue::Complex(c.ln()))
+                Ok(ComplexValue::Complex(math_complex::ln(c)))
             }
             _ => Err(CalcError::domain(format!(
                 "unsupported function in complex domain: {}",

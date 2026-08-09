@@ -15,6 +15,8 @@ use nalgebra::DMatrix;
 #[cfg(feature = "numerical")]
 use nalgebra::DVector;
 
+use crate::math::matrix as math_matrix;
+
 /// 矩阵函数白名单（eval_function 处理，返回 MatrixValue）。
 /// lu/qr/eig/svd/solve 不在此列——走 `evaluate` 顶层的 numerical 短路（见 contains_matrix）。
 const MATRIX_FUNCTIONS: &[&str] = &["det", "transpose", "inverse", "identity"];
@@ -34,7 +36,7 @@ const MATRIX_NUMERICAL_FUNCTIONS: &[&str] = &[
 ];
 
 /// 矩阵维度上限（防字面量大矩阵 DoS，p4 T008 MEDIUM-1；identity 与 eval_matrix_literal 共用）。
-const MAX_MATRIX_DIM: usize = 1000;
+const MAX_MATRIX_DIM: usize = math_matrix::MAX_MATRIX_DIM;
 
 /// Matrix 计算域。
 ///
@@ -252,7 +254,7 @@ impl MatrixDomain {
         Ok(result)
     }
 
-    /// 矩阵加减：要求两矩阵形状一致，否则维度不匹配错误。
+    /// 矩阵加减：委托 math_matrix::mat_add/mat_sub。
     fn eval_matrix_add_sub(
         &self,
         op: BinaryOp,
@@ -261,82 +263,40 @@ impl MatrixDomain {
     ) -> Result<MatrixValue, CalcError> {
         match (a, b) {
             (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
-                if am.shape() != bm.shape() {
-                    return Err(CalcError::domain(format!(
-                        "matrix dimension mismatch for add/sub: {}x{} vs {}x{}",
-                        am.nrows(),
-                        am.ncols(),
-                        bm.nrows(),
-                        bm.ncols()
-                    ))
-                    .with_i18n(
-                        "msg.matrix.dim_mismatch_addsub",
-                        vec![
-                            ("r1".to_string(), am.nrows().to_string()),
-                            ("c1".to_string(), am.ncols().to_string()),
-                            ("r2".to_string(), bm.nrows().to_string()),
-                            ("c2".to_string(), bm.ncols().to_string()),
-                        ],
-                    ));
-                }
                 let result = if op == BinaryOp::Add {
-                    am + bm
+                    math_matrix::mat_add(&am, &bm)?
                 } else {
-                    am - bm
+                    math_matrix::mat_sub(&am, &bm)?
                 };
                 Ok(MatrixValue::Matrix(result))
             }
             _ => Err(CalcError::domain(
                 "matrix add/sub requires two matrices of the same dimension".to_string(),
-            )
-            .with_i18n("msg.matrix.addsub_same_dim", vec![])),
+            )),
         }
     }
 
-    /// 矩阵乘法：标量×矩阵、矩阵×标量、矩阵×矩阵（需列=行）。
+    /// 矩阵乘法：委托 math_matrix::mat_mul / scalar_mul。
     fn eval_matrix_mul(&self, a: MatrixValue, b: MatrixValue) -> Result<MatrixValue, CalcError> {
         match (a, b) {
-            (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => Ok(MatrixValue::Matrix(&m * s)),
-            (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => Ok(MatrixValue::Matrix(&m * s)),
+            (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => Ok(MatrixValue::Matrix(math_matrix::scalar_mul(&m, s))),
+            (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => Ok(MatrixValue::Matrix(math_matrix::scalar_mul(&m, s))),
             (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
-                if am.ncols() != bm.nrows() {
-                    return Err(CalcError::domain(format!(
-                        "matrix multiplication dimension mismatch: {}x{} * {}x{}",
-                        am.nrows(),
-                        am.ncols(),
-                        bm.nrows(),
-                        bm.ncols()
-                    ))
-                    .with_i18n(
-                        "msg.matrix.mul_dim_mismatch",
-                        vec![
-                            ("r1".to_string(), am.nrows().to_string()),
-                            ("c1".to_string(), am.ncols().to_string()),
-                            ("r2".to_string(), bm.nrows().to_string()),
-                            ("c2".to_string(), bm.ncols().to_string()),
-                        ],
-                    ));
-                }
-                Ok(MatrixValue::Matrix(&am * &bm))
+                Ok(MatrixValue::Matrix(math_matrix::mat_mul(&am, &bm)?))
             }
-            // 标量+标量已在 eval_binary 提前分流，不会到达此处
             (MatrixValue::Scalar(_), MatrixValue::Scalar(_)) => unreachable!(),
         }
     }
 
-    /// 矩阵除法：仅支持 矩阵/标量；标量除零报错。
+    /// 矩阵除法：委托 math_matrix::scalar_div。
     fn eval_matrix_div(&self, a: MatrixValue, b: MatrixValue) -> Result<MatrixValue, CalcError> {
         match (a, b) {
             (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => {
-                if s == 0.0 {
-                    return Err(CalcError::division_by_zero());
-                }
-                Ok(MatrixValue::Matrix(&m / s))
+                Ok(MatrixValue::Matrix(math_matrix::scalar_div(&m, s)?))
             }
             _ => Err(CalcError::domain(
                 "matrix division only supports matrix / scalar".to_string(),
-            )
-            .with_i18n("msg.matrix.division_only_scalar", vec![])),
+            )),
         }
     }
 
@@ -515,45 +475,21 @@ impl MatrixDomain {
         Ok((a, b))
     }
 
-    /// det(m)：方阵行列式。
+    /// det(m)：委托 math_matrix::det。
     fn eval_det(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "det() requires exactly 1 argument, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.matrix.det_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+                "det() requires exactly 1 argument, got {}", args.len()
+            )));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
-            MatrixValue::Matrix(matrix) => {
-                if !matrix.is_square() {
-                    return Err(CalcError::domain(format!(
-                        "det() requires a square matrix, got {}x{}",
-                        matrix.nrows(),
-                        matrix.ncols()
-                    ))
-                    .with_i18n(
-                        "msg.matrix.det_square",
-                        vec![
-                            ("rows".to_string(), matrix.nrows().to_string()),
-                            ("cols".to_string(), matrix.ncols().to_string()),
-                        ],
-                    ));
-                }
-                Ok(MatrixValue::Scalar(matrix.determinant()))
-            }
-            _ => Err(
-                CalcError::domain("det() requires a matrix argument".to_string())
-                    .with_i18n("msg.matrix.det_matrix_arg", vec![]),
-            ),
+            MatrixValue::Matrix(matrix) => Ok(MatrixValue::Scalar(math_matrix::det(&matrix)?)),
+            _ => Err(CalcError::domain("det() requires a matrix argument".to_string())),
         }
     }
 
-    /// transpose(m)：矩阵转置。
+    /// transpose(m)：委托 math_matrix::transpose。
     fn eval_transpose(
         &self,
         args: &[AstNode],
@@ -561,113 +497,48 @@ impl MatrixDomain {
     ) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "transpose() requires exactly 1 argument, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.matrix.transpose_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+                "transpose() requires exactly 1 argument, got {}", args.len()
+            )));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
-            MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(matrix.transpose())),
-            _ => Err(
-                CalcError::domain("transpose() requires a matrix argument".to_string())
-                    .with_i18n("msg.matrix.transpose_matrix_arg", vec![]),
-            ),
+            MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(math_matrix::transpose(&matrix))),
+            _ => Err(CalcError::domain("transpose() requires a matrix argument".to_string())),
         }
     }
 
-    /// inverse(m)：方阵逆矩阵，奇异矩阵报错。
+    /// inverse(m)：委托 math_matrix::inverse。
     fn eval_inverse(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "inverse() requires exactly 1 argument, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.matrix.inverse_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+                "inverse() requires exactly 1 argument, got {}", args.len()
+            )));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
-            MatrixValue::Matrix(matrix) => {
-                if !matrix.is_square() {
-                    return Err(CalcError::domain(format!(
-                        "inverse() requires a square matrix, got {}x{}",
-                        matrix.nrows(),
-                        matrix.ncols()
-                    ))
-                    .with_i18n(
-                        "msg.matrix.inverse_square",
-                        vec![
-                            ("rows".to_string(), matrix.nrows().to_string()),
-                            ("cols".to_string(), matrix.ncols().to_string()),
-                        ],
-                    ));
-                }
-                match matrix.try_inverse() {
-                    Some(inv) => Ok(MatrixValue::Matrix(inv)),
-                    None => Err(CalcError::domain(
-                        "matrix is singular (not invertible)".to_string(),
-                    )
-                    .with_i18n("msg.matrix.singular", vec![])),
-                }
-            }
-            _ => Err(
-                CalcError::domain("inverse() requires a matrix argument".to_string())
-                    .with_i18n("msg.matrix.inverse_matrix_arg", vec![]),
-            ),
+            MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(math_matrix::inverse(&matrix)?)),
+            _ => Err(CalcError::domain("inverse() requires a matrix argument".to_string())),
         }
     }
 
-    /// identity(n)：n×n 单位矩阵，n 须为正整数且 ≤ 1000。
+    /// identity(n)：委托 math_matrix::identity。
     fn eval_identity(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "identity() requires exactly 1 argument, got {}",
-                args.len()
-            ))
-            .with_i18n(
-                "msg.matrix.identity_arg_count",
-                vec![("actual".to_string(), args.len().to_string())],
-            ));
+                "identity() requires exactly 1 argument, got {}", args.len()
+            )));
         }
         let n_val = self.eval_node(&args[0], ctx)?;
         match n_val {
             MatrixValue::Scalar(n) => {
                 if n < 1.0 || n != n.trunc() {
                     return Err(CalcError::domain(format!(
-                        "identity() requires a positive integer, got {}",
-                        n
-                    ))
-                    .with_i18n(
-                        "msg.matrix.identity_positive",
-                        vec![("value".to_string(), n.to_string())],
-                    ));
+                        "identity() requires a positive integer, got {}", n
+                    )));
                 }
-                if n as usize > MAX_MATRIX_DIM {
-                    return Err(CalcError::domain(format!(
-                        "identity() dimension {} exceeds maximum of {}",
-                        n, MAX_MATRIX_DIM
-                    ))
-                    .with_i18n(
-                        "msg.matrix.identity_dim_exceeds",
-                        vec![
-                            ("dim".to_string(), n.to_string()),
-                            ("max".to_string(), MAX_MATRIX_DIM.to_string()),
-                        ],
-                    ));
-                }
-                let n = n as usize;
-                Ok(MatrixValue::Matrix(DMatrix::identity(n, n)))
+                Ok(MatrixValue::Matrix(math_matrix::identity(n as usize)?))
             }
-            _ => Err(
-                CalcError::domain("identity() requires a scalar argument".to_string())
-                    .with_i18n("msg.matrix.identity_scalar", vec![]),
-            ),
+            _ => Err(CalcError::domain("identity() requires a scalar argument".to_string())),
         }
     }
 }

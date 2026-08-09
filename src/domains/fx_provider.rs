@@ -22,6 +22,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::core::CalcError;
+use crate::math::fx::RateTable;
 
 /// Frankfurter API 固定端点（编译期常量，无 SSRF 面）。
 const FRANKFURTER_URL: &str = "https://api.frankfurter.dev/v1/latest?base=EUR";
@@ -37,17 +38,6 @@ const CACHE_DIR_NAME: &str = "calnexus";
 
 /// 缓存文件名。
 const CACHE_FILE_NAME: &str = "fx_rates.json";
-
-/// 汇率表：base 币种 + 抓取日期 + 各币种汇率。
-#[derive(Clone, Debug)]
-pub struct RateTable {
-    /// 基准币种（如 "EUR"）。
-    pub base: String,
-    /// 数据日期（RFC 3339 格式）。
-    pub date: String,
-    /// 各币种对 base 的汇率。
-    pub rates: HashMap<String, f64>,
-}
 
 /// 汇率数据源 trait（可注入 mock 测试）。
 pub(crate) trait RateProvider: Send + Sync {

@@ -10,9 +10,7 @@
 //! 路由至本域。本域内含完整算术求值能力，以处理混合表达式如 `sin(x)+2*3`。
 
 use crate::core::CalculationDomain;
-use crate::core::{
-    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_FACTORIAL_INPUT,
-};
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
 /// 科学函数白名单。
 const SCIENTIFIC_FUNCTIONS: &[&str] = &[
@@ -20,27 +18,7 @@ const SCIENTIFIC_FUNCTIONS: &[&str] = &[
     "cosh", "tanh", "gamma", "erf",
 ];
 
-/// Lanczos 逼近系数（g=7, n=9），用于 gamma 函数。
-const LANCZOS_G: f64 = 7.0;
-const LANCZOS_COEF: [f64; 9] = [
-    0.999_999_999_999_809_9,
-    676.5203681218851,
-    -1259.1392167224028,
-    771.323_428_777_653_1,
-    -176.615_029_162_140_6,
-    12.507343278686905,
-    -0.13857109526572012,
-    9.984_369_578_019_572e-6,
-    1.5056327351493116e-7,
-];
-
-/// Abramowitz & Stegun 7.1.26 逼近系数，用于 erf 函数（最大误差 ~1.5e-7）。
-const ERF_A1: f64 = 0.254829592;
-const ERF_A2: f64 = -0.284496736;
-const ERF_A3: f64 = 1.421413741;
-const ERF_A4: f64 = -1.453152027;
-const ERF_A5: f64 = 1.061405429;
-const ERF_P: f64 = 0.3275911;
+// Lanczos 系数和 erf 逼近系数已迁移到 `math/scientific.rs`。
 
 /// Scientific 计算域。
 ///
@@ -96,7 +74,7 @@ impl ScientificDomain {
                 match op {
                     UnaryOp::Neg => Ok(-v),
                     UnaryOp::Factorial => self.eval_factorial(v),
-                    UnaryOp::Abs => Ok(v.abs()),
+                    UnaryOp::Abs => Ok(crate::math::arithmetic::abs(v)),
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
@@ -115,64 +93,21 @@ impl ScientificDomain {
         }
     }
 
-    /// 求值二元运算（与 ArithmeticDomain 等价，保持域自包含）。
+    /// 求值二元运算（委托给 `math::arithmetic::*`）。
     fn eval_binary(&self, op: BinaryOp, a: f64, b: f64) -> Result<f64, CalcError> {
-        let result = match op {
-            BinaryOp::Add => a + b,
-            BinaryOp::Sub => a - b,
-            BinaryOp::Mul => a * b,
-            BinaryOp::Div => {
-                if b == 0.0 {
-                    if a == 0.0 {
-                        return Err(CalcError::nan_or_inf());
-                    }
-                    return Err(CalcError::division_by_zero());
-                }
-                a / b
-            }
-            BinaryOp::Pow => {
-                if a == 0.0 && b == 0.0 {
-                    return Ok(1.0);
-                }
-                a.powf(b)
-            }
-            BinaryOp::Mod => {
-                if b == 0.0 {
-                    return Err(CalcError::division_by_zero());
-                }
-                a % b
-            }
-        };
-        if !result.is_finite() {
-            return Err(CalcError::nan_or_inf());
+        match op {
+            BinaryOp::Add => crate::math::arithmetic::add(a, b),
+            BinaryOp::Sub => crate::math::arithmetic::sub(a, b),
+            BinaryOp::Mul => crate::math::arithmetic::mul(a, b),
+            BinaryOp::Div => crate::math::arithmetic::div(a, b),
+            BinaryOp::Pow => crate::math::arithmetic::pow(a, b),
+            BinaryOp::Mod => crate::math::arithmetic::rem(a, b),
         }
-        Ok(result)
     }
 
-    /// 求值阶乘（与 ArithmeticDomain 等价）。
+    /// 求值阶乘（委托给 `math::arithmetic::factorial`）。
     fn eval_factorial(&self, n: f64) -> Result<f64, CalcError> {
-        if n < 0.0 || n.fract() != 0.0 {
-            return Err(CalcError::domain(format!(
-                "factorial requires non-negative integer, got {}",
-                n
-            ))
-            .with_i18n(
-                "msg.core.factorial_negative",
-                vec![("value".to_string(), n.to_string())],
-            ));
-        }
-        let n = n as u64;
-        if n > MAX_FACTORIAL_INPUT {
-            return Err(CalcError::overflow());
-        }
-        let mut result: f64 = 1.0;
-        for i in 2..=n {
-            result *= i as f64;
-            if result.is_infinite() {
-                return Err(CalcError::overflow());
-            }
-        }
-        Ok(result)
+        crate::math::arithmetic::factorial(n)
     }
 
     /// 求值科学函数调用：按函数名分发到对应的处理方法。
@@ -192,27 +127,27 @@ impl ScientificDomain {
         }
         match name {
             // ===== 三角函数 =====
-            "sin" => self.eval_unary(name, args, ctx, f64::sin),
-            "cos" => self.eval_unary(name, args, ctx, f64::cos),
-            "tan" => self.eval_unary(name, args, ctx, f64::tan),
+            "sin" => self.eval_unary_math(name, args, ctx, crate::math::scientific::sin),
+            "cos" => self.eval_unary_math(name, args, ctx, crate::math::scientific::cos),
+            "tan" => self.eval_unary_math(name, args, ctx, crate::math::scientific::tan),
             // ===== 反三角函数 =====
-            "asin" => self.eval_asin(name, args, ctx),
-            "acos" => self.eval_acos(name, args, ctx),
-            "atan" => self.eval_unary(name, args, ctx, f64::atan),
+            "asin" => self.eval_unary_math(name, args, ctx, crate::math::scientific::asin),
+            "acos" => self.eval_unary_math(name, args, ctx, crate::math::scientific::acos),
+            "atan" => self.eval_unary_math(name, args, ctx, crate::math::scientific::atan),
             // ===== 对数函数 =====
-            "ln" => self.eval_ln(name, args, ctx),
-            "log10" => self.eval_log10(name, args, ctx),
-            "log2" => self.eval_log2(name, args, ctx),
+            "ln" => self.eval_unary_math(name, args, ctx, crate::math::scientific::ln),
+            "log10" => self.eval_unary_math(name, args, ctx, crate::math::scientific::log10),
+            "log2" => self.eval_unary_math(name, args, ctx, crate::math::scientific::log2),
             "log" => self.eval_log(name, args, ctx),
             // ===== 指数函数 =====
-            "exp" => self.eval_unary(name, args, ctx, f64::exp),
+            "exp" => self.eval_unary_math(name, args, ctx, crate::math::scientific::exp),
             // ===== 双曲函数 =====
-            "sinh" => self.eval_unary(name, args, ctx, f64::sinh),
-            "cosh" => self.eval_unary(name, args, ctx, f64::cosh),
-            "tanh" => self.eval_unary(name, args, ctx, f64::tanh),
+            "sinh" => self.eval_unary_math(name, args, ctx, crate::math::scientific::sinh),
+            "cosh" => self.eval_unary_math(name, args, ctx, crate::math::scientific::cosh),
+            "tanh" => self.eval_unary_math(name, args, ctx, crate::math::scientific::tanh),
             // ===== 特殊函数 =====
-            "gamma" => self.eval_unary(name, args, ctx, lanczos_gamma),
-            "erf" => self.eval_unary(name, args, ctx, erf),
+            "gamma" => self.eval_unary_math(name, args, ctx, crate::math::scientific::gamma),
+            "erf" => self.eval_unary_math(name, args, ctx, crate::math::scientific::erf),
             _ => Err(
                 CalcError::eval(format!("unknown function: {}", name)).with_i18n(
                     "msg.unknown_function",
@@ -222,99 +157,19 @@ impl ScientificDomain {
         }
     }
 
-    /// 单参数函数通用模板：求值参数 → 应用 f → 检查有限性。
-    fn eval_unary(
+    /// 单参数 math 函数通用模板：求值参数 → 调用 math 函数。
+    fn eval_unary_math(
         &self,
         name: &str,
         args: &[AstNode],
         ctx: &EvalContext,
-        f: impl Fn(f64) -> f64,
+        f: impl Fn(f64) -> Result<f64, CalcError>,
     ) -> Result<f64, CalcError> {
         let x = self.eval_one_arg(name, args, ctx)?;
-        self.check_finite(f(x), name)
+        f(x)
     }
 
-    /// asin(x)：参数须在 [-1, 1]。
-    fn eval_asin(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
-        let x = self.eval_one_arg(name, args, ctx)?;
-        if !(-1.0..=1.0).contains(&x) {
-            return Err(
-                CalcError::domain(format!("asin requires argument in [-1, 1], got {}", x))
-                    .with_hint("asin domain is [-1, 1]")
-                    .with_i18n(
-                        "msg.scientific.asin_domain",
-                        vec![("value".to_string(), x.to_string())],
-                    ),
-            );
-        }
-        self.check_finite(x.asin(), name)
-    }
-
-    /// acos(x)：参数须在 [-1, 1]。
-    fn eval_acos(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
-        let x = self.eval_one_arg(name, args, ctx)?;
-        if !(-1.0..=1.0).contains(&x) {
-            return Err(
-                CalcError::domain(format!("acos requires argument in [-1, 1], got {}", x))
-                    .with_hint("acos domain is [-1, 1]")
-                    .with_i18n(
-                        "msg.scientific.acos_domain",
-                        vec![("value".to_string(), x.to_string())],
-                    ),
-            );
-        }
-        self.check_finite(x.acos(), name)
-    }
-
-    /// ln(x)：参数须为正数。
-    fn eval_ln(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
-        let x = self.eval_one_arg(name, args, ctx)?;
-        if x <= 0.0 {
-            return Err(
-                CalcError::domain(format!("ln requires positive argument, got {}", x)).with_i18n(
-                    "msg.scientific.ln_positive",
-                    vec![("value".to_string(), x.to_string())],
-                ),
-            );
-        }
-        self.check_finite(x.ln(), name)
-    }
-
-    /// log10(x)：参数须为正数。
-    fn eval_log10(
-        &self,
-        name: &str,
-        args: &[AstNode],
-        ctx: &EvalContext,
-    ) -> Result<f64, CalcError> {
-        let x = self.eval_one_arg(name, args, ctx)?;
-        if x <= 0.0 {
-            return Err(
-                CalcError::domain(format!("log10 requires positive argument, got {}", x))
-                    .with_i18n(
-                        "msg.scientific.log10_positive",
-                        vec![("value".to_string(), x.to_string())],
-                    ),
-            );
-        }
-        self.check_finite(x.log10(), name)
-    }
-
-    /// log2(x)：参数须为正数。
-    fn eval_log2(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
-        let x = self.eval_one_arg(name, args, ctx)?;
-        if x <= 0.0 {
-            return Err(
-                CalcError::domain(format!("log2 requires positive argument, got {}", x)).with_i18n(
-                    "msg.scientific.log2_positive",
-                    vec![("value".to_string(), x.to_string())],
-                ),
-            );
-        }
-        self.check_finite(x.log2(), name)
-    }
-
-    /// log(value, base)：value 须为正数，base 须为正数且 ≠ 1。
+    /// log(value, base)：委托给 `math::scientific::log`。
     fn eval_log(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
         if args.len() != 2 {
             return Err(CalcError::eval(format!(
@@ -328,25 +183,7 @@ impl ScientificDomain {
         }
         let value = self.eval_node(&args[0], ctx)?;
         let base = self.eval_node(&args[1], ctx)?;
-        if value <= 0.0 {
-            return Err(
-                CalcError::domain(format!("log requires positive value, got {}", value)).with_i18n(
-                    "msg.scientific.log_positive_value",
-                    vec![("value".to_string(), value.to_string())],
-                ),
-            );
-        }
-        if base <= 0.0 || base == 1.0 {
-            return Err(CalcError::domain(format!(
-                "log requires positive base != 1, got {}",
-                base
-            ))
-            .with_i18n(
-                "msg.scientific.log_positive_base",
-                vec![("value".to_string(), base.to_string())],
-            ));
-        }
-        self.check_finite(value.log(base), name)
+        crate::math::scientific::log(value, base)
     }
 
     /// 求值单参数函数的参数。
@@ -373,13 +210,7 @@ impl ScientificDomain {
         self.eval_node(&args[0], ctx)
     }
 
-    /// 检查结果是否有限，非有限返回 NaNOrInf。
-    fn check_finite(&self, value: f64, _name: &str) -> Result<f64, CalcError> {
-        if !value.is_finite() {
-            return Err(CalcError::nan_or_inf());
-        }
-        Ok(value)
-    }
+    // check_finite 已迁移到 math/scientific.rs 内部使用。
 }
 
 impl Default for ScientificDomain {
@@ -408,36 +239,7 @@ fn contains_scientific(ast: &AstNode) -> bool {
     }
 }
 
-/// Lanczos 逼近计算 gamma 函数。
-///
-/// 对 x > 0.5 使用 Lanczos 逼近；对 x < 0.5 使用反射公式 Γ(z)Γ(1-z) = π/sin(πz)。
-fn lanczos_gamma(x: f64) -> f64 {
-    if x < 0.5 {
-        std::f64::consts::PI / ((std::f64::consts::PI * x).sin() * lanczos_gamma(1.0 - x))
-    } else {
-        let x = x - 1.0;
-        let mut a = LANCZOS_COEF[0];
-        let t = x + LANCZOS_G + 0.5;
-        for (i, coef) in LANCZOS_COEF.iter().enumerate().skip(1) {
-            a += coef / (x + i as f64);
-        }
-        (2.0 * std::f64::consts::PI).sqrt() * t.powf(x + 0.5) * (-t).exp() * a
-    }
-}
-
-/// Abramowitz & Stegun 7.1.26 逼近计算 erf 函数（最大误差 ~1.5e-7）。
-fn erf(x: f64) -> f64 {
-    // erf(0) = 0 数学上精确，A&S 逼近在此点有 ~1e-7 误差，特判以保证 spec 精确匹配。
-    if x == 0.0 {
-        return 0.0;
-    }
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-    let t = 1.0 / (1.0 + ERF_P * x);
-    let y = 1.0
-        - (((((ERF_A5 * t + ERF_A4) * t) + ERF_A3) * t + ERF_A2) * t + ERF_A1) * t * (-x * x).exp();
-    sign * y
-}
+// lanczos_gamma 和 erf 已迁移到 `math/scientific.rs`。
 
 #[cfg(test)]
 mod tests {

@@ -14,12 +14,12 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use crate::math::time as math_time;
 
-use jiff::civil::{Date, DateTime};
+use jiff::civil::Date;
 use jiff::fmt::strtime;
 use jiff::tz::TimeZone;
-use jiff::{Span, Timestamp, Unit, Zoned};
-use std::sync::OnceLock;
+use jiff::{Timestamp, Zoned};
 
 /// 时间计算域：支持 date/datetime/timestamp/from_timestamp/date_diff/date_add/
 /// parse_date/format_date/reformat_date/weekday/day_of_year/is_leap_year/now/today。
@@ -194,7 +194,7 @@ fn eval_to_f64(ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         EvalResult::Scalar(n) => Ok(n),
         EvalResult::DateTime(s) => {
             // DateTime 字符串解析为 Zoned 取 Unix 秒
-            let zoned = parse_str_to_zoned(&s)?;
+            let zoned = math_time::parse_str_to_zoned(&s)?;
             Ok(zoned.timestamp().as_second() as f64)
         }
         other => Err(CalcError::domain(format!(
@@ -319,11 +319,11 @@ fn eval_date(args: &[AstNode], _ctx: &EvalContext) -> Result<EvalResult, CalcErr
         ));
     }
     let input = extract_str(&args[0])?;
-    let date = parse_date_multi_format(&input)?;
+    let date = math_time::parse_date_multi_format(&input)?;
     let zoned = date
         .to_zoned(TimeZone::UTC)
-        .map_err(|_| invalid_date_error(&input))?;
-    Ok(EvalResult::DateTime(zoned_to_rfc3339(&zoned)))
+        .map_err(|_| math_time::invalid_date_error(&input))?;
+    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&zoned)))
 }
 
 /// datetime(str[, tz]) → DateTime
@@ -346,11 +346,11 @@ fn eval_datetime(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, Calc
     }
     let input = extract_str(&args[0])?;
     let tz = resolve_timezone(args, 1, ctx)?;
-    let datetime = parse_datetime_multi_format(&input)?;
+    let datetime = math_time::parse_datetime_multi_format(&input)?;
     let zoned = datetime
         .to_zoned(tz)
-        .map_err(|_| invalid_date_error(&input))?;
-    Ok(EvalResult::DateTime(zoned_to_rfc3339(&zoned)))
+        .map_err(|_| math_time::invalid_date_error(&input))?;
+    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&zoned)))
 }
 
 /// timestamp(str) → Scalar（Unix 秒，含小数毫秒）
@@ -376,8 +376,8 @@ fn eval_timestamp(args: &[AstNode], _ctx: &EvalContext) -> Result<EvalResult, Ca
     // 失败时回退到 strptime 常见格式
     let ts: Timestamp = input
         .parse::<Timestamp>()
-        .or_else(|_| parse_timestamp_strptime(&input))
-        .map_err(|_| invalid_date_error(&input))?;
+        .or_else(|_| math_time::parse_timestamp_strptime(&input))
+        .map_err(|_| math_time::invalid_date_error(&input))?;
     Ok(EvalResult::Scalar(ts.as_second() as f64))
 }
 
@@ -408,7 +408,7 @@ fn eval_from_timestamp(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult
         )
     })?;
     let zoned = ts.to_zoned(tz);
-    Ok(EvalResult::DateTime(zoned_to_rfc3339(&zoned)))
+    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&zoned)))
 }
 
 // ============================================================================
@@ -442,13 +442,9 @@ fn eval_date_diff(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, Cal
     } else {
         "day".to_string()
     };
-    let unit = parse_time_unit(&unit_str)?;
+    let unit = math_time::parse_time_unit(&unit_str)?;
     // 计算 b.since(a) = b - a（spec：a 到 b 的间隔；b 晚于 a 为正）
-    let span = b.since(&a).map_err(|_| {
-        CalcError::domain(format!("date_diff failed: {} vs {}", a, b))
-            .with_i18n("msg.time.invalid_date", vec![])
-    })?;
-    let value = span_total_in_unit(&span, unit, &a, &b)?;
+    let value = math_time::compute_date_diff(&a, &b, unit)?;
     Ok(EvalResult::Scalar(value))
 }
 
@@ -473,14 +469,10 @@ fn eval_date_add(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, Calc
     let zoned = eval_to_zoned(&args[0], ctx)?;
     let n = extract_i64(&args[1], ctx)?;
     let unit_str = extract_str(&args[2])?;
-    let unit = parse_time_unit(&unit_str)?;
-    // 按单位构造 Span（jiff 公开 API：try_years/try_months/...，无统一 try_unit）
-    let span = build_span_for_unit(unit, n)?;
-    let new_zoned = zoned.checked_add(span).map_err(|_| {
-        CalcError::domain(format!("date_add overflow: {} + {} units", zoned, n))
-            .with_i18n("msg.time.invalid_date", vec![])
-    })?;
-    Ok(EvalResult::DateTime(zoned_to_rfc3339(&new_zoned)))
+    let unit = math_time::parse_time_unit(&unit_str)?;
+    // 按单位构造 Span 并加法（jiff 公开 API）
+    let new_zoned = math_time::compute_date_add(&zoned, n, unit)?;
+    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&new_zoned)))
 }
 
 // ============================================================================
@@ -510,14 +502,14 @@ fn eval_parse_date(args: &[AstNode], _ctx: &EvalContext) -> Result<EvalResult, C
         Ok(date) => {
             let zoned = date
                 .to_zoned(TimeZone::UTC)
-                .map_err(|_| invalid_date_error(&input))?;
-            Ok(EvalResult::DateTime(zoned_to_rfc3339(&zoned)))
+                .map_err(|_| math_time::invalid_date_error(&input))?;
+            Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&zoned)))
         }
         Err(_) => {
             // 失败时尝试解析为 Zoned（含时间/时区）
             match Zoned::strptime(&fmt, &input) {
-                Ok(zoned) => Ok(EvalResult::DateTime(zoned_to_rfc3339(&zoned))),
-                Err(_) => Err(format_mismatch_error(&fmt)),
+                Ok(zoned) => Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&zoned))),
+                Err(_) => Err(math_time::format_mismatch_error(&fmt)),
             }
         }
     }
@@ -549,7 +541,7 @@ fn eval_format_date(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, C
         zoned
     };
     let fmt = extract_str(&args[1])?;
-    let formatted = strtime::format(&fmt, &zoned).map_err(|_| format_mismatch_error(&fmt))?;
+    let formatted = strtime::format(&fmt, &zoned).map_err(|_| math_time::format_mismatch_error(&fmt))?;
     Ok(EvalResult::Symbolic(formatted))
 }
 
@@ -578,14 +570,14 @@ fn eval_reformat_date(args: &[AstNode], _ctx: &EvalContext) -> Result<EvalResult
     let zoned = match Date::strptime(&from_fmt, &input) {
         Ok(date) => date
             .to_zoned(TimeZone::UTC)
-            .map_err(|_| invalid_date_error(&input))?,
+            .map_err(|_| math_time::invalid_date_error(&input))?,
         Err(_) => match Zoned::strptime(&from_fmt, &input) {
             Ok(z) => z,
-            Err(_) => return Err(format_mismatch_error(&from_fmt)),
+            Err(_) => return Err(math_time::format_mismatch_error(&from_fmt)),
         },
     };
     // 格式化阶段
-    let formatted = strtime::format(&to_fmt, &zoned).map_err(|_| format_mismatch_error(&to_fmt))?;
+    let formatted = strtime::format(&to_fmt, &zoned).map_err(|_| math_time::format_mismatch_error(&to_fmt))?;
     Ok(EvalResult::Symbolic(formatted))
 }
 
@@ -678,7 +670,7 @@ fn eval_now(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError
     }
     let tz = resolve_timezone(args, 0, ctx)?;
     let now = Zoned::now().with_time_zone(tz);
-    Ok(EvalResult::DateTime(zoned_to_rfc3339(&now)))
+    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&now)))
 }
 
 /// today([tz]) → DateTime（当日 00:00:00）
@@ -703,157 +695,9 @@ fn eval_today(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcErr
         CalcError::domain("failed to construct today midnight".to_string())
             .with_i18n("msg.time.invalid_date", vec![])
     })?;
-    Ok(EvalResult::DateTime(zoned_to_rfc3339(&today)))
+    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&today)))
 }
 
-// ============================================================================
-// T034: 多格式自动识别（design D4 有序候选格式表）
-// ============================================================================
-
-/// date() 候选格式表（无歧义，年在前或月份为单词）。
-///
-/// 顺序：ISO 8601 → YYYY/MM/DD → YYYY.MM.DD → YYYYMMDD → 英文月份名 → 中文
-const DATE_FORMATS: &[&str] = &[
-    "%Y-%m-%d",  // ISO 8601: 2026-07-25
-    "%Y/%m/%d",  // 2026/07/25
-    "%Y.%m.%d",  // 2026.07.25
-    "%Y%m%d",    // 20260725（8 位 basic）
-    "%d %b %Y",  // 25 Jul 2026
-    "%b %d, %Y", // Jul 25, 2026
-    "%B %d, %Y", // July 25, 2026
-];
-
-/// datetime() 候选格式表（日期 + 时间部分）。
-const DATETIME_FORMATS: &[&str] = &[
-    "%Y-%m-%dT%H:%M:%S",  // ISO 8601: 2026-07-25T12:30:00
-    "%Y-%m-%dT%H:%M",     // 2026-07-25T12:30
-    "%Y-%m-%d %H:%M:%S",  // 2026-07-25 12:30:00（空格分隔）
-    "%Y-%m-%d %H:%M",     // 2026-07-25 12:30
-    "%Y/%m/%d %H:%M:%S",  // 2026/07/25 12:30:00
-    "%Y/%m/%d %H:%M",     // 2026/07/25 12:30
-    "%Y%m%dT%H%M%S",      // 20260725T123000
-    "%Y.%m.%d %H:%M:%S",  // 2026.07.25 12:30:00
-    "%d %b %Y %H:%M:%S",  // 25 Jul 2026 12:30:00
-    "%b %d, %Y %H:%M:%S", // Jul 25, 2026 12:30:00
-    "%B %d, %Y %H:%M:%S", // July 25, 2026 12:30:00
-];
-
-/// 解析日期字符串为 Date（多格式自动识别）。
-///
-/// 歧义拒绝：纯数字 X/Y/YYYY 或 X-Y-YYYY 形式一律拒绝。
-fn parse_date_multi_format(input: &str) -> Result<Date, CalcError> {
-    // 0. 先尝试 jiff 原生 Date::from_str（ISO 8601 日期）
-    if let Ok(d) = input.parse::<Date>() {
-        return Ok(d);
-    }
-    // 1. 歧义检测：纯数字 X/Y/YYYY、X-Y-YYYY、X.Y.YYYY 一律拒绝
-    if is_ambiguous_numeric_date(input) {
-        return Err(ambiguous_format_error());
-    }
-    // 2. 中文格式 fallback：2026年7月25日
-    if input.contains('年') {
-        return parse_chinese_date(input).map_err(|_| invalid_date_error(input));
-    }
-    // 3. 按候选格式表逐一尝试 strptime
-    for fmt in DATE_FORMATS {
-        if let Ok(d) = Date::strptime(fmt, input) {
-            return Ok(d);
-        }
-    }
-    Err(invalid_date_error(input))
-}
-
-/// 解析 datetime 字符串为 DateTime（多格式自动识别）。
-fn parse_datetime_multi_format(input: &str) -> Result<DateTime, CalcError> {
-    // 0. 先尝试 jiff 原生 DateTime::from_str（ISO 8601）
-    if let Ok(dt) = input.parse::<DateTime>() {
-        return Ok(dt);
-    }
-    // 1. 歧义检测
-    if is_ambiguous_numeric_date(input) {
-        return Err(ambiguous_format_error());
-    }
-    // 2. 中文格式 fallback
-    if input.contains('年') {
-        return parse_chinese_datetime(input).map_err(|_| invalid_date_error(input));
-    }
-    // 3. 按候选格式表逐一尝试
-    for fmt in DATETIME_FORMATS {
-        if let Ok(dt) = DateTime::strptime(fmt, input) {
-            return Ok(dt);
-        }
-    }
-    // 4. 退化为纯日期解析（时间为 00:00:00）
-    if let Ok(d) = parse_date_multi_format(input) {
-        return Ok(DateTime::from(d));
-    }
-    Err(invalid_date_error(input))
-}
-
-/// 用 strptime 尝试解析 timestamp 字符串（带偏移量）。
-fn parse_timestamp_strptime(input: &str) -> Result<Timestamp, ()> {
-    let formats: &[&str] = &[
-        "%Y-%m-%dT%H:%M:%S%:z",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S%:z",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
-    ];
-    for fmt in formats {
-        if let Ok(ts) = Timestamp::strptime(fmt, input) {
-            return Ok(ts);
-        }
-    }
-    Err(())
-}
-
-/// 检测纯数字 X/Y/YYYY、X-Y-YYYY、X.Y.YYYY 形式（歧义格式）。
-///
-/// 即使日>12 可推断也拒绝，保持行为一致性（design D4 歧义拒绝）。
-fn is_ambiguous_numeric_date(input: &str) -> bool {
-    // 匹配 N/N/YYYY 或 N-N-YYYY 或 N.N.YYYY 形式（日在前的纯数字）
-    // 关键特征：第一个分隔符前只有 1-2 位数字（年在前时为 4 位）
-    ambiguous_date_regex().is_match(input)
-}
-
-/// 中文日期解析：2026年7月25日
-fn parse_chinese_date(input: &str) -> Result<Date, ()> {
-    // 先尝试 strptime 字面量匹配（jiff 支持 UTF-8 字面量）
-    if let Ok(d) = Date::strptime("%Y年%m月%d日", input) {
-        return Ok(d);
-    }
-    // fallback：正则预提取年月日
-    let caps = chinese_date_regex().captures(input).ok_or(())?;
-    let year: i16 = caps[1].parse().map_err(|_| ())?;
-    let month: i8 = caps[2].parse().map_err(|_| ())?;
-    let day: i8 = caps[3].parse().map_err(|_| ())?;
-    Date::new(year, month, day).map_err(|_| ())
-}
-
-/// 中文 datetime 解析：2026年7月25日 12:30:00 或 2026年7月25日12:30:00
-fn parse_chinese_datetime(input: &str) -> Result<DateTime, ()> {
-    // 先尝试带时间的 strptime
-    if let Ok(dt) = DateTime::strptime("%Y年%m月%d日 %H:%M:%S", input) {
-        return Ok(dt);
-    }
-    if let Ok(dt) = DateTime::strptime("%Y年%m月%d日%H:%M:%S", input) {
-        return Ok(dt);
-    }
-    if let Ok(dt) = DateTime::strptime("%Y年%m月%d日 %H:%M", input) {
-        return Ok(dt);
-    }
-    // fallback：提取日期部分 + 时间部分
-    let date = parse_chinese_date(input)?;
-    // 提取时间部分（HH:MM 或 HH:MM:SS）
-    if let Some(caps) = time_part_regex().captures(input) {
-        let hour: i8 = caps[1].parse().map_err(|_| ())?;
-        let minute: i8 = caps[2].parse().map_err(|_| ())?;
-        let second: i8 = caps.get(3).map_or(0, |m| m.as_str().parse().unwrap_or(0));
-        return Ok(date.at(hour, minute, second, 0));
-    }
-    Ok(DateTime::from(date))
-}
 
 // ============================================================================
 // 辅助：AST → Date / Zoned 转换
@@ -864,7 +708,7 @@ fn parse_chinese_datetime(input: &str) -> Result<DateTime, ()> {
 /// 接受 Str（日期字符串）或 Scalar（Unix 秒）或 DateTime 结果（嵌套调用）。
 fn eval_to_zoned(ast: &AstNode, ctx: &EvalContext) -> Result<Zoned, CalcError> {
     match ast {
-        AstNode::Str(s) => parse_str_to_zoned(s),
+        AstNode::Str(s) => math_time::parse_str_to_zoned(s),
         AstNode::Number(n) => {
             let ts = Timestamp::from_second(*n as i64).map_err(|_| {
                 CalcError::domain(format!("timestamp out of range: {}", n)).with_i18n(
@@ -878,7 +722,7 @@ fn eval_to_zoned(ast: &AstNode, ctx: &EvalContext) -> Result<Zoned, CalcError> {
             // 嵌套函数调用：先求值为 EvalResult，再转换
             let result = evaluate_time(ast, ctx)?;
             match result {
-                EvalResult::DateTime(s) => parse_str_to_zoned(&s),
+                EvalResult::DateTime(s) => math_time::parse_str_to_zoned(&s),
                 EvalResult::Scalar(n) => {
                     let ts = Timestamp::from_second(n as i64).map_err(|_| {
                         CalcError::domain(format!("timestamp out of range: {}", n)).with_i18n(
@@ -897,45 +741,11 @@ fn eval_to_zoned(ast: &AstNode, ctx: &EvalContext) -> Result<Zoned, CalcError> {
     }
 }
 
-/// 解析字符串为 Zoned（多策略回退）。
-///
-/// 1. Zoned::from_str：标准 RFC 3339（含时区名后缀，如 `2026-07-25T00:00:00+08:00[Asia/Shanghai]`）
-/// 2. Z 后缀归一化：`...Z` → `...+00:00`，再用 strptime `%:z` 解析
-/// 3. Zoned::strptime：多种常见格式（含 +HH:MM 偏移、无偏移）
-/// 4. parse_datetime_multi_format + UTC：无时区信息的日期字符串
-fn parse_str_to_zoned(s: &str) -> Result<Zoned, CalcError> {
-    // 1. 标准 RFC 3339（temporal parser，接受 Z、+HH:MM、[tzname] 等）
-    if let Ok(z) = s.parse::<Zoned>() {
-        return Ok(z);
-    }
-    // 2. Z 后缀归一化为 +00:00（strptime %Z 不支持 Z 字面量作为偏移）
-    let normalized = if let Some(stripped) = s.strip_suffix('Z') {
-        format!("{}+00:00", stripped)
-    } else {
-        s.to_string()
-    };
-    // 3. strptime 常见格式回退
-    const ZONED_FORMATS: &[&str] = &[
-        "%Y-%m-%dT%H:%M:%S%:z", // 2026-07-25T12:30:00+00:00
-        "%Y-%m-%dT%H:%M:%S",    // 2026-07-25T12:30:00（无偏移，UTC）
-        "%Y-%m-%d %H:%M:%S%:z", // 2026-07-25 12:30:00+00:00
-        "%Y-%m-%d %H:%M:%S",    // 2026-07-25 12:30:00
-    ];
-    for fmt in ZONED_FORMATS {
-        if let Ok(z) = Zoned::strptime(fmt, &normalized) {
-            return Ok(z);
-        }
-    }
-    // 4. 多格式 datetime 解析 + UTC
-    let dt = parse_datetime_multi_format(s)?;
-    dt.to_zoned(TimeZone::UTC)
-        .map_err(|_| invalid_date_error(s))
-}
 
 /// 将 AST 求值为 Date（用于 weekday / day_of_year）。
 fn eval_to_date(ast: &AstNode, ctx: &EvalContext) -> Result<Date, CalcError> {
     match ast {
-        AstNode::Str(s) => parse_date_multi_format(s),
+        AstNode::Str(s) => math_time::parse_date_multi_format(s),
         AstNode::Number(n) => {
             let ts = Timestamp::from_second(*n as i64).map_err(|_| {
                 CalcError::domain(format!("timestamp out of range: {}", n)).with_i18n(
@@ -952,130 +762,6 @@ fn eval_to_date(ast: &AstNode, ctx: &EvalContext) -> Result<Date, CalcError> {
     }
 }
 
-// ============================================================================
-// 辅助：单位解析与 Span 构造
-// ============================================================================
-
-/// 解析时间单位字符串为 jiff::Unit。
-fn parse_time_unit(s: &str) -> Result<Unit, CalcError> {
-    match s {
-        "s" | "second" | "seconds" => Ok(Unit::Second),
-        "min" | "minute" | "minutes" => Ok(Unit::Minute),
-        "h" | "hour" | "hours" => Ok(Unit::Hour),
-        "day" | "days" => Ok(Unit::Day),
-        "week" | "weeks" => Ok(Unit::Week),
-        "month" | "months" => Ok(Unit::Month),
-        "year" | "years" => Ok(Unit::Year),
-        _ => Err(
-            CalcError::domain(format!("invalid time unit: {}", s)).with_i18n(
-                "msg.time.invalid_unit",
-                vec![("unit".to_string(), s.to_string())],
-            ),
-        ),
-    }
-}
-
-/// 按单位构造 Span（n 为有符号数量）。
-fn build_span_for_unit(unit: Unit, n: i64) -> Result<Span, CalcError> {
-    let span = Span::new();
-    match unit {
-        Unit::Second => span.try_seconds(n),
-        Unit::Minute => span.try_minutes(n),
-        Unit::Hour => span.try_hours(n),
-        Unit::Day => span.try_days(n),
-        Unit::Week => span.try_weeks(n),
-        Unit::Month => span.try_months(n),
-        Unit::Year => span.try_years(n),
-        _ => unreachable!(),
-    }
-    .map_err(|_| {
-        CalcError::domain(format!("span out of range: {} {:?}", n, unit)).with_i18n(
-            "msg.time.invalid_unit",
-            vec![("unit".to_string(), format!("{:?}", unit))],
-        )
-    })
-}
-
-/// 计算 Span 在指定单位下的总数值（带符号）。
-///
-/// jiff 的 Zoned::since 默认返回包含 year/month 等日历单位的 Span，
-/// 因此 span.total(Unit::Day) 会因月长度不定而失败。
-/// 解决：所有单位都传入相对参考点（Zoned）以提供日历上下文。
-fn span_total_in_unit(span: &Span, unit: Unit, a: &Zoned, _b: &Zoned) -> Result<f64, CalcError> {
-    // 所有单位都使用 (Unit, &Zoned) 形式提供相对参考点
-    let result = match unit {
-        Unit::Second => span.total((Unit::Second, a)),
-        Unit::Minute => span.total((Unit::Minute, a)),
-        Unit::Hour => span.total((Unit::Hour, a)),
-        Unit::Day => span.total((Unit::Day, a)),
-        Unit::Week => span.total((Unit::Week, a)),
-        Unit::Month => span.total((Unit::Month, a)),
-        Unit::Year => span.total((Unit::Year, a)),
-        _ => unreachable!(),
-    };
-    result.map_err(|_| {
-        CalcError::domain(format!("span total failed for {:?}", unit)).with_i18n(
-            "msg.time.invalid_unit",
-            vec![("unit".to_string(), format!("{:?}", unit))],
-        )
-    })
-}
-
-// ============================================================================
-// 辅助：错误构造与格式化
-// ============================================================================
-
-/// 构造"无效日期"错误。
-fn invalid_date_error(value: &str) -> CalcError {
-    CalcError::domain(format!("invalid date: {}", value)).with_i18n(
-        "msg.time.invalid_date",
-        vec![("value".to_string(), value.to_string())],
-    )
-}
-
-/// 构造"格式不匹配"错误。
-fn format_mismatch_error(fmt: &str) -> CalcError {
-    CalcError::domain(format!("format mismatch: {}", fmt)).with_i18n(
-        "msg.time.format_mismatch",
-        vec![("fmt".to_string(), fmt.to_string())],
-    )
-}
-
-/// 构造"歧义格式"错误。
-fn ambiguous_format_error() -> CalcError {
-    CalcError::domain("ambiguous date format, use parse_date() with explicit format".to_string())
-        .with_i18n("msg.time.ambiguous_format", vec![])
-}
-
-/// 将 Zoned 转换为 RFC 3339 字符串（用于 EvalResult::DateTime）。
-///
-/// 使用 strtime %Y-%m-%dT%H:%M:%S%:z 格式，输出 `YYYY-MM-DDTHH:MM:SS+HH:MM`。
-/// 不带时区名后缀（与 design D2 一致），UTC 输出为 `+00:00`。
-fn zoned_to_rfc3339(zoned: &Zoned) -> String {
-    strtime::format("%Y-%m-%dT%H:%M:%S%:z", zoned).unwrap_or_else(|_| zoned.to_string())
-}
-
-// ============================================================================
-// 辅助：regex 缓存（OnceLock 模式，避免重复编译）
-// ============================================================================
-
-/// 获取歧义日期检测 regex（缓存）。
-fn ambiguous_date_regex() -> &'static regex::Regex {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4}$").expect("valid regex"))
-}
-
-/// 获取中文日期 regex（缓存）。
-fn chinese_date_regex() -> &'static regex::Regex {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(\d{4})年(\d{1,2})月(\d{1,2})日").expect("valid regex"))
-}
-
-/// 获取时间部分 regex（缓存）。
-fn time_part_regex() -> &'static regex::Regex {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(\d{1,2}):(\d{2})(?::(\d{2}))?").expect("valid regex"))
-}
 
 #[cfg(test)]
 mod tests {
@@ -1469,7 +1155,7 @@ mod tests {
         let result = eval_datetime_str("now()").unwrap();
         // 应可通过 parse_str_to_zoned 反解析（兼容 strtime 格式输出）
         assert!(
-            parse_str_to_zoned(&result).is_ok(),
+            math_time::parse_str_to_zoned(&result).is_ok(),
             "now() result should be parseable: {}",
             result
         );
@@ -1491,7 +1177,7 @@ mod tests {
             result
         );
         assert!(
-            parse_str_to_zoned(&result).is_ok(),
+            math_time::parse_str_to_zoned(&result).is_ok(),
             "today() result should be parseable: {}",
             result
         );
@@ -1666,52 +1352,6 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== 底层函数单元测试 =====
-
-    #[test]
-    fn test_parse_date_multi_format_all_formats() {
-        assert!(parse_date_multi_format("2026-07-25").is_ok());
-        assert!(parse_date_multi_format("2026/07/25").is_ok());
-        assert!(parse_date_multi_format("2026.07.25").is_ok());
-        assert!(parse_date_multi_format("20260725").is_ok());
-        assert!(parse_date_multi_format("25 Jul 2026").is_ok());
-        assert!(parse_date_multi_format("Jul 25, 2026").is_ok());
-        assert!(parse_date_multi_format("July 25, 2026").is_ok());
-        assert!(parse_date_multi_format("2026年7月25日").is_ok());
-    }
-
-    #[test]
-    fn test_parse_date_multi_format_ambiguous() {
-        assert!(parse_date_multi_format("01/02/2026").is_err());
-        assert!(parse_date_multi_format("13/07/2026").is_err());
-        assert!(parse_date_multi_format("01-02-2026").is_err());
-        assert!(parse_date_multi_format("01.02.2026").is_err());
-    }
-
-    #[test]
-    fn test_parse_date_multi_format_invalid() {
-        assert!(parse_date_multi_format("2026-02-30").is_err());
-        assert!(parse_date_multi_format("invalid").is_err());
-        assert!(parse_date_multi_format("").is_err());
-    }
-
-    #[test]
-    fn test_is_leap_year_logic() {
-        // 闰年
-        assert!(is_leap_year(2024));
-        assert!(is_leap_year(2000));
-        assert!(is_leap_year(2400));
-        // 非闰年
-        assert!(!is_leap_year(2026));
-        assert!(!is_leap_year(1900));
-        assert!(!is_leap_year(2100));
-        assert!(!is_leap_year(2023));
-    }
-
-    /// 辅助函数：直接判定闰年（用于测试）。
-    fn is_leap_year(year: i64) -> bool {
-        (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-    }
 
     // ===== from_timestamp 嵌套测试 =====
 

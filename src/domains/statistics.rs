@@ -12,8 +12,7 @@
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
-use super::stats_distributions;
-use super::stats_tests;
+use crate::math::statistics as math_stats;
 
 /// 扩展统计函数白名单：基础 8 + 分布 16 + 检验 3 + 相关 2 = 29。
 const STATISTICS_FUNCTIONS: &[&str] = &[
@@ -210,33 +209,17 @@ impl StatisticsDomain {
 
     /// 基础统计函数求值。
     fn eval_basic_stat(&self, name: &str, values: &[f64]) -> Result<f64, CalcError> {
-        match name {
-            "mean" => Ok(values.iter().sum::<f64>() / values.len() as f64),
-            "variance" => {
-                let mean = values.iter().sum::<f64>() / values.len() as f64;
-                Ok(values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64)
-            }
-            "std" => {
-                let mean = values.iter().sum::<f64>() / values.len() as f64;
-                let var = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
-                Ok(var.sqrt())
-            }
-            "median" => {
-                let mut sorted = values.to_vec();
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let n = sorted.len();
-                if n % 2 == 1 {
-                    Ok(sorted[n / 2])
-                } else {
-                    Ok((sorted[n / 2 - 1] + sorted[n / 2]) / 2.0)
-                }
-            }
-            "min" => Ok(values.iter().cloned().fold(f64::INFINITY, f64::min)),
-            "max" => Ok(values.iter().cloned().fold(f64::NEG_INFINITY, f64::max)),
-            "sum" => Ok(values.iter().sum()),
-            "count" => Ok(values.len() as f64),
+        Ok(match name {
+            "mean" => math_stats::mean(values),
+            "variance" => math_stats::variance(values),
+            "std" => math_stats::std(values),
+            "median" => math_stats::median(values),
+            "min" => math_stats::min(values),
+            "max" => math_stats::max(values),
+            "sum" => math_stats::sum(values),
+            "count" => math_stats::count(values),
             _ => unreachable!(),
-        }
+        })
     }
 
     /// 求值标量参数（从 AST 参数列表提取第 idx 个标量）。
@@ -254,22 +237,22 @@ impl StatisticsDomain {
             args.iter().map(|a| self.eval_scalar_arg(a, ctx)).collect()
         };
         let v = match name {
-            "norm_pdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::norm_pdf(s[0], s[1], s[2]) }
-            "norm_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::norm_cdf(s[0], s[1], s[2]) }
-            "norm_inv" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::norm_inv(s[0], s[1], s[2]) }
-            "t_pdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::t_pdf(s[0], s[1]) }
-            "t_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::t_cdf(s[0], s[1]) }
-            "t_inv" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::t_inv(s[0], s[1]) }
-            "chi2_pdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::chi2_pdf(s[0], s[1]) }
-            "chi2_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::chi2_cdf(s[0], s[1]) }
-            "chi2_inv" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::chi2_inv(s[0], s[1]) }
-            "f_pdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::f_pdf(s[0], s[1], s[2]) }
-            "f_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::f_cdf(s[0], s[1], s[2]) }
-            "f_inv" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::f_inv(s[0], s[1], s[2]) }
-            "poisson_pmf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::poisson_pmf(s[0], s[1]) }
-            "poisson_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; stats_distributions::poisson_cdf(s[0], s[1]) }
-            "binom_pmf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::binom_pmf(s[0], s[1], s[2]) }
-            "binom_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; stats_distributions::binom_cdf(s[0], s[1], s[2]) }
+            "norm_pdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::norm_pdf(s[0], s[1], s[2]) }
+            "norm_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::norm_cdf(s[0], s[1], s[2]) }
+            "norm_inv" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::norm_inv(s[0], s[1], s[2]) }
+            "t_pdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::t_pdf(s[0], s[1]) }
+            "t_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::t_cdf(s[0], s[1]) }
+            "t_inv" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::t_inv(s[0], s[1]) }
+            "chi2_pdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::chi2_pdf(s[0], s[1]) }
+            "chi2_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::chi2_cdf(s[0], s[1]) }
+            "chi2_inv" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::chi2_inv(s[0], s[1]) }
+            "f_pdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::f_pdf(s[0], s[1], s[2]) }
+            "f_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::f_cdf(s[0], s[1], s[2]) }
+            "f_inv" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::f_inv(s[0], s[1], s[2]) }
+            "poisson_pmf" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::poisson_pmf(s[0], s[1]) }
+            "poisson_cdf" => { let s = scalars()?; self.check_len(name, &s, 2)?; math_stats::poisson_cdf(s[0], s[1]) }
+            "binom_pmf" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::binom_pmf(s[0], s[1], s[2]) }
+            "binom_cdf" => { let s = scalars()?; self.check_len(name, &s, 3)?; math_stats::binom_cdf(s[0], s[1], s[2]) }
             _ => return Ok(None),
         };
         Ok(Some(v))
@@ -287,7 +270,7 @@ impl StatisticsDomain {
                 if data.is_empty() {
                     return Err(CalcError::domain("t_test_one requires non-empty data".to_string()));
                 }
-                let map = stats_tests::t_test_one(&data, mu);
+                let map = math_stats::t_test_one(&data, mu);
                 EvalResult::Json(serde_json::to_value(&map).unwrap())
             }
             "t_test_two" => {
@@ -297,7 +280,7 @@ impl StatisticsDomain {
                 if a.is_empty() || b.is_empty() {
                     return Err(CalcError::domain("t_test_two requires non-empty data".to_string()));
                 }
-                let map = stats_tests::t_test_two(&a, &b);
+                let map = math_stats::t_test_two(&a, &b);
                 EvalResult::Json(serde_json::to_value(&map).unwrap())
             }
             "chi2_test" => {
@@ -313,7 +296,7 @@ impl StatisticsDomain {
                         observed.len(), expected.len()
                     )));
                 }
-                let map = stats_tests::chi2_test(&observed, &expected);
+                let map = math_stats::chi2_test(&observed, &expected);
                 EvalResult::Json(serde_json::to_value(&map).unwrap())
             }
             _ => return Ok(None),
@@ -339,7 +322,7 @@ impl StatisticsDomain {
                 if x.len() < 2 {
                     return Err(CalcError::domain("pearson requires at least 2 data points".to_string()));
                 }
-                stats_tests::pearson(&x, &y)
+                math_stats::pearson(&x, &y)
             }
             "spearman" => {
                 self.check_arg_count(name, args, 2)?;
@@ -354,7 +337,7 @@ impl StatisticsDomain {
                 if x.len() < 2 {
                     return Err(CalcError::domain("spearman requires at least 2 data points".to_string()));
                 }
-                stats_tests::spearman(&x, &y)
+                math_stats::spearman(&x, &y)
             }
             _ => return Ok(None),
         };
