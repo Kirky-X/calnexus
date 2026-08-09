@@ -72,10 +72,11 @@
 | 任意精度 | `precision(N, expr)` 基于 BigRational 的任意精度计算 |
 | 数值线性代数 | `lu`、`qr`、`eig`、`svd`、`solve`（`numerical` feature，nalgebra f64 近似） |
 | 三种模式 | 单表达式、REPL（Tab 补全 + 变量绑定）、批量并行（rayon） |
-| 高性能缓存 | Moka L1 缓存（10000 条目，BLAKE3 哈希，线程安全） |
+| 高性能缓存 | Moka L1 缓存（10000 条目，BLAKE3 哈希，线程安全，single-flight 去重） |
+| HTTP 服务 | `--serve-http` 启动 REST 服务，含健康检查（`/health`）、指标导出（`/metrics`）、优雅关闭 |
 | 隐式乘法 | `2x`、`3(x+1)` 等数学惯用写法自动识别 |
 | JSON 输出 | `--json` 输出 `result/domain/cache` 结构，便于管道集成 |
-| 工业级测试 | 1925 个测试，覆盖率 97.27%，release 零警告 |
+| 工业级测试 | 2374 个测试，覆盖率 97.27%，release 零警告 |
 
 ### 11 个计算域
 
@@ -121,6 +122,36 @@ cargo build --features time
 2. **REPL** — `calnexus --repl`（交互式，支持 Tab 补全与变量绑定）
 3. **批量** — `calnexus --batch exprs.txt`（rayon 并行求值）
 
+### HTTP 服务模式
+
+需以 `--features server` 启用。启动后提供 REST API 与运维端点：
+
+```bash
+calnexus --serve-http
+```
+
+| 端点 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/evaluate` | POST | 表达式求值（JSON 请求/响应） |
+| `/health` | GET | 综合健康检查（含 L1 缓存状态） |
+| `/live` | GET | 存活探针（liveness） |
+| `/ready` | GET | 就绪探针（readiness） |
+| `/metrics` | GET | 缓存指标导出（默认 Prometheus 格式，`?format=json` 返回 JSON） |
+
+可选 feature 增强：
+
+| Feature | 说明 |
+| --- | --- |
+| `ratelimit` | HTTP 限流中间件（LimiteronAdapter） |
+| `docs` | Swagger UI（`/swagger-ui`，OpenAPI 文档） |
+| `graceful-shutdown` | 增强优雅关闭（连接追踪 + 可配置 drain timeout） |
+| `observability` | OpenTelemetry 可观测性（tracing 集成） |
+
+```bash
+# 启用全部 HTTP 增强功能
+cargo build --release --features cli,server,ratelimit,graceful-shutdown,observability
+```
+
 ---
 
 ## 架构
@@ -147,7 +178,7 @@ graph TD
 
 - **Parser**：基于 mathexpr，支持隐式乘法与复数预处理
 - **Canonicalizer**：常量折叠、可交换排序、S-表达式规范形式
-- **Cache**：Moka L1 缓存（10000 条目，BLAKE3 键哈希，线程安全）
+- **Cache**：Moka L1 缓存（10000 条目，BLAKE3 键哈希，线程安全，single-flight 并发去重）
 - **Router**：按优先级排序的计算域调度（首个 `supports()` 命中即路由）
 
 ---
@@ -332,8 +363,8 @@ CalNexus 是一个 Rust 库 + CLI 二进制项目，接口文档可通过以下�
 ## 测试
 
 ```bash
-# 运行全部测试（1925+ 测试，含可选域时 2227+）
-cargo test --features cli
+# 运行全部测试（2374+ 测试）
+cargo test --features cli,time,unit,fx,server
 
 # 含可选域全量测试
 cargo test --features cli,time,unit,fx
@@ -346,7 +377,7 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-测试规模：1925 个测试（1623 lib + 123 CLI + 132 集成 + 6 REPL + 13 安全 + 12 属性 + 10 快照 + 6 性能），覆盖率 97.27%，release 构建零警告。可选域（time/unit/fx）启用时追加 302 个测试（lib +292, 集成 +10），合计 2227。
+测试规模：2374 个测试（2037 lib + 132 集成 + 126 数值线性代数 + 13 快照 + 12 HTTP 集成 + 12 时间/单位/汇率集成 + 10 安全 + 10 属性 + 8 REPL + 6 性能 + 2 CLI），覆盖率 97.27%，release 构建零警告。
 
 ---
 

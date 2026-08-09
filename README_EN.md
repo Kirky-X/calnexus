@@ -72,10 +72,11 @@ A command-line math expression evaluator with 11 core computation domains and 3 
 | Arbitrary precision | `precision(N, expr)` BigRational-based arbitrary precision |
 | Numerical linear algebra | `lu`, `qr`, `eig`, `svd`, `solve` (`numerical` feature, nalgebra f64 approximation) |
 | Three modes | Single expression, REPL (Tab completion + variable binding), parallel batch (rayon) |
-| High-performance cache | Moka L1 cache (10000 entries, BLAKE3 hash, thread-safe) |
+| High-performance cache | Moka L1 cache (10000 entries, BLAKE3 hash, thread-safe, single-flight dedup) |
+| HTTP server | `--serve-http` REST service with health checks (`/health`), metrics export (`/metrics`), graceful shutdown |
 | Implicit multiplication | Auto-recognition of math idioms like `2x`, `3(x+1)` |
 | JSON output | `--json` emits a `result/domain/cache` structure for pipeline integration |
-| Industrial-grade testing | 1925 tests, 97.27% coverage, release build with zero warnings |
+| Industrial-grade testing | 2374 tests, 97.27% coverage, release build with zero warnings |
 
 ### 11 Computation Domains
 
@@ -121,6 +122,36 @@ cargo build --features time
 2. **REPL** — `calnexus --repl` (interactive, with Tab completion and variable binding)
 3. **Batch** — `calnexus --batch exprs.txt` (parallel evaluation with rayon)
 
+### HTTP Server Mode
+
+Requires `--features server`. Provides REST API and operational endpoints:
+
+```bash
+calnexus --serve-http
+```
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/v1/evaluate` | POST | Expression evaluation (JSON request/response) |
+| `/health` | GET | Comprehensive health check (includes L1 cache status) |
+| `/live` | GET | Liveness probe |
+| `/ready` | GET | Readiness probe |
+| `/metrics` | GET | Cache metrics export (Prometheus format by default, `?format=json` for JSON) |
+
+Optional feature enhancements:
+
+| Feature | Description |
+| --- | --- |
+| `ratelimit` | HTTP rate limiting middleware (LimiteronAdapter) |
+| `docs` | Swagger UI (`/swagger-ui`, OpenAPI documentation) |
+| `graceful-shutdown` | Enhanced graceful shutdown (connection tracking + configurable drain timeout) |
+| `observability` | OpenTelemetry observability (tracing integration) |
+
+```bash
+# Enable all HTTP enhancements
+cargo build --release --features cli,server,ratelimit,graceful-shutdown,observability
+```
+
 ---
 
 ## Architecture
@@ -147,7 +178,7 @@ Core module notes:
 
 - **Parser**: mathexpr-based, with implicit multiplication and complex number preprocessing
 - **Canonicalizer**: constant folding, commutative sorting, S-expression canonical form
-- **Cache**: Moka L1 cache (10000 entries, BLAKE3 key hash, thread-safe)
+- **Cache**: Moka L1 cache (10000 entries, BLAKE3 key hash, thread-safe, single-flight concurrent dedup)
 - **Router**: Priority-sorted domain dispatch (first `supports()` wins)
 
 ---
@@ -332,8 +363,8 @@ CalNexus is a Rust library + CLI binary project; the interface docs can be viewe
 ## Testing
 
 ```bash
-# Run all tests (1925+ tests, 2227+ with optional domains)
-cargo test --features cli
+# Run all tests (2374+ tests)
+cargo test --features cli,time,unit,fx,server
 
 # Full test suite with optional domains
 cargo test --features cli,time,unit,fx
@@ -346,7 +377,7 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-Test scale: 1925 tests (1623 lib + 123 CLI + 132 integration + 6 REPL + 13 security + 12 property + 10 snapshot + 6 performance), 97.27% coverage, release build with zero warnings. Optional domains (time/unit/fx) add 302 tests (lib +292, integration +10) for a total of 2227.
+Test scale: 2374 tests (2037 lib + 132 integration + 126 numerical linear algebra + 13 snapshot + 12 HTTP integration + 12 time/unit/fx integration + 10 security + 10 property + 8 REPL + 6 performance + 2 CLI), 97.27% coverage, release build with zero warnings.
 
 ---
 

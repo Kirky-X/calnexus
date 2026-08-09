@@ -8,6 +8,8 @@
 //! - validate vars/precision 超限 → 422 `{"type":"ValidationError","field":"...","constraint":"..."}`
 //!
 //! 测试使用 `tower::ServiceExt::oneshot` 直接测试 Router，无需启动真实 server。
+//!
+//! lib-feature-absorption：新增 health-check 端点测试（/health, /ready, /live）。
 
 #![cfg(feature = "server")]
 
@@ -152,4 +154,130 @@ async fn test_http_evaluate_validation_error_oversized_vars() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["type"], "ValidationError");
     assert_eq!(body["field"], "vars");
+}
+
+// ===== Health Check 端点测试（lib-feature-absorption） =====
+
+/// 发送 GET 请求并返回 (status, body_json)。
+async fn send_get_request(uri: &str) -> (StatusCode, Value) {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.expect("router oneshot failed");
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body collection failed")
+        .to_bytes();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+/// GET /health → 200 + {"status": "healthy", "checks": {"cache": {...}}}
+#[tokio::test]
+async fn test_health_endpoint_healthy() {
+    let (status, body) = send_get_request("/health").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "healthy");
+    assert!(body["checks"]["cache"].is_object(), "应包含 cache 检查器");
+    assert_eq!(body["checks"]["cache"]["status"], "healthy");
+}
+
+/// GET /live → 200 + {"status": "healthy", "checks": {}}
+#[tokio::test]
+async fn test_liveness_endpoint_healthy() {
+    let (status, body) = send_get_request("/live").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "healthy");
+    assert!(body["checks"].as_object().unwrap().is_empty(), "/live 不应包含检查器");
+}
+
+/// GET /ready → 200 + 同 /health
+#[tokio::test]
+async fn test_readiness_endpoint_healthy() {
+    let (status, body) = send_get_request("/ready").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "healthy");
+    assert!(body["checks"]["cache"].is_object(), "应包含 cache 检查器");
+}
+
+// ===== Metrics 端点测试（lib-feature-absorption） =====
+
+/// GET /metrics → 200 + Prometheus 文本格式（默认）
+#[tokio::test]
+async fn test_metrics_prometheus_format() {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.expect("router oneshot failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap_or(""))
+        .unwrap_or("");
+    assert!(
+        content_type.contains("text/plain"),
+        "默认应为 text/plain: {}",
+        content_type
+    );
+
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let body = String::from_utf8_lossy(&bytes);
+    assert!(
+        body.contains("cache") || body.contains("operations") || body.is_empty() || body.contains("#"),
+        "Prometheus 格式应包含缓存指标或为空注释: {}",
+        &body[..body.len().min(200)]
+    );
+}
+
+/// GET /metrics?format=json → 200 + JSON 格式
+#[tokio::test]
+async fn test_metrics_json_format() {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/metrics?format=json")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.expect("router oneshot failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .map(|v| v.to_str().unwrap_or(""))
+        .unwrap_or("");
+    assert!(
+        content_type.contains("application/json"),
+        "JSON 格式应为 application/json: {}",
+        content_type
+    );
+
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    // oxcache JSON metrics 应包含缓存统计字段
+    assert!(json.is_object(), "JSON metrics 应返回对象");
 }
