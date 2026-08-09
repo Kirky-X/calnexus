@@ -22,7 +22,11 @@ pub use self::stats::DataAnalysisImpl;
 pub use self::symbolic_api::SymbolicMathImpl;
 pub use self::applied::AppliedMathImpl;
 
+// Re-export traits for external use.
+pub use self::traits::{AppliedMath, DataAnalysis, LinearAlgebra, ScalarMath, SymbolicMath};
+
 use crate::core::{CalcError, EvalContext};
+use crate::api::types::{BigNumber, Complex, Matrix, Polynomial, Vector};
 use std::sync::RwLock;
 
 /// CalNexus 门面结构体：直接 API 入口。
@@ -93,4 +97,133 @@ impl Default for CalNexus {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ── Trait 实现委托 ──
+
+impl ScalarMath for ScalarMathImpl<'_> {
+    fn add(&self, a: f64, b: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::add(self, a, b) }
+    fn sub(&self, a: f64, b: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::sub(self, a, b) }
+    fn mul(&self, a: f64, b: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::mul(self, a, b) }
+    fn div(&self, a: f64, b: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::div(self, a, b) }
+    fn pow(&self, a: f64, b: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::pow(self, a, b) }
+    fn rem(&self, a: f64, b: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::rem(self, a, b) }
+    fn factorial(&self, n: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::factorial(self, n) }
+    fn abs(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::abs(self, x) }
+    fn sin(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::sin(self, x) }
+    fn cos(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::cos(self, x) }
+    fn tan(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::tan(self, x) }
+    fn asin(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::asin(self, x) }
+    fn acos(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::acos(self, x) }
+    fn atan(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::atan(self, x) }
+    fn ln(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::ln(self, x) }
+    fn log(&self, x: f64, base: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::log(self, x, base) }
+    fn exp(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::exp(self, x) }
+    fn sinh(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::sinh(self, x) }
+    fn cosh(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::cosh(self, x) }
+    fn tanh(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::tanh(self, x) }
+    fn gamma(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::gamma(self, x) }
+    fn erf(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::erf(self, x) }
+    fn precision_eval(&self, digits: usize, expr: &str) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::precision_eval(self, digits, expr) }
+    fn gcd(&self, a: &BigNumber, b: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::gcd(self, a, b) }
+    fn lcm(&self, a: &BigNumber, b: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::lcm(self, a, b) }
+    fn is_prime(&self, n: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::is_prime(self, n) }
+    fn prime_sieve(&self, n: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::prime_sieve(self, n) }
+    fn mod_pow(&self, base: &BigNumber, exp: &BigNumber, m: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::mod_pow(self, base, exp, m) }
+    fn mod_inverse(&self, a: &BigNumber, m: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::mod_inverse(self, a, m) }
+    fn euler_phi(&self, n: &BigNumber) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::euler_phi(self, n) }
+    fn perm(&self, n: u64, k: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::perm(self, n, k) }
+    fn comb(&self, n: u64, k: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::comb(self, n, k) }
+    fn catalan(&self, n: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::catalan(self, n) }
+    fn stirling_first(&self, n: u64, k: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::stirling_first(self, n, k) }
+    fn stirling_second(&self, n: u64, k: u64) -> Result<crate::core::EvalResult, CalcError> { ScalarMathImpl::stirling_second(self, n, k) }
+}
+
+impl LinearAlgebra for LinearAlgebraImpl<'_> {
+    fn det(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::det(self, m) }
+    fn inverse(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::inverse(self, m) }
+    fn transpose(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::transpose(self, m) }
+    fn identity(&self, n: usize) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::identity(self, n) }
+    fn mat_add(&self, a: &Matrix, b: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::mat_add(self, a, b) }
+    fn mat_sub(&self, a: &Matrix, b: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::mat_sub(self, a, b) }
+    fn mat_mul(&self, a: &Matrix, b: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::mat_mul(self, a, b) }
+    fn scalar_mul(&self, s: f64, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::scalar_mul(self, s, m) }
+    fn dot(&self, a: &Vector, b: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::dot(self, a, b) }
+    fn cross(&self, a: &Vector, b: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::cross(self, a, b) }
+    fn normalize(&self, a: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::normalize(self, a) }
+    fn magnitude(&self, a: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::magnitude(self, a) }
+    fn vector_add(&self, a: &Vector, b: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::vector_add(self, a, b) }
+    fn vector_sub(&self, a: &Vector, b: &Vector) -> Result<crate::core::EvalResult, CalcError> { LinearAlgebraImpl::vector_sub(self, a, b) }
+}
+
+impl DataAnalysis for DataAnalysisImpl<'_> {
+    fn mean(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::mean(self, data) }
+    fn variance(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::variance(self, data) }
+    fn std(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::std(self, data) }
+    fn median(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::median(self, data) }
+    fn min(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::min(self, data) }
+    fn max(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::max(self, data) }
+    fn sum(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::sum(self, data) }
+    fn count(&self, data: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::count(self, data) }
+    fn norm_pdf(&self, x: f64, mu: f64, sigma: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::norm_pdf(self, x, mu, sigma) }
+    fn norm_cdf(&self, x: f64, mu: f64, sigma: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::norm_cdf(self, x, mu, sigma) }
+    fn norm_inv(&self, p: f64, mu: f64, sigma: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::norm_inv(self, p, mu, sigma) }
+    fn t_pdf(&self, x: f64, df: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::t_pdf(self, x, df) }
+    fn t_cdf(&self, x: f64, df: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::t_cdf(self, x, df) }
+    fn t_inv(&self, p: f64, df: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::t_inv(self, p, df) }
+    fn chi2_pdf(&self, x: f64, k: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::chi2_pdf(self, x, k) }
+    fn chi2_cdf(&self, x: f64, k: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::chi2_cdf(self, x, k) }
+    fn chi2_inv(&self, p: f64, k: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::chi2_inv(self, p, k) }
+    fn f_pdf(&self, x: f64, d1: f64, d2: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::f_pdf(self, x, d1, d2) }
+    fn f_cdf(&self, x: f64, d1: f64, d2: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::f_cdf(self, x, d1, d2) }
+    fn f_inv(&self, p: f64, d1: f64, d2: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::f_inv(self, p, d1, d2) }
+    fn poisson_pmf(&self, k: f64, lambda: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::poisson_pmf(self, k, lambda) }
+    fn poisson_cdf(&self, k: f64, lambda: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::poisson_cdf(self, k, lambda) }
+    fn binom_pmf(&self, k: f64, n: f64, p: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::binom_pmf(self, k, n, p) }
+    fn binom_cdf(&self, k: f64, n: f64, p: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::binom_cdf(self, k, n, p) }
+    fn t_test_one(&self, data: &[f64], mu: f64) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::t_test_one(self, data, mu) }
+    fn t_test_two(&self, a: &[f64], b: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::t_test_two(self, a, b) }
+    fn chi2_test(&self, observed: &[f64], expected: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::chi2_test(self, observed, expected) }
+    fn pearson(&self, x: &[f64], y: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::pearson(self, x, y) }
+    fn spearman(&self, x: &[f64], y: &[f64]) -> Result<crate::core::EvalResult, CalcError> { DataAnalysisImpl::spearman(self, x, y) }
+}
+
+impl SymbolicMath for SymbolicMathImpl<'_> {
+    fn differentiate(&self, expr: &str, var: &str) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::differentiate(self, expr, var) }
+    fn integrate(&self, expr: &str, var: &str) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::integrate(self, expr, var) }
+    fn simplify(&self, expr: &str) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::simplify(self, expr) }
+    fn limit(&self, expr: &str, var: &str, target: f64) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::limit(self, expr, var, target) }
+    fn taylor_expand(&self, expr: &str, var: &str, center: f64, order: usize) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::taylor_expand(self, expr, var, center, order) }
+    fn poly_add(&self, a: &Polynomial, b: &Polynomial) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::poly_add(self, a, b) }
+    fn poly_sub(&self, a: &Polynomial, b: &Polynomial) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::poly_sub(self, a, b) }
+    fn poly_mul(&self, a: &Polynomial, b: &Polynomial) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::poly_mul(self, a, b) }
+    fn poly_div(&self, a: &Polynomial, b: &Polynomial) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::poly_div(self, a, b) }
+    fn poly_roots(&self, p: &Polynomial) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::poly_roots(self, p) }
+    fn poly_eval(&self, p: &Polynomial, x: f64) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::poly_eval(self, p, x) }
+    fn complex_add(&self, a: &Complex, b: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_add(self, a, b) }
+    fn complex_sub(&self, a: &Complex, b: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_sub(self, a, b) }
+    fn complex_mul(&self, a: &Complex, b: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_mul(self, a, b) }
+    fn complex_div(&self, a: &Complex, b: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_div(self, a, b) }
+    fn complex_abs(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_abs(self, z) }
+    fn complex_arg(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_arg(self, z) }
+    fn complex_conj(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_conj(self, z) }
+    fn complex_exp(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_exp(self, z) }
+    fn complex_ln(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_ln(self, z) }
+}
+
+impl AppliedMath for AppliedMathImpl<'_> {
+    #[cfg(feature = "time")]
+    fn now(&self) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::now(self) }
+    #[cfg(feature = "time")]
+    fn today(&self) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::today(self) }
+    #[cfg(feature = "time")]
+    fn date_add(&self, date: &str, expr: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::date_add(self, date, expr) }
+    #[cfg(feature = "time")]
+    fn date_diff(&self, a: &str, b: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::date_diff(self, a, b) }
+    #[cfg(feature = "unit")]
+    fn convert(&self, value: f64, from: &str, to: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::convert(self, value, from, to) }
+    #[cfg(feature = "fx")]
+    fn fx(&self, amount: f64, from: &str, to: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::fx(self, amount, from, to) }
+    #[cfg(feature = "fx")]
+    fn fx_rate(&self, from: &str, to: &str) -> Result<crate::core::EvalResult, CalcError> { AppliedMathImpl::fx_rate(self, from, to) }
 }
