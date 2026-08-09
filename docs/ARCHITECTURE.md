@@ -92,7 +92,7 @@ flowchart TD
 
 ### 1.3 Lmath — 核心数学函数层 (`src/math/`)
 
-从计算域层提取的纯数学函数集合，无表达式解析/域路由依赖。14 个模块对应 14 个计算域的数学核心：
+从计算域层提取的纯数学函数集合，无表达式解析/域路由依赖。16 个模块对应各计算域的数学核心：
 
 | 模块 | 职责 |
 |------|------|
@@ -107,6 +107,8 @@ flowchart TD
 | `polynomial.rs` | poly_add/sub/mul/div/roots/eval |
 | `symbolic.rs` | 符号微分/积分/化简/极限/泰勒展开 |
 | `precision.rs` | BigRational 求值 + format_bigrational |
+| `solvers.rs` | Newton-Raphson / 二分法 / Brent 方程数值求解 |
+| `numerical.rs` | eig/SVD/LU/QR/solve/matrix_exp（feature = "numerical"，nalgebra） |
 | `time.rs` | now/today/date_add/date_diff/parse_date（feature = "time"） |
 | `unit.rs` + `unit_table.rs` | 8 量纲单位换算 + 温度仿射（feature = "unit"） |
 | `fx.rs` | 汇率换算 RateTable + convert/get_rate（feature = "fx"） |
@@ -142,11 +144,11 @@ flowchart LR
 | `mod.rs` | `CalNexus` 门面（`RwLock<EvalContext>` + 5 个分组访问器） |
 | `types.rs` | 5 个类型包装器（Matrix/Vector/Complex/Polynomial/BigNumber）+ From/TryFrom |
 | `traits.rs` | 5 个分组 trait 定义（ScalarMath/LinearAlgebra/DataAnalysis/SymbolicMath/AppliedMath） |
-| `scalar.rs` | ScalarMathImpl — add/sub/mul/div/sin/cos |
-| `linalg.rs` | LinearAlgebraImpl — det/dot |
-| `stats.rs` | DataAnalysisImpl — mean/std |
-| `symbolic_api.rs` | SymbolicMathImpl — 占位 |
-| `applied.rs` | AppliedMathImpl — convert（feature = "unit"） |
+| `scalar.rs` | ScalarMathImpl — 算术(8) + 科学函数(14) + 精度(1) + 数论(9) + 组合(5)，共 37 方法 |
+| `linalg.rs` | LinearAlgebraImpl — 矩阵(8) + 向量(6) + 数值分解(6)，共 20 方法 |
+| `stats.rs` | DataAnalysisImpl — 基础统计(8) + 分布(16) + 假设检验(3) + 相关(2) + 回归(3)，共 32 方法 |
+| `symbolic_api.rs` | SymbolicMathImpl — 符号演算(5) + 多项式(6) + 复数(9) + 方程求解(1)，共 21 方法 |
+| `applied.rs` | AppliedMathImpl — 时间(13) + 单位(1) + 汇率(2)，共 16 方法（feature-gated） |
 | `cache.rs` | build_api_cache_key 基础实现 |
 
 **依赖方向**：`api/` → `math/` → `core/`，不依赖 `domains/`。
@@ -308,13 +310,11 @@ flowchart LR
 | `time` | `domains/time.rs` | 时间计算（jiff 0.2 + IANA tzdb，14 函数） |
 | `unit` | `math/unit.rs` / `math/unit_table.rs` → `domains/unit.rs` | 8 量纲物理单位换算 + 温度仿射 |
 | `fx` | `math/fx.rs` → `domains/fx.rs` / `fx_provider.rs` | 汇率换算（frankfurter.dev API + 三级缓存） |
-| `numerical` | 数值扩展（规划中，P3） | 高级数值方法 — 当前 `numerical = []` 无模块 |
+| `numerical` | `math/numerical.rs` → `domains/numerical.rs` + `api/linalg.rs` | 数值线性代数分解（eig/SVD/LU/QR/solve/matrix_exp，nalgebra f64） |
 
 `default = []`：核心库零依赖，可作为嵌入式计算引擎被其他 crate 引用。
 
 ## 6. 参考资料
 
-- [P2 优化提案](../specmark/changes/p2-codenexus-optimization/proposal.md)
-- [P2 设计文档](../specmark/changes/p2-codenexus-optimization/design.md)
 - [变更日志](CHANGELOG.md)
 - [贡献指南](CONTRIBUTING.md)

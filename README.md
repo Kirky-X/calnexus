@@ -76,7 +76,7 @@
 | HTTP 服务 | `--serve-http` 启动 REST 服务，含健康检查（`/health`）、指标导出（`/metrics`）、优雅关闭 |
 | 隐式乘法 | `2x`、`3(x+1)` 等数学惯用写法自动识别 |
 | JSON 输出 | `--json` 输出 `result/domain/cache` 结构，便于管道集成 |
-| 工业级测试 | 2374 个测试，覆盖率 97.27%，release 零警告 |
+| 工业级测试 | 2693 个测试，覆盖率 97.27%，release 零警告 |
 
 ### 11 个计算域
 
@@ -164,14 +164,18 @@ graph TD
     D --> E[Domain::evaluate]
     E --> F[ArithmeticDomain]
     E --> G[ScientificDomain]
-    E --> H[PrecisionDomain]
-    E --> I[NumberTheoryDomain]
-    E --> J[CombinatoricsDomain]
-    E --> K[PolynomialDomain]
-    E --> L[ComplexDomain]
-    E --> M[MatrixDomain]
-    E --> N[VectorDomain]
-    E --> O[SymbolicDomain]
+    E --> H[StatisticsDomain]
+    E --> I[PrecisionDomain]
+    E --> J[NumberTheoryDomain]
+    E --> K[CombinatoricsDomain]
+    E --> L[PolynomialDomain]
+    E --> M[ComplexDomain]
+    E --> N[MatrixDomain]
+    E --> O[VectorDomain]
+    E --> P[SymbolicDomain]
+    E --> Q[TimeDomain]
+    E --> R[UnitDomain]
+    E --> S[FxDomain]
 ```
 
 核心模块说明：
@@ -363,7 +367,7 @@ CalNexus 是一个 Rust 库 + CLI 二进制项目，接口文档可通过以下�
 ## 测试
 
 ```bash
-# 运行全部测试（2374+ 测试）
+# 运行全部测试（2693+ 测试）
 cargo test --features cli,time,unit,fx,server
 
 # 含可选域全量测试
@@ -377,7 +381,7 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-测试规模：2374 个测试（2037 lib + 132 集成 + 126 数值线性代数 + 13 快照 + 12 HTTP 集成 + 12 时间/单位/汇率集成 + 10 安全 + 10 属性 + 8 REPL + 6 性能 + 2 CLI），覆盖率 97.27%，release 构建零警告。
+测试规模：2693 个测试（2339 lib + 132 集成 + 126 数值线性代数 + 17 API 集成 + 13 快照 + 12 HTTP 集成 + 12 时间/单位/汇率集成 + 10 安全 + 10 属性 + 8 REPL + 6 性能 + 2 CLI + 2 其他），覆盖率 97.27%，release 构建零警告。
 
 ---
 

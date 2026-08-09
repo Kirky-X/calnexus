@@ -76,7 +76,7 @@ A command-line math expression evaluator with 11 core computation domains and 3 
 | HTTP server | `--serve-http` REST service with health checks (`/health`), metrics export (`/metrics`), graceful shutdown |
 | Implicit multiplication | Auto-recognition of math idioms like `2x`, `3(x+1)` |
 | JSON output | `--json` emits a `result/domain/cache` structure for pipeline integration |
-| Industrial-grade testing | 2374 tests, 97.27% coverage, release build with zero warnings |
+| Industrial-grade testing | 2693 tests, 97.27% coverage, release build with zero warnings |
 
 ### 11 Computation Domains
 
@@ -164,14 +164,18 @@ graph TD
     D --> E[Domain::evaluate]
     E --> F[ArithmeticDomain]
     E --> G[ScientificDomain]
-    E --> H[PrecisionDomain]
-    E --> I[NumberTheoryDomain]
-    E --> J[CombinatoricsDomain]
-    E --> K[PolynomialDomain]
-    E --> L[ComplexDomain]
-    E --> M[MatrixDomain]
-    E --> N[VectorDomain]
-    E --> O[SymbolicDomain]
+    E --> H[StatisticsDomain]
+    E --> I[PrecisionDomain]
+    E --> J[NumberTheoryDomain]
+    E --> K[CombinatoricsDomain]
+    E --> L[PolynomialDomain]
+    E --> M[ComplexDomain]
+    E --> N[MatrixDomain]
+    E --> O[VectorDomain]
+    E --> P[SymbolicDomain]
+    E --> Q[TimeDomain]
+    E --> R[UnitDomain]
+    E --> S[FxDomain]
 ```
 
 Core module notes:
@@ -363,7 +367,7 @@ CalNexus is a Rust library + CLI binary project; the interface docs can be viewe
 ## Testing
 
 ```bash
-# Run all tests (2374+ tests)
+# Run all tests (2693+ tests)
 cargo test --features cli,time,unit,fx,server
 
 # Full test suite with optional domains
@@ -377,7 +381,7 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-Test scale: 2374 tests (2037 lib + 132 integration + 126 numerical linear algebra + 13 snapshot + 12 HTTP integration + 12 time/unit/fx integration + 10 security + 10 property + 8 REPL + 6 performance + 2 CLI), 97.27% coverage, release build with zero warnings.
+Test scale: 2693 tests (2339 lib + 132 integration + 126 numerical linear algebra + 17 API integration + 13 snapshot + 12 HTTP integration + 12 time/unit/fx integration + 10 security + 10 property + 8 REPL + 6 performance + 2 CLI + 2 other), 97.27% coverage, release build with zero warnings.
 
 ---
 
