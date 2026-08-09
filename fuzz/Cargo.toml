@@ -32,5 +32,5 @@ name = "matrix_dim_fuzz"
 path = "fuzz_targets/matrix_dim_fuzz.rs"
 
 [dependencies]
-libfuzzer-sys = "0.4"
+libfuzzer-sys = { version = "0.4", default-features = false }
 calnexus = { path = ".." }
