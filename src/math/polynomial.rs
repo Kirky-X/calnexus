@@ -40,9 +40,15 @@ pub fn mul(a: &[f64], b: &[f64]) -> Vec<f64> {
 }
 
 /// 多项式长除法，返回 `(quotient, remainder)`。
+/// HIGH #38 修复：检查零多项式除数，返回 Inf/NaN 而非静默错误结果
 pub fn div(a: &[f64], b: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let a = trim(a);
     let b = trim(b);
+    // 检查零多项式除数（trim 后为 [0.0] 或空）
+    if b.is_empty() || (b.len() == 1 && b[0] == 0.0) {
+        // 返回含 NaN 的结果，调用方通过 is_finite 检查捕获
+        return (vec![f64::NAN], vec![f64::NAN]);
+    }
     if a.len() < b.len() || a.is_empty() {
         return (vec![0.0], a.clone());
     }
@@ -312,11 +318,15 @@ fn solve_quartic(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<(f64, f64)> {
         }
     } else {
         let resolvent_roots = solve_cubic(1.0, 2.0 * p, p * p - 4.0 * r, -q * q);
-        let m = resolvent_roots
+        let m = match resolvent_roots
             .iter()
             .find(|(re, im)| im.abs() < EPS && *re > 0.0)
             .map(|(re, _)| *re)
-            .expect("resolvent cubic must have a positive real root");
+        {
+            Some(v) => v,
+            // HIGH #39 修复：将 .expect() 转为空结果返回，避免 panic
+            None => return Vec::new(),
+        };
 
         let sqrt_m = m.sqrt();
         let half_pm = (p + m) / 2.0;

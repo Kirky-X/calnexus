@@ -181,7 +181,17 @@ impl SymbolicDomain {
         }
         let expr = ast_to_symbolic(&args[0])?;
         let var = extract_var_name(&args[1])?;
-        let order = extract_number(&args[2])? as u32;
+        let order_f = extract_number(&args[2])?;
+        // CRITICAL #89 修复：验证 f64 → u32 范围，防止负数/超大值不安全转换
+        if order_f < 0.0 || !order_f.is_finite() || order_f > u32::MAX as f64 {
+            return Err(CalcError::domain(format!(
+                "taylor() order must be a non-negative finite integer, got {}", order_f
+            )).with_i18n(
+                "msg.symbolic.taylor_order_invalid",
+                vec![("order".to_string(), order_f.to_string())],
+            ));
+        }
+        let order = order_f as u32;
         math_sym::taylor(&expr, &var, order)
     }
 }

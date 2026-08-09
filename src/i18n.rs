@@ -102,11 +102,29 @@ impl I18n {
         if args.is_empty() {
             return template.to_string();
         }
-        let mut result = template.to_string();
-        for (name, value) in args {
-            let placeholder = format!("{{{}}}", name);
-            result = result.replace(&placeholder, value);
+        // HIGH #12 修复：单次扫描替换，避免交叉占位符污染
+        // 旧实现顺序替换，若 args 值含其他占位符模式（如 {b}），会被后续迭代二次替换
+        let mut result = String::with_capacity(template.len());
+        let mut remaining = template;
+        while let Some(start) = remaining.find('{') {
+            result.push_str(&remaining[..start]);
+            if let Some(end) = remaining[start..].find('}') {
+                let placeholder_name = &remaining[start + 1..start + end];
+                // 查找匹配的 arg
+                if let Some((_, value)) = args.iter().find(|(name, _)| *name == placeholder_name) {
+                    result.push_str(value);
+                } else {
+                    // 未找到匹配：保留原始占位符
+                    result.push_str(&remaining[start..start + end + 1]);
+                }
+                remaining = &remaining[start + end + 1..];
+            } else {
+                // 无匹配 '}'：保留剩余文本
+                result.push_str(&remaining[start..]);
+                remaining = "";
+            }
         }
+        result.push_str(remaining);
         result
     }
 }

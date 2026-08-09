@@ -622,22 +622,18 @@ impl CalcError {
 
     /// JSON 机器可读（--json）。手动构造避免 serde_json 运行时依赖。
     pub fn to_json(&self) -> String {
-        let span = match &self.span {
-            Some(s) => format!(r#","span":{{"start":{},"end":{}}}"#, s.start, s.end),
-            None => String::new(),
-        };
-        let hint = match &self.hint {
-            Some(h) => format!(r#","hint":"{}""#, escape_json_string(h)),
-            None => String::new(),
-        };
-        format!(
-            r#"{{"error":{{"kind":"{:?}","message":"{}"{}{},"exit_code":{}}}}}"#,
-            self.kind,
-            escape_json_string(&self.message),
-            span,
-            hint,
-            self.kind.exit_code()
-        )
+        // 条件拼接 span/hint，避免 None 时产生无效 JSON（CRITICAL #103 修复）
+        let mut inner = String::new();
+        inner.push_str(&format!("{{\"kind\":\"{:?}\",\"message\":\"{}\"",
+            self.kind, escape_json_string(&self.message)));
+        if let Some(s) = &self.span {
+            inner.push_str(&format!(r#","span":{{"start":{},"end":{}}}"#, s.start, s.end));
+        }
+        if let Some(h) = &self.hint {
+            inner.push_str(&format!(r#","hint":"{}""#, escape_json_string(h)));
+        }
+        inner.push_str(&format!(r#","exit_code":{}}}"#, self.kind.exit_code()));
+        format!("{{\"error\":{}}}", inner)
     }
 
     /// 教育模式（--explain）。design.md §5.5。

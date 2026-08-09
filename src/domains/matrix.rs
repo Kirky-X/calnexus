@@ -506,6 +506,12 @@ impl MatrixDomain {
                         "identity() requires a positive integer, got {}", n
                     )));
                 }
+                // HIGH #73-76 修复：检查 usize 转换安全性
+                if n > usize::MAX as f64 {
+                    return Err(CalcError::domain(format!(
+                        "identity() argument {} exceeds maximum dimension", n
+                    )));
+                }
                 Ok(MatrixValue::Matrix(math_matrix::identity(n as usize)?))
             }
             _ => Err(CalcError::domain("identity() requires a scalar argument".to_string())),

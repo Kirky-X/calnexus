@@ -124,6 +124,10 @@ impl CombinatoricsDomain {
                         name, v
                     )));
                 }
+                // HIGH #69 修复：添加与 Number 分支一致的边界检查
+                if v > i64::MAX as f64 || v < i64::MIN as f64 {
+                    return Err(CalcError::overflow());
+                }
                 Ok(BigInt::from(v as i64))
             }
             AstNode::BinaryOp(op, l, r) => {

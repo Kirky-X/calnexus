@@ -390,21 +390,31 @@ fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
 }
 
 fn gcd(a: i64, b: i64) -> i64 {
-    let mut a = a.abs();
-    let mut b = b.abs();
+    // HIGH #26 修复：i64::MIN.abs() 会溢出，用 i128 中间计算
+    let mut a = (a as i128).abs();
+    let mut b = (b as i128).abs();
     while b != 0 {
         let t = b;
         b = a % b;
         a = t;
     }
-    a
+    a as i64
 }
 
 fn lcm(a: i64, b: i64) -> i64 {
     if a == 0 || b == 0 {
         return 0;
     }
-    (a.abs() / gcd(a, b)) * b.abs()
+    // HIGH #23 修复：用 i128 中间计算防止溢出
+    let a_abs = (a as i128).abs();
+    let b_abs = (b as i128).abs();
+    let g = gcd(a, b) as i128;
+    let result = (a_abs / g) * b_abs;
+    if result > i64::MAX as i128 {
+        // 溢出时返回 i64::MAX 作为饱和值（steps 模式仅用于显示）
+        return i64::MAX;
+    }
+    result as i64
 }
 
 /// 二元运算符字符串表示。

@@ -359,7 +359,8 @@ fn mod_pow_bigint(base: &BigInt, exp: &BigInt, m: &BigInt) -> BigInt {
         return BigInt::zero();
     }
     let mut result = BigInt::one();
-    let mut base = base % m;
+    // HIGH #36 修复：归一化 base 为非负值，防止负数模幂结果错误
+    let mut base = ((base % m) + m) % m;
     let mut exp = exp.clone();
     while exp.is_positive() {
         if exp.is_odd() {

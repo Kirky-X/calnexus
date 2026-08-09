@@ -19,15 +19,19 @@
 /// - 保留默认 backtrace 行为（开发者调试需要，由 RUST_BACKTRACE 控制）
 /// - 在默认输出前追加用户友好的简短错误前缀（"calnexus: internal error"）
 /// - 全局生效（影响所有线程的 panic 行为）
-/// - 幂等：多次调用不会叠加 hook（每次 take_hook 取出当前 hook 替换）
+/// - HIGH #13 修复：使用 Once 保证幂等，多次调用不叠加 hook
 fn setup_panic_hook() {
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        eprintln!("calnexus: internal error (panic)");
-        // 调用默认 hook 打印 panic location + backtrace（如启用）
-        default_hook(info);
-        eprintln!("calnexus: please report this bug with the backtrace above");
-    }));
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            eprintln!("calnexus: internal error (panic)");
+            // 调用默认 hook 打印 panic location + backtrace（如启用）
+            default_hook(info);
+            eprintln!("calnexus: please report this bug with the backtrace above");
+        }));
+    });
 }
 
 #[cfg(feature = "cli")]
