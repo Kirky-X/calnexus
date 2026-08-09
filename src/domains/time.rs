@@ -14,6 +14,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use crate::math::time as math_time;
 
 use jiff::civil::Date;
@@ -35,7 +36,8 @@ impl CalculationDomain for TimeDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        evaluate_time(ast, ctx)
+        let ctx = ensure_math_constants(ctx);
+        evaluate_time(ast, &ctx)
     }
 
     fn priority(&self) -> u8 {
@@ -103,22 +105,7 @@ fn evaluate_time(ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcErr
             })?;
             Ok(EvalResult::Scalar(n))
         }
-        AstNode::Variable(name) => {
-            // 用户绑定优先，再识别数学常量 pi/e（与 steps.rs 一致）
-            if let Some(v) = ctx.get_var(name) {
-                return Ok(EvalResult::Scalar(v));
-            }
-            match name.as_str() {
-                "pi" => Ok(EvalResult::Scalar(std::f64::consts::PI)),
-                "e" => Ok(EvalResult::Scalar(std::f64::consts::E)),
-                _ => Err(
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.clone())],
-                    ),
-                ),
-            }
-        }
+        AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
         AstNode::BinaryOp(op, l, r) => {
             // 时间域的算术包围：timestamp("...")+3600 等
             // 策略：先尝试将两边求值为标量（DateTime 转为 Unix 秒），做标量算术
@@ -148,13 +135,9 @@ fn evaluate_time(ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcErr
             "string operand not supported in time domain binary/unary operations".to_string(),
         )
         .with_i18n("msg.time.string_operand_not_supported", vec![])),
-        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
-            format!("time domain does not support this node type: {:?}", ast),
-        )
-        .with_i18n(
-            "msg.time.unsupported_node",
-            vec![("node".to_string(), format!("{:?}", ast))],
-        )),
+        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+            Err(unsupported_node_error("time", ast))
+        }
     }
 }
 
@@ -215,12 +198,7 @@ fn eval_to_f64(ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
 /// 求值时间函数调用：按函数名分发到对应的处理方法。
 fn eval_function(name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
     if !TIME_FUNCTIONS.contains(&name) {
-        return Err(
-            CalcError::domain(format!("unsupported function in time domain: {}", name)).with_i18n(
-                "msg.unknown_function",
-                vec![("name".to_string(), name.to_string())],
-            ),
-        );
+        return Err(unsupported_function_error("time", name));
     }
     match name {
         "date" => eval_date(args, ctx),

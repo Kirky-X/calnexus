@@ -11,6 +11,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error};
 
 /// 科学函数白名单。
 const SCIENTIFIC_FUNCTIONS: &[&str] = &[
@@ -40,14 +41,7 @@ impl CalculationDomain for ScientificDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        // 预绑定 pi/e（若上下文未提供）
-        let mut ctx = ctx.clone();
-        if ctx.get_var("pi").is_none() {
-            ctx = ctx.with_var("pi", std::f64::consts::PI);
-        }
-        if ctx.get_var("e").is_none() {
-            ctx = ctx.with_var("e", std::f64::consts::E);
-        }
+        let ctx = ensure_math_constants(ctx);
         let value = self.eval_node(ast, &ctx)?;
         Ok(EvalResult::Scalar(value))
     }
@@ -58,12 +52,7 @@ impl ScientificDomain {
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(*n),
-            AstNode::Variable(name) => ctx.get_var(name).ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+            AstNode::Variable(name) => resolve_variable(ctx, name),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
                 let b = self.eval_node(r, ctx)?;
@@ -82,14 +71,7 @@ impl ScientificDomain {
             | AstNode::Matrix(_)
             | AstNode::List(_)
             | AstNode::BigNumber(_)
-            | AstNode::Str(_) => Err(CalcError::domain(format!(
-                "scientific domain does not support this node type: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.scientific.unsupported_node",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            )),
+            | AstNode::Str(_) => Err(unsupported_node_error("scientific", ast)),
         }
     }
 
@@ -170,7 +152,7 @@ impl ScientificDomain {
     }
 
     /// log(value, base)：委托给 `math::scientific::log`。
-    fn eval_log(&self, name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+    fn eval_log(&self, _name: &str, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
         if args.len() != 2 {
             return Err(CalcError::eval(format!(
                 "log expects 2 arguments (value, base), got {}",

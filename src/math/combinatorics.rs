@@ -6,7 +6,7 @@
 //! 供 `domains/`（AST 求值路径）和 `api/`（直接 API 路径）共用。
 
 use num_bigint::BigInt;
-use num_traits::{One, Signed, ToPrimitive, Zero};
+use num_traits::{One, ToPrimitive, Zero};
 
 use crate::core::CalcError;
 

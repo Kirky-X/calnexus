@@ -16,6 +16,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use nalgebra::DVector;
 
 use crate::math::vector as math_vec;
@@ -56,22 +57,7 @@ impl CalculationDomain for VectorDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        // M2 修复：性能优化——vars 已含 pi/e 时跳过 clone
-        // 修复前：每次 evaluate 无条件 ctx.clone() 注入 pi/e，即使 vars 已含 pi/e
-        // 修复后：仅在缺 pi/e 时 clone，避免常见情况的堆分配
-        let needs_pi = ctx.get_var("pi").is_none();
-        let needs_e = ctx.get_var("e").is_none();
-        if !needs_pi && !needs_e {
-            // 快路径：vars 已含 pi/e，跳过 clone
-            return self.eval_node(ast, ctx);
-        }
-        let mut ctx = ctx.clone();
-        if needs_pi {
-            ctx = ctx.with_var("pi", std::f64::consts::PI);
-        }
-        if needs_e {
-            ctx = ctx.with_var("e", std::f64::consts::E);
-        }
+        let ctx = ensure_math_constants(ctx);
         self.eval_node(ast, &ctx)
     }
 }
@@ -97,12 +83,7 @@ impl VectorDomain {
                 })?;
                 Ok(EvalResult::Scalar(n))
             }
-            AstNode::Variable(name) => ctx.get_var(name).map(EvalResult::Scalar).ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+            AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
             AstNode::List(_) => {
                 // 裸 List 节点 → 转为 Vector 结果
                 let v = self.list_to_vector(ast, ctx)?;
@@ -129,14 +110,7 @@ impl VectorDomain {
                 .with_i18n("msg.vector.factorial_not_supported", vec![])),
             },
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "vector domain does not support this node type: {:?}",
-                    ast
-                ))
-                .with_i18n(
-                    "msg.vector.unsupported_node",
-                    vec![("node".to_string(), format!("{:?}", ast))],
-                ))
+                Err(unsupported_node_error("vector", ast))
             }
         }
     }
@@ -175,12 +149,7 @@ impl VectorDomain {
                     vec![("value".to_string(), s.to_string())],
                 )
             }),
-            AstNode::Variable(name) => ctx.get_var(name).ok_or_else(|| {
-                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                    "msg.unbound_variable",
-                    vec![("name".to_string(), name.to_string())],
-                )
-            }),
+            AstNode::Variable(name) => resolve_variable(ctx, name),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_scalar(l, ctx)?;
                 let b = self.eval_scalar(r, ctx)?;
@@ -306,14 +275,7 @@ impl VectorDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !VECTOR_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in vector domain: {}",
-                name
-            ))
-            .with_i18n(
-                "msg.vector.unsupported_function",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(unsupported_function_error("vector", name));
         }
         match name {
             "dot" => self.eval_dot(args, ctx),

@@ -86,11 +86,6 @@ impl CalNexus {
     pub fn applied(&self) -> AppliedMathImpl<'_> {
         AppliedMathImpl { cn: self }
     }
-
-    /// 获取内部上下文（供 trait 实现使用）。
-    pub(crate) fn context(&self) -> EvalContext {
-        self.ctx.read().unwrap().clone()
-    }
 }
 
 impl Default for CalNexus {

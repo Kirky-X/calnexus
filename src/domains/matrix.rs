@@ -11,6 +11,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use nalgebra::DMatrix;
 #[cfg(feature = "numerical")]
 use nalgebra::DVector;
@@ -57,13 +58,7 @@ impl CalculationDomain for MatrixDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        let mut ctx = ctx.clone();
-        if ctx.get_var("pi").is_none() {
-            ctx = ctx.with_var("pi", std::f64::consts::PI);
-        }
-        if ctx.get_var("e").is_none() {
-            ctx = ctx.with_var("e", std::f64::consts::E);
-        }
+        let ctx = ensure_math_constants(ctx);
 
         // numerical 分解函数短路（返回 EvalResult::Json/Vector，绕过 MatrixValue 类型限制）。
         // lu/qr/eig/svd/solve 在此直接委托 numerical.rs；非 numerical 函数返回 None 回退 eval_node。
@@ -115,12 +110,7 @@ impl MatrixDomain {
         match ast {
             AstNode::Number(n) => Ok(MatrixValue::Scalar(*n)),
             AstNode::Variable(name) => {
-                ctx.get_var(name).map(MatrixValue::Scalar).ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                })
+                resolve_variable(ctx, name).map(MatrixValue::Scalar)
             }
             AstNode::Matrix(rows) => self.eval_matrix_literal(rows, ctx),
             AstNode::BinaryOp(op, l, r) => {
@@ -150,14 +140,7 @@ impl MatrixDomain {
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Complex(_, _) | AstNode::List(_) | AstNode::BigNumber(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "matrix domain does not support this node type: {:?}",
-                    ast
-                ))
-                .with_i18n(
-                    "msg.matrix.unsupported_node",
-                    vec![("node".to_string(), format!("{:?}", ast))],
-                ))
+                Err(unsupported_node_error("matrix", ast))
             }
         }
     }
@@ -308,27 +291,14 @@ impl MatrixDomain {
         ctx: &EvalContext,
     ) -> Result<MatrixValue, CalcError> {
         if !MATRIX_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in matrix domain: {}",
-                name
-            ))
-            .with_i18n(
-                "msg.matrix.unsupported_function",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(unsupported_function_error("matrix", name));
         }
         match name {
             "det" => self.eval_det(args, ctx),
             "transpose" => self.eval_transpose(args, ctx),
             "inverse" => self.eval_inverse(args, ctx),
             "identity" => self.eval_identity(args, ctx),
-            _ => Err(
-                CalcError::domain(format!("unsupported function in matrix domain: {}", name))
-                    .with_i18n(
-                        "msg.matrix.unsupported_function",
-                        vec![("name".to_string(), name.to_string())],
-                    ),
-            ),
+            _ => Err(unsupported_function_error("matrix", name)),
         }
     }
 

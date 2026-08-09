@@ -11,6 +11,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use num_complex::Complex64;
 
 use crate::math::complex as math_complex;
@@ -35,14 +36,7 @@ impl CalculationDomain for ComplexDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        // 预绑定 pi/e（若上下文未提供）
-        let mut ctx = ctx.clone();
-        if ctx.get_var("pi").is_none() {
-            ctx = ctx.with_var("pi", std::f64::consts::PI);
-        }
-        if ctx.get_var("e").is_none() {
-            ctx = ctx.with_var("e", std::f64::consts::E);
-        }
+        let ctx = ensure_math_constants(ctx);
 
         let value = self.eval(ast, &ctx)?;
         match value {
@@ -78,12 +72,7 @@ impl ComplexDomain {
                 if name == "i" {
                     return Ok(ComplexValue::Complex(Complex64::new(0.0, 1.0)));
                 }
-                ctx.get_var(name).map(ComplexValue::Scalar).ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                })
+                resolve_variable(ctx, name).map(ComplexValue::Scalar)
             }
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval(l, ctx)?;
@@ -106,14 +95,7 @@ impl ComplexDomain {
             }
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Matrix(_) | AstNode::List(_) | AstNode::BigNumber(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "complex domain does not support this node type: {:?}",
-                    ast
-                ))
-                .with_i18n(
-                    "msg.complex.unsupported_node",
-                    vec![("node".to_string(), format!("{:?}", ast))],
-                ))
+                Err(unsupported_node_error("complex", ast))
             }
         }
     }
@@ -246,14 +228,7 @@ impl ComplexDomain {
                 let c = self.expect_one_arg(name, args, ctx)?;
                 Ok(ComplexValue::Complex(math_complex::ln(c)))
             }
-            _ => Err(CalcError::domain(format!(
-                "unsupported function in complex domain: {}",
-                name
-            ))
-            .with_i18n(
-                "msg.complex.unsupported_function",
-                vec![("name".to_string(), name.to_string())],
-            )),
+            _ => Err(unsupported_function_error("complex", name)),
         }
     }
 

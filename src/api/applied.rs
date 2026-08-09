@@ -7,6 +7,7 @@ use crate::core::{CalcError, EvalResult};
 
 /// AppliedMath API 访问器。
 pub struct AppliedMathImpl<'a> {
+    #[allow(dead_code)]
     pub(crate) cn: &'a CalNexus,
 }
 

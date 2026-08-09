@@ -18,6 +18,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
 use crate::math::unit as math_unit;
 
@@ -40,7 +41,8 @@ impl CalculationDomain for UnitDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        self.eval_node(ast, ctx)
+        let ctx = ensure_math_constants(ctx);
+        self.eval_node(ast, &ctx)
     }
 
     fn priority(&self) -> u8 {
@@ -66,23 +68,7 @@ impl UnitDomain {
                     vec![("value".to_string(), s.clone())],
                 )
             }),
-            AstNode::Variable(name) => {
-                // 优先 ctx 变量，然后 pi/e 常量，最后 unbound 错误
-                if let Some(v) = ctx.get_var(name) {
-                    Ok(EvalResult::Scalar(v))
-                } else if name == "pi" {
-                    Ok(EvalResult::Scalar(std::f64::consts::PI))
-                } else if name == "e" {
-                    Ok(EvalResult::Scalar(std::f64::consts::E))
-                } else {
-                    Err(
-                        CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                            "msg.unbound_variable",
-                            vec![("name".to_string(), name.clone())],
-                        ),
-                    )
-                }
-            }
+            AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_scalar(l, ctx)?;
                 let b = self.eval_scalar(r, ctx)?;
@@ -117,17 +103,7 @@ impl UnitDomain {
                 )],
             )),
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
-                Err(CalcError::domain(format!(
-                    "unit domain does not support this node type: {:?}",
-                    ast
-                ))
-                .with_i18n(
-                    "msg.unit.invalid_argument",
-                    vec![(
-                        "detail".to_string(),
-                        format!("unit domain does not support this node type: {:?}", ast),
-                    )],
-                ))
+                Err(unsupported_node_error("unit", ast))
             }
         }
     }
@@ -192,14 +168,7 @@ impl UnitDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !UNIT_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in unit domain: {}",
-                name
-            ))
-            .with_i18n(
-                "msg.unknown_function",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(unsupported_function_error("unit", name));
         }
         // UNIT_FUNCTIONS: convert / mod / abs
         match name {
@@ -628,7 +597,7 @@ mod tests {
         let err = result.expect_err("expected error");
         assert_eq!(err.kind, ErrorKind::Domain);
         assert!(err.message.contains("sin"), "msg: {}", err.message);
-        assert_eq!(err.i18n_key, Some("msg.unknown_function"));
+        assert_eq!(err.i18n_key, Some("msg.domain.unsupported_function"));
     }
 
     #[test]

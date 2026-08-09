@@ -11,6 +11,7 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
 use crate::math::statistics as math_stats;
 
@@ -51,13 +52,7 @@ impl CalculationDomain for StatisticsDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        let mut ctx = ctx.clone();
-        if ctx.get_var("pi").is_none() {
-            ctx = ctx.with_var("pi", std::f64::consts::PI);
-        }
-        if ctx.get_var("e").is_none() {
-            ctx = ctx.with_var("e", std::f64::consts::E);
-        }
+        let ctx = ensure_math_constants(ctx);
 
         let result = self.eval_node(ast, &ctx)?;
         match result {
@@ -72,14 +67,7 @@ impl StatisticsDomain {
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
-            AstNode::Variable(name) => ctx.get_var(name)
-                .map(EvalResult::Scalar)
-                .ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                }),
+            AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?.as_scalar().ok_or_else(|| {
                     CalcError::domain("binary op requires scalar operands".to_string())
@@ -107,14 +95,7 @@ impl StatisticsDomain {
             | AstNode::Matrix(_)
             | AstNode::List(_)
             | AstNode::BigNumber(_)
-            | AstNode::Str(_) => Err(CalcError::domain(format!(
-                "statistics domain does not support this node type: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.statistics.unsupported_node",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            )),
+            | AstNode::Str(_) => Err(unsupported_node_error("statistics", ast)),
         }
     }
 
@@ -161,14 +142,7 @@ impl StatisticsDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !STATISTICS_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in statistics domain: {}",
-                name
-            ))
-            .with_i18n(
-                "msg.statistics.unsupported_function",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(unsupported_function_error("statistics", name));
         }
 
         // 基础统计函数：单列表参数

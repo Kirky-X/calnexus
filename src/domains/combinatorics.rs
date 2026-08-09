@@ -14,6 +14,7 @@ use crate::core::{
     check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
     MAX_POW_EXPONENT,
 };
+use super::common::{unsupported_node_error, unsupported_function_error};
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
@@ -90,10 +91,7 @@ impl CombinatoricsDomain {
                 }
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "combinatorics domain does not support this node type: {:?}",
-                    ast
-                )))
+                Err(unsupported_node_error("combinatorics", ast))
             }
         }
     }
@@ -212,10 +210,7 @@ impl CombinatoricsDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if !COMBINATORICS_FUNCTIONS.contains(&name) {
-            return Err(CalcError::domain(format!(
-                "unsupported function in combinatorics domain: {}",
-                name
-            )));
+            return Err(unsupported_function_error("combinatorics", name));
         }
         match name {
             "P" => self.eval_permutation(args, ctx),

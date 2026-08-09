@@ -20,10 +20,10 @@
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
 use crate::math::fx as math_fx;
 use super::fx_provider::{FrankfurterProvider, RateProvider};
-use crate::math::fx::RateTable;
 
 /// fx 域函数白名单（用于路由 supports() 和非确定性申报）。
 ///
@@ -70,7 +70,8 @@ impl CalculationDomain for FxDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        eval_with_provider(ast, ctx, self.provider.as_ref())
+        let ctx = ensure_math_constants(ctx);
+        eval_with_provider(ast, &ctx, self.provider.as_ref())
     }
 
     fn priority(&self) -> u8 {
@@ -99,22 +100,7 @@ fn eval_with_provider(
                 vec![("value".to_string(), s.clone())],
             )
         }),
-        AstNode::Variable(name) => {
-            if let Some(v) = ctx.get_var(name) {
-                Ok(EvalResult::Scalar(v))
-            } else if name == "pi" {
-                Ok(EvalResult::Scalar(std::f64::consts::PI))
-            } else if name == "e" {
-                Ok(EvalResult::Scalar(std::f64::consts::E))
-            } else {
-                Err(
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.clone())],
-                    ),
-                )
-            }
-        }
+        AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
         AstNode::BinaryOp(op, l, r) => {
             let a = eval_scalar(l, ctx, provider)?;
             let b = eval_scalar(r, ctx, provider)?;
@@ -136,13 +122,9 @@ fn eval_with_provider(
             "string operand not supported in fx domain".to_string(),
         )
         .with_i18n("msg.fx.string_operand_not_supported", vec![])),
-        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
-            format!("fx domain does not support this node type: {:?}", ast),
-        )
-        .with_i18n(
-            "msg.fx.unsupported_node",
-            vec![("node".to_string(), format!("{:?}", ast))],
-        )),
+        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) => {
+            Err(unsupported_node_error("fx", ast))
+        }
     }
 }
 
@@ -201,12 +183,7 @@ fn eval_function(
     provider: &dyn RateProvider,
 ) -> Result<EvalResult, CalcError> {
     if !FX_EVAL_FUNCTIONS.contains(&name) {
-        return Err(
-            CalcError::domain(format!("unsupported function in fx domain: {}", name)).with_i18n(
-                "msg.unknown_function",
-                vec![("name".to_string(), name.to_string())],
-            ),
-        );
+        return Err(unsupported_function_error("fx", name));
     }
     match name {
         "fx" => eval_fx(args, ctx, provider),
@@ -374,6 +351,7 @@ mod tests {
     use super::*;
     use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::math::fx::RateTable;
     use std::collections::HashMap;
 
     /// 测试用 mock provider：返回预设的汇率表（不出网）。
@@ -410,7 +388,9 @@ mod tests {
     /// 使用 mock provider 求值表达式。
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();
-        let ctx = EvalContext::new();
+        let ctx = EvalContext::new()
+            .with_var("pi", std::f64::consts::PI)
+            .with_var("e", std::f64::consts::E);
         let provider = mock_provider();
         eval_with_provider(&ast, &ctx, &provider)
     }
@@ -703,7 +683,7 @@ mod tests {
         let err = result.expect_err("expected error");
         assert_eq!(err.kind, ErrorKind::Domain);
         assert!(err.message.contains("sin"), "msg: {}", err.message);
-        assert_eq!(err.i18n_key, Some("msg.unknown_function"));
+        assert_eq!(err.i18n_key, Some("msg.domain.unsupported_function"));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use crate::math;
 
 /// LinearAlgebra API 访问器。
 pub struct LinearAlgebraImpl<'a> {
+    #[allow(dead_code)]
     pub(crate) cn: &'a CalNexus,
 }
 

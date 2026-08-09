@@ -7,6 +7,7 @@
 
 mod arithmetic;
 mod combinatorics;
+mod common;
 mod complex;
 mod factory;
 #[cfg(feature = "fx")]
