@@ -26,7 +26,7 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 ///
 /// `#[forge]` 宏自动生成 axum handler（消费 `EvaluateRequest` body + `ApiError::into_response`
 /// 错误路径）与 MCP tool struct/schema（input_schema 从 `EvaluateRequest` 字段推导），
-/// 并 `inventory::submit!` 注册。`name="evaluate"` + `version="v1"` 决定路径前缀 `/api/v1`，
+/// 并 `inventory::submit!` 注册。`name="evaluate"` + `version=1` 决定路径前缀 `/api/v1`，
 /// 叠加 `path="/evaluate"` → 最终路由 `/api/v1/evaluate`（spec.md R-sdforge-002）。
 ///
 /// 函数体内保留 `spawn_blocking` 隔离 oxcache 同步 `block_on`（与 p1 手写 handler 等价）：
@@ -36,7 +36,7 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// ServiceUnavailable（`retry_after=REQUEST_TIMEOUT_SECS`），防止慢攻击。
 #[forge(
     name = "evaluate",
-    version = "v1",
+    version = 1,
     path = "/evaluate",
     method = "POST",
     tool_name = "evaluate",
