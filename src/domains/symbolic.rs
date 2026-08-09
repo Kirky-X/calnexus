@@ -19,117 +19,15 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 use crate::math::symbolic as math_sym;
 use std::collections::HashMap;
 
-// Re-export SymbolicExpr for tests and other modules.
+// Re-export SymbolicExpr and ast_to_symbolic for tests and other modules.
 pub use crate::math::symbolic::SymbolicExpr;
+pub use crate::math::symbolic::ast_to_symbolic;
 
 /// 符号函数白名单。
 const SYMBOLIC_FUNCTIONS: &[&str] = &["diff", "integrate", "simplify", "limit", "taylor"];
 
 // ============================ AstNode ↔ SymbolicExpr 转换 ============================
-
-/// 将 [`AstNode`] 转换为 [`SymbolicExpr`]（TG3.1）。
-///
-/// 支持 Number/Variable/BinaryOp/UnaryOp/FunctionCall(sin/cos/tan/ln/exp)。
-/// 不支持的节点（Matrix/List/Complex/BigNumber/未知函数）返回 DomainError。
-pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
-    match ast {
-        AstNode::Number(n) => Ok(SymbolicExpr::Const(*n)),
-        AstNode::BigNumber(s) => {
-            let n: f64 = s.parse().map_err(|_| {
-                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
-                    "msg.invalid_bignumber",
-                    vec![("value".to_string(), s.to_string())],
-                )
-            })?;
-            Ok(SymbolicExpr::Const(n))
-        }
-        AstNode::Variable(name) => {
-            // pi / e 视为常数
-            match name.as_str() {
-                "pi" => Ok(SymbolicExpr::Const(std::f64::consts::PI)),
-                "e" => Ok(SymbolicExpr::Const(std::f64::consts::E)),
-                _ => Ok(SymbolicExpr::Var(name.clone())),
-            }
-        }
-        AstNode::BinaryOp(op, l, r) => {
-            let l = ast_to_symbolic(l)?;
-            let r = ast_to_symbolic(r)?;
-            Ok(match op {
-                BinaryOp::Add => SymbolicExpr::Add(Box::new(l), Box::new(r)),
-                BinaryOp::Sub => SymbolicExpr::Sub(Box::new(l), Box::new(r)),
-                BinaryOp::Mul => SymbolicExpr::Mul(Box::new(l), Box::new(r)),
-                BinaryOp::Div => SymbolicExpr::Div(Box::new(l), Box::new(r)),
-                BinaryOp::Pow => SymbolicExpr::Pow(Box::new(l), Box::new(r)),
-                BinaryOp::Mod => {
-                    return Err(CalcError::domain(
-                        "modulo not supported in symbolic expressions".to_string(),
-                    )
-                    .with_i18n("msg.symbolic.modulo_not_supported", vec![]));
-                }
-            })
-        }
-        AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?))),
-        AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
-            Err(CalcError::domain(format!(
-                "unary op not supported in symbolic expressions: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.symbolic.unary_not_supported",
-                vec![("op".to_string(), format!("{:?}", ast))],
-            ))
-        }
-        AstNode::FunctionCall(name, args) => {
-            let unary = unary_symbolic_arg(name, args)?;
-            match name.as_str() {
-                "sin" => Ok(SymbolicExpr::Sin(unary)),
-                "cos" => Ok(SymbolicExpr::Cos(unary)),
-                "tan" => Ok(SymbolicExpr::Tan(unary)),
-                "ln" | "log" => Ok(SymbolicExpr::Ln(unary)),
-                "exp" => Ok(SymbolicExpr::Exp(unary)),
-                _ => Err(CalcError::domain(format!(
-                    "function not supported in symbolic expressions: {}",
-                    name
-                ))
-                .with_i18n(
-                    "msg.symbolic.function_not_supported",
-                    vec![("name".to_string(), name.to_string())],
-                )),
-            }
-        }
-        AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
-            Err(CalcError::domain(format!(
-                "node type not supported in symbolic expressions: {:?}",
-                ast
-            ))
-            .with_i18n(
-                "msg.symbolic.node_not_supported",
-                vec![("node".to_string(), format!("{:?}", ast))],
-            ))
-        }
-    }
-}
-
-/// 提取单参数函数的符号化参数：验证参数数为 1，递归转换并返回 `Box<SymbolicExpr>`。
-///
-/// 复用于 sin/cos/tan/ln/log/exp 等单参符号函数。
-fn unary_symbolic_arg(name: &str, args: &[AstNode]) -> Result<Box<SymbolicExpr>, CalcError> {
-    if args.len() != 1 {
-        return Err(CalcError::domain(format!(
-            "{}() requires exactly 1 argument, got {}",
-            name,
-            args.len()
-        ))
-        .with_i18n(
-            "msg.symbolic.arg_count_1",
-            vec![
-                ("name".to_string(), name.to_string()),
-                ("actual".to_string(), args.len().to_string()),
-            ],
-        ));
-    }
-    Ok(Box::new(ast_to_symbolic(&args[0])?))
-}
+// ast_to_symbolic 已迁移至 math::symbolic，此处保留 re-export 供向后兼容。
 
 // ============================ SymbolicDomain (TG3.7) ============================
 
