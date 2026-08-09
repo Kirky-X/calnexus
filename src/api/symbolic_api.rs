@@ -177,4 +177,63 @@ impl<'a> SymbolicMathImpl<'a> {
         let r = math::complex::ln(z.value());
         Ok(EvalResult::Complex(r.re, r.im))
     }
+
+    // ── 方程求解 ──
+
+    pub fn solve_equation(
+        &self,
+        expr: &str,
+        var: &str,
+        method: &str,
+        options: Option<&[f64]>,
+    ) -> Result<EvalResult, CalcError> {
+        let ctx = self.cn.ctx.read().unwrap();
+        let cache = crate::core::CacheManager::new();
+        let expr_owned = expr.to_string();
+        let var_owned = var.to_string();
+
+        // 构建 f(x) 闭包：设置变量值后求值
+        let f = |x: f64| -> f64 {
+            let mut local_ctx = ctx.clone();
+            local_ctx.vars.insert(var_owned.clone(), x);
+            match crate::core::evaluate(&expr_owned, &local_ctx, None, &cache) {
+                Ok((EvalResult::Scalar(v), _, _, _)) => v,
+                _ => f64::NAN,
+            }
+        };
+
+        let opts = options.unwrap_or(&[]);
+        match method {
+            "newton" => {
+                let x0 = opts.first().copied().unwrap_or(1.0);
+                // 数值导数
+                let h = 1e-8;
+                let df = |x: f64| -> f64 { (f(x + h) - f(x - h)) / (2.0 * h) };
+                let root = math::solvers::newton_raphson(&f, df, x0, 1e-12, 200)?;
+                Ok(EvalResult::Scalar(root))
+            }
+            "bisection" => {
+                if opts.len() < 2 {
+                    return Err(CalcError::domain(
+                        "bisection requires options [a, b]".to_string(),
+                    ));
+                }
+                let root = math::solvers::bisection(&f, opts[0], opts[1], 1e-12, 200)?;
+                Ok(EvalResult::Scalar(root))
+            }
+            "brent" => {
+                if opts.len() < 2 {
+                    return Err(CalcError::domain(
+                        "brent requires options [a, b]".to_string(),
+                    ));
+                }
+                let root = math::solvers::brent(&f, opts[0], opts[1], 1e-12, 200)?;
+                Ok(EvalResult::Scalar(root))
+            }
+            _ => Err(CalcError::domain(format!(
+                "unknown solver method: '{}'. Available: newton, bisection, brent",
+                method
+            ))),
+        }
+    }
 }

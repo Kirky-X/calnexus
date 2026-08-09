@@ -221,6 +221,7 @@ impl SymbolicMath for SymbolicMathImpl<'_> {
     fn complex_conj(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_conj(self, z) }
     fn complex_exp(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_exp(self, z) }
     fn complex_ln(&self, z: &Complex) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::complex_ln(self, z) }
+    fn solve_equation(&self, expr: &str, var: &str, method: &str, options: Option<&[f64]>) -> Result<crate::core::EvalResult, CalcError> { SymbolicMathImpl::solve_equation(self, expr, var, method, options) }
 }
 
 impl AppliedMath for AppliedMathImpl<'_> {
