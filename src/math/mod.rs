@@ -23,6 +23,8 @@ pub mod vector;
 // feature-gated 可选域
 #[cfg(feature = "fx")]
 pub mod fx;
+#[cfg(feature = "fx")]
+pub mod fx_scenario;
 #[cfg(feature = "numerical")]
 pub mod numerical;
 #[cfg(feature = "time")]
