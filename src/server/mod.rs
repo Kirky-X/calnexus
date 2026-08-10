@@ -15,6 +15,8 @@ mod cache;
 mod evaluate;
 mod types;
 
+#[cfg(feature = "fx")]
+mod fx_tools;
 #[cfg(feature = "http")]
 mod http;
 #[cfg(feature = "mcp")]
