@@ -104,16 +104,19 @@ mod tests {
     /// 无需外层 tokio runtime。
     ///
     /// 失败条件（→ 触发 design A2 MCP 回退）：
-    /// - `tool_count != 1`：inventory submit 丢失（链接器未收集 #[forge] 注册）
+    /// - `tool_count` 不符预期：inventory submit 丢失（链接器未收集 #[forge] 注册）
     /// - panic：`block_in_place` / `spawn_blocking` / evaluate 调用链 runtime 错误
     #[test]
     fn test_forge_evaluate_registers_and_calls() {
         let server = build_mcp_server();
+        // fx feature 启用时注册 3 个 tool（evaluate + fx_budget + fx_pricing）
+        // 否则仅 1 个（evaluate）
+        let expected_count = if cfg!(feature = "fx") { 3 } else { 1 };
         assert_eq!(
             server.tool_count(),
-            1,
-            "evaluate tool must register via #[forge]+init_all_plugins; \
-             count==0 ⇒ inventory submit lost (linker) → A2 回退"
+            expected_count,
+            "forge tools must register via #[forge]+init_all_plugins; \
+             count mismatch ⇒ inventory submit lost (linker) → A2 回退"
         );
         // 标量 2+3 → 5（成功路径）
         let r1 = server
