@@ -40,7 +40,7 @@ const CACHE_DIR_NAME: &str = "calnexus";
 const CACHE_FILE_NAME: &str = "fx_rates.json";
 
 /// 汇率数据源 trait（可注入 mock 测试）。
-pub(crate) trait RateProvider: Send + Sync {
+pub trait RateProvider: Send + Sync {
     /// 获取最新汇率表。
     fn rates(&self) -> Result<RateTable, CalcError>;
 }

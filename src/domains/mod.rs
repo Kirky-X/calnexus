@@ -13,7 +13,7 @@ mod factory;
 #[cfg(feature = "fx")]
 mod fx;
 #[cfg(feature = "fx")]
-pub(crate) mod fx_provider;
+pub mod fx_provider;
 mod matrix;
 mod number_theory;
 #[cfg(feature = "numerical")]
@@ -37,6 +37,8 @@ pub use combinatorics::CombinatoricsDomain;
 pub use complex::ComplexDomain;
 #[cfg(feature = "fx")]
 pub use fx::FxDomain;
+#[cfg(feature = "fx")]
+pub use fx_provider::RateProvider;
 pub use matrix::MatrixDomain;
 pub use number_theory::NumberTheoryDomain;
 pub use polynomial::PolynomialDomain;
