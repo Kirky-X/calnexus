@@ -19,7 +19,7 @@ cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
 # tokio/signal: BUG-S-M-003 graceful shutdown（Ctrl+C / SIGTERM）
-http = ["dep:sdforge", "sdforge/http", "sdforge/health-check", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
+http = ["dep:sdforge", "sdforge/http", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # Time: 时间计算（日期差、时间戳、格式解析，feature 门控）
@@ -36,16 +36,16 @@ server = ["http", "mcp"]
 ratelimit = ["dep:sdforge", "sdforge/ratelimit-http"]
 # Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
 docs = ["dep:sdforge", "sdforge/docs"]
-# Graceful shutdown: 优雅关闭（sdforge/graceful-shutdown）
-graceful-shutdown = ["dep:sdforge", "sdforge/graceful-shutdown"]
-# Observability: OpenTelemetry 分布式追踪（sdforge/observability）
-observability = ["dep:sdforge", "sdforge/observability", "dep:tracing"]
+# Graceful shutdown: 优雅关闭（axum with_graceful_shutdown + tokio signal，不依赖 sdforge）
+graceful-shutdown = []
+# Observability: OpenTelemetry 分布式追踪（tracing 本地实现）
+observability = ["dep:tracing"]
 
 [dependencies]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
-oxcache = { version = "0.4", features = ["core"], default-features = false }
+oxcache = { version = "0.4", path = "../base/oxcache", features = ["core"], default-features = false }
 # 错误派生（仅 std，禁用默认特性）
 thiserror = { version = "2.0", default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
@@ -69,7 +69,7 @@ rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化（仅 compiled_data，禁用默认特性）
 icu = { version = "2.2", default-features = false, features = ["compiled_data"], optional = true }
 # sdforge: CLI/HTTP/MCP 接口封装层（禁用默认特性，按需启用 cli/http/mcp）
-sdforge = { version = "0.4", default-features = false, optional = true }
+sdforge = { version = "0.4", path = "../base/sdforge", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
