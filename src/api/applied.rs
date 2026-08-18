@@ -3,6 +3,7 @@
 //! AppliedMath trait 实现。
 
 use crate::api::CalNexus;
+#[cfg(any(feature = "time", feature = "unit", feature = "fx"))]
 use crate::core::{CalcError, EvalResult};
 
 /// AppliedMath API 访问器。
