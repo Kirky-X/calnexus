@@ -9,7 +9,6 @@ use super::ServerError;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::get;
 use axum::Router;
-use std::sync::Arc;
 
 /// 请求体大小上限（64KB，T016 安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
@@ -24,12 +23,12 @@ pub fn build_router() -> Router {
     let mut router = sdforge::http::build()
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE));
 
-    // Health check endpoints: /health, /ready, /live（由 http feature 隐式包含 sdforge/health-check）
-    let coordinator = Arc::new(
-        sdforge::http::HealthCheckCoordinator::new()
-            .with_checker(Arc::new(CalNexusCacheHealthChecker)),
-    );
-    router = router.merge(sdforge::http::health_router(coordinator));
+    // Health check endpoints: /health（含检查器明细）、/ready、/live（存活探针）
+    // 原生 axum 实现，不依赖 sdforge 扩展 API（sdforge 无 health_check 模块）。
+    router = router
+        .route("/health", get(health_handler))
+        .route("/ready", get(liveness_handler))
+        .route("/live", get(liveness_handler));
 
     // Metrics endpoint: /metrics（always available，oxcache metrics 由 core/minimal feature 包含）
     router = router.route("/metrics", get(metrics_handler));
@@ -51,23 +50,27 @@ pub fn build_router() -> Router {
     router
 }
 
-/// CalNexus 缓存健康检查器：验证 L1 缓存（Moka 后端）可操作。
-///
-/// 进程内缓存始终可用，返回 Healthy。
-struct CalNexusCacheHealthChecker;
+/// GET /health：健康检查（含检查器明细）。进程内 L1 缓存始终可用。
+async fn health_handler() -> axum::Json<serde_json::Value> {
+    use serde_json::json;
+    axum::Json(json!({
+        "status": "healthy",
+        "checks": {
+            "cache": {
+                "status": "healthy",
+                "details": "L1 in-memory cache operational",
+            }
+        },
+    }))
+}
 
-#[async_trait::async_trait]
-impl sdforge::http::health_check::HealthChecker for CalNexusCacheHealthChecker {
-    fn name(&self) -> &str {
-        "cache"
-    }
-
-    async fn check(&self) -> sdforge::http::health_check::CheckResult {
-        sdforge::http::health_check::CheckResult {
-            status: sdforge::http::HealthStatus::Healthy,
-            details: Some("L1 in-memory cache operational".to_string()),
-        }
-    }
+/// GET /ready 与 /live：就绪/存活探针（无检查器明细）。
+async fn liveness_handler() -> axum::Json<serde_json::Value> {
+    use serde_json::json;
+    axum::Json(json!({
+        "status": "healthy",
+        "checks": {},
+    }))
 }
 
 /// Metrics 查询参数。
@@ -116,7 +119,6 @@ async fn metrics_handler(
 /// 进入 drain 阶段（停止 accept、等待 in-flight 请求完成）。
 ///
 /// 单元测试通过 `assert_shutdown_signal_is_send` 验证 future 为 `Send`（axum 要求）。
-#[cfg(not(feature = "graceful-shutdown"))]
 async fn shutdown_signal() {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -187,28 +189,6 @@ impl HttpServer {
     ///
     /// `with_graceful_shutdown(shutdown_signal())` 让 server 收到
     /// Ctrl+C / SIGTERM 后进入 drain 阶段，等待 in-flight 请求完成再退出。
-    ///
-    /// lib-feature-absorption: `graceful-shutdown` feature 启用时使用 sdforge GracefulShutdown
-    /// 增强版（含连接追踪 + 可配置 drain timeout），否则保留手写 shutdown_signal()。
-    #[cfg(feature = "graceful-shutdown")]
-    async fn start_inner(&self) -> Result<(), ServerError> {
-        let listener = tokio::net::TcpListener::bind(&self.addr)
-            .await
-            .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
-        let router = build_router();
-        let shutdown = std::sync::Arc::new(sdforge::http::GracefulShutdown::default());
-        let shutdown_fut = {
-            let shutdown = std::sync::Arc::clone(&shutdown);
-            async move { shutdown.wait_for_shutdown().await }
-        };
-        sdforge::axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown_fut)
-            .await
-            .map_err(|e| ServerError::Http(format!("server error: {}", e)))?;
-        Ok(())
-    }
-
-    #[cfg(not(feature = "graceful-shutdown"))]
     async fn start_inner(&self) -> Result<(), ServerError> {
         let listener = tokio::net::TcpListener::bind(&self.addr)
             .await
@@ -266,7 +246,6 @@ mod tests {
     /// 验证 `shutdown_signal` 返回的 future 为 `Send`。
     /// axum `with_graceful_shutdown` 要求 signal future 为 `Send`，编译期检查。
     /// 此测试在编译期捕获 Send 约束违规（若 future 非 Send，编译失败）。
-    #[cfg(not(feature = "graceful-shutdown"))]
     #[test]
     fn test_shutdown_signal_is_send() {
         fn assert_send<T: Send>(_t: T) {}
@@ -276,7 +255,6 @@ mod tests {
 
     /// 验证 `shutdown_signal` 函数存在且可调用（构造即不 panic）。
     /// 不实际 await（await 需要真实信号，单元测试环境难以注入）。
-    #[cfg(not(feature = "graceful-shutdown"))]
     #[test]
     fn test_shutdown_signal_callable_without_panic() {
         let _fut = shutdown_signal();
