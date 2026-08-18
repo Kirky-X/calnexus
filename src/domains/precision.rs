@@ -23,7 +23,8 @@ use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{Signed, Zero};
 
-// Re-export format_bigrational for use by other modules.
+// Re-export format_bigrational（供 domains/mod.rs 在 cli/http/mcp 组合下对外暴露）
+#[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
 pub use crate::math::precision::format_bigrational;
 
 /// Precision 计算域。
@@ -418,6 +419,7 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
 mod tests {
     use super::*;
     use crate::core::parse;
+    use crate::math::precision::format_bigrational;
     use crate::core::ErrorKind;
     use crate::core::MAX_FACTORIAL_INPUT;
 
