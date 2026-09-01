@@ -45,7 +45,7 @@ observability = ["dep:tracing"]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
-oxcache = { version = "0.4", path = "../base/oxcache", features = ["core"], default-features = false }
+oxcache = { version = "0.5.0-rc.1", path = "../oxcache", features = ["core"], default-features = false }
 # 错误派生（仅 std，禁用默认特性）
 thiserror = { version = "2.0", default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
@@ -69,7 +69,7 @@ rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化（仅 compiled_data，禁用默认特性）
 icu = { version = "2.2", default-features = false, features = ["compiled_data"], optional = true }
 # sdforge: CLI/HTTP/MCP 接口封装层（禁用默认特性，按需启用 cli/http/mcp）
-sdforge = { version = "0.4", path = "../base/sdforge", default-features = false, optional = true }
+sdforge = { version = "0.5.0-rc.1", path = "../sdforge", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
@@ -101,10 +101,10 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 # http-body-util: 读取 HTTP response body（集成测试用）
 http-body-util = { version = "0.1", default-features = false }
 
-# 本地 patch：使用 base/ 下自研库最新版本
+# 本地 patch：使用 projects 根目录下自研库最新版本
 [patch.crates-io]
-oxcache = { path = "../base/oxcache" }
-sdforge = { path = "../base/sdforge" }
+oxcache = { path = "../oxcache" }
+sdforge = { path = "../sdforge" }
 
 [lints.rust]
 # check-cfg: sdforge #[forge] 宏总会 emit `#[cfg(feature="openapi")]` / `#[cfg(feature="observability")]` gate，
