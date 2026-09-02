@@ -209,7 +209,7 @@ impl<'a> SymbolicMathImpl<'a> {
                 // 数值导数
                 let h = 1e-8;
                 let df = |x: f64| -> f64 { (f(x + h) - f(x - h)) / (2.0 * h) };
-                let root = math::solvers::newton_raphson(&f, df, x0, 1e-12, 200)?;
+                let root = math::solvers::newton_raphson(f, df, x0, 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
             }
             "bisection" => {
@@ -218,7 +218,7 @@ impl<'a> SymbolicMathImpl<'a> {
                         "bisection requires options [a, b]".to_string(),
                     ));
                 }
-                let root = math::solvers::bisection(&f, opts[0], opts[1], 1e-12, 200)?;
+                let root = math::solvers::bisection(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
             }
             "brent" => {
@@ -227,7 +227,7 @@ impl<'a> SymbolicMathImpl<'a> {
                         "brent requires options [a, b]".to_string(),
                     ));
                 }
-                let root = math::solvers::brent(&f, opts[0], opts[1], 1e-12, 200)?;
+                let root = math::solvers::brent(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
             }
             _ => Err(CalcError::domain(format!(
