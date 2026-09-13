@@ -261,6 +261,7 @@ fn apply_stale_policy(
 }
 
 /// 缓存文件读取结果（v015 T018：区分缺失与损坏，支撑三分类错误）。
+#[derive(Debug)]
 enum CacheRead {
     /// 文件不存在（正常首次运行）。
     Missing,
@@ -517,7 +518,10 @@ mod tests {
         let fetched_at = current_unix_timestamp();
         write_cache_file(&path, &table, fetched_at).unwrap();
 
-        let cached = read_cache_file(&path).expect("cache file should be readable");
+        let cached = match read_cache_file(&path) {
+            CacheRead::Loaded(c) => c,
+            other => panic!("cache file should be Loaded, got non-Loaded variant ({:?})", matches!(other, CacheRead::Loaded(_))),
+        };
         assert_eq!(cached.base, "EUR");
         assert_eq!(cached.date, "2026-07-25");
         assert_eq!(cached.rates.len(), 4);
@@ -527,14 +531,14 @@ mod tests {
     #[test]
     fn test_read_cache_file_nonexistent() {
         let path = Path::new("/nonexistent/path/fx_rates.json");
-        assert!(read_cache_file(path).is_none());
+        assert!(matches!(read_cache_file(path), CacheRead::Missing));
     }
 
     #[test]
     fn test_read_cache_file_invalid_json() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), "not valid json").unwrap();
-        assert!(read_cache_file(tmp.path()).is_none());
+        assert!(matches!(read_cache_file(tmp.path()), CacheRead::Corrupted));
     }
 
     #[test]
@@ -550,7 +554,10 @@ mod tests {
         write_cache_file(&nested_path, &table, 0).unwrap();
 
         assert!(nested_path.exists());
-        let cached = read_cache_file(&nested_path).expect("should be readable");
+        let cached = match read_cache_file(&nested_path) {
+            CacheRead::Loaded(c) => c,
+            other => panic!("should be readable, got {:?}", other),
+        };
         assert_eq!(cached.base, "EUR");
     }
 
@@ -573,18 +580,18 @@ mod tests {
     #[test]
     fn test_stale_policy_no_cache_no_allow_stale() {
         // 无缓存 + 不允许 stale → 错误
-        let result = apply_stale_policy(None, false);
+        let result = apply_stale_policy(None, false, false);
         let err = result.expect_err("expected error");
-        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
         assert_eq!(err.i18n_key, Some("msg.fx.network_unreachable"));
     }
 
     #[test]
     fn test_stale_policy_no_cache_with_allow_stale() {
         // 无缓存 + 允许 stale → 仍然错误（没有数据可用）
-        let result = apply_stale_policy(None, true);
+        let result = apply_stale_policy(None, true, false);
         let err = result.expect_err("expected error");
-        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
     }
 
     #[test]
@@ -596,9 +603,9 @@ mod tests {
             rates: mock_rates(),
             fetched_at: 0,
         };
-        let result = apply_stale_policy(Some(&cached), false);
+        let result = apply_stale_policy(Some(&cached), false, false);
         let err = result.expect_err("expected error");
-        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
         assert!(err.message.contains("2026-07-20"), "msg: {}", err.message);
         assert!(
             err.message.contains("CALNEXUS_FX_ALLOW_STALE"),
@@ -617,7 +624,7 @@ mod tests {
             rates: mock_rates(),
             fetched_at: 0,
         };
-        let result = apply_stale_policy(Some(&cached), true);
+        let result = apply_stale_policy(Some(&cached), true, false);
         let table = result.expect("expected Ok with stale data");
         assert_eq!(table.base, "EUR");
         assert_eq!(table.date, "2026-07-20");
