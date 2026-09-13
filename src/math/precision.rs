@@ -118,17 +118,15 @@ pub fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
 /// 返回 BigInt 形式的操作数（可为负数，由调用方负责范围检查）。
 pub fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
     if !r.is_integer() {
-        return Err(CalcError::domain(format!(
-            "{} requires integer operand, got {}",
-            ctx, r
-        ))
-        .with_i18n(
-            "msg.precision.requires_integer_operand",
-            vec![
-                ("ctx".to_string(), ctx.to_string()),
-                ("value".to_string(), r.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("{} requires integer operand, got {}", ctx, r)).with_i18n(
+                "msg.precision.requires_integer_operand",
+                vec![
+                    ("ctx".to_string(), ctx.to_string()),
+                    ("value".to_string(), r.to_string()),
+                ],
+            ),
+        );
     }
     Ok(r.numer().clone())
 }

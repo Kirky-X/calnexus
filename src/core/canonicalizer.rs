@@ -380,6 +380,22 @@ impl AstCanonicalizer {
 
 #[cfg(test)]
 mod tests {
+
+    /// v015 T062（R-depth-003 验收）：绕过解析器直接构造 258 层深 AST，
+    /// canonicalize 必须返回 DepthExceeded 且不 panic（TransformDepthGuard 纵深防御）。
+    #[test]
+    fn test_deep_constructed_ast_returns_depth_exceeded() {
+        let mut ast = AstNode::Number(1.0);
+        for _ in 0..258 {
+            ast = AstNode::BinaryOp(BinaryOp::Add, Box::new(ast), Box::new(AstNode::Number(1.0)));
+        }
+        let result = AstCanonicalizer::canonicalize(&ast);
+        match result {
+            Err(e) => assert_eq!(e.kind, crate::core::types::ErrorKind::Depth),
+            Ok(_) => panic!("258 层手构造 AST 应被 transform 深度守卫拒绝"),
+        }
+    }
+
     use super::*;
     use crate::core::ErrorKind;
     use crate::core::parser::parse;

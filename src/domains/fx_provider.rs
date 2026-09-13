@@ -637,6 +637,46 @@ mod tests {
         assert_eq!(table.rates.len(), 4);
     }
 
+    // ===== v015 T066（R-fx-002 验收）：拉取单飞并发一致性 =====
+
+    #[test]
+    fn test_fetch_lock_concurrent_consistency() {
+        // 过期缓存 + 网络不可达（CI/沙箱环境）下 8 线程并发 rates()：
+        // 持锁序列化语义保证不死锁、结果一致（同一错误或同一数据）、无 panic。
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let table = RateTable {
+            base: "EUR".to_string(),
+            date: "2026-07-20".to_string(),
+            rates: mock_rates(),
+        };
+        // 写入后将 fetched_at 置 0（必然过期）
+        write_cache_file(tmp.path(), &table, 0).unwrap();
+
+        let provider = std::sync::Arc::new(FrankfurterProvider::with_cache_path(
+            tmp.path().to_path_buf(),
+        ));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let mut handles = vec![];
+        for _ in 0..8 {
+            let p = std::sync::Arc::clone(&provider);
+            let b = std::sync::Arc::clone(&barrier);
+            handles.push(std::thread::spawn(move || {
+                b.wait();
+                p.rates()
+            }));
+        }
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        // 全部一致：要么同错误（网络不可达 + 无 ALLOW_STALE），要么同数据
+        let first = &results[0];
+        for r in &results[1..] {
+            match (first, r) {
+                (Ok(a), Ok(b)) => assert_eq!(a.date, b.date),
+                (Err(a), Err(b)) => assert_eq!(a.kind, b.kind),
+                _ => panic!("并发 rates() 结果不一致"),
+            }
+        }
+    }
+
     // ===== FrankfurterProvider 基本行为（不出网）=====
 
     #[test]

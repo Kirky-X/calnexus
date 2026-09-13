@@ -187,20 +187,20 @@ impl<'a> SymbolicMathImpl<'a> {
             }
             "bisection" => {
                 if opts.len() < 2 {
-                    return Err(CalcError::domain(
-                        "bisection requires options [a, b]".to_string(),
-                    )
-                    .with_i18n("msg.symbolic.bisection_requires_options", vec![]));
+                    return Err(
+                        CalcError::domain("bisection requires options [a, b]".to_string())
+                            .with_i18n("msg.symbolic.bisection_requires_options", vec![]),
+                    );
                 }
                 let root = math::solvers::bisection(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
             }
             "brent" => {
                 if opts.len() < 2 {
-                    return Err(CalcError::domain(
-                        "brent requires options [a, b]".to_string(),
-                    )
-                    .with_i18n("msg.symbolic.brent_requires_options", vec![]));
+                    return Err(
+                        CalcError::domain("brent requires options [a, b]".to_string())
+                            .with_i18n("msg.symbolic.brent_requires_options", vec![]),
+                    );
                 }
                 let root = math::solvers::brent(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))

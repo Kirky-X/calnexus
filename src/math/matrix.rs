@@ -52,12 +52,10 @@ pub fn inverse(m: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
             ],
         ));
     }
-    m.clone()
-        .try_inverse()
-        .ok_or_else(|| {
-            CalcError::domain("matrix is singular (not invertible)".to_string())
-                .with_i18n("msg.matrix.singular", vec![])
-        })
+    m.clone().try_inverse().ok_or_else(|| {
+        CalcError::domain("matrix is singular (not invertible)".to_string())
+            .with_i18n("msg.matrix.singular", vec![])
+    })
 }
 
 /// n×n 单位矩阵。n 须 ≤ MAX_MATRIX_DIM。

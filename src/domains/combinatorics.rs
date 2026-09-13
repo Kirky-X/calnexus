@@ -77,15 +77,12 @@ impl CombinatoricsDomain {
                 })?;
                 Ok(EvalResult::BigInt(b))
             }
-            AstNode::Variable(name) => ctx
-                .get_var(name)
-                .map(EvalResult::Scalar)
-                .ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                }),
+            AstNode::Variable(name) => ctx.get_var(name).map(EvalResult::Scalar).ok_or_else(|| {
+                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                    "msg.unbound_variable",
+                    vec![("name".to_string(), name.to_string())],
+                )
+            }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;
                 let b = self.eval_int(r, ctx)?;
@@ -117,14 +114,13 @@ impl CombinatoricsDomain {
         match ast {
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
-                    return Err(CalcError::domain(format!(
-                        "expected integer argument, got {}",
-                        n
-                    ))
-                    .with_i18n(
-                        "msg.core.expected_integer",
-                        vec![("value".to_string(), n.to_string())],
-                    ));
+                    return Err(
+                        CalcError::domain(format!("expected integer argument, got {}", n))
+                            .with_i18n(
+                                "msg.core.expected_integer",
+                                vec![("value".to_string(), n.to_string())],
+                            ),
+                    );
                 }
                 if *n > i64::MAX as f64 || *n < i64::MIN as f64 {
                     return Err(CalcError::overflow());
@@ -305,14 +301,12 @@ impl CombinatoricsDomain {
         let n = self.eval_int(&args[0], ctx)?;
         let k = self.eval_int(&args[1], ctx)?;
         if n.is_negative() || k.is_negative() {
-            return Err(CalcError::domain(format!(
-                "{}() requires non-negative arguments",
-                name
-            ))
-            .with_i18n(
-                "msg.combinatorics.requires_non_negative",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(
+                CalcError::domain(format!("{}() requires non-negative arguments", name)).with_i18n(
+                    "msg.combinatorics.requires_non_negative",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            );
         }
         Ok((n, k))
     }
@@ -342,14 +336,12 @@ impl CombinatoricsDomain {
         }
         let n = self.eval_int(&args[0], ctx)?;
         if n.is_negative() {
-            return Err(CalcError::domain(format!(
-                "{}() requires non-negative argument",
-                name
-            ))
-            .with_i18n(
-                "msg.combinatorics.requires_non_negative_arg",
-                vec![("name".to_string(), name.to_string())],
-            ));
+            return Err(
+                CalcError::domain(format!("{}() requires non-negative argument", name)).with_i18n(
+                    "msg.combinatorics.requires_non_negative_arg",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            );
         }
         Ok(n)
     }

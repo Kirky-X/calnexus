@@ -718,7 +718,11 @@ fn eval_to_zoned(ast: &AstNode, ctx: &EvalContext) -> Result<Zoned, CalcError> {
                 other => Err(CalcError::domain(format!(
                     "expected datetime or scalar, got {:?}",
                     other
-                ))),
+                ))
+                .with_i18n(
+                    "msg.time.expected_scalar_or_datetime",
+                    vec![("got".to_string(), format!("{:?}", other))],
+                )),
             }
         }
     }

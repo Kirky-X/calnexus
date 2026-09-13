@@ -774,10 +774,10 @@ pub fn polynomial_regression(
 /// 返回 (coefficients含截距, r_squared)。
 pub fn multiple_regression(x: &[Vec<f64>], y: &[f64]) -> Result<(Vec<f64>, f64), CalcError> {
     if x.is_empty() || y.is_empty() {
-        return Err(CalcError::domain(
-            "multiple_regression(): empty input".to_string(),
-        )
-        .with_i18n("msg.statistics.regression_empty_input", vec![]));
+        return Err(
+            CalcError::domain("multiple_regression(): empty input".to_string())
+                .with_i18n("msg.statistics.regression_empty_input", vec![]),
+        );
     }
     let n = y.len();
     let p = x.len(); // 特征数

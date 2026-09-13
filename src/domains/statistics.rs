@@ -185,6 +185,7 @@ impl StatisticsDomain {
                     "msg.statistics.arg_count",
                     vec![
                         ("name".to_string(), name.to_string()),
+                        ("expected".to_string(), "1".to_string()),
                         ("actual".to_string(), args.len().to_string()),
                     ],
                 ));
@@ -216,14 +217,12 @@ impl StatisticsDomain {
             return Ok(EvalResult::Scalar(v));
         }
 
-        Err(CalcError::domain(format!(
-            "unhandled statistics function: {}",
-            name
-        ))
-        .with_i18n(
-            "msg.unknown_function",
-            vec![("name".to_string(), name.to_string())],
-        ))
+        Err(
+            CalcError::domain(format!("unhandled statistics function: {}", name)).with_i18n(
+                "msg.unknown_function",
+                vec![("name".to_string(), name.to_string())],
+            ),
+        )
     }
 
     /// 基础统计函数求值。
@@ -238,14 +237,12 @@ impl StatisticsDomain {
             "sum" => math_stats::sum(values),
             "count" => math_stats::count(values),
             _ => {
-                return Err(CalcError::domain(format!(
-                    "unknown basic stat function: {}",
-                    name
-                ))
-                .with_i18n(
-                    "msg.unknown_function",
-                    vec![("name".to_string(), name.to_string())],
-                ));
+                return Err(
+                    CalcError::domain(format!("unknown basic stat function: {}", name)).with_i18n(
+                        "msg.unknown_function",
+                        vec![("name".to_string(), name.to_string())],
+                    ),
+                );
             }
         })
     }
@@ -417,13 +414,13 @@ impl StatisticsDomain {
                 let observed = self.extract_list(&args[0], ctx)?;
                 let expected = self.extract_list(&args[1], ctx)?;
                 if observed.is_empty() || expected.is_empty() {
-                    return Err(CalcError::domain(
-                        "chi2_test requires non-empty data".to_string(),
-                    )
-                    .with_i18n(
-                        "msg.statistics.requires_non_empty_data",
-                        vec![("name".to_string(), "chi2_test".to_string())],
-                    ));
+                    return Err(
+                        CalcError::domain("chi2_test requires non-empty data".to_string())
+                            .with_i18n(
+                                "msg.statistics.requires_non_empty_data",
+                                vec![("name".to_string(), "chi2_test".to_string())],
+                            ),
+                    );
                 }
                 if observed.len() != expected.len() {
                     return Err(CalcError::domain(format!(
@@ -507,11 +504,26 @@ impl StatisticsDomain {
                         "spearman: x ({}) and y ({}) must have same length",
                         x.len(),
                         y.len()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.statistics.list_length_mismatch",
+                        vec![
+                            ("name".to_string(), "spearman".to_string()),
+                            ("len1".to_string(), x.len().to_string()),
+                            ("len2".to_string(), y.len().to_string()),
+                        ],
+                    ));
                 }
                 if x.len() < 2 {
                     return Err(CalcError::domain(
                         "spearman requires at least 2 data points".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.statistics.min_data_points",
+                        vec![
+                            ("name".to_string(), "spearman".to_string()),
+                            ("min".to_string(), "2".to_string()),
+                        ],
                     ));
                 }
                 math_stats::spearman(&x, &y)
@@ -539,6 +551,7 @@ impl StatisticsDomain {
                 "msg.statistics.arg_count",
                 vec![
                     ("name".to_string(), name.to_string()),
+                    ("expected".to_string(), expected.to_string()),
                     ("actual".to_string(), args.len().to_string()),
                 ],
             ));
@@ -554,7 +567,15 @@ impl StatisticsDomain {
                 name,
                 expected,
                 s.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.statistics.arg_count",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("expected".to_string(), expected.to_string()),
+                    ("actual".to_string(), s.len().to_string()),
+                ],
+            ));
         }
         Ok(())
     }
@@ -567,6 +588,7 @@ impl StatisticsDomain {
                 for elem in elements {
                     let v = self.eval_node(elem, ctx)?.as_scalar().ok_or_else(|| {
                         CalcError::domain("list elements must be scalar".to_string())
+                            .with_i18n("msg.statistics.list_elements_must_be_scalar", vec![])
                     })?;
                     values.push(v);
                 }

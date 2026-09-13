@@ -1666,3 +1666,29 @@ fn bind_flag_serve_http_listens_on_custom_port() {
     let _ = child.wait();
     assert!(connected, "--bind {port} 应可连接（flag 生效且优先于 env）");
 }
+
+// ===== v015 T064（R-err-004/005 验收） =====
+
+/// ERR-CARET: 文本模式 stderr 含表达式行 + caret 指示。
+#[test]
+fn parse_error_text_mode_shows_caret() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let output = cmd.arg("(2+3").output().expect("failed to execute");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("(2+3"), "应回显表达式: {}", stderr);
+    assert!(stderr.contains("  | "), "应含表达式行指示符: {}", stderr);
+    assert!(stderr.contains('^'), "应含 caret 指示: {}", stderr);
+}
+
+/// ERR-HINT-CLI: undefined_symbol 在 CLI 语境 hint 含 --var。
+#[test]
+fn undefined_symbol_hint_suggests_cli_var_flag() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let output = cmd.arg("x+1").output().expect("failed to execute");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--var x=<value>"),
+        "CLI 语境应提示 --var: {}",
+        stderr
+    );
+}

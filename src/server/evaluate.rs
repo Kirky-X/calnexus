@@ -140,6 +140,18 @@ fn error_kind_prefix(kind: ErrorKind) -> &'static str {
 mod tests {
     use super::*;
 
+    /// v015 T065（R-srv-001 验收）：DependencyUnavailable 映射 503 ServiceUnavailable
+    #[test]
+    fn calc_error_to_api_error_dependency_unavailable_maps_to_503() {
+        let e = CalcError::dependency_unavailable("FX upstream unreachable");
+        let api_err = calc_error_to_api_error(e);
+        assert!(
+            matches!(api_err, sdforge::error::ApiError::ServiceUnavailable { .. }),
+            "DependencyUnavailable 应映射 ServiceUnavailable/503，实际 {:?}",
+            api_err
+        );
+    }
+
     /// 8 种计算错误变体 → InvalidInput(400)，message 含 `"{Kind}:"` 前缀，field/value 为 None。
     #[test]
     fn calc_error_to_api_error_compute_kinds_map_to_invalid_input() {

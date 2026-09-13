@@ -255,7 +255,8 @@ impl MatrixDomain {
             }
             _ => Err(CalcError::domain(
                 "matrix add/sub requires two matrices of the same dimension".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.addsub_same_dim", vec![])),
         }
     }
 
@@ -283,7 +284,8 @@ impl MatrixDomain {
             }
             _ => Err(CalcError::domain(
                 "matrix division only supports matrix / scalar".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.division_only_scalar", vec![])),
         }
     }
 
@@ -455,14 +457,19 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "det() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.det_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
             MatrixValue::Matrix(matrix) => Ok(MatrixValue::Scalar(math_matrix::det(&matrix)?)),
-            _ => Err(CalcError::domain(
-                "det() requires a matrix argument".to_string(),
-            )),
+            _ => Err(
+                CalcError::domain("det() requires a matrix argument".to_string())
+                    .with_i18n("msg.matrix.det_matrix_arg", vec![]),
+            ),
         }
     }
 
@@ -476,14 +483,19 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "transpose() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.transpose_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
             MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(math_matrix::transpose(&matrix))),
-            _ => Err(CalcError::domain(
-                "transpose() requires a matrix argument".to_string(),
-            )),
+            _ => Err(
+                CalcError::domain("transpose() requires a matrix argument".to_string())
+                    .with_i18n("msg.matrix.transpose_matrix_arg", vec![]),
+            ),
         }
     }
 
@@ -493,14 +505,19 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "inverse() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.inverse_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
             MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(math_matrix::inverse(&matrix)?)),
-            _ => Err(CalcError::domain(
-                "inverse() requires a matrix argument".to_string(),
-            )),
+            _ => Err(
+                CalcError::domain("inverse() requires a matrix argument".to_string())
+                    .with_i18n("msg.matrix.inverse_matrix_arg", vec![]),
+            ),
         }
     }
 
@@ -510,7 +527,11 @@ impl MatrixDomain {
             return Err(CalcError::domain(format!(
                 "identity() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.matrix.identity_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let n_val = self.eval_node(&args[0], ctx)?;
         match n_val {
@@ -519,20 +540,29 @@ impl MatrixDomain {
                     return Err(CalcError::domain(format!(
                         "identity() requires a positive integer, got {}",
                         n
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.identity_positive",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 // 检查 usize 转换安全性
                 if n > usize::MAX as f64 {
                     return Err(CalcError::domain(format!(
                         "identity() argument {} exceeds maximum dimension",
                         n
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.matrix.identity_arg_exceeds",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 Ok(MatrixValue::Matrix(math_matrix::identity(n as usize)?))
             }
-            _ => Err(CalcError::domain(
-                "identity() requires a scalar argument".to_string(),
-            )),
+            _ => Err(
+                CalcError::domain("identity() requires a scalar argument".to_string())
+                    .with_i18n("msg.matrix.identity_scalar", vec![]),
+            ),
         }
     }
 }

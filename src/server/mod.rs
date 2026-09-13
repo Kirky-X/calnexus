@@ -52,3 +52,13 @@ pub use types::{EvaluateRequest, EvaluateResponse, ServerError};
 pub use http::{HttpServer, build_router};
 #[cfg(feature = "mcp")]
 pub use mcp::{McpServer, build_mcp_server};
+
+#[cfg(test)]
+mod observability_tests {
+    /// v015 T065（R-srv-004 验收）：init_observability 幂等，重复调用无 panic。
+    #[test]
+    fn test_init_observability_idempotent() {
+        crate::server::init_observability();
+        crate::server::init_observability();
+    }
+}

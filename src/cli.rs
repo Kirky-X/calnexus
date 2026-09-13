@@ -102,7 +102,9 @@ pub fn run() -> i32 {
     // 因此在 get_matches 前预读 `--lang` 并用 builder 覆盖 `about`。
     // 运行时语言仍以 clap 解析出的 cli.lang 为准（合法输入下与预读结果一致）。
     let about_i18n = peek_lang_i18n();
-    let matches = Cli::command().about(about_i18n.t("cli.about")).get_matches();
+    let matches = Cli::command()
+        .about(about_i18n.t("cli.about"))
+        .get_matches();
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     let i18n = crate::i18n::I18n::from_str(&cli.lang);
 
@@ -494,9 +496,10 @@ fn resolve_timeout(i18n: &crate::i18n::I18n, cli_value: Option<f64>) -> Result<f
         Some(v) => v,
         None => match std::env::var("CALNEXUS_TIMEOUT") {
             // 注意：'{s}' 报告原始（未 trim）环境变量值，与历史文案一致
-            Ok(s) => s.trim().parse::<f64>().map_err(|_| {
-                i18n.tf("cli.invalid_timeout_env", &[("value", s.as_str())])
-            })?,
+            Ok(s) => s
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| i18n.tf("cli.invalid_timeout_env", &[("value", s.as_str())]))?,
             Err(_) => DEFAULT_TIMEOUT_SECS,
         },
     };
@@ -524,9 +527,10 @@ fn cache_budget_bytes(i18n: &crate::i18n::I18n, cli_value: Option<u64>) -> Resul
         Some(n) => n,
         None => match std::env::var("CALNEXUS_CACHE_SIZE") {
             // 注意：'{s}' 报告原始（未 trim）环境变量值，与历史文案一致
-            Ok(s) => s.trim().parse::<u64>().map_err(|_| {
-                i18n.tf("cli.invalid_cache_size_env", &[("value", s.as_str())])
-            })?,
+            Ok(s) => s
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| i18n.tf("cli.invalid_cache_size_env", &[("value", s.as_str())]))?,
             Err(_) => DEFAULT_CACHE_SIZE,
         },
     };
@@ -738,6 +742,37 @@ mod tests {
             "locales 中存在指向不存在旗标的 hint:\n{}",
             violations.join("\n")
         );
+    }
+
+    /// v015 T063（R-json-003 验收）：CLI 不可达变体（Steps/LaTeX/Json/DateTime）
+    /// 经 format_json_output 输出合法 JSON 且含 v=1。
+    #[test]
+    fn test_json_contract_non_cli_reachable_variants() {
+        let variants: Vec<(EvalResult, &str)> = vec![
+            (
+                EvalResult::Steps(vec!["2+9=11".into(), "11*3=33".into()]),
+                "steps",
+            ),
+            (EvalResult::LaTeX(r"\frac{1}{2}".into()), "latex"),
+            (
+                EvalResult::Json(serde_json::json!({"U": [[1.0]], "S": [1.0]})),
+                "json",
+            ),
+            (
+                EvalResult::DateTime("2026-09-14T00:00:00Z".into()),
+                "datetime",
+            ),
+        ];
+        for (result, name) in variants {
+            let out = format_json_output(&result, "test", false, None);
+            let parsed: serde_json::Value =
+                serde_json::from_str(&out).unwrap_or_else(|e| panic!("{name}: 非法 JSON: {e}"));
+            assert_eq!(parsed["v"], 1, "{name}: 契约版本必须为 1");
+            assert!(
+                parsed["result"].is_string() || parsed["result"].is_array(),
+                "{name}: result 应为字符串或数组"
+            );
+        }
     }
 
     /// 递归收集 JSON 中所有字符串叶子。

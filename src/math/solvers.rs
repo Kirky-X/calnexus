@@ -111,17 +111,16 @@ where
     let mut fa = f(a);
     let mut fb = f(b);
     if fa * fb > 0.0 {
-        return Err(CalcError::domain(format!(
-            "brent: f({}) and f({}) have the same sign",
-            a, b
-        ))
-        .with_i18n(
-            "msg.solvers.brent_same_sign",
-            vec![
-                ("a".to_string(), a.to_string()),
-                ("b".to_string(), b.to_string()),
-            ],
-        ));
+        return Err(
+            CalcError::domain(format!("brent: f({}) and f({}) have the same sign", a, b))
+                .with_i18n(
+                    "msg.solvers.brent_same_sign",
+                    vec![
+                        ("a".to_string(), a.to_string()),
+                        ("b".to_string(), b.to_string()),
+                    ],
+                ),
+        );
     }
     if fa.abs() < fb.abs() {
         std::mem::swap(&mut a, &mut b);

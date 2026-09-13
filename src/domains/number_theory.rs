@@ -89,15 +89,12 @@ impl NumberTheoryDomain {
                 })?;
                 Ok(EvalResult::BigInt(b))
             }
-            AstNode::Variable(name) => ctx
-                .get_var(name)
-                .map(EvalResult::Scalar)
-                .ok_or_else(|| {
-                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
-                        "msg.unbound_variable",
-                        vec![("name".to_string(), name.to_string())],
-                    )
-                }),
+            AstNode::Variable(name) => ctx.get_var(name).map(EvalResult::Scalar).ok_or_else(|| {
+                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                    "msg.unbound_variable",
+                    vec![("name".to_string(), name.to_string())],
+                )
+            }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;
                 let b = self.eval_int(r, ctx)?;
@@ -183,14 +180,13 @@ impl NumberTheoryDomain {
                 evalresult_to_bigint(result, ast)
             }
             AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
-                Err(CalcError::domain(format!(
-                    "expected integer expression, got: {:?}",
-                    ast
-                ))
-                .with_i18n(
-                    "msg.core.expected_integer_expression",
-                    vec![("got".to_string(), format!("{:?}", ast))],
-                ))
+                Err(
+                    CalcError::domain(format!("expected integer expression, got: {:?}", ast))
+                        .with_i18n(
+                            "msg.core.expected_integer_expression",
+                            vec![("got".to_string(), format!("{:?}", ast))],
+                        ),
+                )
             }
         }
     }

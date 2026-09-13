@@ -542,10 +542,10 @@ fn integrate_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
             ))));
         }
     }
-    Err(CalcError::domain(
-        "integrate() only supports 1/var form for division".to_string(),
+    Err(
+        CalcError::domain("integrate() only supports 1/var form for division".to_string())
+            .with_i18n("msg.symbolic.integrate_only_div", vec![]),
     )
-    .with_i18n("msg.symbolic.integrate_only_div", vec![]))
 }
 
 fn integrate_neg(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
@@ -558,10 +558,10 @@ fn integrate_sin(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             SymbolicExpr::Var(var.to_string()),
         )))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports sin(var) form".to_string(),
+        Err(
+            CalcError::domain("integrate() only supports sin(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_sin", vec![]),
         )
-        .with_i18n("msg.symbolic.integrate_only_sin", vec![]))
     }
 }
 
@@ -571,10 +571,10 @@ fn integrate_cos(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             var.to_string(),
         ))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports cos(var) form".to_string(),
+        Err(
+            CalcError::domain("integrate() only supports cos(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_cos", vec![]),
         )
-        .with_i18n("msg.symbolic.integrate_only_cos", vec![]))
     }
 }
 
@@ -584,10 +584,10 @@ fn integrate_exp(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             var.to_string(),
         ))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports exp(var) form".to_string(),
+        Err(
+            CalcError::domain("integrate() only supports exp(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_exp", vec![]),
         )
-        .with_i18n("msg.symbolic.integrate_only_exp", vec![]))
     }
 }
 
@@ -881,14 +881,12 @@ fn eval_div(
 fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
     let v = eval_symbolic(e, env)?;
     if v <= 0.0 {
-        return Err(CalcError::domain(format!(
-            "ln requires positive argument, got {}",
-            v
-        ))
-        .with_i18n(
-            "msg.scientific.ln_positive",
-            vec![("value".to_string(), v.to_string())],
-        ));
+        return Err(
+            CalcError::domain(format!("ln requires positive argument, got {}", v)).with_i18n(
+                "msg.scientific.ln_positive",
+                vec![("value".to_string(), v.to_string())],
+            ),
+        );
     }
     Ok(v.ln())
 }
@@ -900,14 +898,12 @@ fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcErro
 /// 在 point=0 处展开（Maclaurin 级数）。
 pub fn taylor(expr: &SymbolicExpr, var: &str, order: u32) -> Result<EvalResult, CalcError> {
     if order > 20 {
-        return Err(CalcError::domain(format!(
-            "taylor() order {} exceeds maximum of 20",
-            order
-        ))
-        .with_i18n(
-            "msg.symbolic.taylor_order_exceeds",
-            vec![("order".to_string(), order.to_string())],
-        ));
+        return Err(
+            CalcError::domain(format!("taylor() order {} exceeds maximum of 20", order)).with_i18n(
+                "msg.symbolic.taylor_order_exceeds",
+                vec![("order".to_string(), order.to_string())],
+            ),
+        );
     }
 
     let mut terms: Vec<String> = Vec::new();

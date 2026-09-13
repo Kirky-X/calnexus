@@ -245,7 +245,14 @@ impl VectorDomain {
                         "Hadamard product dimension mismatch: {} vs {}",
                         a.len(),
                         b.len()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.vector.hadamard_dim_mismatch",
+                        vec![
+                            ("a".to_string(), a.len().to_string()),
+                            ("b".to_string(), b.len().to_string()),
+                        ],
+                    ));
                 }
                 let result: Vec<f64> = a.iter().zip(b.iter()).map(|(x, y)| x * y).collect();
                 Ok(EvalResult::Vector(result))
@@ -305,7 +312,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "dot() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.dot_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -318,7 +329,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "cross() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.cross_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -331,13 +346,18 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "norm() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.norm_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
         if v.is_empty() {
-            return Err(CalcError::domain(
-                "norm() requires non-empty vector".to_string(),
-            ));
+            return Err(
+                CalcError::domain("norm() requires non-empty vector".to_string())
+                    .with_i18n("msg.vector.norm_empty", vec![]),
+            );
         }
         Ok(EvalResult::Scalar(math_vec::magnitude(&v)))
     }
@@ -348,7 +368,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "angle() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.angle_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -361,7 +385,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "normalize() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.normalize_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
         Ok(EvalResult::Vector(math_vec::normalize(&v)?))
@@ -377,7 +405,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "scalar_triple() requires exactly 3 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.scalar_triple_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -395,7 +427,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "cosine_similarity() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.cosine_similarity_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -408,7 +444,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "project() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.project_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -421,7 +461,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "reflect() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.reflect_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
         let n = self.list_to_vector(&args[1], ctx)?;
@@ -434,7 +478,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "euclidean() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.euclidean_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -447,7 +495,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "manhattan() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.manhattan_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -460,7 +512,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "outer() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.outer_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -475,7 +531,11 @@ impl VectorDomain {
             return Err(CalcError::domain(format!(
                 "lerp() requires exactly 3 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.vector.lerp_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let t = self.eval_scalar(&args[2], ctx)?;
         let is_a_list = is_list_node(&args[0]);
@@ -493,7 +553,8 @@ impl VectorDomain {
             }
             _ => Err(CalcError::domain(
                 "lerp(): arguments must be both scalars or both vectors".to_string(),
-            )),
+            )
+            .with_i18n("msg.vector.lerp_type_mismatch", vec![])),
         }
     }
 
