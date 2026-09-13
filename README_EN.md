@@ -202,12 +202,26 @@ Ensure your environment meets the following requirements before running this pro
 
 ### Installation
 
+**Option 1: crates.io (recommended)**
+
 ```bash
-# 1. Clone the repository
+cargo install calnexus --features cli
+```
+
+**Option 2: prebuilt binaries**
+
+Download the archive for your platform (linux x86_64/aarch64 musl static,
+macOS x86_64/aarch64, windows x86_64) from
+[GitHub Releases](https://github.com/kirky-x/calnexus/releases),
+verify the SHA256 checksum, and extract it into your PATH.
+
+**Option 3: from source**
+
+```bash
 git clone https://github.com/kirky-x/calnexus.git
 cd calnexus
 
-# 2. Install to ~/.cargo/bin
+# Install to ~/.cargo/bin
 cargo install --path . --features cli
 
 # Or build locally only

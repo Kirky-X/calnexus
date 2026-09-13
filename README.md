@@ -202,12 +202,25 @@ graph TD
 
 ### 安装
 
+**方式一：crates.io（推荐）**
+
 ```bash
-# 1. 克隆仓库
+cargo install calnexus --features cli
+```
+
+**方式二：预编译二进制**
+
+从 [GitHub Releases](https://github.com/kirky-x/calnexus/releases) 下载对应平台
+（linux x86_64/aarch64 musl 静态、macOS x86_64/aarch64、windows x86_64）压缩包，
+校验 SHA256 后解压至 PATH。
+
+**方式三：从源码构建**
+
+```bash
 git clone https://github.com/kirky-x/calnexus.git
 cd calnexus
 
-# 2. 安装到 ~/.cargo/bin
+# 安装到 ~/.cargo/bin
 cargo install --path . --features cli
 
 # 或者仅本地构建
