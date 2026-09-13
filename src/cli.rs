@@ -81,6 +81,10 @@ struct Cli {
     #[arg(long)]
     bind: Option<String>,
 
+    /// List all available functions grouped by domain, then exit
+    #[arg(long)]
+    list_functions: bool,
+
     /// Start HTTP server mode (POST /api/v1/evaluate). Requires `server` feature.
     #[cfg(feature = "server")]
     #[arg(long, conflicts_with_all = ["repl", "batch", "canonical", "latex", "steps", "json", "explain", "precision", "serve_mcp"])]
@@ -120,6 +124,11 @@ pub fn run() -> i32 {
         return run_server_mode(&cli);
     }
 
+    // --list-functions：运行时函数目录（v015 T038，R-mcp-002）
+    if cli.list_functions {
+        return run_list_functions();
+    }
+
     // --repl 模式：启动交互式 REPL
     if cli.repl {
         return run_repl_mode(&cli, &i18n, timeout_secs, cache_budget);
@@ -150,6 +159,17 @@ pub fn run() -> i32 {
     } else {
         run_default_mode(&expr, &ctx, &cli, &i18n, cache_budget)
     }
+}
+
+/// --list-functions：按域分组打印函数目录，退出码 0。
+fn run_list_functions() -> i32 {
+    for (domain, functions) in crate::function_catalog::DOMAIN_FUNCTIONS {
+        println!("{}:", domain);
+        for f in *functions {
+            println!("  {}", f);
+        }
+    }
+    0
 }
 
 /// 启动 HTTP/MCP server 模式。

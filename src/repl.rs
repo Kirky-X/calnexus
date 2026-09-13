@@ -23,75 +23,11 @@ use rustyline::{Editor, Helper, Highlighter, Hinter, Result as RlResult, Validat
 /// REPL 命令补全候选：函数名 + REPL 命令。
 const REPL_COMMANDS: &[&str] = &[":let", ":vars", ":quit", ":q", ":help", ":clear"];
 
-/// 已知函数名（用于 Tab 补全）。
-const KNOWN_FUNCTIONS: &[&str] = &[
-    "sin",
-    "cos",
-    "tan",
-    "asin",
-    "acos",
-    "atan",
-    "ln",
-    "log",
-    "exp",
-    "sinh",
-    "cosh",
-    "tanh",
-    "gamma",
-    "erf",
-    "abs",
-    "factorial",
-    "mod",
-    "gcd",
-    "lcm",
-    "is_prime",
-    "prime_sieve",
-    "mod_inverse",
-    "mod_pow",
-    "euler_phi",
-    "P",
-    "C",
-    "catalan",
-    "stirling",
-    "dot",
-    "cross",
-    "norm",
-    "angle",
-    "normalize",
-    "scalar_triple",
-    "poly_add",
-    "poly_sub",
-    "poly_mul",
-    "poly_div",
-    "poly_eval",
-    "poly_diff",
-    "poly_integrate",
-    "roots",
-    "factor",
-    "diff",
-    "integrate",
-    "simplify",
-    "limit",
-    "taylor",
-    "mean",
-    "median",
-    "variance",
-    "stddev",
-    "sum",
-    "min",
-    "max",
-    "det",
-    "transpose",
-    "inverse",
-    "trace",
-    "complex",
-    "re",
-    "im",
-    "conj",
-    "magnitude",
-    "phase",
-    "precision",
-];
+/// 已知函数名（用于 Tab 补全；v015 起由统一函数目录派生，
+/// 含 feature 门控函数——修复审计发现的 convert/fx/now 缺失）。
+fn known_functions() -> Vec<&'static str> {
+    crate::function_catalog::all_function_names()
+}
 
 /// REPL 会话：持有路由器、缓存、变量上下文、i18n（TG4.1）。
 pub struct ReplSession {
@@ -375,7 +311,7 @@ fn complete_candidates(line: &str, pos: usize) -> (usize, Vec<String>) {
         return (0, Vec::new());
     }
     let start = pos - prefix.len();
-    for func in KNOWN_FUNCTIONS {
+    for func in known_functions() {
         if func.starts_with(&prefix) && *func != prefix {
             candidates.push(func.to_string());
         }

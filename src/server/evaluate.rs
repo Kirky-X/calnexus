@@ -40,7 +40,7 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
     path = "/evaluate",
     method = "POST",
     tool_name = "evaluate",
-    description = "Evaluate a math expression. Returns {result, domain, cache}. Supports vars and precision."
+    description = "Evaluate a math expression. Args MUST be wrapped in a req object: req.expr is the expression string, req.vars holds optional variable bindings, req.precision is optional. Limits: expr up to 4096 chars, vars up to 1024 keys, precision up to 10000. Returns result, domain, cache. Errors: 400 InvalidInput (syntax/eval), 422 ValidationError (limit exceeded), 503 ServiceUnavailable (timeout/upstream, includes Retry-After)."
 )]
 pub(crate) async fn evaluate(req: EvaluateRequest) -> Result<EvaluateResponse, ApiError> {
     evaluate_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await

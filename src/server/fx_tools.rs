@@ -232,7 +232,7 @@ impl FxPricingRequest {
     path = "/fx_budget",
     method = "POST",
     tool_name = "fx_budget",
-    description = "Calculate study abroad budget with currency conversion. Returns tuition, living costs, total, and ±3% exchange rate risk range."
+    description = "Calculate study abroad budget with currency conversion. Args MUST be wrapped in a req object with fields: tuition, tuition_currency, home_currency, optional living_cost_monthly, duration_years. Returns tuition/living/total in home currency plus a 3-percent exchange-rate risk range and rate_date (snapshot date). Errors: 400 InvalidInput (unknown currency), 503 ServiceUnavailable (FX upstream unreachable)."
 )]
 pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, ApiError> {
     req.validate()?;
@@ -309,7 +309,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     path = "/fx_pricing",
     method = "POST",
     tool_name = "fx_pricing",
-    description = "Cross-border e-commerce multi-currency pricing. Calculates recommended prices with safety buffer and platform fees."
+    description = "Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer. Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable)."
 )]
 pub(crate) async fn fx_pricing(
     req: FxPricingRequest,

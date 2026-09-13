@@ -15,6 +15,7 @@ mod batch;
 mod cli;
 mod core;
 pub mod domains;
+mod function_catalog;
 mod i18n;
 pub mod math;
 mod output;

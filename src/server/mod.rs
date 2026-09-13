@@ -12,6 +12,7 @@
 //! - `server` feature：HTTP + MCP 聚合
 
 mod cache;
+mod catalog;
 mod evaluate;
 mod types;
 
@@ -43,6 +44,7 @@ pub(crate) fn init_observability() {
 pub(crate) fn init_observability() {}
 #[cfg(feature = "cli")]
 pub(crate) use cache::init_shared_cache;
+pub use catalog::{ListFunctionsRequest, ListFunctionsResponse};
 pub use evaluate::calc_error_to_api_error;
 pub use types::{EvaluateRequest, EvaluateResponse, ServerError};
 

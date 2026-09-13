@@ -36,6 +36,10 @@ pub fn build_router() -> Router {
     #[allow(unused_mut)] // docs/ratelimit feature 下需重新赋值
     let mut router = Router::new()
         .route("/api/v1/evaluate", post(evaluate_http_handler))
+        .route(
+            "/api/v1/list_functions",
+            post(list_functions_http_handler),
+        )
         .route("/health", get(health_handler))
         .route("/ready", get(readiness_handler))
         .route("/live", get(liveness_handler))
@@ -78,6 +82,17 @@ async fn evaluate_http_handler(
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
     match evaluate_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await {
+        Ok(resp) => axum::Json(resp).into_response(),
+        Err(api_err) => api_err.into_response(),
+    }
+}
+
+/// `POST /api/v1/list_functions`：Json 提取 → `list_functions`（显式挂载）。
+async fn list_functions_http_handler(
+    axum::extract::Json(_req): axum::extract::Json<super::catalog::ListFunctionsRequest>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match super::catalog::list_functions_inner().await {
         Ok(resp) => axum::Json(resp).into_response(),
         Err(api_err) => api_err.into_response(),
     }

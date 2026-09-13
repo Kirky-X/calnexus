@@ -185,3 +185,51 @@ fn test_mcp_tool_evaluate_invalid_input_null() {
     let result = server.call_tool_internal("evaluate", Some(serde_json::Value::Null));
     assert!(result.is_err(), "null input should return Err(ErrorData)");
 }
+
+// ===== v015 MCP 增强（R-mcp-001/002） =====
+
+/// MCP-DESC-01: evaluate 工具 description 自包含（req 包装示例 + 上限 + 错误语义）。
+#[test]
+fn test_evaluate_tool_description_self_contained() {
+    let server = build_mcp_server();
+    let tools = server.get_all_tools();
+    let eval = tools
+        .iter()
+        .find(|t| t.name.as_ref() == "evaluate")
+        .expect("evaluate tool 应已注册");
+    let desc = eval
+        .description
+        .as_ref()
+        .map(|d| d.to_string())
+        .unwrap_or_default();
+    assert!(desc.contains("req"), "description 应含 req 包装示例: {}", desc);
+    assert!(desc.contains("4096"), "应含 expr 上限: {}", desc);
+    assert!(desc.contains("503"), "应含 503 错误语义: {}", desc);
+}
+
+/// MCP-CATALOG-01: list_functions tool 可调用并返回按域分组的目录。
+#[test]
+fn test_list_functions_tool_callable() {
+    let server = build_mcp_server();
+    let r = server
+        .call_tool_internal("list_functions", Some(serde_json::json!({"req": {}})))
+        .expect("list_functions call_tool_internal");
+    assert!(!r.is_error.unwrap_or(false), "list_functions 应成功");
+    let text = serde_json::to_string(&r.content).unwrap_or_default();
+    assert!(text.contains("arithmetic"), "目录应含 arithmetic 域: {}", text);
+    assert!(text.contains("symbolic"), "目录应含 symbolic 域: {}", text);
+}
+
+/// MCP-CATALOG-02: fx feature 开启时目录含 fx 域（feature 门控可见性）。
+#[test]
+fn test_list_functions_feature_gated_domains() {
+    let server = build_mcp_server();
+    let r = server
+        .call_tool_internal("list_functions", Some(serde_json::json!({"req": {}})))
+        .expect("list_functions call_tool_internal");
+    let text = serde_json::to_string(&r.content).unwrap_or_default();
+    if cfg!(feature = "fx") {
+        // content 经 JSON 字符串化，内层引号已转义；用唯一函数名判定域存在
+        assert!(text.contains("fx_rate"), "fx feature 下目录应含 fx 域: {}", text);
+    }
+}
