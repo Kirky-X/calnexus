@@ -247,9 +247,12 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
         let table = provider.rates().map_err(|e| {
-            // 保留错误源（v015 T030 相关：503 语义统一，不再丢弃诊断信息）
-            let _ = e;
-            ApiError::service_unavailable("fx_budget", Some(5))
+            // 保留底层错误源（v015 T030：503 语义 + 可诊断性）
+            ApiError::service_unavailable_with_source(
+                "fx_budget",
+                Some(5),
+                std::io::Error::other(e.to_string()),
+            )
         })?;
         let rate_date = Some(table.date.clone());
         budget_calculation(
@@ -326,8 +329,13 @@ pub(crate) async fn fx_pricing(
 
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
-        let table = provider.rates().map_err(|_| {
-            ApiError::service_unavailable("fx_pricing", Some(5))
+        let table = provider.rates().map_err(|e| {
+            // 保留底层错误源（v015 T030：503 语义 + 可诊断性）
+            ApiError::service_unavailable_with_source(
+                "fx_pricing",
+                Some(5),
+                std::io::Error::other(e.to_string()),
+            )
         })?;
         let rate_date = Some(table.date.clone());
         let cur_refs: Vec<&str> = currencies.iter().map(|s| s.as_str()).collect();

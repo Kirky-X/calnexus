@@ -107,6 +107,11 @@ pub(crate) async fn evaluate_with_timeout(
 pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
     match e.kind {
         ErrorKind::Timeout => ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS)),
+        // v015 T030（R-srv-001）：上游依赖故障 → 503（不再误标为客户端 400）
+        ErrorKind::DependencyUnavailable => ApiError::service_unavailable(
+            "evaluate",
+            Some(REQUEST_TIMEOUT_SECS),
+        ),
         kind => ApiError::invalid_input(
             format!("{}: {}", error_kind_prefix(kind), e.message),
             None,
@@ -128,6 +133,7 @@ fn error_kind_prefix(kind: ErrorKind) -> &'static str {
         ErrorKind::UndefinedSymbol => "UndefinedSymbol",
         ErrorKind::Timeout => "Timeout",
         ErrorKind::Usage => "Usage",
+        ErrorKind::DependencyUnavailable => "DependencyUnavailable",
     }
 }
 

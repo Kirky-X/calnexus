@@ -237,7 +237,7 @@ fn apply_stale_policy(
 ) -> Result<RateTable, CalcError> {
     match cached {
         Some(c) if allow_stale => Ok(c.clone().into()),
-        Some(c) => Err(CalcError::domain(format!(
+        Some(c) => Err(CalcError::dependency_unavailable(format!(
             "FX network unreachable, local snapshot: {}, set CALNEXUS_FX_ALLOW_STALE=1 to allow stale cache",
             c.date
         ))
@@ -245,13 +245,13 @@ fn apply_stale_policy(
         None => {
             if cache_corrupted {
                 // 三分类之二：缓存文件损坏（v015 T018 R-err-002）
-                Err(CalcError::domain(
+                Err(CalcError::dependency_unavailable(
                     "FX rate cache file is corrupted and network fetch failed".to_string(),
                 )
                 .with_i18n("msg.fx.cache_unreadable", vec![]))
             } else {
                 // 三分类之一：网络不可达且无本地缓存
-                Err(CalcError::domain(
+                Err(CalcError::dependency_unavailable(
                     "FX network unreachable, no local cache available".to_string(),
                 )
                 .with_i18n("msg.fx.network_unreachable", vec![]))
@@ -334,7 +334,7 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
         .build()
         .call()
         .map_err(|e| {
-            CalcError::domain("FX network request failed")
+            CalcError::dependency_unavailable("FX network request failed")
                 .with_source(e.to_string())
                 .with_i18n("msg.fx.network_unreachable", vec![])
         })?;
@@ -347,14 +347,14 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
         .read_to_string()
         .map_err(|e| {
         // 三分类之二：响应读取失败 → invalid_response（v015 T018 R-err-002）
-        CalcError::domain("FX response read failed")
+        CalcError::dependency_unavailable("FX response read failed")
             .with_source(e.to_string())
             .with_i18n("msg.fx.invalid_response", vec![])
     })?;
 
     let parsed: FrankfurterResponse = serde_json::from_str(&body).map_err(|e| {
         // 三分类之二：响应 JSON 解析失败 → invalid_response（v015 T018 R-err-002）
-        CalcError::domain("FX response parse failed")
+        CalcError::dependency_unavailable("FX response parse failed")
             .with_source(e.to_string())
             .with_i18n("msg.fx.invalid_response", vec![])
     })?;

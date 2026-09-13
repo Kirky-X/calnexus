@@ -25,18 +25,24 @@ use super::fx_tools::{fx_budget, fx_pricing, FxBudgetRequest, FxPricingRequest};
 /// 请求体大小上限（64KB，T016 安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
 
+/// 优雅关闭排空超时：30 秒（v015 T034，R-srv-005）。
+const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// 构建 CalNexus HTTP Router：显式 API 路由 + 探针端点 + body limit。
 ///
 /// 路由为显式注册（见模块文档：inventory 链接器 GC 脆弱性）。
 /// `DefaultBodyLimit` 防止超大请求体攻击（保留 p1 安全约束）。
 pub fn build_router() -> Router {
+    #[allow(unused_mut)] // docs/ratelimit feature 下需重新赋值
     let mut router = Router::new()
         .route("/api/v1/evaluate", post(evaluate_http_handler))
         .route("/health", get(health_handler))
         .route("/ready", get(readiness_handler))
         .route("/live", get(liveness_handler))
         .route("/metrics", get(metrics_handler))
-        .layer(DefaultBodyLimit::max(MAX_BODY_SIZE));
+        .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
+        // 请求标识传播 + HTTP 请求计数（v015 T032，R-srv-003）
+        .layer(axum::middleware::from_fn(request_id_middleware));
 
     // fx 场景工具路由（与 fx_tools 模块同门控：fx + mcp）
     #[cfg(all(feature = "fx", feature = "mcp"))]
@@ -101,6 +107,63 @@ async fn fx_pricing_http_handler(
     }
 }
 
+/// 全局 HTTP 请求计数（/metrics 的 calnexus_http_requests_total）。
+static HTTP_REQUESTS_TOTAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 请求标识中间件（v015 T032，R-srv-003）：
+/// - 入站带 `X-Request-ID`/`traceparent` 则透传，否则生成 `req-<blake3 前 16 hex>`
+/// - 响应回写 `X-Request-ID`；请求计数并入 /metrics
+async fn request_id_middleware(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::header::HeaderName;
+    use std::sync::atomic::Ordering;
+
+    HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
+
+    let request_id = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .unwrap_or_else(generate_request_id);
+
+    let traceparent = req
+        .headers()
+        .get("traceparent")
+        .cloned();
+
+    let mut resp = next.run(req).await;
+    if let Ok(v) = request_id.parse() {
+        resp.headers_mut().insert(HeaderName::from_static("x-request-id"), v);
+    }
+    if let Some(tp) = traceparent {
+        if let Ok(v) = tp.to_str().unwrap_or_default().parse() {
+            resp.headers_mut().insert(HeaderName::from_static("traceparent"), v);
+        }
+    }
+    resp
+}
+
+/// 生成请求标识：blake3(pid + 时间戳 + 原子计数) 前 16 hex。
+fn generate_request_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut input = Vec::with_capacity(32);
+    input.extend_from_slice(&std::process::id().to_le_bytes());
+    input.extend_from_slice(
+        &std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+            .to_le_bytes(),
+    );
+    input.extend_from_slice(&n.to_le_bytes());
+    format!("req-{}", blake3::hash(&input).to_hex()[..16].to_string())
+}
+
 /// GET /health：健康检查（含检查器明细与真实缓存统计）。
 async fn health_handler() -> axum::Json<serde_json::Value> {
     use serde_json::json;
@@ -141,6 +204,12 @@ async fn liveness_handler() -> axum::Json<serde_json::Value> {
     }))
 }
 
+/// 读取全局请求计数。
+fn http_requests_total() -> u64 {
+    use std::sync::atomic::Ordering;
+    HTTP_REQUESTS_TOTAL.load(Ordering::Relaxed)
+}
+
 /// Metrics 查询参数。
 #[derive(serde::Deserialize)]
 struct MetricsQuery {
@@ -163,6 +232,7 @@ async fn metrics_handler(
             "hits": stats.hits,
             "misses": stats.misses,
             "entry_count": stats.entry_count,
+            "http_requests_total": http_requests_total(),
         });
         (
             [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -179,8 +249,14 @@ async fn metrics_handler(
              calnexus_cache_misses {}\n\
              # HELP calnexus_cache_entries Current number of cached entries.\n\
              # TYPE calnexus_cache_entries gauge\n\
-             calnexus_cache_entries {}\n",
-            stats.hits, stats.misses, stats.entry_count
+             calnexus_cache_entries {}\n\
+             # HELP calnexus_http_requests_total Total HTTP requests handled.\n\
+             # TYPE calnexus_http_requests_total counter\n\
+             calnexus_http_requests_total {}\n",
+            stats.hits,
+            stats.misses,
+            stats.entry_count,
+            http_requests_total()
         );
         (
             [(
@@ -272,12 +348,17 @@ impl HttpServer {
     /// `with_graceful_shutdown(shutdown_signal())` 让 server 收到
     /// Ctrl+C / SIGTERM 后进入 drain 阶段，等待 in-flight 请求完成再退出。
     async fn start_inner(&self) -> Result<(), ServerError> {
+        crate::server::init_observability();
         let listener = tokio::net::TcpListener::bind(&self.addr)
             .await
             .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
         let router = build_router();
+        // 优雅关闭 + 排空超时（v015 T034，R-srv-005）：drain 最长等待 30s，
+        // 超时后强退（k8s terminationGracePeriod 语义，防止慢客户端拖延 SIGTERM）。
         sdforge::axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown_signal())
+            .with_graceful_shutdown(async {
+                tokio::time::timeout(DRAIN_TIMEOUT, shutdown_signal()).await.ok();
+            })
             .await
             .map_err(|e| ServerError::Http(format!("server error: {}", e)))?;
         Ok(())

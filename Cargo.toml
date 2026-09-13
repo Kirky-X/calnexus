@@ -38,8 +38,8 @@ ratelimit = ["dep:sdforge", "sdforge/ratelimit-http"]
 docs = ["dep:sdforge", "sdforge/docs"]
 # Graceful shutdown: 优雅关闭（axum with_graceful_shutdown + tokio signal，不依赖 sdforge）
 graceful-shutdown = []
-# Observability: OpenTelemetry 分布式追踪（tracing 本地实现）
-observability = ["dep:tracing"]
+# Observability: tracing 日志（server 模式 EnvFilter 消费 RUST_LOG）
+observability = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
 # 解析器
@@ -78,8 +78,9 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 anyhow = { version = "1.0", default-features = false, features = ["std"], optional = true }
 # async-trait: HealthChecker trait 实现（sdforge health-check 依赖 async_trait 宏；仅 http feature 启用）
 async-trait = { version = "0.1", default-features = false, optional = true }
-# tracing: observability 支持（#[forge] 宏在 observability feature 下生成 tracing 调用；仅 observability feature 启用）
+# tracing: observability 支持（server 模式结构化日志；仅 observability feature 启用）
 tracing = { version = "0.1", default-features = false, optional = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std"], optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）

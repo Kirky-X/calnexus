@@ -281,3 +281,76 @@ async fn test_metrics_json_format() {
     // JSON metrics 应包含缓存统计字段
     assert!(json.is_object(), "JSON metrics 应返回对象");
 }
+
+// ===== v015 服务化最小包（R-srv-003/004） =====
+
+/// REQ-ID-01: 无标识请求 → 响应回写生成的 X-Request-ID（req-* 前缀）。
+#[tokio::test]
+async fn test_request_id_generated() {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.expect("oneshot failed");
+    let rid = response
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(rid.starts_with("req-"), "应生成 req-* 标识，实际: {}", rid);
+}
+
+/// REQ-ID-02: 入站 X-Request-ID → 响应透传同值。
+#[tokio::test]
+async fn test_request_id_passthrough() {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .header("x-request-id", "my-trace-42")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.expect("oneshot failed");
+    assert_eq!(
+        response.headers().get("x-request-id").and_then(|v| v.to_str().ok()),
+        Some("my-trace-42"),
+        "入站 X-Request-ID 应透传"
+    );
+}
+
+/// METRICS-HTTP: /metrics 含 calnexus_http_requests_total。
+#[tokio::test]
+async fn test_metrics_http_requests_total() {
+    let router = build_router();
+    let _ = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot failed");
+    let bytes = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(
+        text.contains("calnexus_http_requests_total"),
+        "/metrics 应含 HTTP 请求计数"
+    );
+}

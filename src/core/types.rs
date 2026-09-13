@@ -432,13 +432,16 @@ pub enum ErrorKind {
     UndefinedSymbol,
     Timeout,
     Usage,
+    /// 上游依赖不可用（v015 T030，R-srv-001）：fx 汇率源等外部服务故障。
+    /// 与客户端输入错误（400）严格区分，服务化部署下映射 503。
+    DependencyUnavailable,
 }
 
 impl ErrorKind {
     /// 退出码契约：0=成功, 1=计算错误, 2=用法错误, 3=超时。design.md §5.6。
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::Timeout => 3,
+            Self::Timeout | Self::DependencyUnavailable => 3,
             Self::Usage => 2,
             _ => 1,
         }
@@ -457,6 +460,7 @@ impl ErrorKind {
             Self::UndefinedSymbol => "error.undefined_symbol",
             Self::Timeout => "error.timeout",
             Self::Usage => "error.usage",
+            Self::DependencyUnavailable => "error.dependency_unavailable",
         }
     }
 }
@@ -505,6 +509,9 @@ impl fmt::Display for CalcError {
             ErrorKind::UndefinedSymbol => write!(f, "{}", self.message),
             ErrorKind::Timeout => write!(f, "{}", self.message),
             ErrorKind::Usage => write!(f, "{}", self.message),
+            ErrorKind::DependencyUnavailable => {
+                write!(f, "dependency unavailable: {}", self.message)
+            }
         }?;
         // 错误链（v015 R-err-001）：有 source 时追加 ": {source}" 保留底层错误摘要
         if let Some(src) = &self.source_detail {
@@ -590,6 +597,12 @@ impl CalcError {
             .with_hint("check divisor before division")
             .with_i18n("detail.division_by_zero", vec![])
     }
+    /// 上游依赖不可用错误（v015 T030，R-srv-001）。
+    pub fn dependency_unavailable(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::DependencyUnavailable, message)
+            .with_i18n("detail.dependency_unavailable", vec![])
+    }
+
     pub fn undefined_symbol(name: &str) -> Self {
         Self::new(
             ErrorKind::UndefinedSymbol,
