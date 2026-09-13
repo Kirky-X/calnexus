@@ -22,7 +22,9 @@ mod http;
 #[cfg(feature = "mcp")]
 mod mcp;
 
-pub(crate) use cache::{init_shared_cache, shared_cache};
+pub(crate) use cache::shared_cache;
+#[cfg(feature = "cli")]
+pub(crate) use cache::init_shared_cache;
 pub use evaluate::calc_error_to_api_error;
 pub use types::{EvaluateRequest, EvaluateResponse, ServerError};
 

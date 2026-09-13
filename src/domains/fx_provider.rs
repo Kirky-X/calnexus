@@ -33,6 +33,9 @@ const DEFAULT_TTL_SECONDS: u64 = 24 * 3600;
 /// HTTP 请求超时：5 秒。
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// 响应体读取上限：1 MB（v015 T028，防源站异常导致内存膨胀）。
+const MAX_RESPONSE_BODY_BYTES: u64 = 1024 * 1024;
+
 /// 缓存目录名。
 const CACHE_DIR_NAME: &str = "calnexus";
 
@@ -81,6 +84,9 @@ pub struct FrankfurterProvider {
     cache_path: Option<PathBuf>,
     /// L1 内存缓存。
     in_memory: Mutex<Option<RateTable>>,
+    /// 拉取单飞锁（v015 T027，R-fx-002）：L1 miss 后持锁 double-check，
+    /// 消除 TTL 过期瞬间 N 个并发请求 × N 次外网 GET 的惊群。
+    fetch_lock: Mutex<()>,
 }
 
 impl FrankfurterProvider {
@@ -89,6 +95,7 @@ impl FrankfurterProvider {
         Self {
             cache_path: default_cache_path(),
             in_memory: Mutex::new(None),
+            fetch_lock: Mutex::new(()),
         }
     }
 
@@ -98,6 +105,7 @@ impl FrankfurterProvider {
         Self {
             cache_path: Some(path),
             in_memory: Mutex::new(None),
+            fetch_lock: Mutex::new(()),
         }
     }
 }
@@ -111,6 +119,16 @@ impl Default for FrankfurterProvider {
 impl RateProvider for FrankfurterProvider {
     fn rates(&self) -> Result<RateTable, CalcError> {
         // L1: 内存缓存（短暂持锁，仅读取/克隆后立即释放）
+        {
+            let mem = self.in_memory.lock().unwrap();
+            if let Some(table) = mem.as_ref() {
+                return Ok(table.clone());
+            }
+        }
+
+        // L3' 拉取单飞（v015 T027，R-fx-002）：持锁后 double-check L1，
+        // 过期瞬间 N 个并发请求只有 leader 走 L2/L3，其余共享结果。
+        let _flight = self.fetch_lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         {
             let mem = self.in_memory.lock().unwrap();
             if let Some(table) = mem.as_ref() {
@@ -136,7 +154,7 @@ impl RateProvider for FrankfurterProvider {
             _ => None,
         };
 
-        // L3: 网络抓取（不持锁，避免阻塞其他线程）
+        // 真正的网络抓取（此时已持单飞锁，全进程仅一次在途请求）
         match fetch_from_network() {
             Ok(table) => {
                 // 写回文件缓存（best-effort，失败静默降级）
@@ -278,7 +296,31 @@ fn write_cache_file(path: &Path, table: &RateTable, fetched_at: u64) -> std::io:
         let _ = std::fs::create_dir_all(parent);
     }
 
-    std::fs::write(path, json)
+    // 原子写（v015 T026，R-fx-001）：同目录 temp 文件 + rename 替换，
+    // 并发读取方只会看到完整旧文件或完整新文件（杜绝 torn write）。
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "fx_rates.json".to_string());
+    let tmp_path = path.with_file_name(format!(".{}.tmp.{}", file_name, std::process::id()));
+    {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp_path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+        }
+        f.write_all(json.as_bytes())?;
+        f.sync_all().ok();
+    }
+    match std::fs::rename(&tmp_path, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(e)
+        }
+    }
 }
 
 /// 从 Frankfurter API 抓取最新汇率。
@@ -288,6 +330,7 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
     let response = ureq::get(FRANKFURTER_URL)
         .config()
         .timeout_global(Some(HTTP_TIMEOUT))
+        .https_only(true) // v015 T028（R-fx-003）：拒绝降级到明文/重定向到 http
         .build()
         .call()
         .map_err(|e| {
@@ -296,7 +339,13 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
                 .with_i18n("msg.fx.network_unreachable", vec![])
         })?;
 
-    let body = response.into_body().read_to_string().map_err(|e| {
+    // 响应体读取上限 1MB（v015 T028，R-fx-003）：源站被劫持/异常时防止内存膨胀
+    let body = response
+        .into_body()
+        .with_config()
+        .limit(MAX_RESPONSE_BODY_BYTES)
+        .read_to_string()
+        .map_err(|e| {
         // 三分类之二：响应读取失败 → invalid_response（v015 T018 R-err-002）
         CalcError::domain("FX response read failed")
             .with_source(e.to_string())

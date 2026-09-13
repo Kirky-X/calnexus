@@ -22,6 +22,7 @@ pub(crate) fn shared_cache() -> &'static CacheManager {
 /// 以指定字节预算预初始化共享缓存（server 启动前由 CLI `--cache-size` 调用）。
 ///
 /// 已初始化时为 no-op（首次调用生效，v015 R-cfg-002）。
+#[cfg(feature = "cli")]
 pub(crate) fn init_shared_cache(capacity_bytes: u64) {
     let _ = SHARED_CACHE.get_or_init(|| CacheManager::with_capacity_bytes(capacity_bytes));
 }

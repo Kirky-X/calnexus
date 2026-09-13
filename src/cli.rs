@@ -483,7 +483,7 @@ fn resolve_bind(cli_value: Option<String>) -> Result<String, String> {
         None => match std::env::var("CALNEXUS_BIND_ADDR") {
             Ok(s) if !s.trim().is_empty() => Ok(s.trim().to_string()),
             Ok(_) => Err("invalid CALNEXUS_BIND_ADDR: empty value".to_string()),
-            Err(_) => Ok(DEFAULT_BIND),
+            Err(_) => Ok(DEFAULT_BIND.to_string()),
         },
     }
 }

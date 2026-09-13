@@ -51,6 +51,8 @@ pub struct FxBudgetResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_cost_home: Option<f64>,
     pub exchange_risk: ExchangeRiskResponse,
+    /// 汇率快照日期（v015 T029，R-fx-004：跨实例结果可审计）。
+    pub rate_date: Option<String>,
 }
 
 /// 汇率风险区间响应。
@@ -93,6 +95,8 @@ pub struct FxPricingResponse {
     pub platform_rate: f64,
     pub safety_buffer: f64,
     pub pricing: Vec<PricingItemResponse>,
+    /// 汇率快照日期（v015 T029，R-fx-004：跨实例结果可审计）。
+    pub rate_date: Option<String>,
 }
 
 /// 单币种定价明细。
@@ -242,9 +246,12 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     // spawn_blocking 隔离同步 RateProvider 调用
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
-        let table = provider.rates().map_err(|_| {
+        let table = provider.rates().map_err(|e| {
+            // 保留错误源（v015 T030 相关：503 语义统一，不再丢弃诊断信息）
+            let _ = e;
             ApiError::service_unavailable("fx_budget", Some(5))
         })?;
+        let rate_date = Some(table.date.clone());
         budget_calculation(
             tuition,
             &tuition_currency,
@@ -253,12 +260,13 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
             &home_currency,
             &table,
         )
+        .map(|result| (result, rate_date))
         .map_err(|e| ApiError::invalid_input(e.message, None, None))
     })
     .await;
 
     match join_result {
-        Ok(Ok(result)) => Ok(FxBudgetResponse {
+        Ok(Ok((result, rate_date))) => Ok(FxBudgetResponse {
             tuition_foreign: result.tuition_foreign,
             tuition_currency: result.tuition_currency,
             tuition_home: result.tuition_home,
@@ -278,6 +286,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
                 ),
                 note: "基于±3%汇率波动估算，建议分批换汇降低风险".to_string(),
             },
+            rate_date,
         }),
         Ok(Err(api_err)) => Err(api_err),
         Err(join_err) => Err(ApiError::internal_with_source(
@@ -320,14 +329,16 @@ pub(crate) async fn fx_pricing(
         let table = provider.rates().map_err(|_| {
             ApiError::service_unavailable("fx_pricing", Some(5))
         })?;
+        let rate_date = Some(table.date.clone());
         let cur_refs: Vec<&str> = currencies.iter().map(|s| s.as_str()).collect();
         pricing_calculation(cost, profit_rate, &cur_refs, platform_rate, safety_buffer, &table)
+            .map(|result| (result, rate_date))
             .map_err(|e| ApiError::invalid_input(e.message, None, None))
     })
     .await;
 
     match join_result {
-        Ok(Ok(result)) => Ok(FxPricingResponse {
+        Ok(Ok((result, rate_date))) => Ok(FxPricingResponse {
             cost_cny: result.cost_cny,
             target_profit_rate: profit_rate,
             platform_rate,
@@ -343,6 +354,7 @@ pub(crate) async fn fx_pricing(
                     platform_fee_cny: item.platform_fee_cny,
                 })
                 .collect(),
+            rate_date,
         }),
         Ok(Err(api_err)) => Err(api_err),
         Err(join_err) => Err(ApiError::internal_with_source(
@@ -550,6 +562,7 @@ mod tests {
                 range: "1027345~1089655 CNY".into(),
                 note: "test".into(),
             },
+            rate_date: Some("2026-09-13".into()),
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""tuition_foreign":50000.0"#));
