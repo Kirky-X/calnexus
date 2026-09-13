@@ -44,8 +44,8 @@ observability = ["dep:tracing"]
 [dependencies]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
-# 缓存层（仅启用 core，禁用默认的 tokio/moka 全特性）
-oxcache = { version = "0.5.0-rc.2", features = ["core"], default-features = false }
+# 缓存层（moka::sync 直连：字节权重预算 + try_get_with single-flight，禁用默认特性避免 quanta/async-lock）
+moka = { version = "0.12", default-features = false, features = ["sync"] }
 # 错误派生（仅 std，禁用默认特性）
 thiserror = { version = "2.0", default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）

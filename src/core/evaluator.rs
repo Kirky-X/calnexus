@@ -5,6 +5,7 @@
 //! 本模块为顶层模块（不受 feature gate），CLI、REPL、batch、HTTP/MCP server 共用。
 //! 从 `src/cli.rs` 移出，使 `http`/`mcp` feature 在不启用 `cli` 时也能调用 `evaluate`。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::core::{
@@ -136,6 +137,9 @@ fn build_cache_key(
 }
 
 /// precision 模式：直接使用 PrecisionDomain，绕过路由器。
+///
+/// v015 缓存重构：get+insert 两段式改为 `get_or_compute`（moka try_get_with
+/// single-flight），并发相同键仅一次真实求值；compute 错误原样传播且不缓存。
 fn eval_precision_mode(
     canonical_ast: &AstNode,
     ctx: &EvalContext,
@@ -144,17 +148,21 @@ fn eval_precision_mode(
     precision: Option<usize>,
     start: Instant,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
-    // 缓存命中
-    if let Some(cached) = cache.get(cache_cf) {
-        return Ok((cached, "precision".to_string(), true, precision));
-    }
-    // 缓存未命中：求值 + 超时检查
-    let domain = build_precision_domain();
-    check_elapsed(start, ctx.timeout)?;
-    let result = domain.evaluate(canonical_ast, ctx)?;
-    check_elapsed(start, ctx.timeout)?;
-    cache.insert(cache_cf, &Ok(result.clone()));
-    Ok((result, "precision".to_string(), false, precision))
+    let computed = AtomicBool::new(false);
+    let result = cache.get_or_compute(cache_cf, || {
+        computed.store(true, Ordering::Relaxed);
+        let domain = build_precision_domain();
+        check_elapsed(start, ctx.timeout)?;
+        let r = domain.evaluate(canonical_ast, ctx)?;
+        check_elapsed(start, ctx.timeout)?;
+        Ok(r)
+    })?;
+    Ok((
+        result,
+        "precision".to_string(),
+        !computed.load(Ordering::Relaxed),
+        precision,
+    ))
 }
 
 /// 常规模式：路由器分发 + 缓存查询 + 格式化精度提取。
@@ -182,21 +190,21 @@ fn eval_regular_mode(
         return Ok((result, domain.domain_name().to_string(), false, fmt_prec));
     }
 
-    // 缓存命中
-    if let Some(cached) = cache.get(cache_cf) {
+    // 缓存查询或计算（single-flight）：miss 时闭包内路由 + 求值 + 超时检查；
+    // hit 时（含 single-flight follower）跳过闭包，domain 名与格式化精度照常提取。
+    let computed = AtomicBool::new(false);
+    let result = cache.get_or_compute(cache_cf, || {
+        computed.store(true, Ordering::Relaxed);
         let domain = router.route(canonical_ast)?;
-        let fmt_prec = extract_format_precision(canonical_ast);
-        return Ok((cached, domain.domain_name().to_string(), true, fmt_prec));
-    }
-
-    // 缓存未命中：路由 + 求值 + 超时检查
+        check_elapsed(start, ctx.timeout)?;
+        let r = domain.evaluate(canonical_ast, ctx)?;
+        check_elapsed(start, ctx.timeout)?;
+        Ok(r)
+    })?;
     let domain = router.route(canonical_ast)?;
-    check_elapsed(start, ctx.timeout)?;
-    let result = domain.evaluate(canonical_ast, ctx)?;
-    check_elapsed(start, ctx.timeout)?;
-    cache.insert(cache_cf, &Ok(result.clone()));
     let fmt_prec = extract_format_precision(canonical_ast);
-    Ok((result, domain.domain_name().to_string(), false, fmt_prec))
+    let cache_hit = !computed.load(Ordering::Relaxed);
+    Ok((result, domain.domain_name().to_string(), cache_hit, fmt_prec))
 }
 
 /// 检查是否已超时，超时则返回 `CalcError::timeout()`。

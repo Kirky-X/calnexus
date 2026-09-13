@@ -278,6 +278,6 @@ async fn test_metrics_json_format() {
         .unwrap()
         .to_bytes();
     let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    // oxcache JSON metrics 应包含缓存统计字段
+    // JSON metrics 应包含缓存统计字段
     assert!(json.is_object(), "JSON metrics 应返回对象");
 }

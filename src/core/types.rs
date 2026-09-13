@@ -135,7 +135,7 @@ pub enum UnaryOp {
 /// 求值结果。
 ///
 /// v0.1 仅支持标量；v0.5 扩展 Complex（design.md D4）与 Matrix（design.md D5）。
-/// 派生 Serialize/Deserialize 以支持 oxcache 缓存序列化（ADD ADR-001）。
+/// 派生 Serialize/Deserialize 以支持 JSON 输出与缓存层调试序列化（ADD ADR-001）。
 ///
 /// time-unit-fx-domains D2 新增 DateTime（RFC3339 字符串），
 /// 用于 TimeDomain/FxDomain 的 now()/today()/fx() 等返回时间或汇率字符串的结果。

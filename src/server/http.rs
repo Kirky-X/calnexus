@@ -1,37 +1,50 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! HTTP server 启动：`POST /api/v1/evaluate` 路由由 `#[forge]` 宏声明（evaluate.rs），
-//! 本模块仅负责构建 Router（body limit）与启动 HttpServer。
+//! HTTP server 启动：API 路由（显式注册）+ 健康探针 + /metrics + HttpServer。
 //!
 //! spec.md R-sdforge-002 定义接口契约。
+//!
+//! 路由注册策略（v015 缓存重构期间发现的关键修复）：`#[forge]` 宏生成的 HTTP
+//! inventory 注册在 rlib/测试二进制场景下会被链接器 GC 静默丢弃（`#[forge]`
+//! 注解对象文件若无其他符号引用即整体剔除，404 且无任何告警）。因此 HTTP 路由
+//! 在本模块**显式挂载**（单一事实源），复用与 `#[forge]` 注解函数相同的内部实现
+//! 与 `ApiError` 契约，行为等价；`#[forge]` 保留 MCP tool 注册与 schema 推导职责。
 
+use std::time::Duration;
+
+use super::evaluate::{evaluate_with_timeout, REQUEST_TIMEOUT_SECS};
 use super::ServerError;
+use super::EvaluateRequest;
 use axum::extract::DefaultBodyLimit;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
+
+#[cfg(all(feature = "fx", feature = "mcp"))]
+use super::fx_tools::{fx_budget, fx_pricing, FxBudgetRequest, FxPricingRequest};
 
 /// 请求体大小上限（64KB，T016 安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
 
-/// 构建 CalNexus HTTP Router：`init_all_plugins()` + `sdforge::http::build()` + body limit。
+/// 构建 CalNexus HTTP Router：显式 API 路由 + 探针端点 + body limit。
 ///
-/// `init_all_plugins()` 替代 p1 的 `preserve_http_inventory()` 链接器 hack，
-/// 确保 `#[forge]` 注册的 evaluate 路由被 `http::build()` 收集。
+/// 路由为显式注册（见模块文档：inventory 链接器 GC 脆弱性）。
 /// `DefaultBodyLimit` 防止超大请求体攻击（保留 p1 安全约束）。
 pub fn build_router() -> Router {
-    sdforge::init_all_plugins();
-    let mut router = sdforge::http::build()
+    let mut router = Router::new()
+        .route("/api/v1/evaluate", post(evaluate_http_handler))
+        .route("/health", get(health_handler))
+        .route("/ready", get(readiness_handler))
+        .route("/live", get(liveness_handler))
+        .route("/metrics", get(metrics_handler))
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE));
 
-    // Health check endpoints: /health（含检查器明细）、/ready、/live（存活探针）
-    // 原生 axum 实现，不依赖 sdforge 扩展 API（sdforge 无 health_check 模块）。
-    router = router
-        .route("/health", get(health_handler))
-        .route("/ready", get(liveness_handler))
-        .route("/live", get(liveness_handler));
-
-    // Metrics endpoint: /metrics（always available，oxcache metrics 由 core/minimal feature 包含）
-    router = router.route("/metrics", get(metrics_handler));
+    // fx 场景工具路由（与 fx_tools 模块同门控：fx + mcp）
+    #[cfg(all(feature = "fx", feature = "mcp"))]
+    {
+        router = router
+            .route("/api/v1/fx_budget", post(fx_budget_http_handler))
+            .route("/api/v1/fx_pricing", post(fx_pricing_http_handler));
+    }
 
     // Swagger UI: /swagger-ui（docs feature）
     #[cfg(feature = "docs")]
@@ -50,21 +63,76 @@ pub fn build_router() -> Router {
     router
 }
 
-/// GET /health：健康检查（含检查器明细）。进程内 L1 缓存始终可用。
+/// `POST /api/v1/evaluate`：Json 提取 → `evaluate_with_timeout` → ApiError 契约。
+///
+/// 与 `#[forge]` 宏生成的 HTTP 外壳行为等价（Json 提取 + `.0` 解包 +
+/// `ApiError::into_response` 错误路径）。
+async fn evaluate_http_handler(
+    axum::extract::Json(req): axum::extract::Json<EvaluateRequest>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match evaluate_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await {
+        Ok(resp) => axum::Json(resp).into_response(),
+        Err(api_err) => api_err.into_response(),
+    }
+}
+
+/// `POST /api/v1/fx_budget`：Json 提取 → `fx_budget`（显式挂载，同上）。
+#[cfg(all(feature = "fx", feature = "mcp"))]
+async fn fx_budget_http_handler(
+    axum::extract::Json(req): axum::extract::Json<FxBudgetRequest>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match fx_budget(req).await {
+        Ok(resp) => axum::Json(resp).into_response(),
+        Err(api_err) => api_err.into_response(),
+    }
+}
+
+/// `POST /api/v1/fx_pricing`：Json 提取 → `fx_pricing`（显式挂载，同上）。
+#[cfg(all(feature = "fx", feature = "mcp"))]
+async fn fx_pricing_http_handler(
+    axum::extract::Json(req): axum::extract::Json<FxPricingRequest>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match fx_pricing(req).await {
+        Ok(resp) => axum::Json(resp).into_response(),
+        Err(api_err) => api_err.into_response(),
+    }
+}
+
+/// GET /health：健康检查（含检查器明细与真实缓存统计）。
 async fn health_handler() -> axum::Json<serde_json::Value> {
     use serde_json::json;
+    let stats = super::cache::shared_cache().stats();
     axum::Json(json!({
         "status": "healthy",
         "checks": {
             "cache": {
                 "status": "healthy",
                 "details": "L1 in-memory cache operational",
+                "entry_count": stats.entry_count,
             }
         },
     }))
 }
 
-/// GET /ready 与 /live：就绪/存活探针（无检查器明细）。
+/// GET /ready：就绪探针（依赖就绪语义：进程内缓存可读）。
+async fn readiness_handler() -> axum::Json<serde_json::Value> {
+    use serde_json::json;
+    let stats = super::cache::shared_cache().stats();
+    axum::Json(json!({
+        "status": "healthy",
+        "checks": {
+            "cache": {
+                "status": "healthy",
+                "entry_count": stats.entry_count,
+            }
+        },
+    }))
+}
+
+/// GET /live：存活探针（纯进程语义，无检查器明细）。
 async fn liveness_handler() -> axum::Json<serde_json::Value> {
     use serde_json::json;
     axum::Json(json!({
@@ -80,26 +148,40 @@ struct MetricsQuery {
     format: Option<String>,
 }
 
-/// GET /metrics：返回 oxcache 缓存统计数据。
+/// GET /metrics：返回缓存统计数据（CacheManager::stats）。
 ///
-/// - 默认返回 Prometheus 文本格式（`Content-Type: text/plain`）
-/// - `?format=json` 返回 JSON 格式
+/// - 默认返回 Prometheus 文本格式（`Content-Type: text/plain; version=0.0.4`，
+///   含 `# HELP`/`# TYPE` 注释行，指标族 `calnexus_cache_*`）
+/// - `?format=json` 返回 JSON 格式（调试友好）
 async fn metrics_handler(
     query: axum::extract::Query<MetricsQuery>,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
+    let stats = super::cache::shared_cache().stats();
     if query.format.as_deref() == Some("json") {
-        match oxcache::export_json_format() {
-            Ok(json) => (
-                [(axum::http::header::CONTENT_TYPE, "application/json")],
-                json,
-            )
-                .into_response(),
-            Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR
-                .into_response(),
-        }
+        let body = serde_json::json!({
+            "hits": stats.hits,
+            "misses": stats.misses,
+            "entry_count": stats.entry_count,
+        });
+        (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            body.to_string(),
+        )
+            .into_response()
     } else {
-        let prometheus = oxcache::export_prometheus_format();
+        let prometheus = format!(
+            "# HELP calnexus_cache_hits Cache hit count.\n\
+             # TYPE calnexus_cache_hits counter\n\
+             calnexus_cache_hits {}\n\
+             # HELP calnexus_cache_misses Cache miss count.\n\
+             # TYPE calnexus_cache_misses counter\n\
+             calnexus_cache_misses {}\n\
+             # HELP calnexus_cache_entries Current number of cached entries.\n\
+             # TYPE calnexus_cache_entries gauge\n\
+             calnexus_cache_entries {}\n",
+            stats.hits, stats.misses, stats.entry_count
+        );
         (
             [(
                 axum::http::header::CONTENT_TYPE,

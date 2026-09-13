@@ -29,7 +29,7 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// 并 `inventory::submit!` 注册。`name="evaluate"` + `version=1` 决定路径前缀 `/api/v1`，
 /// 叠加 `path="/evaluate"` → 最终路由 `/api/v1/evaluate`（spec.md R-sdforge-002）。
 ///
-/// 函数体内保留 `spawn_blocking` 隔离 oxcache 同步 `block_on`（与 p1 手写 handler 等价）：
+/// 函数体内保留 `spawn_blocking` 隔离同步求值（避免阻塞 tokio 异步运行时）：
 /// `#[forge]` 只生成外层路由/tool 外壳，函数体仍是 CalNexus 代码，隔离策略不变。
 ///
 /// 用 `tokio::time::timeout` 包裹 `spawn_blocking`，超时返回 503
@@ -63,7 +63,7 @@ pub(crate) async fn evaluate_with_timeout(
     let ctx = req.to_eval_context();
     let precision = req.precision;
     let expr = req.expr.clone();
-    // spawn_blocking 把同步 evaluate（内部 CacheManager 用 block_on 调 oxcache async API）
+    // spawn_blocking 把同步 evaluate（内部 CacheManager 为 moka::sync 同步实现）
     // 移到无 runtime context 的阻塞线程池，避免 "Cannot start a runtime from within a runtime"。
     let join_handle = tokio::task::spawn_blocking(move || {
         let cache = shared_cache();
