@@ -665,7 +665,8 @@ impl CalcError {
         if let Some(src) = &self.source_detail {
             obj.insert("source".to_string(), serde_json::Value::String(src.clone()));
         }
-        format!("{{\"error\":{}}}", err)
+        // v015 T023（R-json-001）：错误契约同版本化
+        serde_json::json!({ "v": 1, "error": err }).to_string()
     }
 
     /// 教育模式（--explain）。design.md §5.5。

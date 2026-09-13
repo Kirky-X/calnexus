@@ -305,32 +305,23 @@ fn format_json_output(
     cache_hit: bool,
     fmt_prec: Option<usize>,
 ) -> String {
+    // v015 T023（R-json-001/002）：serde_json 统一构造 + 契约版本字段 "v":1。
+    // result 类型判别：Scalar 为数值、Complex 为 {re,im}、Steps 为字符串数组，
+    // 其余变体为文本形态字符串。契约详见 docs/schema/result-v1.json。
     let cache_str = if cache_hit { "hit" } else { "miss" };
-    match result {
-        EvalResult::Scalar(v) => format!(
-            r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
-            v, domain, cache_str
-        ),
-        EvalResult::Steps(v) => {
-            let arr: Vec<String> = v
-                .iter()
-                .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
-                .collect();
-            format!(
-                r#"{{"result":[{}],"domain":"{}","cache":"{}"}}"#,
-                arr.join(","),
-                domain,
-                cache_str
-            )
-        }
-        _ => {
-            let value = format_result(result, fmt_prec);
-            format!(
-                r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                value, domain, cache_str
-            )
-        }
-    }
+    let result_value = match result {
+        EvalResult::Scalar(v) => serde_json::json!(*v),
+        EvalResult::Complex(re, im) => serde_json::json!({ "re": re, "im": im }),
+        EvalResult::Steps(v) => serde_json::json!(v),
+        _ => serde_json::json!(format_result(result, fmt_prec)),
+    };
+    serde_json::json!({
+        "v": 1,
+        "result": result_value,
+        "domain": domain,
+        "cache": cache_str,
+    })
+    .to_string()
 }
 
 /// 根据 CLI 配置输出 CalcError 并返回退出码。

@@ -1,5 +1,7 @@
 ---
 source: tests/snapshot_tests.rs
-expression: stderr
+expression: stdout
 ---
-error: Parse error (Position 0:4): parse error: Invalid syntax: Error(Error { input: "(2+3", code: Tag })
+error: Parse error (Position 0:4): parse error: unexpected input near '(2+3'
+  | (2+3
+  | ^^^^

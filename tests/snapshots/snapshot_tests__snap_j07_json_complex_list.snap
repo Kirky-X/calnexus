@@ -1,0 +1,5 @@
+---
+source: tests/snapshot_tests.rs
+expression: stdout.trim()
+---
+{"cache":"miss","domain":"polynomial","result":"[-0+1i,-0-1i]","v":1}

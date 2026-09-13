@@ -1,0 +1,5 @@
+---
+source: tests/snapshot_tests.rs
+expression: stdout.trim()
+---
+{"cache":"miss","domain":"complex","result":{"im":4.0,"re":3.0},"v":1}

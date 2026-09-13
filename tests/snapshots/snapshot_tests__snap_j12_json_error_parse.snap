@@ -1,0 +1,5 @@
+---
+source: tests/snapshot_tests.rs
+expression: stdout.trim()
+---
+{"error":{"exit_code":1,"kind":"Parse","message":"unexpected input near '(2+3'","span":{"end":4,"start":0}},"v":1}

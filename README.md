@@ -244,10 +244,23 @@ $ calnexus --precision 50 '1/3'
 
 #### JSON 输出
 
+`--json` 输出契约版本化（`"v":1`，Schema 见 [`docs/schema/result-v1.json`](./docs/schema/result-v1.json)）：
+
 ```bash
 $ calnexus --json '2+3'
-{"result":5,"domain":"arithmetic","cache":"miss"}
+{"cache":"miss","domain":"arithmetic","result":5.0,"v":1}
 ```
+
+**result 字段形态 × domain 对照表**（v1 契约）：
+
+| result 形态 | 触发域/变体 | 示例 |
+| --- | --- | --- |
+| number | 算术/科学/统计等标量结果（Scalar） | `5.0` |
+| `{"re":…,"im":…}` | 复数（Complex） | `{"im":4.0,"re":3.0}` |
+| string（文本形态） | 矩阵/向量/多项式/符号/BigRational/BigInt/复根列表/JSON 复合 | `"[[1,2],[3,4]]"`、`"0.33333"` |
+| string 数组 | 求值步骤（Steps，仅批量/库路径） | `["2+9=11"]` |
+
+错误输出：`{"v":1,"error":{"kind","message","span"?,"hint"?,"source"?,"exit_code"}}`（exit_code：1=求值错误、2=用法/系统错误、3=超时/不可用）。
 
 #### 符号微积分
 

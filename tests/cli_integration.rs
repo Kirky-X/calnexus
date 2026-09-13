@@ -50,7 +50,7 @@ fn test_json_arithmetic() {
     // --json "2+3" → {"result":5,"domain":"arithmetic","cache":"miss"} (Req 3 Scen 1)
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json").arg("2+3").assert().success().stdout(
-        r#"{"result":5,"domain":"arithmetic","cache":"miss"}
+        r#"{"cache":"miss","domain":"arithmetic","result":5.0,"v":1}
 "#,
     );
 }
@@ -64,7 +64,7 @@ fn test_json_scientific() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":1,"domain":"scientific","cache":"miss"}
+            r#"{"cache":"miss","domain":"scientific","result":1.0,"v":1}
 "#,
         );
 }
@@ -317,7 +317,7 @@ fn test_precision_function_call_json() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"0.33333","domain":"precision","cache":"miss"}
+            r#"{"cache":"miss","domain":"precision","result":"0.33333","v":1}
 "#,
         );
 }
@@ -355,7 +355,7 @@ fn test_bigint_json_output() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"123456789012345678901234567890","domain":"precision","cache":"miss"}
+            r#"{"cache":"miss","domain":"precision","result":"123456789012345678901234567890","v":1}
 "#,
         );
 }
@@ -384,7 +384,7 @@ fn test_complex_json_output() {
     // 覆盖 cli.rs lines 69, 71（Complex JSON 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json").arg("3+4i").assert().success().stdout(
-        r#"{"result":"3+4i","domain":"complex","cache":"miss"}
+        r#"{"cache":"miss","domain":"complex","result":{"im":4.0,"re":3.0},"v":1}
 "#,
     );
 }
@@ -412,7 +412,7 @@ fn test_matrix_json_output() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"[[1,2],[3,4]]","domain":"matrix","cache":"miss"}
+            r#"{"cache":"miss","domain":"matrix","result":"[[1,2],[3,4]]","v":1}
 "#,
         );
 }
@@ -442,7 +442,7 @@ fn test_bigrational_json_output_with_precision_flag() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"0.33333","domain":"precision","cache":"miss"}
+            r#"{"cache":"miss","domain":"precision","result":"0.33333","v":1}
 "#,
         );
 }
@@ -566,7 +566,7 @@ fn test_statistics_json_output() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":3,"domain":"statistics","cache":"miss"}
+            r#"{"cache":"miss","domain":"statistics","result":3.0,"v":1}
 "#,
         );
 }
@@ -621,7 +621,7 @@ fn test_cli_number_theory_json_domain() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":6,"domain":"number_theory","cache":"miss"}
+            r#"{"cache":"miss","domain":"number_theory","result":6.0,"v":1}
 "#,
         );
 }
@@ -890,7 +890,7 @@ fn test_json_vector_output() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"[4,6]","domain":"vector","cache":"miss"}
+            r#"{"cache":"miss","domain":"vector","result":"[4,6]","v":1}
 "#,
         );
 }
@@ -905,7 +905,7 @@ fn test_json_polynomial_output() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"2x+3","domain":"polynomial","cache":"miss"}
+            r#"{"cache":"miss","domain":"polynomial","result":"2x+3","v":1}
 "#,
         );
 }
@@ -920,7 +920,7 @@ fn test_json_complex_list_output() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"[-0+1i,-0-1i]","domain":"polynomial","cache":"miss"}
+            r#"{"cache":"miss","domain":"polynomial","result":"[-0+1i,-0-1i]","v":1}
 "#,
         );
 }
@@ -935,7 +935,7 @@ fn test_json_symbolic_output() {
         .assert()
         .success()
         .stdout(
-            r#"{"result":"2*x","domain":"symbolic","cache":"miss"}
+            r#"{"cache":"miss","domain":"symbolic","result":"2*x","v":1}
 "#,
         );
 }

@@ -183,3 +183,118 @@ fn test_span_multibyte_char_position() {
         stderr
     );
 }
+
+// ===== v015 T024：--json 契约 v1 全变体快照（R-json-003） =====
+
+/// JSON 快照辅助：断言成功输出为合法 JSON 且含 v=1，快照锁定全文。
+fn assert_json_snapshot(name: &str, args: &[&str]) {
+    let output = calnexus()
+        .args(args)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{name}: 非法 JSON: {e}"));
+    assert_eq!(parsed["v"], 1, "{name}: 契约版本必须为 1");
+    insta::assert_snapshot!(name, stdout.trim());
+}
+
+/// JSON 错误输出快照（v=1 + error 对象）。
+fn assert_json_error_snapshot(name: &str, args: &[&str]) {
+    let output = calnexus()
+        .args(args)
+        .output()
+        .expect("failed to execute");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{name}: 非法 JSON: {e}"));
+    assert_eq!(parsed["v"], 1, "{name}: 错误契约版本必须为 1");
+    assert!(parsed["error"].is_object(), "{name}: 应含 error 对象");
+    insta::assert_snapshot!(name, stdout.trim());
+}
+
+/// SNAP-J01: Scalar（数值形态 result）
+#[test]
+fn snap_j01_json_scalar() {
+    assert_json_snapshot("snap_j01_json_scalar", &["--json", "2+3"]);
+}
+
+/// SNAP-J02: Complex（{re,im} 判别形态）
+#[test]
+fn snap_j02_json_complex() {
+    assert_json_snapshot("snap_j02_json_complex", &["--json", "3+4i"]);
+}
+
+/// SNAP-J03: Matrix（文本形态 result）
+#[test]
+fn snap_j03_json_matrix() {
+    assert_json_snapshot("snap_j03_json_matrix", &["--json", "[[1,2],[3,4]]"]);
+}
+
+/// SNAP-J04: Vector
+#[test]
+fn snap_j04_json_vector() {
+    assert_json_snapshot("snap_j04_json_vector", &["--json", "[1,2]+[3,4]"]);
+}
+
+/// SNAP-J05: Polynomial
+#[test]
+fn snap_j05_json_polynomial() {
+    assert_json_snapshot("snap_j05_json_polynomial", &["--json", "poly_add(x+1,x+2)"]);
+}
+
+/// SNAP-J06: Symbolic
+#[test]
+fn snap_j06_json_symbolic() {
+    assert_json_snapshot("snap_j06_json_symbolic", &["--json", "diff(x^2,x)"]);
+}
+
+/// SNAP-J07: ComplexList
+#[test]
+fn snap_j07_json_complex_list() {
+    assert_json_snapshot("snap_j07_json_complex_list", &["--json", "roots(x^2+1)"]);
+}
+
+/// SNAP-J08: BigInt（字符串形态 result，保留任意精度）
+#[test]
+fn snap_j08_json_bigint() {
+    assert_json_snapshot(
+        "snap_j08_json_bigint",
+        &["--json", "123456789012345678901234567890"],
+    );
+}
+
+/// SNAP-J09: BigRational（precision 函数调用）
+#[test]
+fn snap_j09_json_bigrational_precision() {
+    assert_json_snapshot(
+        "snap_j09_json_bigrational_precision",
+        &["--json", "precision(5, 1/3)"],
+    );
+}
+
+/// SNAP-J10: BigRational（--precision 旗标）
+#[test]
+fn snap_j10_json_bigrational_flag() {
+    assert_json_snapshot(
+        "snap_j10_json_bigrational_flag",
+        &["--json", "--precision", "5", "1/3"],
+    );
+}
+
+/// SNAP-J11: 错误契约（v=1 + error 对象）
+#[test]
+fn snap_j11_json_error() {
+    assert_json_error_snapshot("snap_j11_json_error", &["--json", "1/0"]);
+}
+
+/// SNAP-J12: source 错误链字段（除零固定消息，无 source 时不应有空字段）
+#[test]
+fn snap_j12_json_error_parse() {
+    assert_json_error_snapshot("snap_j12_json_error_parse", &["--json", "(2+3"]);
+}
