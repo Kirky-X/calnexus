@@ -16,57 +16,96 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc56dabe9d744d # v2.7.5
       - name: Check formatting
         run: cargo fmt --all -- --check
 
   clippy:
-    name: Clippy
+    name: Clippy (${{ matrix.features }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - cli
+          - server
+          - all
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Run clippy
-        run: cargo clippy --features cli --all-targets -- -D warnings
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc56dabe9d744d # v2.7.5
+      - name: Run clippy (${{ matrix.features }})
+        run: |
+          if [ "${{ matrix.features }}" = "all" ]; then
+            cargo clippy --all-features --all-targets -- -D warnings
+          else
+            cargo clippy --features ${{ matrix.features }} --all-targets -- -D warnings
+          fi
 
   test:
-    name: Test
+    name: Test (${{ matrix.features }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - cli
+          - cli,time,unit,fx
+          - server
+          - cli,numerical
+          - all
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run tests (cli)
-        run: cargo test --features cli
-      - name: Run tests (cli,time,unit,fx)
-        run: cargo test --features cli,time,unit,fx
-      - name: Check time feature
-        run: cargo check --features time
-      - name: Check unit feature
-        run: cargo check --features unit
-      - name: Check fx feature
-        run: cargo check --features fx
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc56dabe9d744d # v2.7.5
+      - name: Run tests (${{ matrix.features }})
+        run: |
+          if [ "${{ matrix.features }}" = "all" ]; then
+            cargo test --all-features
+          else
+            cargo test --features "${{ matrix.features }}"
+          fi
+      - name: Check single features
+        run: |
+          cargo check --features time
+          cargo check --features unit
+          cargo check --features fx
+          cargo check --features numerical
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install Rust 1.85
+        run: |
+          rustup toolchain install 1.85 --profile minimal
+          rustup default 1.85
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc56dabe9d744d # v2.7.5
+      - name: Check with MSRV
+        run: cargo check --all-features
 
   build:
     name: Build (release)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc56dabe9d744d # v2.7.5
       - name: Build release
         run: cargo build --release --features cli
 
@@ -74,16 +113,16 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc56dabe9d744d # v2.7.5
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
         with:
           tool: cargo-llvm-cov
       - name: Run coverage
-        run: cargo llvm-cov --features cli --fail-under-lines 90 --summary-only
+        run: cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 90 --summary-only

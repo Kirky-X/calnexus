@@ -1,0 +1,43 @@
+# cargo-deny 配置（v015 T050，R-ci-004）：许可证/漏洞/重复依赖治理
+# 文档：https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# wasm 目标暂不支持（tokio rt），排除相关目标避免误报
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-unknown-linux-gnu" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-pc-windows-msvc" },
+]
+
+[advisories]
+version = 2
+ignore = [
+    # { id = "RUSTSEC-0000-0000", reason = "说明理由" }
+]
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

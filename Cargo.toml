@@ -102,15 +102,10 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 # http-body-util: 读取 HTTP response body（集成测试用）
 http-body-util = { version = "0.1", default-features = false }
 
-# 本地 patch：使用 base/ 下自研库最新版本
 [lints.rust]
 # check-cfg: sdforge #[forge] 宏总会 emit `#[cfg(feature="openapi")]` / `#[cfg(feature="observability")]` gate，
 # 但 CalNexus 不启用这些 feature。声明这些值为合法 cfg 以消除 unexpected_cfgs warning。
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("openapi"))', 'cfg(feature, values("observability"))'] }
-
-[package.metadata.tarpaulin]
-fail-under = 95
-exclude-files = ["src/main.rs"]
 
 [[bench]]
 name = "parser_bench"
@@ -170,3 +165,7 @@ required-features = ["server"]
 [[test]]
 name = "time_unit_fx_integration"
 required-features = ["cli", "time", "unit", "fx"]
+
+[[test]]
+name = "numerical_linalg_test"
+required-features = ["cli", "numerical"]
