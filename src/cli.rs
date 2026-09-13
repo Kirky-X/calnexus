@@ -13,7 +13,7 @@
 use crate::core::evaluate;
 use crate::domains::format_bigrational;
 use crate::output::{format_canonical, format_latex, generate_steps};
-use crate::{parse, AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult};
+use crate::{AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult, parse};
 use sdforge::clap::{self, Parser};
 use std::io::{self, IsTerminal, Read};
 
@@ -207,12 +207,7 @@ fn run_server_mode(cli: &Cli) -> i32 {
 }
 
 /// --repl 模式：解析变量绑定并启动交互式 REPL。
-fn run_repl_mode(
-    cli: &Cli,
-    i18n: &crate::i18n::I18n,
-    timeout_secs: f64,
-    cache_budget: u64,
-) -> i32 {
+fn run_repl_mode(cli: &Cli, i18n: &crate::i18n::I18n, timeout_secs: f64, cache_budget: u64) -> i32 {
     let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
@@ -469,7 +464,9 @@ fn resolve_timeout(cli_value: Option<f64>) -> Result<f64, String> {
         },
     };
     if !(MIN..=MAX).contains(&raw) {
-        return Err(format!("--timeout {raw} out of range ({MIN}-{MAX} seconds)"));
+        return Err(format!(
+            "--timeout {raw} out of range ({MIN}-{MAX} seconds)"
+        ));
     }
     Ok(raw)
 }
@@ -508,7 +505,8 @@ fn resolve_bind(cli_value: Option<String>) -> Result<String, String> {
     }
 }
 
-fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {    let mut ctx = EvalContext::new();
+fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
+    let mut ctx = EvalContext::new();
     for v in vars {
         let parts: Vec<&str> = v.splitn(2, '=').collect();
         if parts.len() != 2 {
@@ -668,10 +666,9 @@ mod tests {
 
         for locale in ["en", "zh"] {
             let path = format!("locales/{locale}.json");
-            let raw = std::fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("read {path}: {e}"));
-            let value: serde_json::Value = serde_json::from_str(&raw)
-                .unwrap_or_else(|e| panic!("parse {path}: {e}"));
+            let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let value: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {path}: {e}"));
             collect_json_strings(&value, &mut seen);
         }
 
@@ -703,8 +700,6 @@ mod tests {
             _ => {}
         }
     }
-
-
 
     // ===== v1.1 新增 CLI 标志测试 =====
 
@@ -771,8 +766,8 @@ mod tests {
 
     #[test]
     fn test_format_canonical_wrapper() {
-        use crate::output::format_canonical;
         use crate::CanonicalForm;
+        use crate::output::format_canonical;
         let cf = CanonicalForm::new("(+ 2 3)");
         assert_eq!(format_canonical(&cf), "(+ 2 3)");
     }

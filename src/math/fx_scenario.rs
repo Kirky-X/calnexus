@@ -6,7 +6,7 @@
 //! 接受 `&RateTable` 参数，由调用方（server 层）注入汇率数据。
 
 use crate::core::CalcError;
-use crate::math::fx::{convert, RateTable};
+use crate::math::fx::{RateTable, convert};
 
 /// 留学预算计算结果。
 #[derive(Clone, Debug, PartialEq)]
@@ -101,17 +101,15 @@ pub fn budget_calculation(
     let annual_tuition_home = tuition_home / duration_years as f64;
 
     // 生活费换算
-    let (living_monthly_home, total_living_home, total_cost_home) =
-        match living_cost_monthly {
-            Some(monthly) if monthly > 0.0 => {
-                let monthly_home =
-                    convert(monthly, tuition_currency, home_currency, table)?;
-                let total_living = monthly_home * 12.0 * duration_years as f64;
-                let total = tuition_home + total_living;
-                (Some(monthly_home), Some(total_living), Some(total))
-            }
-            _ => (None, None, None),
-        };
+    let (living_monthly_home, total_living_home, total_cost_home) = match living_cost_monthly {
+        Some(monthly) if monthly > 0.0 => {
+            let monthly_home = convert(monthly, tuition_currency, home_currency, table)?;
+            let total_living = monthly_home * 12.0 * duration_years as f64;
+            let total = tuition_home + total_living;
+            (Some(monthly_home), Some(total_living), Some(total))
+        }
+        _ => (None, None, None),
+    };
 
     // ±3% 汇率风险区间（基于总费用或仅学费）
     let base_for_risk = total_cost_home.unwrap_or(tuition_home);
@@ -157,12 +155,12 @@ pub fn pricing_calculation(
             "target_profit_rate must be between 0 and 1 (exclusive)".to_string(),
         ));
     }
-    if platform_rate < 0.0 || platform_rate >= 1.0 {
+    if !(0.0..1.0).contains(&platform_rate) {
         return Err(CalcError::domain(
             "platform_rate must be in [0, 1)".to_string(),
         ));
     }
-    if safety_buffer < 0.0 || safety_buffer > 0.5 {
+    if !(0.0..=0.5).contains(&safety_buffer) {
         return Err(CalcError::domain(
             "safety_buffer must be in [0, 0.5]".to_string(),
         ));
@@ -210,10 +208,7 @@ pub fn pricing_calculation(
         });
     }
 
-    Ok(PricingResult {
-        cost_cny,
-        pricing,
-    })
+    Ok(PricingResult { cost_cny, pricing })
 }
 
 #[cfg(test)]
@@ -242,22 +237,11 @@ mod tests {
         // 50000 USD 学费 + 2000 USD/月生活费，4年，换算为 CNY
         // rate(USD→CNY) = 1/1.08 * 7.85 ≈ 7.2685
         let table = mock_table();
-        let result = budget_calculation(
-            50000.0,
-            "USD",
-            Some(2000.0),
-            4,
-            "CNY",
-            &table,
-        )
-        .unwrap();
+        let result = budget_calculation(50000.0, "USD", Some(2000.0), 4, "CNY", &table).unwrap();
 
         // 学费换算
         let expected_rate = 1.0 / 1.08 * 7.85;
-        assert!(
-            (result.rate - expected_rate).abs() < 1e-6,
-            "rate mismatch"
-        );
+        assert!((result.rate - expected_rate).abs() < 1e-6, "rate mismatch");
         let expected_tuition_home = 50000.0 / 1.08 * 7.85;
         assert!(
             (result.tuition_home - expected_tuition_home).abs() < 0.01,
@@ -265,41 +249,28 @@ mod tests {
         );
 
         // 年均学费
-        assert!(
-            (result.annual_tuition_home - expected_tuition_home / 4.0).abs() < 0.01
-        );
+        assert!((result.annual_tuition_home - expected_tuition_home / 4.0).abs() < 0.01);
 
         // 生活费
         let expected_monthly_home = 2000.0 / 1.08 * 7.85;
-        assert!(
-            (result.living_monthly_home.unwrap() - expected_monthly_home).abs() < 0.01
-        );
+        assert!((result.living_monthly_home.unwrap() - expected_monthly_home).abs() < 0.01);
         let expected_total_living = expected_monthly_home * 12.0 * 4.0;
-        assert!(
-            (result.total_living_home.unwrap() - expected_total_living).abs() < 0.01
-        );
+        assert!((result.total_living_home.unwrap() - expected_total_living).abs() < 0.01);
 
         // 总费用
         let expected_total = expected_tuition_home + expected_total_living;
-        assert!(
-            (result.total_cost_home.unwrap() - expected_total).abs() < 0.01
-        );
+        assert!((result.total_cost_home.unwrap() - expected_total).abs() < 0.01);
 
         // ±3% 风险区间
-        assert!(
-            (result.exchange_risk.low - expected_total * 0.97).abs() < 0.01
-        );
-        assert!(
-            (result.exchange_risk.high - expected_total * 1.03).abs() < 0.01
-        );
+        assert!((result.exchange_risk.low - expected_total * 0.97).abs() < 0.01);
+        assert!((result.exchange_risk.high - expected_total * 1.03).abs() < 0.01);
         assert_eq!(result.exchange_risk.currency, "CNY");
     }
 
     #[test]
     fn test_budget_tuition_only_no_living() {
         let table = mock_table();
-        let result =
-            budget_calculation(10000.0, "USD", None, 1, "CNY", &table).unwrap();
+        let result = budget_calculation(10000.0, "USD", None, 1, "CNY", &table).unwrap();
 
         assert!(result.living_monthly_home.is_none());
         assert!(result.total_living_home.is_none());
@@ -307,18 +278,18 @@ mod tests {
 
         // 风险区间基于仅学费
         let tuition_home = 10000.0 / 1.08 * 7.85;
-        assert!(
-            (result.exchange_risk.low - tuition_home * 0.97).abs() < 0.01
-        );
+        assert!((result.exchange_risk.low - tuition_home * 0.97).abs() < 0.01);
     }
 
     #[test]
     fn test_budget_same_currency_identity() {
         let table = mock_table();
-        let result =
-            budget_calculation(50000.0, "USD", None, 2, "USD", &table).unwrap();
+        let result = budget_calculation(50000.0, "USD", None, 2, "USD", &table).unwrap();
 
-        assert!((result.rate - 1.0).abs() < 1e-9, "same currency rate should be 1.0");
+        assert!(
+            (result.rate - 1.0).abs() < 1e-9,
+            "same currency rate should be 1.0"
+        );
         assert!((result.tuition_home - 50000.0).abs() < 1e-9);
         assert!((result.annual_tuition_home - 25000.0).abs() < 1e-9);
     }
@@ -362,15 +333,7 @@ mod tests {
     #[test]
     fn test_pricing_happy_path_single_currency() {
         let table = mock_table();
-        let result = pricing_calculation(
-            50.0,
-            0.3,
-            &["USD"],
-            0.15,
-            0.05,
-            &table,
-        )
-        .unwrap();
+        let result = pricing_calculation(50.0, 0.3, &["USD"], 0.15, 0.05, &table).unwrap();
 
         assert_eq!(result.cost_cny, 50.0);
         assert_eq!(result.pricing.len(), 1);
@@ -391,15 +354,8 @@ mod tests {
     #[test]
     fn test_pricing_multi_currency() {
         let table = mock_table();
-        let result = pricing_calculation(
-            100.0,
-            0.25,
-            &["USD", "EUR", "GBP"],
-            0.10,
-            0.05,
-            &table,
-        )
-        .unwrap();
+        let result =
+            pricing_calculation(100.0, 0.25, &["USD", "EUR", "GBP"], 0.10, 0.05, &table).unwrap();
 
         assert_eq!(result.pricing.len(), 3);
         for item in &result.pricing {
@@ -419,8 +375,7 @@ mod tests {
     #[test]
     fn test_pricing_negative_cost_error() {
         let table = mock_table();
-        let result =
-            pricing_calculation(-10.0, 0.3, &["USD"], 0.15, 0.05, &table);
+        let result = pricing_calculation(-10.0, 0.3, &["USD"], 0.15, 0.05, &table);
         assert!(result.is_err());
     }
 
@@ -456,24 +411,21 @@ mod tests {
     #[test]
     fn test_pricing_unknown_currency_error() {
         let table = mock_table();
-        let result =
-            pricing_calculation(50.0, 0.3, &["XYZ"], 0.15, 0.05, &table);
+        let result = pricing_calculation(50.0, 0.3, &["XYZ"], 0.15, 0.05, &table);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_pricing_zero_platform_rate() {
         let table = mock_table();
-        let result =
-            pricing_calculation(50.0, 0.3, &["USD"], 0.0, 0.05, &table).unwrap();
+        let result = pricing_calculation(50.0, 0.3, &["USD"], 0.0, 0.05, &table).unwrap();
         assert_eq!(result.pricing[0].platform_fee_cny, 0.0);
     }
 
     #[test]
     fn test_pricing_zero_safety_buffer() {
         let table = mock_table();
-        let result =
-            pricing_calculation(50.0, 0.3, &["USD"], 0.15, 0.0, &table).unwrap();
+        let result = pricing_calculation(50.0, 0.3, &["USD"], 0.15, 0.0, &table).unwrap();
         // 无缓冲时售价应低于有缓冲时（更安全但利润更紧）
         assert!(result.pricing[0].recommended_price > 0.0);
     }

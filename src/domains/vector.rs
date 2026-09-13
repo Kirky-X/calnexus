@@ -14,9 +14,11 @@
 //! 输入：AstNode::List 节点，元素必须为标量数值。
 //! 输出：EvalResult::Vector / EvalResult::Scalar / EvalResult::Matrix（outer）。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use nalgebra::DVector;
 
 use crate::math::vector as math_vec;
@@ -240,7 +242,9 @@ impl VectorDomain {
                 let b = self.list_to_vector(r, ctx)?;
                 if a.len() != b.len() {
                     return Err(CalcError::domain(format!(
-                        "Hadamard product dimension mismatch: {} vs {}", a.len(), b.len()
+                        "Hadamard product dimension mismatch: {} vs {}",
+                        a.len(),
+                        b.len()
                     )));
                 }
                 let result: Vec<f64> = a.iter().zip(b.iter()).map(|(x, y)| x * y).collect();
@@ -298,7 +302,10 @@ impl VectorDomain {
     /// dot(a, b)：委托 math_vec::dot。
     fn eval_dot(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("dot() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "dot() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -308,7 +315,10 @@ impl VectorDomain {
     /// cross(a, b)：委托 math_vec::cross。
     fn eval_cross(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("cross() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "cross() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -318,11 +328,16 @@ impl VectorDomain {
     /// norm(v)：委托 math_vec::magnitude。
     fn eval_norm(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!("norm() requires exactly 1 argument, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "norm() requires exactly 1 argument, got {}",
+                args.len()
+            )));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
         if v.is_empty() {
-            return Err(CalcError::domain("norm() requires non-empty vector".to_string()));
+            return Err(CalcError::domain(
+                "norm() requires non-empty vector".to_string(),
+            ));
         }
         Ok(EvalResult::Scalar(math_vec::magnitude(&v)))
     }
@@ -330,7 +345,10 @@ impl VectorDomain {
     /// angle(a, b)：委托 math_vec::angle。
     fn eval_angle(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("angle() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "angle() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -340,7 +358,10 @@ impl VectorDomain {
     /// normalize(v)：委托 math_vec::normalize。
     fn eval_normalize(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
-            return Err(CalcError::domain(format!("normalize() requires exactly 1 argument, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "normalize() requires exactly 1 argument, got {}",
+                args.len()
+            )));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
         Ok(EvalResult::Vector(math_vec::normalize(&v)?))
@@ -353,7 +374,10 @@ impl VectorDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if args.len() != 3 {
-            return Err(CalcError::domain(format!("scalar_triple() requires exactly 3 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "scalar_triple() requires exactly 3 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -368,7 +392,10 @@ impl VectorDomain {
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("cosine_similarity() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "cosine_similarity() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -378,7 +405,10 @@ impl VectorDomain {
     /// project(a, b)：委托 math_vec::project。
     fn eval_project(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("project() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "project() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -388,7 +418,10 @@ impl VectorDomain {
     /// reflect(v, n)：委托 math_vec::reflect。
     fn eval_reflect(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("reflect() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "reflect() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let v = self.list_to_vector(&args[0], ctx)?;
         let n = self.list_to_vector(&args[1], ctx)?;
@@ -398,7 +431,10 @@ impl VectorDomain {
     /// euclidean(a, b)：委托 math_vec::euclidean。
     fn eval_euclidean(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("euclidean() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "euclidean() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -408,7 +444,10 @@ impl VectorDomain {
     /// manhattan(a, b)：委托 math_vec::manhattan。
     fn eval_manhattan(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("manhattan() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "manhattan() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -418,7 +457,10 @@ impl VectorDomain {
     /// outer(a, b)：委托 math_vec::outer。
     fn eval_outer(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            return Err(CalcError::domain(format!("outer() requires exactly 2 arguments, got {}", args.len())));
+            return Err(CalcError::domain(format!(
+                "outer() requires exactly 2 arguments, got {}",
+                args.len()
+            )));
         }
         let a = self.list_to_vector(&args[0], ctx)?;
         let b = self.list_to_vector(&args[1], ctx)?;
@@ -526,8 +568,8 @@ fn contains_vector_arithmetic(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

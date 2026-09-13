@@ -136,7 +136,9 @@ mod tests {
     fn test_div_by_zero() {
         let a = Complex64::new(1.0, 2.0);
         let b = Complex64::new(0.0, 0.0);
-        assert!(matches!(div(a, b), Err(ref e) if e.kind == crate::core::ErrorKind::DivisionByZero));
+        assert!(
+            matches!(div(a, b), Err(ref e) if e.kind == crate::core::ErrorKind::DivisionByZero)
+        );
     }
 
     // ===== 幂运算 =====

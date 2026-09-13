@@ -27,19 +27,23 @@ const EPS: f64 = 1e-14;
 const MAX_ITER: usize = 300;
 const TINY: f64 = 1e-30;
 
-use std::collections::HashMap;
-use nalgebra::DMatrix;
 use crate::core::CalcError;
+use nalgebra::DMatrix;
+use std::collections::HashMap;
 
 // ===== 基础统计函数 =====
 
 pub fn mean(values: &[f64]) -> f64 {
-    if values.is_empty() { return f64::NAN; }
+    if values.is_empty() {
+        return f64::NAN;
+    }
     values.iter().sum::<f64>() / values.len() as f64
 }
 
 pub fn variance(values: &[f64]) -> f64 {
-    if values.is_empty() { return f64::NAN; }
+    if values.is_empty() {
+        return f64::NAN;
+    }
     let m = mean(values);
     values.iter().map(|x| (x - m).powi(2)).sum::<f64>() / values.len() as f64
 }
@@ -49,7 +53,9 @@ pub fn std(values: &[f64]) -> f64 {
 }
 
 pub fn median(values: &[f64]) -> f64 {
-    if values.is_empty() { return f64::NAN; }
+    if values.is_empty() {
+        return f64::NAN;
+    }
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = sorted.len();
@@ -61,12 +67,16 @@ pub fn median(values: &[f64]) -> f64 {
 }
 
 pub fn min(values: &[f64]) -> f64 {
-    if values.is_empty() { return f64::NAN; }
+    if values.is_empty() {
+        return f64::NAN;
+    }
     values.iter().cloned().fold(f64::INFINITY, f64::min)
 }
 
 pub fn max(values: &[f64]) -> f64 {
-    if values.is_empty() { return f64::NAN; }
+    if values.is_empty() {
+        return f64::NAN;
+    }
     values.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
 }
 
@@ -136,9 +146,13 @@ fn gamma_cf(a: f64, x: f64) -> f64 {
         let an = -(i as f64) * (i as f64 - a);
         b += 2.0;
         d = an * d + b;
-        if d.abs() < TINY { d = TINY; }
+        if d.abs() < TINY {
+            d = TINY;
+        }
         c = b + an / c;
-        if c.abs() < TINY { c = TINY; }
+        if c.abs() < TINY {
+            c = TINY;
+        }
         d = 1.0 / d;
         let delta = d * c;
         h *= delta;
@@ -154,8 +168,12 @@ pub fn regularized_beta_inc(a: f64, b: f64, x: f64) -> f64 {
     if !(0.0..=1.0).contains(&x) || a <= 0.0 || b <= 0.0 {
         return f64::NAN;
     }
-    if x == 0.0 { return 0.0; }
-    if x == 1.0 { return 1.0; }
+    if x == 0.0 {
+        return 0.0;
+    }
+    if x == 1.0 {
+        return 1.0;
+    }
     if x <= 0.5 {
         beta_series(a, b, x)
     } else {
@@ -172,7 +190,9 @@ fn beta_series(a: f64, b: f64, x: f64) -> f64 {
         let kf = k as f64;
         term *= (a + kf - 1.0) * (kf - b) * x / ((a + kf) * kf);
         sum_val += term;
-        if term.abs() < sum_val.abs() * EPS { break; }
+        if term.abs() < sum_val.abs() * EPS {
+            break;
+        }
     }
     prefactor * sum_val
 }
@@ -184,34 +204,48 @@ fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
     let qam = a - 1.0;
     let mut c = 1.0;
     let mut d = 1.0 - qab * x / qap;
-    if d.abs() < TINY { d = TINY; }
+    if d.abs() < TINY {
+        d = TINY;
+    }
     d = 1.0 / d;
     let mut h = d;
     for m in 1..=MAX_ITER {
         let m = m as f64;
         let aa = m * (b - m) * x / ((qam + 2.0 * m) * (a + 2.0 * m));
         d = 1.0 + aa * d;
-        if d.abs() < TINY { d = TINY; }
+        if d.abs() < TINY {
+            d = TINY;
+        }
         c = 1.0 + aa / c;
-        if c.abs() < TINY { c = TINY; }
+        if c.abs() < TINY {
+            c = TINY;
+        }
         d = 1.0 / d;
         h *= d * c;
         let aa = -(a + m) * (qab + m) * x / ((a + 2.0 * m) * (qap + 2.0 * m));
         d = 1.0 + aa * d;
-        if d.abs() < TINY { d = TINY; }
+        if d.abs() < TINY {
+            d = TINY;
+        }
         c = 1.0 + aa / c;
-        if c.abs() < TINY { c = TINY; }
+        if c.abs() < TINY {
+            c = TINY;
+        }
         d = 1.0 / d;
         let delta = d * c;
         h *= delta;
-        if (delta - 1.0).abs() < EPS { return h; }
+        if (delta - 1.0).abs() < EPS {
+            return h;
+        }
     }
     h
 }
 
 /// 计算 ln(n!)。小 n（≤20）直接累加；大 n 用 ln_gamma(n+1)。
 pub fn ln_factorial(n: u64) -> f64 {
-    if n <= 1 { return 0.0; }
+    if n <= 1 {
+        return 0.0;
+    }
     if n <= 20 {
         (2..=n).map(|i| (i as f64).ln()).sum()
     } else {
@@ -221,8 +255,12 @@ pub fn ln_factorial(n: u64) -> f64 {
 
 /// 计算 ln(C(n, k)) = ln(n!) - ln(k!) - ln((n-k)!)。
 pub fn ln_binomial(n: u64, k: u64) -> f64 {
-    if k > n { return f64::NAN; }
-    if k == 0 || k == n { return 0.0; }
+    if k > n {
+        return f64::NAN;
+    }
+    if k == 0 || k == n {
+        return 0.0;
+    }
     ln_factorial(n) - ln_factorial(k) - ln_factorial(n - k)
 }
 
@@ -239,174 +277,259 @@ pub fn norm_cdf(x: f64, mu: f64, sigma: f64) -> f64 {
     let z = (x - mu) / sigma;
     let az = z.abs();
     let p = regularized_gamma_inc(0.5, 0.5 * az * az);
-    if z >= 0.0 { 0.5 + 0.5 * p } else { 0.5 - 0.5 * p }
+    if z >= 0.0 {
+        0.5 + 0.5 * p
+    } else {
+        0.5 - 0.5 * p
+    }
 }
 
 /// 正态分布逆函数（Beasley-Springer-Moro）。
 pub fn norm_inv(p: f64, mu: f64, sigma: f64) -> f64 {
-    if p <= 0.0 || p >= 1.0 { return f64::NAN; }
+    if p <= 0.0 || p >= 1.0 {
+        return f64::NAN;
+    }
     mu + sigma * norm_inv_standard(p)
 }
 
 fn norm_inv_standard(p: f64) -> f64 {
-    const A: [f64; 6] = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
-        1.383_577_518_672_69e2, -3.066479806614716e+01, 2.506628277459239e+00];
-    const B: [f64; 5] = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
-        6.680131188771972e+01, -1.328068155288572e+01];
-    const C: [f64; 6] = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
-        -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
-    const D: [f64; 4] = [7.784695709041462e-03, 3.224671290700398e-01,
-        2.445134137142996e+00, 3.754408661907416e+00];
+    const A: [f64; 6] = [
+        -3.969683028665376e+01,
+        2.209460984245205e+02,
+        -2.759285104469687e+02,
+        1.383_577_518_672_69e2,
+        -3.066479806614716e+01,
+        2.506628277459239e+00,
+    ];
+    const B: [f64; 5] = [
+        -5.447609879822406e+01,
+        1.615858368580409e+02,
+        -1.556989798598866e+02,
+        6.680131188771972e+01,
+        -1.328068155288572e+01,
+    ];
+    const C: [f64; 6] = [
+        -7.784894002430293e-03,
+        -3.223964580411365e-01,
+        -2.400758277161838e+00,
+        -2.549732539343734e+00,
+        4.374664141464968e+00,
+        2.938163982698783e+00,
+    ];
+    const D: [f64; 4] = [
+        7.784695709041462e-03,
+        3.224671290700398e-01,
+        2.445134137142996e+00,
+        3.754408661907416e+00,
+    ];
     let p_low = 0.02425;
     let p_high = 1.0 - p_low;
     if p < p_low {
         let q = (-2.0 * p.ln()).sqrt();
-        (((((C[0]*q+C[1])*q+C[2])*q+C[3])*q+C[4])*q+C[5])
-            / ((((D[0]*q+D[1])*q+D[2])*q+D[3])*q+1.0)
+        (((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
+            / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
     } else if p <= p_high {
         let q = p - 0.5;
         let r = q * q;
-        (((((A[0]*r+A[1])*r+A[2])*r+A[3])*r+A[4])*r+A[5])*q
-            / (((((B[0]*r+B[1])*r+B[2])*r+B[3])*r+B[4])*r+1.0)
+        (((((A[0] * r + A[1]) * r + A[2]) * r + A[3]) * r + A[4]) * r + A[5]) * q
+            / (((((B[0] * r + B[1]) * r + B[2]) * r + B[3]) * r + B[4]) * r + 1.0)
     } else {
         let q = (-2.0 * (1.0 - p).ln()).sqrt();
-        -(((((C[0]*q+C[1])*q+C[2])*q+C[3])*q+C[4])*q+C[5])
-            / ((((D[0]*q+D[1])*q+D[2])*q+D[3])*q+1.0)
+        -(((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
+            / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
     }
 }
 
 /// t 分布 PDF。
 pub fn t_pdf(x: f64, df: f64) -> f64 {
-    let coef = (ln_gamma((df+1.0)/2.0) - ln_gamma(df/2.0) - 0.5*(df*std::f64::consts::PI).ln()).exp();
-    coef * (1.0 + x*x/df).powf(-(df+1.0)/2.0)
+    let coef =
+        (ln_gamma((df + 1.0) / 2.0) - ln_gamma(df / 2.0) - 0.5 * (df * std::f64::consts::PI).ln())
+            .exp();
+    coef * (1.0 + x * x / df).powf(-(df + 1.0) / 2.0)
 }
 
 /// t 分布 CDF。
 pub fn t_cdf(x: f64, df: f64) -> f64 {
     let t2 = x * x;
     let v = df / (df + t2);
-    let p = 0.5 * regularized_beta_inc(df/2.0, 0.5, v);
+    let p = 0.5 * regularized_beta_inc(df / 2.0, 0.5, v);
     if x >= 0.0 { 1.0 - p } else { p }
 }
 
 /// t 分布逆函数（Newton-Raphson）。
 pub fn t_inv(p: f64, df: f64) -> f64 {
-    if p <= 0.0 || p >= 1.0 { return f64::NAN; }
+    if p <= 0.0 || p >= 1.0 {
+        return f64::NAN;
+    }
     let mut x = norm_inv_standard(p);
     for _ in 0..100 {
         let cdf = t_cdf(x, df);
         let pdf = t_pdf(x, df);
-        if pdf < 1e-300 { break; }
+        if pdf < 1e-300 {
+            break;
+        }
         let dx = (cdf - p) / pdf;
         x -= dx;
-        if dx.abs() < 1e-10 { break; }
+        if dx.abs() < 1e-10 {
+            break;
+        }
     }
     x
 }
 
 /// χ² 分布 PDF。
 pub fn chi2_pdf(x: f64, k: f64) -> f64 {
-    if x < 0.0 { return 0.0; }
-    if x == 0.0 {
-        if k < 2.0 { return f64::INFINITY; }
-        if k == 2.0 { return 0.5; }
+    if x < 0.0 {
         return 0.0;
     }
-    ((k/2.0-1.0)*x.ln() - x/2.0 - (k/2.0)*2.0_f64.ln() - ln_gamma(k/2.0)).exp()
+    if x == 0.0 {
+        if k < 2.0 {
+            return f64::INFINITY;
+        }
+        if k == 2.0 {
+            return 0.5;
+        }
+        return 0.0;
+    }
+    ((k / 2.0 - 1.0) * x.ln() - x / 2.0 - (k / 2.0) * 2.0_f64.ln() - ln_gamma(k / 2.0)).exp()
 }
 
 /// χ² 分布 CDF。
 pub fn chi2_cdf(x: f64, k: f64) -> f64 {
-    if x <= 0.0 { return 0.0; }
-    regularized_gamma_inc(k/2.0, x/2.0)
+    if x <= 0.0 {
+        return 0.0;
+    }
+    regularized_gamma_inc(k / 2.0, x / 2.0)
 }
 
 /// χ² 分布逆函数（Newton-Raphson）。
 pub fn chi2_inv(p: f64, k: f64) -> f64 {
-    if p <= 0.0 || p >= 1.0 { return f64::NAN; }
+    if p <= 0.0 || p >= 1.0 {
+        return f64::NAN;
+    }
     let z = norm_inv_standard(p);
-    let y = 1.0 - 2.0/(9.0*k) + z*(2.0/(9.0*k)).sqrt();
+    let y = 1.0 - 2.0 / (9.0 * k) + z * (2.0 / (9.0 * k)).sqrt();
     let mut x = k * y * y * y;
-    if x <= 0.0 { x = k; }
+    if x <= 0.0 {
+        x = k;
+    }
     for _ in 0..100 {
         let cdf = chi2_cdf(x, k);
         let pdf = chi2_pdf(x, k);
-        if pdf < 1e-300 { break; }
+        if pdf < 1e-300 {
+            break;
+        }
         let dx = (cdf - p) / pdf;
         x -= dx;
-        if x <= 0.0 { x = 1e-10; }
-        if dx.abs() < 1e-10 { break; }
+        if x <= 0.0 {
+            x = 1e-10;
+        }
+        if dx.abs() < 1e-10 {
+            break;
+        }
     }
     x
 }
 
 /// F 分布 PDF。
 pub fn f_pdf(x: f64, d1: f64, d2: f64) -> f64 {
-    if x < 0.0 { return 0.0; }
-    if x == 0.0 {
-        if d1 < 2.0 { return f64::INFINITY; }
-        if d1 == 2.0 { return 1.0; }
+    if x < 0.0 {
         return 0.0;
     }
-    let log_coef = (d1/2.0)*d1.ln() + (d2/2.0)*d2.ln()
-        + ln_gamma((d1+d2)/2.0) - ln_gamma(d1/2.0) - ln_gamma(d2/2.0);
-    let log_body = ((d1/2.0-1.0)*x.ln()) - ((d1+d2)/2.0)*(d1*x+d2).ln();
+    if x == 0.0 {
+        if d1 < 2.0 {
+            return f64::INFINITY;
+        }
+        if d1 == 2.0 {
+            return 1.0;
+        }
+        return 0.0;
+    }
+    let log_coef = (d1 / 2.0) * d1.ln() + (d2 / 2.0) * d2.ln() + ln_gamma((d1 + d2) / 2.0)
+        - ln_gamma(d1 / 2.0)
+        - ln_gamma(d2 / 2.0);
+    let log_body = ((d1 / 2.0 - 1.0) * x.ln()) - ((d1 + d2) / 2.0) * (d1 * x + d2).ln();
     (log_coef + log_body).exp()
 }
 
 /// F 分布 CDF。
 pub fn f_cdf(x: f64, d1: f64, d2: f64) -> f64 {
-    if x <= 0.0 { return 0.0; }
+    if x <= 0.0 {
+        return 0.0;
+    }
     let u = d1 * x / (d1 * x + d2);
-    regularized_beta_inc(d1/2.0, d2/2.0, u)
+    regularized_beta_inc(d1 / 2.0, d2 / 2.0, u)
 }
 
 /// F 分布逆函数（Newton-Raphson）。
 pub fn f_inv(p: f64, d1: f64, d2: f64) -> f64 {
-    if p <= 0.0 || p >= 1.0 { return f64::NAN; }
+    if p <= 0.0 || p >= 1.0 {
+        return f64::NAN;
+    }
     let mut x = 1.0;
     for _ in 0..100 {
         let cdf = f_cdf(x, d1, d2);
         let pdf = f_pdf(x, d1, d2);
-        if pdf < 1e-300 { x *= 1.5; continue; }
+        if pdf < 1e-300 {
+            x *= 1.5;
+            continue;
+        }
         let dx = (cdf - p) / pdf;
         x -= dx;
-        if x <= 0.0 { x = 1e-10; }
-        if dx.abs() < 1e-10 { break; }
+        if x <= 0.0 {
+            x = 1e-10;
+        }
+        if dx.abs() < 1e-10 {
+            break;
+        }
     }
     x
 }
 
 /// 泊松分布 PMF。
 pub fn poisson_pmf(k: f64, lambda: f64) -> f64 {
-    if k < 0.0 || lambda <= 0.0 { return 0.0; }
+    if k < 0.0 || lambda <= 0.0 {
+        return 0.0;
+    }
     let ki = k as u64;
-    if (ki as f64 - k).abs() > 1e-10 { return 0.0; }
+    if (ki as f64 - k).abs() > 1e-10 {
+        return 0.0;
+    }
     (ki as f64 * lambda.ln() - lambda - ln_factorial(ki)).exp()
 }
 
 /// 泊松分布 CDF。
 pub fn poisson_cdf(k: f64, lambda: f64) -> f64 {
-    if k < 0.0 || lambda <= 0.0 { return 0.0; }
+    if k < 0.0 || lambda <= 0.0 {
+        return 0.0;
+    }
     let ki = k.floor() as u64;
     1.0 - regularized_gamma_inc(ki as f64 + 1.0, lambda)
 }
 
 /// 二项分布 PMF。
 pub fn binom_pmf(k: f64, n: f64, p: f64) -> f64 {
-    if k < 0.0 || n < 0.0 || !(0.0..=1.0).contains(&p) { return 0.0; }
+    if k < 0.0 || n < 0.0 || !(0.0..=1.0).contains(&p) {
+        return 0.0;
+    }
     let ki = k as u64;
     let ni = n as u64;
-    if ki > ni { return 0.0; }
+    if ki > ni {
+        return 0.0;
+    }
     (ln_binomial(ni, ki) + ki as f64 * p.ln() + (ni - ki) as f64 * (1.0 - p).ln()).exp()
 }
 
 /// 二项分布 CDF。
 pub fn binom_cdf(k: f64, n: f64, p: f64) -> f64 {
-    if k < 0.0 || n < 0.0 || !(0.0..=1.0).contains(&p) { return 0.0; }
+    if k < 0.0 || n < 0.0 || !(0.0..=1.0).contains(&p) {
+        return 0.0;
+    }
     let ki = k.floor() as u64;
     let ni = n as u64;
-    if ki >= ni { return 1.0; }
+    if ki >= ni {
+        return 1.0;
+    }
     1.0 - regularized_beta_inc(ki as f64 + 1.0, ni as f64 - ki as f64, p)
 }
 
@@ -420,7 +543,10 @@ pub fn t_test_one(data: &[f64], mu: f64) -> HashMap<String, f64> {
         result.insert("t".into(), f64::NAN);
         result.insert("df".into(), f64::NAN);
         result.insert("p".into(), f64::NAN);
-        result.insert("mean".into(), if data.is_empty() { f64::NAN } else { data[0] });
+        result.insert(
+            "mean".into(),
+            if data.is_empty() { f64::NAN } else { data[0] },
+        );
         return result;
     }
     let n = data.len() as f64;
@@ -456,11 +582,11 @@ pub fn t_test_two(a: &[f64], b: &[f64]) -> HashMap<String, f64> {
     let mean2 = b.iter().sum::<f64>() / n2;
     let var1 = a.iter().map(|&x| (x - mean1).powi(2)).sum::<f64>() / (n1 - 1.0);
     let var2 = b.iter().map(|&x| (x - mean2).powi(2)).sum::<f64>() / (n2 - 1.0);
-    let se = (var1/n1 + var2/n2).sqrt();
+    let se = (var1 / n1 + var2 / n2).sqrt();
     let t = if se > 0.0 { (mean1 - mean2) / se } else { 0.0 };
     let s1_n1 = var1 / n1;
     let s2_n2 = var2 / n2;
-    let df = (s1_n1 + s2_n2).powi(2) / (s1_n1.powi(2)/(n1-1.0) + s2_n2.powi(2)/(n2-1.0));
+    let df = (s1_n1 + s2_n2).powi(2) / (s1_n1.powi(2) / (n1 - 1.0) + s2_n2.powi(2) / (n2 - 1.0));
     let p = 2.0 * (1.0 - t_cdf(t.abs(), df));
     let mut result = HashMap::new();
     result.insert("t".into(), t);
@@ -473,10 +599,20 @@ pub fn t_test_two(a: &[f64], b: &[f64]) -> HashMap<String, f64> {
 
 /// χ² 拟合优度检验。返回 {"chi2", "df", "p"}。
 pub fn chi2_test(observed: &[f64], expected: &[f64]) -> HashMap<String, f64> {
-    assert_eq!(observed.len(), expected.len(), "observed and expected must have same length");
-    assert!(expected.iter().all(|&e| e > 0.0), "all expected values must be positive");
-    let chi2 = observed.iter().zip(expected.iter())
-        .map(|(o, e)| (o - e).powi(2) / e).sum::<f64>();
+    assert_eq!(
+        observed.len(),
+        expected.len(),
+        "observed and expected must have same length"
+    );
+    assert!(
+        expected.iter().all(|&e| e > 0.0),
+        "all expected values must be positive"
+    );
+    let chi2 = observed
+        .iter()
+        .zip(expected.iter())
+        .map(|(o, e)| (o - e).powi(2) / e)
+        .sum::<f64>();
     let df = (observed.len() - 1) as f64;
     let p = 1.0 - chi2_cdf(chi2, df);
     let mut result = HashMap::new();
@@ -520,9 +656,16 @@ fn rank(data: &[f64]) -> Vec<f64> {
     let mut i = 0;
     while i < n {
         let mut j = i;
-        while j < n && (indexed[j].1 - indexed[i].1).abs() < 1e-15 * (indexed[i].1.abs() + indexed[j].1.abs()).max(1.0) { j += 1; }
+        while j < n
+            && (indexed[j].1 - indexed[i].1).abs()
+                < 1e-15 * (indexed[i].1.abs() + indexed[j].1.abs()).max(1.0)
+        {
+            j += 1;
+        }
         let avg_rank = (i + 1 + j) as f64 / 2.0;
-        for k in i..j { ranks[indexed[k].0] = avg_rank; }
+        for k in i..j {
+            ranks[indexed[k].0] = avg_rank;
+        }
         i = j;
     }
     ranks
@@ -594,26 +737,33 @@ pub fn polynomial_regression(
     let xtx = x_mat.transpose() * &x_mat;
     let xty = x_mat.transpose() * &y_vec;
     let xtx_inv = xtx.try_inverse().ok_or_else(|| {
-        CalcError::domain("polynomial_regression(): singular matrix (XᵀX not invertible)".to_string())
+        CalcError::domain(
+            "polynomial_regression(): singular matrix (XᵀX not invertible)".to_string(),
+        )
     })?;
     let beta = xtx_inv * xty;
     let coeffs: Vec<f64> = beta.iter().copied().collect();
     // R²
     let y_pred = &x_mat * &beta;
     let y_mean = mean(y);
-    let ss_res: f64 = y.iter().zip(y_pred.iter()).map(|(yi, pi)| (yi - pi).powi(2)).sum();
+    let ss_res: f64 = y
+        .iter()
+        .zip(y_pred.iter())
+        .map(|(yi, pi)| (yi - pi).powi(2))
+        .sum();
     let ss_tot: f64 = y.iter().map(|yi| (yi - y_mean).powi(2)).sum();
-    let r_squared = if ss_tot.abs() < 1e-30 { 1.0 } else { 1.0 - ss_res / ss_tot };
+    let r_squared = if ss_tot.abs() < 1e-30 {
+        1.0
+    } else {
+        1.0 - ss_res / ss_tot
+    };
     Ok((coeffs, r_squared))
 }
 
 /// 多元回归：y = c0 + c1*x1 + c2*x2 + ...。x 为 &[Vec<f64>]，每个内向量是一个特征。
 ///
 /// 返回 (coefficients含截距, r_squared)。
-pub fn multiple_regression(
-    x: &[Vec<f64>],
-    y: &[f64],
-) -> Result<(Vec<f64>, f64), CalcError> {
+pub fn multiple_regression(x: &[Vec<f64>], y: &[f64]) -> Result<(Vec<f64>, f64), CalcError> {
     if x.is_empty() || y.is_empty() {
         return Err(CalcError::domain(
             "multiple_regression(): empty input".to_string(),
@@ -634,26 +784,32 @@ pub fn multiple_regression(
     // 构造设计矩阵 X (n × (p+1))，第一列为 1（截距）
     let cols = p + 1;
     let data: Vec<f64> = (0..n)
-        .flat_map(|i| {
-            std::iter::once(1.0).chain((0..p).map(move |j| x[j][i]))
-        })
+        .flat_map(|i| std::iter::once(1.0).chain((0..p).map(move |j| x[j][i])))
         .collect();
     let x_mat = DMatrix::from_row_slice(n, cols, &data);
     let y_vec = nalgebra::DVector::from_row_slice(y);
     // β = (XᵀX)⁻¹Xᵀy
     let xtx = x_mat.transpose() * &x_mat;
     let xty = x_mat.transpose() * &y_vec;
-    let xtx_inv = xtx.try_inverse().ok_or_else(|| {
-        CalcError::domain("multiple_regression(): singular matrix".to_string())
-    })?;
+    let xtx_inv = xtx
+        .try_inverse()
+        .ok_or_else(|| CalcError::domain("multiple_regression(): singular matrix".to_string()))?;
     let beta = xtx_inv * xty;
     let coeffs: Vec<f64> = beta.iter().copied().collect();
     // R²
     let y_pred = &x_mat * &beta;
     let y_mean = mean(y);
-    let ss_res: f64 = y.iter().zip(y_pred.iter()).map(|(yi, pi)| (yi - pi).powi(2)).sum();
+    let ss_res: f64 = y
+        .iter()
+        .zip(y_pred.iter())
+        .map(|(yi, pi)| (yi - pi).powi(2))
+        .sum();
     let ss_tot: f64 = y.iter().map(|yi| (yi - y_mean).powi(2)).sum();
-    let r_squared = if ss_tot.abs() < 1e-30 { 1.0 } else { 1.0 - ss_res / ss_tot };
+    let r_squared = if ss_tot.abs() < 1e-30 {
+        1.0
+    } else {
+        1.0 - ss_res / ss_tot
+    };
     Ok((coeffs, r_squared))
 }
 
@@ -667,7 +823,10 @@ mod tests {
         assert!(
             (actual - expected).abs() < tol,
             "{}: expected {} but got {} (diff={})",
-            label, expected, actual, (actual - expected).abs()
+            label,
+            expected,
+            actual,
+            (actual - expected).abs()
         );
     }
 
@@ -695,7 +854,12 @@ mod tests {
 
     #[test]
     fn test_std_basic() {
-        assert_approx(std(&[1.0, 2.0, 3.0, 4.0, 5.0]), 2.0_f64.sqrt(), 1e-10, "std");
+        assert_approx(
+            std(&[1.0, 2.0, 3.0, 4.0, 5.0]),
+            2.0_f64.sqrt(),
+            1e-10,
+            "std",
+        );
     }
 
     #[test]
@@ -739,7 +903,12 @@ mod tests {
 
     #[test]
     fn test_gamma_inc_1_1() {
-        assert_approx(regularized_gamma_inc(1.0, 1.0), 0.6321205588, 1e-6, "P(1,1)");
+        assert_approx(
+            regularized_gamma_inc(1.0, 1.0),
+            0.6321205588,
+            1e-6,
+            "P(1,1)",
+        );
     }
 
     #[test]
@@ -749,7 +918,12 @@ mod tests {
 
     #[test]
     fn test_beta_inc_half() {
-        assert_approx(regularized_beta_inc(1.0, 1.0, 0.5), 0.5, 1e-10, "I_0.5(1,1)");
+        assert_approx(
+            regularized_beta_inc(1.0, 1.0, 0.5),
+            0.5,
+            1e-10,
+            "I_0.5(1,1)",
+        );
     }
 
     #[test]
@@ -766,7 +940,12 @@ mod tests {
 
     #[test]
     fn test_ln_binomial() {
-        assert_approx(ln_binomial(10, 3), 120.0_f64.ln(), 1e-10, "ln_binomial(10,3)");
+        assert_approx(
+            ln_binomial(10, 3),
+            120.0_f64.ln(),
+            1e-10,
+            "ln_binomial(10,3)",
+        );
         assert!(ln_binomial(3, 10).is_nan());
     }
 
@@ -774,7 +953,12 @@ mod tests {
 
     #[test]
     fn test_norm_pdf_standard() {
-        assert_approx(norm_pdf(0.0, 0.0, 1.0), 0.3989422804014327, 1e-10, "norm_pdf(0,0,1)");
+        assert_approx(
+            norm_pdf(0.0, 0.0, 1.0),
+            0.3989422804014327,
+            1e-10,
+            "norm_pdf(0,0,1)",
+        );
     }
 
     #[test]
@@ -835,8 +1019,18 @@ mod tests {
 
     #[test]
     fn test_binom() {
-        assert_approx(binom_pmf(3.0, 10.0, 0.5), 0.1172, 1e-3, "binom_pmf(3,10,0.5)");
-        assert_approx(binom_cdf(5.0, 10.0, 0.5), 0.6230, 1e-3, "binom_cdf(5,10,0.5)");
+        assert_approx(
+            binom_pmf(3.0, 10.0, 0.5),
+            0.1172,
+            1e-3,
+            "binom_pmf(3,10,0.5)",
+        );
+        assert_approx(
+            binom_cdf(5.0, 10.0, 0.5),
+            0.6230,
+            1e-3,
+            "binom_cdf(5,10,0.5)",
+        );
     }
 
     // --- 检验与相关 ---
@@ -930,8 +1124,11 @@ mod tests {
         // y = 1 + 2*x1 + 3*x2
         let x1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let x2 = vec![2.0, 1.0, 3.0, 2.0, 4.0];
-        let y: Vec<f64> = x1.iter().zip(x2.iter())
-            .map(|(a, b)| 1.0 + 2.0 * a + 3.0 * b).collect();
+        let y: Vec<f64> = x1
+            .iter()
+            .zip(x2.iter())
+            .map(|(a, b)| 1.0 + 2.0 * a + 3.0 * b)
+            .collect();
         let (coeffs, r_sq) = multiple_regression(&[x1, x2], &y).unwrap();
         assert_approx(coeffs[0], 1.0, 1e-9, "intercept");
         assert_approx(coeffs[1], 2.0, 1e-9, "c1");

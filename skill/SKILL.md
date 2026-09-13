@@ -149,7 +149,7 @@ calnexus --steps '(2+9)*7-6'                # 求解步骤
 ## 架构链路
 
 ```
-parse → AstCanonicalizer → CacheManager → DomainRouter → Domain::evaluate
+parse → AstCanonicalizer → CacheManager（moka::sync 直连，single-flight）→ DomainRouter → CalculationDomain::evaluate
 ```
 
 - **Parser**：mathexpr 基础，支持隐式乘法（`2x`、`3(x+1)`）与复数预处理
@@ -164,8 +164,10 @@ parse → AstCanonicalizer → CacheManager → DomainRouter → Domain::evaluat
 ## 测试与质量
 
 ```bash
-cargo test --features cli                              # 全量测试（1925+ 用例）
-cargo test --features cli,time,unit,fx                 # 含可选域全量测试（2227+ 用例）
+cargo test --features cli                              # 全量测试（2800+ 用例）
+cargo test --features cli,time,unit,fx                 # 含可选域全量测试
+cargo test --features server                           # HTTP/MCP 集成（CI 独立腿）
+calnexus --list-functions                              # 运行时函数目录（按域分组）
 cargo clippy --all-features --all-targets -- -D warnings  # 零警告
 cargo bench --features cli                             # criterion 基准
 ```

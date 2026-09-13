@@ -42,9 +42,9 @@ pub use fx_provider::RateProvider;
 pub use matrix::MatrixDomain;
 pub use number_theory::NumberTheoryDomain;
 pub use polynomial::PolynomialDomain;
+pub use precision::PrecisionDomain;
 #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
 pub use precision::format_bigrational;
-pub use precision::PrecisionDomain;
 pub use scientific::ScientificDomain;
 pub use statistics::StatisticsDomain;
 pub use symbolic::SymbolicDomain;

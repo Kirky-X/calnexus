@@ -66,8 +66,7 @@ pub fn parse_date_multi_format(input: &str) -> Result<Date, CalcError> {
     }
     // 2. 中文格式 fallback：2026年7月25日
     if input.contains('年') {
-        return parse_chinese_date(input)
-            .map_err(|_| invalid_date_error(input));
+        return parse_chinese_date(input).map_err(|_| invalid_date_error(input));
     }
     // 3. 按候选格式表逐一尝试 strptime
     for fmt in DATE_FORMATS {
@@ -90,8 +89,7 @@ pub fn parse_datetime_multi_format(input: &str) -> Result<DateTime, CalcError> {
     }
     // 2. 中文格式 fallback
     if input.contains('年') {
-        return parse_chinese_datetime(input)
-            .map_err(|_| invalid_date_error(input));
+        return parse_chinese_datetime(input).map_err(|_| invalid_date_error(input));
     }
     // 3. 按候选格式表逐一尝试
     for fmt in DATETIME_FORMATS {
@@ -171,10 +169,12 @@ pub fn parse_time_unit(s: &str) -> Result<Unit, CalcError> {
         "week" | "weeks" => Ok(Unit::Week),
         "month" | "months" => Ok(Unit::Month),
         "year" | "years" => Ok(Unit::Year),
-        _ => Err(CalcError::domain(format!("invalid time unit: {}", s)).with_i18n(
-            "msg.time.invalid_unit",
-            vec![("unit".to_string(), s.to_string())],
-        )),
+        _ => Err(
+            CalcError::domain(format!("invalid time unit: {}", s)).with_i18n(
+                "msg.time.invalid_unit",
+                vec![("unit".to_string(), s.to_string())],
+            ),
+        ),
     }
 }
 
@@ -190,10 +190,12 @@ pub fn build_span_for_unit(unit: Unit, n: i64) -> Result<Span, CalcError> {
         Unit::Month => span.try_months(n),
         Unit::Year => span.try_years(n),
         _ => {
-            return Err(CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
-                "msg.time.invalid_unit",
-                vec![("unit".to_string(), format!("{:?}", unit))],
-            ));
+            return Err(
+                CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
+                    "msg.time.invalid_unit",
+                    vec![("unit".to_string(), format!("{:?}", unit))],
+                ),
+            );
         }
     }
     .map_err(|_| {
@@ -215,10 +217,12 @@ pub fn span_total_in_unit(span: &Span, unit: Unit, a: &Zoned) -> Result<f64, Cal
         Unit::Month => span.total((Unit::Month, a)),
         Unit::Year => span.total((Unit::Year, a)),
         _ => {
-            return Err(CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
-                "msg.time.invalid_unit",
-                vec![("unit".to_string(), format!("{:?}", unit))],
-            ));
+            return Err(
+                CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
+                    "msg.time.invalid_unit",
+                    vec![("unit".to_string(), format!("{:?}", unit))],
+                ),
+            );
         }
     };
     result.map_err(|_| {
@@ -463,8 +467,10 @@ mod tests {
 
     #[test]
     fn test_parse_timestamp_rfc3339() {
-        assert!(parse_timestamp_strptime("2026-07-25T00:00:00Z").is_ok()
-            || parse_timestamp_strptime("2026-07-25T00:00:00+00:00").is_ok());
+        assert!(
+            parse_timestamp_strptime("2026-07-25T00:00:00Z").is_ok()
+                || parse_timestamp_strptime("2026-07-25T00:00:00+00:00").is_ok()
+        );
     }
 
     #[test]

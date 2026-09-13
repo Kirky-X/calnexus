@@ -128,7 +128,10 @@ impl RateProvider for FrankfurterProvider {
 
         // L3' 拉取单飞（v015 T027，R-fx-002）：持锁后 double-check L1，
         // 过期瞬间 N 个并发请求只有 leader 走 L2/L3，其余共享结果。
-        let _flight = self.fetch_lock.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _flight = self
+            .fetch_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         {
             let mem = self.in_memory.lock().unwrap();
             if let Some(table) = mem.as_ref() {
@@ -347,11 +350,11 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
         .limit(MAX_RESPONSE_BODY_BYTES)
         .read_to_string()
         .map_err(|e| {
-        // 三分类之二：响应读取失败 → invalid_response（v015 T018 R-err-002）
-        CalcError::dependency_unavailable("FX response read failed")
-            .with_source(e.to_string())
-            .with_i18n("msg.fx.invalid_response", vec![])
-    })?;
+            // 三分类之二：响应读取失败 → invalid_response（v015 T018 R-err-002）
+            CalcError::dependency_unavailable("FX response read failed")
+                .with_source(e.to_string())
+                .with_i18n("msg.fx.invalid_response", vec![])
+        })?;
 
     let parsed: FrankfurterResponse = serde_json::from_str(&body).map_err(|e| {
         // 三分类之二：响应 JSON 解析失败 → invalid_response（v015 T018 R-err-002）
@@ -520,7 +523,10 @@ mod tests {
 
         let cached = match read_cache_file(&path) {
             CacheRead::Loaded(c) => c,
-            other => panic!("cache file should be Loaded, got non-Loaded variant ({:?})", matches!(other, CacheRead::Loaded(_))),
+            other => panic!(
+                "cache file should be Loaded, got non-Loaded variant ({:?})",
+                matches!(other, CacheRead::Loaded(_))
+            ),
         };
         assert_eq!(cached.base, "EUR");
         assert_eq!(cached.date, "2026-07-25");

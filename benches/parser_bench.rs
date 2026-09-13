@@ -5,8 +5,8 @@
 //! 运行：`cargo bench --bench parser_bench`
 //! 基线：`target/criterion/` 目录。
 
-use calnexus::{parse, AstCanonicalizer};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use calnexus::{AstCanonicalizer, parse};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 /// BENCH-001: parser throughput ≥ 10000 expr/s（目标：单表达式解析 < 100μs）
@@ -37,7 +37,16 @@ fn bench_parser_throughput(c: &mut Criterion) {
 fn bench_parser_large_expression(c: &mut Criterion) {
     // 构造 ~4090 字符的长算术表达式（50 项 × ~80 字符）
     let terms: Vec<String> = (0..50)
-        .map(|i| format!("({}+{})*{} - sin({}) + cos({})", i * 37, i * 13, i + 1, i, i * 2))
+        .map(|i| {
+            format!(
+                "({}+{})*{} - sin({}) + cos({})",
+                i * 37,
+                i * 13,
+                i + 1,
+                i,
+                i * 2
+            )
+        })
         .collect();
     let large = terms.join(" + ");
     assert!(large.len() <= 4096, "基准表达式不得超过 4096 上限");

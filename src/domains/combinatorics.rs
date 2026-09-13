@@ -9,12 +9,12 @@
 //! 路由策略：AST 含组合函数调用（P/C/catalan/stirling）时路由至本域。
 //! 内部用 u128 累积，溢出时自动升级为 BigInt，返回 Scalar（fit i64）或 BigInt。
 
+use super::common::{unsupported_function_error, unsupported_node_error};
 use crate::core::CalculationDomain;
 use crate::core::{
-    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
-    MAX_POW_EXPONENT,
+    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, MAX_POW_EXPONENT, UnaryOp,
+    check_pow_output_size,
 };
-use super::common::{unsupported_node_error, unsupported_function_error};
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
@@ -220,10 +220,12 @@ impl CombinatoricsDomain {
             "C" => self.eval_combination(args, ctx),
             "catalan" => self.eval_catalan(args, ctx),
             "stirling" => self.eval_stirling(args, ctx),
-            _ => Err(CalcError::eval(format!("unknown combinatorics function: {}", name)).with_i18n(
-                "msg.unknown_function",
-                vec![("name".to_string(), name.to_string())],
-            )),
+            _ => Err(
+                CalcError::eval(format!("unknown combinatorics function: {}", name)).with_i18n(
+                    "msg.unknown_function",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            ),
         }
     }
 
@@ -357,8 +359,8 @@ fn contains_combinatorics_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

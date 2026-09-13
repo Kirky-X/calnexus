@@ -9,9 +9,11 @@
 //! 路由策略：AST 含 `Complex` 节点或 `complex()`/`conj()`/`arg()` 函数调用时路由至本域。
 //! `abs()`/`exp()`/`ln()` 仅当参数含 `Complex` 节点时路由至本域。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use num_complex::Complex64;
 
 use crate::math::complex as math_complex;
@@ -136,7 +138,7 @@ impl ComplexDomain {
                     return Err(CalcError::domain(
                         "mod not supported in complex domain".to_string(),
                     )
-                    .with_i18n("msg.complex.mod_not_supported_scalar", vec![]))
+                    .with_i18n("msg.complex.mod_not_supported_scalar", vec![]));
                 }
             };
             return Ok(ComplexValue::Scalar(result));
@@ -161,7 +163,7 @@ impl ComplexDomain {
                 return Err(
                     CalcError::domain("mod not supported for complex numbers".to_string())
                         .with_i18n("msg.complex.mod_not_supported_complex", vec![]),
-                )
+                );
             }
         };
         Ok(ComplexValue::Complex(result))
@@ -193,7 +195,7 @@ impl ComplexDomain {
                         return Err(CalcError::domain(
                             "complex() requires scalar arguments".to_string(),
                         )
-                        .with_i18n("msg.output.requires_scalar", vec![]))
+                        .with_i18n("msg.output.requires_scalar", vec![]));
                     }
                 };
                 let im = match self.eval(&args[1], ctx)? {
@@ -202,7 +204,7 @@ impl ComplexDomain {
                         return Err(CalcError::domain(
                             "complex() requires scalar arguments".to_string(),
                         )
-                        .with_i18n("msg.output.requires_scalar", vec![]))
+                        .with_i18n("msg.output.requires_scalar", vec![]));
                     }
                 };
                 Ok(ComplexValue::Complex(Complex64::new(re, im)))
@@ -308,8 +310,8 @@ fn contains_complex(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     /// 测试浮点近似相等（默认容差 1e-10）。
     fn assert_approx(actual: f64, expected: f64) {

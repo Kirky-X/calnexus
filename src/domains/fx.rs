@@ -18,12 +18,14 @@
 //!
 //! 非确定性：fx/fx_rate 申报为非确定性函数（D3），永不进 L1 缓存。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
-use crate::math::fx as math_fx;
 use super::fx_provider::{FrankfurterProvider, RateProvider};
+use crate::math::fx as math_fx;
 
 /// fx 域函数白名单（用于路由 supports() 和非确定性申报）。
 ///
@@ -190,10 +192,12 @@ fn eval_function(
         "fx_rate" => eval_fx_rate(args, ctx, provider),
         "mod" => eval_mod(args, ctx, provider),
         "abs" => eval_abs(args, ctx, provider),
-        _ => Err(CalcError::eval(format!("unknown fx function: {}", name)).with_i18n(
-            "msg.unknown_function",
-            vec![("name".to_string(), name.to_string())],
-        )),
+        _ => Err(
+            CalcError::eval(format!("unknown fx function: {}", name)).with_i18n(
+                "msg.unknown_function",
+                vec![("name".to_string(), name.to_string())],
+            ),
+        ),
     }
 }
 
@@ -330,7 +334,6 @@ fn expect_str_arg<'a>(arg: &'a AstNode, param_name: &str) -> Result<&'a str, Cal
     }
 }
 
-
 /// 递归检查 AST 是否含 fx/fx_rate 函数调用。
 fn contains_fx_function(ast: &AstNode) -> bool {
     match ast {
@@ -352,8 +355,8 @@ fn contains_fx_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
     use crate::math::fx::RateTable;
     use std::collections::HashMap;
 

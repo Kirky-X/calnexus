@@ -13,12 +13,15 @@
 //!
 //! 内部求值统一使用 `BigRational`，结果根据分母是否为 1 转换为 `BigInt` 或 `BigRational`。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{
-    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp, MAX_POW_EXPONENT, MAX_PRECISION,
+    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, MAX_POW_EXPONENT, MAX_PRECISION,
+    UnaryOp, check_pow_output_size,
 };
 use crate::math::precision as math_prec;
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{Signed, Zero};
@@ -414,14 +417,13 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
     Ok(v)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
-    use crate::math::precision::format_bigrational;
     use crate::core::ErrorKind;
     use crate::core::MAX_FACTORIAL_INPUT;
+    use crate::core::parse;
+    use crate::math::precision::format_bigrational;
 
     /// 创建默认上下文。
     fn default_ctx() -> EvalContext {

@@ -127,10 +127,7 @@ impl FxBudgetRequest {
     /// 校验请求参数约束。
     fn validate(&self) -> Result<(), ApiError> {
         if self.tuition <= 0.0 {
-            return Err(ApiError::validation(
-                "tuition",
-                "tuition must be positive",
-            ));
+            return Err(ApiError::validation("tuition", "tuition must be positive"));
         }
         if self.duration_years == 0 || self.duration_years > 10 {
             return Err(ApiError::validation(
@@ -138,13 +135,20 @@ impl FxBudgetRequest {
                 "duration_years must be between 1 and 10",
             ));
         }
-        if self.tuition_currency.len() != 3 || !self.tuition_currency.chars().all(|c| c.is_ascii_alphabetic()) {
+        if self.tuition_currency.len() != 3
+            || !self
+                .tuition_currency
+                .chars()
+                .all(|c| c.is_ascii_alphabetic())
+        {
             return Err(ApiError::validation(
                 "tuition_currency",
                 "must be a 3-letter ISO 4217 currency code",
             ));
         }
-        if self.home_currency.len() != 3 || !self.home_currency.chars().all(|c| c.is_ascii_alphabetic()) {
+        if self.home_currency.len() != 3
+            || !self.home_currency.chars().all(|c| c.is_ascii_alphabetic())
+        {
             return Err(ApiError::validation(
                 "home_currency",
                 "must be a 3-letter ISO 4217 currency code",
@@ -311,9 +315,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     tool_name = "fx_pricing",
     description = "Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer. Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable)."
 )]
-pub(crate) async fn fx_pricing(
-    req: FxPricingRequest,
-) -> Result<FxPricingResponse, ApiError> {
+pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingResponse, ApiError> {
     req.validate()?;
 
     let cost = req.cost_cny;
@@ -339,9 +341,16 @@ pub(crate) async fn fx_pricing(
         })?;
         let rate_date = Some(table.date.clone());
         let cur_refs: Vec<&str> = currencies.iter().map(|s| s.as_str()).collect();
-        pricing_calculation(cost, profit_rate, &cur_refs, platform_rate, safety_buffer, &table)
-            .map(|result| (result, rate_date))
-            .map_err(|e| ApiError::invalid_input(e.message, None, None))
+        pricing_calculation(
+            cost,
+            profit_rate,
+            &cur_refs,
+            platform_rate,
+            safety_buffer,
+            &table,
+        )
+        .map(|result| (result, rate_date))
+        .map_err(|e| ApiError::invalid_input(e.message, None, None))
     })
     .await;
 
@@ -592,6 +601,7 @@ mod tests {
                 profit_cny: 14.35,
                 platform_fee_cny: 1.65,
             }],
+            rate_date: Some("2026-09-13".into()),
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""cost_cny":50.0"#));

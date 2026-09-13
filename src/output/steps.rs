@@ -304,7 +304,7 @@ fn eval_function(name: &str, args: &[f64]) -> Result<f64, CalcError> {
                     ("name".to_string(), name.to_string()),
                     ("actual".to_string(), args.len().to_string()),
                 ],
-            ))
+            ));
         }
     };
     if result.is_nan() || result.is_infinite() {

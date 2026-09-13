@@ -5,8 +5,8 @@
 //! 运行：`cargo bench --bench api_bench`
 //! 对比直接 API 调用与表达式解析路径的性能差异。
 
-use calnexus::{CalNexus, CacheManager, EvalContext, Matrix, Vector};
-use criterion::{criterion_group, criterion_main, Criterion};
+use calnexus::{CacheManager, CalNexus, EvalContext, Matrix, Vector};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 /// 标量加法：直接 API vs 表达式路径。
@@ -48,7 +48,12 @@ fn bench_scalar_sin(c: &mut Criterion) {
     group.bench_function("expression_path", |b| {
         let cache = CacheManager::new();
         b.iter(|| {
-            let _ = black_box(calnexus::evaluate(black_box("sin(1.0)"), &ctx, None, &cache));
+            let _ = black_box(calnexus::evaluate(
+                black_box("sin(1.0)"),
+                &ctx,
+                None,
+                &cache,
+            ));
         });
     });
 

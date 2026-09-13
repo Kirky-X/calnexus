@@ -1284,7 +1284,8 @@ fn test_json_error_output_exit_1() {
         .output()
         .expect("failed to execute");
     assert_eq!(output.status.code(), Some(1));
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("错误输出必须是合法 JSON");
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("错误输出必须是合法 JSON");
     assert_eq!(json["error"]["kind"], "Parse");
     assert_eq!(json["error"]["exit_code"], 1);
 }
@@ -1588,7 +1589,11 @@ fn timeout_env_var_fallback_and_validation() {
         .env("CALNEXUS_TIMEOUT", "0.1")
         .output()
         .expect("failed to execute");
-    assert_eq!(output.status.code(), Some(3), "env CALNEXUS_TIMEOUT=0.1 应超时退出 3");
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "env CALNEXUS_TIMEOUT=0.1 应超时退出 3"
+    );
 
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd
@@ -1596,7 +1601,11 @@ fn timeout_env_var_fallback_and_validation() {
         .env_remove("CALNEXUS_TIMEOUT")
         .output()
         .expect("failed to execute");
-    assert_eq!(output.status.code(), Some(2), "--timeout 9999 超范围应退出 2");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--timeout 9999 超范围应退出 2"
+    );
 }
 
 /// CFG-002: --cache-size 旗标被接受；0 值被拒绝（退出码 2）。
@@ -1614,7 +1623,11 @@ fn cache_size_flag_accepted_and_validated() {
         .args(["--cache-size", "0", "1+1"])
         .output()
         .expect("failed to execute");
-    assert_eq!(output.status.code(), Some(2), "--cache-size 0 应被拒绝（退出码 2）");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--cache-size 0 应被拒绝（退出码 2）"
+    );
 }
 
 /// CFG-003: --serve-http --bind 自定义端口可监听；flag 优先于 CALNEXUS_BIND_ADDR。
@@ -1623,7 +1636,6 @@ fn cache_size_flag_accepted_and_validated() {
 #[test]
 fn bind_flag_serve_http_listens_on_custom_port() {
     use std::io::Read;
-    use std::process::Stdio;
     use std::time::Duration;
 
     // 找一个空闲端口
@@ -1631,13 +1643,11 @@ fn bind_flag_serve_http_listens_on_custom_port() {
     let port = listener.local_addr().unwrap().port();
     drop(listener);
 
-    let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    let mut child = cmd
+    // assert_cmd 的 spawn 受限，此用例直接用 std::process::Command
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_calnexus"))
         .args(["--serve-http", "--bind", &format!("127.0.0.1:{port}")])
         // flag 优先：env 故意给一个会被覆盖的值
         .env("CALNEXUS_BIND_ADDR", "127.0.0.1:1")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
         .spawn()
         .expect("spawn --serve-http");
 

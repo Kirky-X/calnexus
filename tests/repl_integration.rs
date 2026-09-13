@@ -7,7 +7,7 @@
 
 use expectrl::process::Healthcheck;
 use expectrl::session::OsSession;
-use expectrl::{spawn, Expect};
+use expectrl::{Expect, spawn};
 use std::time::{Duration, Instant};
 
 /// REPL 提示符（src/repl.rs: `calnexus> `）

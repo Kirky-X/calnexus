@@ -9,7 +9,7 @@
 
 use crate::core::{CalcError, EvalResult};
 use nalgebra::{DMatrix, DVector};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// LU 分解 → `{"L":[[..]], "U":[[..]], "P":[[..]]}`，满足 P·A = L·U。
 pub fn lu(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
@@ -67,7 +67,7 @@ fn dmatrix_to_json(m: &DMatrix<f64>) -> Value {
 mod tests {
     use super::*;
     use crate::core::ErrorKind;
-    use nalgebra::{SymmetricEigen, LU, QR, SVD};
+    use nalgebra::{LU, QR, SVD, SymmetricEigen};
 
     /// 测试辅助：JSON 二维数组 → DMatrix。
     fn matrix_from_json(v: &Value) -> DMatrix<f64> {

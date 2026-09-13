@@ -491,7 +491,9 @@ mod tests {
 
     #[test]
     fn test_eval_overflow() {
-        assert!(matches!(eval(&[1.0, 1.0, 1.0, 1.0, 1.0], 1e308), Err(ref e) if e.kind == crate::core::ErrorKind::NaNOrInf));
+        assert!(
+            matches!(eval(&[1.0, 1.0, 1.0, 1.0, 1.0], 1e308), Err(ref e) if e.kind == crate::core::ErrorKind::NaNOrInf)
+        );
     }
 
     // ===== 微分 =====
@@ -597,7 +599,9 @@ mod tests {
 
     #[test]
     fn test_roots_degree_too_high() {
-        assert!(matches!(roots(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain));
+        assert!(
+            matches!(roots(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain)
+        );
     }
 
     // ===== 因式分解 =====
@@ -618,7 +622,9 @@ mod tests {
 
     #[test]
     fn test_factor_complex_roots_error() {
-        assert!(matches!(factor(&[1.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain));
+        assert!(
+            matches!(factor(&[1.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain)
+        );
     }
 
     // ===== diff + integrate 互逆 =====

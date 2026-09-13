@@ -49,6 +49,6 @@ pub use evaluate::calc_error_to_api_error;
 pub use types::{EvaluateRequest, EvaluateResponse, ServerError};
 
 #[cfg(feature = "http")]
-pub use http::{build_router, HttpServer};
+pub use http::{HttpServer, build_router};
 #[cfg(feature = "mcp")]
-pub use mcp::{build_mcp_server, McpServer};
+pub use mcp::{McpServer, build_mcp_server};

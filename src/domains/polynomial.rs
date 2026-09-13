@@ -12,9 +12,11 @@
 //! 多项式表示：系数向量 Vec<f64>，升幂存储（coef[i] = x^i 的系数）。
 //! 输入语法：直接表达式 `poly_add(x^2+2x+1, x+1)`，域内 `expr_to_coeffs()` 转换。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
 use crate::math::polynomial as math_poly;
 
@@ -599,9 +601,6 @@ fn merge_var(a: &str, b: &str) -> Result<String, CalcError> {
     )
 }
 
-
-
-
 /// 递归检查 AST 是否含多项式函数调用。
 fn contains_polynomial_function(ast: &AstNode) -> bool {
     match ast {
@@ -624,8 +623,8 @@ fn contains_polynomial_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

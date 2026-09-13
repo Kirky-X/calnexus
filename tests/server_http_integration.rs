@@ -15,10 +15,10 @@
 
 use calnexus::build_router;
 use http_body_util::BodyExt;
-use sdforge::axum::http::status::StatusCode;
-use sdforge::axum::http::Request;
 use sdforge::axum::Body;
-use serde_json::{json, Value};
+use sdforge::axum::http::Request;
+use sdforge::axum::http::status::StatusCode;
+use serde_json::{Value, json};
 use tower::ServiceExt;
 
 /// 构建 POST /api/v1/evaluate 请求。
@@ -166,7 +166,10 @@ async fn send_get_request(uri: &str) -> (StatusCode, Value) {
         .uri(uri)
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.expect("router oneshot failed");
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
     let status = response.status();
     let bytes = response
         .into_body()
@@ -196,7 +199,10 @@ async fn test_liveness_endpoint_healthy() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "healthy");
-    assert!(body["checks"].as_object().unwrap().is_empty(), "/live 不应包含检查器");
+    assert!(
+        body["checks"].as_object().unwrap().is_empty(),
+        "/live 不应包含检查器"
+    );
 }
 
 /// GET /ready → 200 + 同 /health
@@ -220,7 +226,10 @@ async fn test_metrics_prometheus_format() {
         .uri("/metrics")
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.expect("router oneshot failed");
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
 
     assert_eq!(response.status(), StatusCode::OK);
     let content_type = response
@@ -234,15 +243,13 @@ async fn test_metrics_prometheus_format() {
         content_type
     );
 
-    let bytes = response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = String::from_utf8_lossy(&bytes);
     assert!(
-        body.contains("cache") || body.contains("operations") || body.is_empty() || body.contains("#"),
+        body.contains("cache")
+            || body.contains("operations")
+            || body.is_empty()
+            || body.contains("#"),
         "Prometheus 格式应包含缓存指标或为空注释: {}",
         &body[..body.len().min(200)]
     );
@@ -257,7 +264,10 @@ async fn test_metrics_json_format() {
         .uri("/metrics?format=json")
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.expect("router oneshot failed");
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
 
     assert_eq!(response.status(), StatusCode::OK);
     let content_type = response
@@ -271,12 +281,7 @@ async fn test_metrics_json_format() {
         content_type
     );
 
-    let bytes = response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     // JSON metrics 应包含缓存统计字段
     assert!(json.is_object(), "JSON metrics 应返回对象");
@@ -314,7 +319,10 @@ async fn test_request_id_passthrough() {
         .unwrap();
     let response = router.oneshot(request).await.expect("oneshot failed");
     assert_eq!(
-        response.headers().get("x-request-id").and_then(|v| v.to_str().ok()),
+        response
+            .headers()
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok()),
         Some("my-trace-42"),
         "入站 X-Request-ID 应透传"
     );

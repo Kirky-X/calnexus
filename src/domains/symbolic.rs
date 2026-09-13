@@ -185,8 +185,10 @@ impl SymbolicDomain {
         // 验证 f64 → u32 范围，防止负数/超大值不安全转换
         if order_f < 0.0 || !order_f.is_finite() || order_f > u32::MAX as f64 {
             return Err(CalcError::domain(format!(
-                "taylor() order must be a non-negative finite integer, got {}", order_f
-            )).with_i18n(
+                "taylor() order must be a non-negative finite integer, got {}",
+                order_f
+            ))
+            .with_i18n(
                 "msg.symbolic.taylor_order_invalid",
                 vec![("order".to_string(), order_f.to_string())],
             ));
@@ -249,11 +251,11 @@ fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
-    use crate::core::ErrorKind;
     use crate::core::BinaryOp;
-    use crate::math::symbolic::SymbolicExpr;
+    use crate::core::ErrorKind;
+    use crate::core::parse;
     use crate::math::symbolic as math_sym;
+    use crate::math::symbolic::SymbolicExpr;
     use std::collections::HashMap;
 
     // ----- TG3.1 转换测试 -----
@@ -904,15 +906,27 @@ mod tests {
         let v = SymbolicExpr::Var("x".to_string());
         let ast_v = AstNode::Variable("x".to_string());
         assert_eq!(
-            ast_to_symbolic(&AstNode::FunctionCall("tan".to_string(), vec![ast_v.clone()])).unwrap(),
+            ast_to_symbolic(&AstNode::FunctionCall(
+                "tan".to_string(),
+                vec![ast_v.clone()]
+            ))
+            .unwrap(),
             SymbolicExpr::Tan(Box::new(v.clone()))
         );
         assert_eq!(
-            ast_to_symbolic(&AstNode::FunctionCall("ln".to_string(), vec![ast_v.clone()])).unwrap(),
+            ast_to_symbolic(&AstNode::FunctionCall(
+                "ln".to_string(),
+                vec![ast_v.clone()]
+            ))
+            .unwrap(),
             SymbolicExpr::Ln(Box::new(v.clone()))
         );
         assert_eq!(
-            ast_to_symbolic(&AstNode::FunctionCall("exp".to_string(), vec![ast_v.clone()])).unwrap(),
+            ast_to_symbolic(&AstNode::FunctionCall(
+                "exp".to_string(),
+                vec![ast_v.clone()]
+            ))
+            .unwrap(),
             SymbolicExpr::Exp(Box::new(v.clone()))
         );
         assert_eq!(
@@ -1257,7 +1271,10 @@ mod tests {
             Box::new(SymbolicExpr::Var("x".to_string())),
             Box::new(SymbolicExpr::Const(0.0)),
         );
-        assert_eq!(math_sym::simplify(&expr), SymbolicExpr::Var("x".to_string()));
+        assert_eq!(
+            math_sym::simplify(&expr),
+            SymbolicExpr::Var("x".to_string())
+        );
     }
 
     #[test]
@@ -1308,7 +1325,10 @@ mod tests {
             Box::new(SymbolicExpr::Var("x".to_string())),
             Box::new(SymbolicExpr::Const(1.0)),
         );
-        assert_eq!(math_sym::simplify(&expr), SymbolicExpr::Var("x".to_string()));
+        assert_eq!(
+            math_sym::simplify(&expr),
+            SymbolicExpr::Var("x".to_string())
+        );
     }
 
     #[test]
@@ -1349,7 +1369,10 @@ mod tests {
         let expr = SymbolicExpr::Neg(Box::new(SymbolicExpr::Neg(Box::new(SymbolicExpr::Var(
             "x".to_string(),
         )))));
-        assert_eq!(math_sym::simplify(&expr), SymbolicExpr::Var("x".to_string()));
+        assert_eq!(
+            math_sym::simplify(&expr),
+            SymbolicExpr::Var("x".to_string())
+        );
     }
 
     #[test]
@@ -1672,34 +1695,42 @@ mod tests {
             math_sym::eval_symbolic(
                 &SymbolicExpr::Add(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             5.0
         );
         assert_eq!(
             math_sym::eval_symbolic(
                 &SymbolicExpr::Sub(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             -1.0
         );
         assert_eq!(
             math_sym::eval_symbolic(
                 &SymbolicExpr::Mul(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             6.0
         );
         assert!(
             (math_sym::eval_symbolic(
                 &SymbolicExpr::Div(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap() - 2.0 / 3.0).abs() < 1e-10
+            )
+            .unwrap()
+                - 2.0 / 3.0)
+                .abs()
+                < 1e-10
         );
         assert_eq!(
             math_sym::eval_symbolic(
                 &SymbolicExpr::Pow(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             8.0
         );
 
@@ -1717,21 +1748,37 @@ mod tests {
             -2.0
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Sin(Box::new(x.clone())), &env).unwrap() - 2.0_f64.sin()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Sin(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.sin())
+            .abs()
+                < 1e-10
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Cos(Box::new(x.clone())), &env).unwrap() - 2.0_f64.cos()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Cos(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.cos())
+            .abs()
+                < 1e-10
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Tan(Box::new(x.clone())), &env).unwrap() - 2.0_f64.tan()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Tan(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.tan())
+            .abs()
+                < 1e-10
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Exp(Box::new(x.clone())), &env).unwrap() - 2.0_f64.exp()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Exp(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.exp())
+            .abs()
+                < 1e-10
         );
 
         // Ln boundaries
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Const(1.0))), &env).unwrap() - 0.0).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Const(1.0))), &env)
+                .unwrap()
+                - 0.0)
+                .abs()
+                < 1e-10
         );
         assert!(matches!(
             math_sym::eval_symbolic(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Const(0.0))), &env),

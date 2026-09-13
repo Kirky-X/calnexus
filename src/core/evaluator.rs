@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::core::{
-    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CanonicalForm, DomainRouter,
-    EvalContext, EvalResult, MAX_PRECISION,
+    AstCanonicalizer, AstNode, CacheManager, CalcError, CanonicalForm, DomainRouter, EvalContext,
+    EvalResult, MAX_PRECISION, parse,
 };
 use crate::domains::{build_default_router, build_precision_domain};
 
@@ -41,7 +41,7 @@ pub fn evaluate(
     precision: Option<usize>,
     cache: &CacheManager,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
-    evaluate_with_router(expr, ctx, precision, cache, &build_default_router())
+    evaluate_with_router(expr, ctx, precision, cache, build_default_router())
 }
 
 /// 路由器可注入求值（v015 T040，R-api-001）：与 [`evaluate`] 语义一致，
@@ -229,7 +229,12 @@ fn eval_regular_mode(
     let domain = router.route(canonical_ast)?;
     let fmt_prec = extract_format_precision(canonical_ast);
     let cache_hit = !computed.load(Ordering::Relaxed);
-    Ok((result, domain.domain_name().to_string(), cache_hit, fmt_prec))
+    Ok((
+        result,
+        domain.domain_name().to_string(),
+        cache_hit,
+        fmt_prec,
+    ))
 }
 
 /// 检查是否已超时，超时则返回 `CalcError::timeout()`。

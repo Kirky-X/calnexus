@@ -589,7 +589,10 @@ impl CalcError {
     }
     pub fn depth_exceeded() -> Self {
         Self::new(ErrorKind::Depth, "AST depth exceeded limit")
-            .with_hint(format!("simplify nested expressions (max {})", MAX_AST_DEPTH))
+            .with_hint(format!(
+                "simplify nested expressions (max {})",
+                MAX_AST_DEPTH
+            ))
             .with_i18n("detail.depth_exceeded", vec![])
     }
     pub fn division_by_zero() -> Self {

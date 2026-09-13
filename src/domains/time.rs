@@ -12,9 +12,11 @@
 //! - 日历：weekday / day_of_year / is_leap_year
 //! - 当前：now / today（非确定性，申报旁路 L1 缓存）
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use crate::math::time as math_time;
 
 use jiff::civil::Date;
@@ -123,7 +125,7 @@ fn evaluate_time(ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcErr
                     return Err(CalcError::domain(
                         "factorial not supported in time domain".to_string(),
                     )
-                    .with_i18n("msg.time.factorial_not_supported", vec![]))
+                    .with_i18n("msg.time.factorial_not_supported", vec![]));
                 }
             };
             if result.is_nan() || result.is_infinite() {
@@ -450,7 +452,9 @@ fn eval_date_add(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, Calc
     let unit = math_time::parse_time_unit(&unit_str)?;
     // 按单位构造 Span 并加法（jiff 公开 API）
     let new_zoned = math_time::compute_date_add(&zoned, n, unit)?;
-    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&new_zoned)))
+    Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(
+        &new_zoned,
+    )))
 }
 
 // ============================================================================
@@ -519,7 +523,8 @@ fn eval_format_date(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, C
         zoned
     };
     let fmt = extract_str(&args[1])?;
-    let formatted = strtime::format(&fmt, &zoned).map_err(|_| math_time::format_mismatch_error(&fmt))?;
+    let formatted =
+        strtime::format(&fmt, &zoned).map_err(|_| math_time::format_mismatch_error(&fmt))?;
     Ok(EvalResult::Symbolic(formatted))
 }
 
@@ -555,7 +560,8 @@ fn eval_reformat_date(args: &[AstNode], _ctx: &EvalContext) -> Result<EvalResult
         },
     };
     // 格式化阶段
-    let formatted = strtime::format(&to_fmt, &zoned).map_err(|_| math_time::format_mismatch_error(&to_fmt))?;
+    let formatted =
+        strtime::format(&to_fmt, &zoned).map_err(|_| math_time::format_mismatch_error(&to_fmt))?;
     Ok(EvalResult::Symbolic(formatted))
 }
 
@@ -676,7 +682,6 @@ fn eval_today(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcErr
     Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&today)))
 }
 
-
 // ============================================================================
 // 辅助：AST → Date / Zoned 转换
 // ============================================================================
@@ -719,7 +724,6 @@ fn eval_to_zoned(ast: &AstNode, ctx: &EvalContext) -> Result<Zoned, CalcError> {
     }
 }
 
-
 /// 将 AST 求值为 Date（用于 weekday / day_of_year）。
 fn eval_to_date(ast: &AstNode, ctx: &EvalContext) -> Result<Date, CalcError> {
     match ast {
@@ -740,12 +744,11 @@ fn eval_to_date(ast: &AstNode, ctx: &EvalContext) -> Result<Date, CalcError> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     /// 测试辅助：求值表达式字符串。
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
@@ -1329,7 +1332,6 @@ mod tests {
         let result = TimeDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
-
 
     // ===== from_timestamp 嵌套测试 =====
 

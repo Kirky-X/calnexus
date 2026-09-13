@@ -692,14 +692,15 @@ fn validate_no_consecutive_operators(input: &str) -> Result<(), CalcError> {
                 }
                 // 检查是否匹配：第一个字符 + (可选空格) + 第二个字符
                 if j < chars.len() && chars[j] == op.as_bytes()[1] as char {
-                    return Err(
-                        CalcError::parse(format!("illegal consecutive operators '{}'", op))
-                            .with_span(Span::new(i, j + 1))
-                            .with_i18n(
-                                "msg.core.parse_illegal_consecutive_ops",
-                                vec![("op".to_string(), op.to_string())],
-                            ),
-                    );
+                    return Err(CalcError::parse(format!(
+                        "illegal consecutive operators '{}'",
+                        op
+                    ))
+                    .with_span(Span::new(i, j + 1))
+                    .with_i18n(
+                        "msg.core.parse_illegal_consecutive_ops",
+                        vec![("op".to_string(), op.to_string())],
+                    ));
                 }
             }
         }

@@ -93,9 +93,8 @@ pub fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
     if n.fract() == 0.0 && n.abs() <= i64::MAX as f64 {
         Ok(BigRational::from_integer(BigInt::from(n as i64)))
     } else {
-        BigRational::from_float(n).ok_or_else(|| {
-            CalcError::eval(format!("cannot convert {} to BigRational", n))
-        })
+        BigRational::from_float(n)
+            .ok_or_else(|| CalcError::eval(format!("cannot convert {} to BigRational", n)))
     }
 }
 
@@ -138,10 +137,7 @@ mod tests {
 
     #[test]
     fn test_factorial_five() {
-        assert_eq!(
-            factorial(&BigInt::from(5)).unwrap(),
-            BigInt::from(120)
-        );
+        assert_eq!(factorial(&BigInt::from(5)).unwrap(), BigInt::from(120));
     }
 
     #[test]

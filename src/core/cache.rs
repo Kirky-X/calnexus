@@ -13,8 +13,8 @@
 //! - [`CacheKeyGen`]：将 `CanonicalForm` 单次 BLAKE3 哈希为 `[u8; 32]` 键
 //! - [`CacheManager`]：线程安全的 L1 缓存，仅存储 `Ok(EvalResult)`，字节权重预算驱逐
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use moka::sync::Cache;
 
@@ -70,10 +70,8 @@ pub fn estimate_result_bytes(r: &EvalResult) -> u64 {
             BASE + s.len() as u64
         }
         EvalResult::Json(v) => BASE + estimate_json_bytes(v),
-        EvalResult::BigInt(b) => BASE + b.bits() as u64 / 8 + 1,
-        EvalResult::BigRational(q) => {
-            BASE + (q.numer().bits() as u64 + q.denom().bits() as u64) / 8 + 2
-        }
+        EvalResult::BigInt(b) => BASE + b.bits() / 8 + 1,
+        EvalResult::BigRational(q) => BASE + (q.numer().bits() + q.denom().bits()) / 8 + 2,
     }
 }
 
@@ -85,11 +83,12 @@ fn estimate_json_bytes(v: &serde_json::Value) -> u64 {
         serde_json::Value::Number(_) => 16,
         serde_json::Value::String(s) => s.len() as u64 + 2,
         serde_json::Value::Array(a) => a.iter().map(estimate_json_bytes).sum::<u64>() + 2,
-        serde_json::Value::Object(o) => o
-            .iter()
-            .map(|(k, val)| k.len() as u64 + 4 + estimate_json_bytes(val))
-            .sum::<u64>()
-            + 2,
+        serde_json::Value::Object(o) => {
+            o.iter()
+                .map(|(k, val)| k.len() as u64 + 4 + estimate_json_bytes(val))
+                .sum::<u64>()
+                + 2
+        }
     }
 }
 
@@ -166,12 +165,10 @@ impl CacheManager {
         F: FnOnce() -> Result<EvalResult, CalcError>,
     {
         let ran = AtomicBool::new(false);
-        let outcome = self
-            .inner
-            .try_get_with(CacheKeyGen::hash(cf), || {
-                ran.store(true, Ordering::Relaxed);
-                compute().map(Arc::new)
-            });
+        let outcome = self.inner.try_get_with(CacheKeyGen::hash(cf), || {
+            ran.store(true, Ordering::Relaxed);
+            compute().map(Arc::new)
+        });
         if ran.load(Ordering::Relaxed) {
             // leader 实际执行 compute：计一次 miss（follower 共享结果计 hit）
             self.misses.fetch_add(1, Ordering::Relaxed);
@@ -608,11 +605,7 @@ mod tests {
         let big = EvalResult::Matrix(vec![vec![0.0f64; 512]; 512]);
 
         cache.insert(&cf, &Ok(big.clone()));
-        assert_eq!(
-            cache.entry_count(),
-            0,
-            "大结果不应写入缓存（准入阈值策略）"
-        );
+        assert_eq!(cache.entry_count(), 0, "大结果不应写入缓存（准入阈值策略）");
 
         // get_or_compute 路径：由 weigher 字节预算兜底驱逐，但返回值不受影响
         let big2 = big.clone();
@@ -656,8 +649,7 @@ mod tests {
     fn test_estimate_result_bytes_variants() {
         assert_eq!(estimate_result_bytes(&EvalResult::Scalar(1.0)), 16);
         assert!(
-            estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 100]; 100]))
-                > 100 * 100 * 8,
+            estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 100]; 100])) > 100 * 100 * 8,
             "矩阵估算应随尺寸增长"
         );
         assert!(

@@ -61,7 +61,7 @@ flowchart TD
 | `types.rs` | `AstNode` / `BinaryOp` / `UnaryOp` / `CalcError` / `EvalResult` / `Span` 等共享类型 |
 | `parser.rs` | 表达式字符串 → `AstNode`（递归下降解析器） |
 | `canonicalizer.rs` | AST 规范化（交换律排序 + 常量折叠 + 一元归一化）+ S-表达式序列化 |
-| `cache.rs` | L1 缓存管理器（Moka + BLAKE3 哈希键） |
+| `cache.rs` | L1 缓存管理器（moka::sync 直连：try_get_with single-flight、字节权重预算、Arc<EvalResult> 零拷贝命中；BLAKE3 单次哈希键） |
 | `domain.rs` | `CalculationDomain` trait + `DomainRouter`（14 域优先级路由） |
 | `evaluator.rs` | 顶层 `evaluate()` 编排函数（parse → canonicalize → cache → route → evaluate） — **L3 编排层**，但位于 `src/core/` 目录下 |
 
@@ -241,7 +241,7 @@ flowchart LR
 2. **Green**：重构实现使测试通过（行为不变）
 3. **Verify**：`cargo test` 全套通过 + `cargo clippy -D warnings` 0 告警 + codenexus 复杂度复测
 
-最终测试规模：**1940 passed / 0 failed（`--features cli` lib）；含可选域（time/unit/fx）时 2288 passed / 0 failed（lib）；全量（含 server + 集成测试）2693 passed / 0 failed**。
+最终测试规模：**2820 个测试函数（2432 lib 内联 + 388 集成），CI 矩阵覆盖 cli / cli,time,unit,fx / server / cli,numerical / all-features 五条腿，全部绿色；行覆盖 90.4%（llvm-cov，门禁 ≥90%）**。
 
 ## 4. 测试与基准结构
 
@@ -318,3 +318,27 @@ flowchart LR
 
 - [变更日志](CHANGELOG.md)
 - [贡献指南](CONTRIBUTING.md)
+
+
+---
+
+## v0.1.5 架构变更记录（v015-comprehensive-optimization，2026-09）
+
+1. **缓存引擎重构**：oxcache 封装退役，`CacheManager` 直连 `moka::sync`——
+   `try_get_with` 生产级 single-flight（并发相同键恰一次求值、错误原样传播），
+   字节权重预算（默认 64MB）+ 256KB 大结果准入阈值，`Arc<EvalResult>` 命中零拷贝，
+   单次 BLAKE3 键。连带消除 JSON 序列化存储、临时 tokio runtime 与 hex 键分配。
+2. **HTTP 路由显式注册**：`#[forge]` inventory 注册在 rlib/测试二进制下会被链接器
+   GC 静默丢弃（生产 404），HTTP 路由改为 `build_router()` 显式挂载（单一事实源）；
+   `#[forge]` 保留 MCP tool 注册与 schema 推导职责。
+3. **递归深度防护闭环**：括号字面量递归 thread-local RAII 守卫、mathexpr 前迭代
+   括号预检、canonicalizer 深度守卫；fuzz 目标覆盖真实深度域。
+4. **错误语义服务化**：`ErrorKind::DependencyUnavailable`（exit_code=3）→ HTTP 503，
+   与客户端 400 严格区分；`/ready`/`/live`/`/health` 三探针语义分离。
+5. **可观测性**：request-id/traceparent 中间件、`calnexus_http_requests_total`、
+   observability feature 接入 tracing-subscriber（RUST_LOG）。
+6. **公共 API**：`evaluate_with_router` 路由器可注入；`pub use server::*` 具名化；
+   math/domains 标注内部 API 边界；统一函数目录 `function_catalog`（REPL 补全 /
+   `--list-functions` / MCP `list_functions` 单一事实源）。
+7. **规格流程**：openspec/ 已收敛并入 `specmark/specs/`（27 个能力域），
+   **specmark 为唯一 SDD 流程**。

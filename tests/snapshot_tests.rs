@@ -188,10 +188,7 @@ fn test_span_multibyte_char_position() {
 
 /// JSON 快照辅助：断言成功输出为合法 JSON 且含 v=1，快照锁定全文。
 fn assert_json_snapshot(name: &str, args: &[&str]) {
-    let output = calnexus()
-        .args(args)
-        .output()
-        .expect("failed to execute");
+    let output = calnexus().args(args).output().expect("failed to execute");
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -206,10 +203,7 @@ fn assert_json_snapshot(name: &str, args: &[&str]) {
 
 /// JSON 错误输出快照（v=1 + error 对象）。
 fn assert_json_error_snapshot(name: &str, args: &[&str]) {
-    let output = calnexus()
-        .args(args)
-        .output()
-        .expect("failed to execute");
+    let output = calnexus().args(args).output().expect("failed to execute");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value =
         serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{name}: 非法 JSON: {e}"));

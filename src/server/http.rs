@@ -12,15 +12,15 @@
 
 use std::time::Duration;
 
-use super::evaluate::{evaluate_with_timeout, REQUEST_TIMEOUT_SECS};
-use super::ServerError;
 use super::EvaluateRequest;
+use super::ServerError;
+use super::evaluate::{REQUEST_TIMEOUT_SECS, evaluate_with_timeout};
+use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
-use axum::Router;
 
 #[cfg(all(feature = "fx", feature = "mcp"))]
-use super::fx_tools::{fx_budget, fx_pricing, FxBudgetRequest, FxPricingRequest};
+use super::fx_tools::{FxBudgetRequest, FxPricingRequest, fx_budget, fx_pricing};
 
 /// 请求体大小上限（64KB，T016 安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
@@ -36,10 +36,7 @@ pub fn build_router() -> Router {
     #[allow(unused_mut)] // docs/ratelimit feature 下需重新赋值
     let mut router = Router::new()
         .route("/api/v1/evaluate", post(evaluate_http_handler))
-        .route(
-            "/api/v1/list_functions",
-            post(list_functions_http_handler),
-        )
+        .route("/api/v1/list_functions", post(list_functions_http_handler))
         .route("/health", get(health_handler))
         .route("/ready", get(readiness_handler))
         .route("/live", get(liveness_handler))
@@ -144,18 +141,17 @@ async fn request_id_middleware(
         .map(str::to_string)
         .unwrap_or_else(generate_request_id);
 
-    let traceparent = req
-        .headers()
-        .get("traceparent")
-        .cloned();
+    let traceparent = req.headers().get("traceparent").cloned();
 
     let mut resp = next.run(req).await;
     if let Ok(v) = request_id.parse() {
-        resp.headers_mut().insert(HeaderName::from_static("x-request-id"), v);
+        resp.headers_mut()
+            .insert(HeaderName::from_static("x-request-id"), v);
     }
     if let Some(tp) = traceparent {
         if let Ok(v) = tp.to_str().unwrap_or_default().parse() {
-            resp.headers_mut().insert(HeaderName::from_static("traceparent"), v);
+            resp.headers_mut()
+                .insert(HeaderName::from_static("traceparent"), v);
         }
     }
     resp
@@ -176,7 +172,7 @@ fn generate_request_id() -> String {
             .to_le_bytes(),
     );
     input.extend_from_slice(&n.to_le_bytes());
-    format!("req-{}", blake3::hash(&input).to_hex()[..16].to_string())
+    format!("req-{}", &blake3::hash(&input).to_hex()[..16])
 }
 
 /// GET /health：健康检查（含检查器明细与真实缓存统计）。
@@ -237,9 +233,7 @@ struct MetricsQuery {
 /// - 默认返回 Prometheus 文本格式（`Content-Type: text/plain; version=0.0.4`，
 ///   含 `# HELP`/`# TYPE` 注释行，指标族 `calnexus_cache_*`）
 /// - `?format=json` 返回 JSON 格式（调试友好）
-async fn metrics_handler(
-    query: axum::extract::Query<MetricsQuery>,
-) -> axum::response::Response {
+async fn metrics_handler(query: axum::extract::Query<MetricsQuery>) -> axum::response::Response {
     use axum::response::IntoResponse;
     let stats = super::cache::shared_cache().stats();
     if query.format.as_deref() == Some("json") {
@@ -372,7 +366,9 @@ impl HttpServer {
         // 超时后强退（k8s terminationGracePeriod 语义，防止慢客户端拖延 SIGTERM）。
         sdforge::axum::serve(listener, router)
             .with_graceful_shutdown(async {
-                tokio::time::timeout(DRAIN_TIMEOUT, shutdown_signal()).await.ok();
+                tokio::time::timeout(DRAIN_TIMEOUT, shutdown_signal())
+                    .await
+                    .ok();
             })
             .await
             .map_err(|e| ServerError::Http(format!("server error: {}", e)))?;

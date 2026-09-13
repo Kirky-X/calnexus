@@ -24,7 +24,9 @@ fn perf_001_criterion_baseline_comparison() {
     // 注：不强制断言 current 存在——bench 可能尚未运行，仅作为基线存在的提示。
     let current = Path::new("target/criterion/main");
     if !current.exists() {
-        eprintln!("skipped: current benchmark output not found at target/criterion/main — run `cargo bench` first");
+        eprintln!(
+            "skipped: current benchmark output not found at target/criterion/main — run `cargo bench` first"
+        );
     }
 }
 

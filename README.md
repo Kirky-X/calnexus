@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus) [![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus) [![coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen)](https://github.com/kirky-x/calnexus)
 
 </div>
 
@@ -72,11 +72,11 @@
 | 任意精度 | `precision(N, expr)` 基于 BigRational 的任意精度计算 |
 | 数值线性代数 | `lu`、`qr`、`eig`、`svd`、`solve`（`numerical` feature，nalgebra f64 近似） |
 | 三种模式 | 单表达式、REPL（Tab 补全 + 变量绑定）、批量并行（rayon） |
-| 高性能缓存 | Moka L1 缓存（10000 条目，BLAKE3 哈希，线程安全，single-flight 去重） |
+| 高性能缓存 | moka::sync 直连（64MB 字节权重预算 + 256KB 大结果准入阈值，BLAKE3 单次哈希键，try_get_with 生产级 single-flight 去重） |
 | HTTP 服务 | `--serve-http` 启动 REST 服务，含健康检查（`/health`）、指标导出（`/metrics`）、优雅关闭 |
 | 隐式乘法 | `2x`、`3(x+1)` 等数学惯用写法自动识别 |
 | JSON 输出 | `--json` 输出 `result/domain/cache` 结构，便于管道集成 |
-| 工业级测试 | 2693 个测试，覆盖率 97.27%，release 零警告 |
+| 工业级测试 | 2820 个测试（2432 lib 内联 + 388 集成），行覆盖 90.4%（llvm-cov 实测，CI 门禁 ≥90%），全 feature 组合零警告 |
 
 ### 11 个计算域
 
@@ -161,7 +161,7 @@ graph TD
     A[parse] --> B[AstCanonicalizer]
     B --> C[CacheManager]
     C --> D[DomainRouter]
-    D --> E[Domain::evaluate]
+    D --> E[CalculationDomain::evaluate]
     E --> F[ArithmeticDomain]
     E --> G[ScientificDomain]
     E --> H[StatisticsDomain]
@@ -182,7 +182,7 @@ graph TD
 
 - **Parser**：基于 mathexpr，支持隐式乘法与复数预处理
 - **Canonicalizer**：常量折叠、可交换排序、S-表达式规范形式
-- **Cache**：Moka L1 缓存（10000 条目，BLAKE3 键哈希，线程安全，single-flight 并发去重）
+- **Cache**：moka::sync 直连（字节权重预算默认 64MB，`--cache-size` 条目×4KB 近似可配；`try_get_with` 生产级 single-flight；大结果 >256KB 不入缓存）
 - **Router**：按优先级排序的计算域调度（首个 `supports()` 命中即路由）
 
 ---
@@ -385,7 +385,7 @@ CalNexus 是一个 Rust 库 + CLI 二进制项目，接口文档可通过以下�
 
 - **本地 rustdoc**：执行 `cargo doc --features cli --open` 后访问 `http://localhost:port`
 - **核心入口**：`calnexus::parse()` → `AstCanonicalizer` → `CacheManager` → `DomainRouter`
-- **Domain trait**：各计算域实现 `Domain::evaluate()`，通过 `supports()` 路由
+- **CalculationDomain trait**：各计算域实现 `CalculationDomain::evaluate()`，通过 `supports()` 路由
 - **CLI 帮助**：`calnexus --help` / `calnexus --repl` 内 `:help`
 
 ---
@@ -393,8 +393,9 @@ CalNexus 是一个 Rust 库 + CLI 二进制项目，接口文档可通过以下�
 ## 测试
 
 ```bash
-# 运行全部测试（2693+ 测试）
-cargo test --features cli,time,unit,fx,server
+# 运行全部测试（2820 个测试；CI 矩阵另含 server/cli,numerical/all-features 腿）
+cargo test --features server                # HTTP/MCP 集成（CI 独立腿）
+cargo test --features "cli,numerical"       # 数值线性代数（CI 独立腿）
 
 # 含可选域全量测试
 cargo test --features cli,time,unit,fx
@@ -407,15 +408,19 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-测试规模：2693 个测试（2339 lib + 132 集成 + 126 数值线性代数 + 17 API 集成 + 13 快照 + 12 HTTP 集成 + 12 时间/单位/汇率集成 + 10 安全 + 10 属性 + 8 REPL + 6 性能 + 2 CLI + 2 其他），覆盖率 97.27%，release 构建零警告。
+测试规模：2820 个测试（2432 lib 内联 + 388 tests/ 集成），行覆盖 90.4%（llvm-cov，`--features cli,time,unit,fx` 实测），全 feature 组合零警告。分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。
 
 ---
 
 ## WebAssembly (wasm32) 支持
 
+> **状态：实验性路线图目标，当前不可构建**（badge：experimental）。
+
 CalNexus 通过 `--no-default-features`（排除 CLI / REPL / batch）面向 `wasm32-unknown-unknown` 目标构建。
 
-**已知限制**：`oxcache` 依赖 `tokio`，而 `tokio` 依赖 `mio` —— `mio` 不支持 `wasm32-unknown-unknown`。要启用 wasm32，需将缓存层重构为 wasm 兼容的后端（计划于 v0.2.0 完成）。在此之前，wasm32 构建会在 `mio` 编译步骤失败。
+**已知限制**：缓存层已重构为 moka::sync 直连（v0.1.5，移除了 oxcache→tokio 链），
+但 `tokio::rt`（server feature 引入）仍不支持 wasm32；CLI-only 形态理论上可编译，未验证。
+要启用完整 wasm32 支持，需评估无 tokio 的构建组合。在此之前，wasm32 构建**不受 CI 门禁保护、不承诺可用**。
 
 ```bash
 # 尝试构建（当前因 tokio/mio 失败）：
@@ -479,7 +484,7 @@ cargo clippy --features cli    # 无警告
 感谢以下项目为本项目提供的支撑：
 
 - [mathexpr](https://crates.io/crates/mathexpr) — 表达式解析基础
-- [Moka](https://crates.io/crates/moka) — 高性能并发缓存
+- [moka](https://crates.io/crates/moka) — 高性能并发缓存（缓存引擎直连）
 - [clap](https://crates.io/crates/clap) — CLI 参数解析
 - [rustyline](https://crates.io/crates/rustyline) — REPL 行编辑与 Tab 补全
 - [rayon](https://crates.io/crates/rayon) — 数据并行批量求值

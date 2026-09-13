@@ -10,8 +10,8 @@
 //! 流程：读取 → 解析验证 → 预规范化（串行）→ 并行求值（rayon）→ 按序输出 + 缓存统计。
 
 use crate::cli::format_result;
-use crate::core::evaluate;
 use crate::core::MAX_EXPR_LEN;
+use crate::core::evaluate;
 use crate::core::{EvalContext, EvalResult};
 use crate::i18n::I18n;
 use rayon::prelude::*;
@@ -60,11 +60,7 @@ impl BatchProcessor {
         print_summary(&results, start.elapsed(), i18n);
 
         let err_count = results.iter().filter(|r| r.result.is_err()).count();
-        if err_count > 0 {
-            1
-        } else {
-            0
-        }
+        if err_count > 0 { 1 } else { 0 }
     }
 }
 

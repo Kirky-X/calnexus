@@ -381,8 +381,8 @@ impl AstCanonicalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
     use crate::core::ErrorKind;
+    use crate::core::parser::parse;
 
     // 辅助函数：解析 + 规范化，返回 CanonicalForm 字符串
     fn canon(input: &str) -> Result<String, CalcError> {

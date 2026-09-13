@@ -102,9 +102,7 @@ pub fn euler_phi(n: &BigInt) -> BigInt {
 /// 返回最小非负解。模数不必两两互素——不兼容时返回 `DomainError`。
 pub fn crt(remainders: &[BigInt], moduli: &[BigInt]) -> Result<BigInt, CalcError> {
     if remainders.is_empty() || moduli.is_empty() {
-        return Err(CalcError::domain(
-            "crt(): empty input".to_string(),
-        ));
+        return Err(CalcError::domain("crt(): empty input".to_string()));
     }
     if remainders.len() != moduli.len() {
         return Err(CalcError::domain(
@@ -112,9 +110,7 @@ pub fn crt(remainders: &[BigInt], moduli: &[BigInt]) -> Result<BigInt, CalcError
         ));
     }
     if moduli.iter().any(|m| m.is_zero()) {
-        return Err(CalcError::domain(
-            "crt(): zero modulus".to_string(),
-        ));
+        return Err(CalcError::domain("crt(): zero modulus".to_string()));
     }
     // 迭代两两合并
     let mut cur_r = ((&remainders[0] % &moduli[0]) + &moduli[0]) % &moduli[0];
@@ -149,7 +145,8 @@ pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcEr
     }
     if !is_prime(p) {
         return Err(CalcError::domain(format!(
-            "discrete_log(): modulus {} is not prime", p
+            "discrete_log(): modulus {} is not prime",
+            p
         )));
     }
     if g.is_zero() {
@@ -164,9 +161,7 @@ pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcEr
 
     // m = ⌈√p⌉
     let m = sqrt_bigint(&p_abs) + &one;
-    let m_usize = m.to_usize().ok_or_else(|| {
-        CalcError::overflow()
-    })?;
+    let m_usize = m.to_usize().ok_or_else(CalcError::overflow)?;
 
     // Baby step: table[g^j mod p] = j for j in 0..m
     let mut table = std::collections::HashMap::new();
@@ -568,8 +563,8 @@ mod tests {
     fn test_mod_inverse_negative() {
         let inv = mod_inverse(&BigInt::from(-3), &BigInt::from(11)).unwrap();
         // (-3) * inv ≡ 1 (mod 11)，验证 (inv * (-3) + k*11) == 1
-        let check = ((&inv * BigInt::from(-3)) % BigInt::from(11) + BigInt::from(11))
-            % BigInt::from(11);
+        let check =
+            ((&inv * BigInt::from(-3)) % BigInt::from(11) + BigInt::from(11)) % BigInt::from(11);
         assert_eq!(check, BigInt::from(1));
     }
 
@@ -692,7 +687,10 @@ mod tests {
         // 2^x ≡ 5 (mod 13)
         let x = discrete_log(&BigInt::from(2), &BigInt::from(5), &BigInt::from(13)).unwrap();
         // verify: 2^x mod 13 == 5
-        assert_eq!(mod_pow(&BigInt::from(2), &x, &BigInt::from(13)).unwrap(), BigInt::from(5));
+        assert_eq!(
+            mod_pow(&BigInt::from(2), &x, &BigInt::from(13)).unwrap(),
+            BigInt::from(5)
+        );
     }
 
     #[test]

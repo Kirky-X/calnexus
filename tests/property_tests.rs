@@ -6,7 +6,7 @@
 //!
 //! 每个 property 测试默认 256 cases；CI 可通过 `PROPTEST_CASES=1024` 提升。
 
-use calnexus::{parse, AstCanonicalizer, CacheManager, EvalContext, EvalResult};
+use calnexus::{AstCanonicalizer, CacheManager, EvalContext, EvalResult, parse};
 use proptest::prelude::*;
 
 proptest! {

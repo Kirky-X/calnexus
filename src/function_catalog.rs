@@ -12,10 +12,7 @@
 ///
 /// 域名与 `DomainRouter` 的 `domain_name()` 一致；可选域以 cfg 惯例标注注释。
 pub const DOMAIN_FUNCTIONS: &[(&str, &[&str])] = &[
-    (
-        "arithmetic",
-        &["abs", "mod", "factorial"],
-    ),
+    ("arithmetic", &["abs", "mod", "factorial"]),
     (
         "scientific",
         &[
@@ -27,38 +24,49 @@ pub const DOMAIN_FUNCTIONS: &[(&str, &[&str])] = &[
         "statistics",
         &["mean", "median", "variance", "stddev", "sum", "min", "max"],
     ),
-    (
-        "precision",
-        &["precision"],
-    ),
+    ("precision", &["precision"]),
     (
         "number_theory",
         &[
-            "gcd", "lcm", "is_prime", "prime_sieve", "mod_inverse", "mod_pow", "euler_phi",
+            "gcd",
+            "lcm",
+            "is_prime",
+            "prime_sieve",
+            "mod_inverse",
+            "mod_pow",
+            "euler_phi",
         ],
     ),
-    (
-        "combinatorics",
-        &["P", "C", "catalan", "stirling"],
-    ),
+    ("combinatorics", &["P", "C", "catalan", "stirling"]),
     (
         "polynomial",
         &[
-            "poly_add", "poly_sub", "poly_mul", "poly_div", "poly_eval", "poly_diff",
-            "poly_integrate", "roots", "factor",
+            "poly_add",
+            "poly_sub",
+            "poly_mul",
+            "poly_div",
+            "poly_eval",
+            "poly_diff",
+            "poly_integrate",
+            "roots",
+            "factor",
         ],
     ),
     (
         "complex",
         &["complex", "re", "im", "conj", "magnitude", "phase"],
     ),
-    (
-        "matrix",
-        &["det", "transpose", "inverse", "trace"],
-    ),
+    ("matrix", &["det", "transpose", "inverse", "trace"]),
     (
         "vector",
-        &["dot", "cross", "norm", "angle", "normalize", "scalar_triple"],
+        &[
+            "dot",
+            "cross",
+            "norm",
+            "angle",
+            "normalize",
+            "scalar_triple",
+        ],
     ),
     (
         "symbolic",
@@ -67,22 +75,13 @@ pub const DOMAIN_FUNCTIONS: &[(&str, &[&str])] = &[
     // ---- 可选域（feature 门控） ----
     // `time` feature
     #[cfg(feature = "time")]
-    (
-        "time",
-        &["now", "today", "date_diff"],
-    ),
+    ("time", &["now", "today", "date_diff"]),
     // `unit` feature
     #[cfg(feature = "unit")]
-    (
-        "unit",
-        &["convert"],
-    ),
+    ("unit", &["convert"]),
     // `fx` feature
     #[cfg(feature = "fx")]
-    (
-        "fx",
-        &["fx", "fx_rate"],
-    ),
+    ("fx", &["fx", "fx_rate"]),
     // `numerical` feature（经 matrix 域委托）
     #[cfg(feature = "numerical")]
     (

@@ -5,8 +5,8 @@
 //! 运行：`cargo bench --bench cache_bench`
 //! 基线：`target/criterion/` 目录。
 
-use calnexus::{parse, AstCanonicalizer, CacheManager, EvalContext};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use calnexus::{AstCanonicalizer, CacheManager, EvalContext, parse};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 /// BENCH-002: cache hit < 100μs（第二次求值命中缓存）

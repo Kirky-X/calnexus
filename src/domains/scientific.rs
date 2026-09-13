@@ -9,9 +9,9 @@
 //! priority = 20（高于 Arithmetic 的 10），含科学函数或 pi/e 常量的表达式
 //! 路由至本域。本域内含完整算术求值能力，以处理混合表达式如 `sin(x)+2*3`。
 
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error};
 
 /// 科学函数白名单。
 const SCIENTIFIC_FUNCTIONS: &[&str] = &[
@@ -226,8 +226,8 @@ fn contains_scientific(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     /// 辅助函数：解析 + 求值，返回 f64
     fn eval(input: &str) -> Result<f64, CalcError> {

@@ -69,7 +69,12 @@ pub trait ScalarMath {
     /// 埃氏筛：返回 n 以内全部素数（上限 10^7）。
     fn prime_sieve(&self, n: u64) -> Result<EvalResult, CalcError>;
     /// 模幂（快速幂）。
-    fn mod_pow(&self, base: &BigNumber, exp: &BigNumber, m: &BigNumber) -> Result<EvalResult, CalcError>;
+    fn mod_pow(
+        &self,
+        base: &BigNumber,
+        exp: &BigNumber,
+        m: &BigNumber,
+    ) -> Result<EvalResult, CalcError>;
     /// 模逆元（存在性校验）。
     fn mod_inverse(&self, a: &BigNumber, m: &BigNumber) -> Result<EvalResult, CalcError>;
     /// 欧拉函数 φ(n)。
@@ -77,7 +82,12 @@ pub trait ScalarMath {
     /// 中国剩余定理。
     fn crt(&self, remainders: &[BigNumber], moduli: &[BigNumber]) -> Result<EvalResult, CalcError>;
     /// 离散对数（BSGS）。
-    fn discrete_log(&self, g: &BigNumber, h: &BigNumber, p: &BigNumber) -> Result<EvalResult, CalcError>;
+    fn discrete_log(
+        &self,
+        g: &BigNumber,
+        h: &BigNumber,
+        p: &BigNumber,
+    ) -> Result<EvalResult, CalcError>;
 
     // ── 组合 ──
     /// 排列数 P(n,k)。
@@ -236,7 +246,13 @@ pub trait SymbolicMath {
     /// 计算 `limit`（语义详见 docs/API_GUIDE.md 对应章节）。
     fn limit(&self, expr: &str, var: &str, target: f64) -> Result<EvalResult, CalcError>;
     /// 泰勒展开。
-    fn taylor_expand(&self, expr: &str, var: &str, center: f64, order: usize) -> Result<EvalResult, CalcError>;
+    fn taylor_expand(
+        &self,
+        expr: &str,
+        var: &str,
+        center: f64,
+        order: usize,
+    ) -> Result<EvalResult, CalcError>;
 
     // ── 多项式 ──
     /// 计算 `poly_add`（语义详见 docs/API_GUIDE.md 对应章节）。
@@ -274,7 +290,13 @@ pub trait SymbolicMath {
 
     // ── 方程求解 ──
     /// 计算 `solve_equation`（语义详见 docs/API_GUIDE.md 对应章节）。
-    fn solve_equation(&self, expr: &str, var: &str, method: &str, options: Option<&[f64]>) -> Result<EvalResult, CalcError>;
+    fn solve_equation(
+        &self,
+        expr: &str,
+        var: &str,
+        method: &str,
+        options: Option<&[f64]>,
+    ) -> Result<EvalResult, CalcError>;
 }
 
 /// 应用数学 trait：时间 + 单位 + 汇率（feature-gated）。
@@ -291,6 +313,9 @@ pub trait AppliedMath {
     fn timestamp(&self, datetime_str: &str) -> Result<EvalResult, CalcError>;
     #[cfg(feature = "time")]
     /// 计算 `from_timestamp`（语义详见 docs/API_GUIDE.md 对应章节）。
+    /// 命名说明：`from_*` 惯例无 self，但本 trait 全方法统一 `&self` 求值门面签名
+    /// （v015 命名权衡，与 timestamp/now 等一致），故豁免 clippy::wrong_self_convention。
+    #[allow(clippy::wrong_self_convention)]
     fn from_timestamp(&self, secs: i64, tz: Option<&str>) -> Result<EvalResult, CalcError>;
 
     // ── 时间：算术 ──
@@ -310,10 +335,16 @@ pub trait AppliedMath {
     // ── 时间：格式与日历 ──
     #[cfg(feature = "time")]
     /// 计算 `format_date`（语义详见 docs/API_GUIDE.md 对应章节）。
-    fn format_date(&self, date: &str, fmt: &str, tz: Option<&str>) -> Result<EvalResult, CalcError>;
+    fn format_date(&self, date: &str, fmt: &str, tz: Option<&str>)
+    -> Result<EvalResult, CalcError>;
     #[cfg(feature = "time")]
     /// 计算 `reformat_date`（语义详见 docs/API_GUIDE.md 对应章节）。
-    fn reformat_date(&self, input: &str, from_fmt: &str, to_fmt: &str) -> Result<EvalResult, CalcError>;
+    fn reformat_date(
+        &self,
+        input: &str,
+        from_fmt: &str,
+        to_fmt: &str,
+    ) -> Result<EvalResult, CalcError>;
     #[cfg(feature = "time")]
     /// 计算 `weekday`（语义详见 docs/API_GUIDE.md 对应章节）。
     fn weekday(&self, date: &str) -> Result<EvalResult, CalcError>;

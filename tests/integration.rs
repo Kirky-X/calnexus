@@ -1,5 +1,6 @@
+// v015：CalcError 144 字节，闭包返回值触发 result_large_err——与 lib.rs 同论证
+#![allow(clippy::result_large_err)]
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
-
 #![allow(clippy::approx_constant, non_snake_case)]
 
 //! 跨能力集成测试：解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出全链路。
@@ -14,8 +15,8 @@ mod common;
 use common::default_router;
 
 use calnexus::{
-    parse, AstCanonicalizer, CacheManager, CalcError, ErrorKind, EvalContext, EvalResult,
-    PrecisionDomain,
+    AstCanonicalizer, CacheManager, CalcError, ErrorKind, EvalContext, EvalResult, PrecisionDomain,
+    parse,
 };
 
 /// 全链路求值（无变量绑定）：parse → canonicalize → cache → route → evaluate。
@@ -216,8 +217,8 @@ fn test_cache_miss_non_equivalent() {
 #[test]
 fn test_cache_get_or_compute_dedup() {
     // 用 get_or_compute 验证：等价表达式第二次不调用 compute
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let ast1 = parse("2+3").unwrap();
     let ast2 = parse("3+2").unwrap();
@@ -1376,9 +1377,10 @@ fn test_v10_roots_cubic_one_real() {
     let v = result.unwrap().as_complex_list().unwrap().clone();
     assert_eq!(v.len(), 3);
     // 至少有一个实根 -1
-    assert!(v
-        .iter()
-        .any(|(re, im)| (re - (-1.0)).abs() < 1e-6 && im.abs() < 1e-6));
+    assert!(
+        v.iter()
+            .any(|(re, im)| (re - (-1.0)).abs() < 1e-6 && im.abs() < 1e-6)
+    );
 }
 
 #[test]

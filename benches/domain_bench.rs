@@ -6,7 +6,7 @@
 //! 基线：`target/criterion/` 目录。
 
 use calnexus::{CacheManager, EvalContext};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 /// BENCH-004: arithmetic domain < 1ms

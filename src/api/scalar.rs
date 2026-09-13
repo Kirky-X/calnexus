@@ -4,8 +4,8 @@
 
 use num_bigint::BigInt;
 
-use crate::api::types::BigNumber;
 use crate::api::CalNexus;
+use crate::api::types::BigNumber;
 use crate::core::{CalcError, EvalResult};
 use crate::math;
 
@@ -125,7 +125,11 @@ impl<'a> ScalarMathImpl<'a> {
     // ── 精度 ──
 
     pub fn precision_eval(&self, digits: usize, expr: &str) -> Result<EvalResult, CalcError> {
-        let ctx = self.cn.ctx.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let ctx = self
+            .cn
+            .ctx
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let cache = crate::core::CacheManager::new();
         let (result, _, _, _) = crate::core::evaluate(expr, &ctx, Some(digits), &cache)?;
         Ok(result)
@@ -152,7 +156,9 @@ impl<'a> ScalarMathImpl<'a> {
     pub fn prime_sieve(&self, n: u64) -> Result<EvalResult, CalcError> {
         let big_n = BigInt::from(n);
         let primes = math::number_theory::prime_sieve(&big_n)?;
-        Ok(EvalResult::Vector(primes.iter().map(|&p| p as f64).collect()))
+        Ok(EvalResult::Vector(
+            primes.iter().map(|&p| p as f64).collect(),
+        ))
     }
 
     pub fn mod_pow(
@@ -164,11 +170,7 @@ impl<'a> ScalarMathImpl<'a> {
         math::number_theory::mod_pow(to_bigint(base), to_bigint(exp), to_bigint(m)).map(big)
     }
 
-    pub fn mod_inverse(
-        &self,
-        a: &BigNumber,
-        m: &BigNumber,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn mod_inverse(&self, a: &BigNumber, m: &BigNumber) -> Result<EvalResult, CalcError> {
         math::number_theory::mod_inverse(to_bigint(a), to_bigint(m)).map(big)
     }
 
@@ -176,13 +178,22 @@ impl<'a> ScalarMathImpl<'a> {
         Ok(big(math::number_theory::euler_phi(to_bigint(n))))
     }
 
-    pub fn crt(&self, remainders: &[BigNumber], moduli: &[BigNumber]) -> Result<EvalResult, CalcError> {
+    pub fn crt(
+        &self,
+        remainders: &[BigNumber],
+        moduli: &[BigNumber],
+    ) -> Result<EvalResult, CalcError> {
         let r: Vec<BigInt> = remainders.iter().map(|b| b.value().clone()).collect();
         let m: Vec<BigInt> = moduli.iter().map(|b| b.value().clone()).collect();
         math::number_theory::crt(&r, &m).map(big)
     }
 
-    pub fn discrete_log(&self, g: &BigNumber, h: &BigNumber, p: &BigNumber) -> Result<EvalResult, CalcError> {
+    pub fn discrete_log(
+        &self,
+        g: &BigNumber,
+        h: &BigNumber,
+        p: &BigNumber,
+    ) -> Result<EvalResult, CalcError> {
         math::number_theory::discrete_log(to_bigint(g), to_bigint(h), to_bigint(p)).map(big)
     }
 

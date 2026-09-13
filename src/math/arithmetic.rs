@@ -70,20 +70,18 @@ pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
     }
     // 负底数 + 非整数指数是域错误，不是 NaNOrInf
     if a < 0.0 && b.fract() != 0.0 {
-        return Err(
-            CalcError::domain(format!(
-                "negative base with non-integer exponent: {}^{}",
-                a, b
-            ))
-            .with_hint("use complex numbers for negative base with fractional exponent")
-            .with_i18n(
-                "msg.arithmetic.neg_base_frac_exp",
-                vec![
-                    ("base".to_string(), a.to_string()),
-                    ("exponent".to_string(), b.to_string()),
-                ],
-            ),
-        );
+        return Err(CalcError::domain(format!(
+            "negative base with non-integer exponent: {}^{}",
+            a, b
+        ))
+        .with_hint("use complex numbers for negative base with fractional exponent")
+        .with_i18n(
+            "msg.arithmetic.neg_base_frac_exp",
+            vec![
+                ("base".to_string(), a.to_string()),
+                ("exponent".to_string(), b.to_string()),
+            ],
+        ));
     }
     let r = a.powf(b);
     if !r.is_finite() {

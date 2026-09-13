@@ -20,7 +20,7 @@
 
 use calnexus::build_mcp_server;
 use sdforge::rmcp::model::{CallToolResult, ContentBlock};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// 从 `CallToolResult` 提取首个文本内容并解析为 JSON。
 ///
@@ -202,7 +202,11 @@ fn test_evaluate_tool_description_self_contained() {
         .as_ref()
         .map(|d| d.to_string())
         .unwrap_or_default();
-    assert!(desc.contains("req"), "description 应含 req 包装示例: {}", desc);
+    assert!(
+        desc.contains("req"),
+        "description 应含 req 包装示例: {}",
+        desc
+    );
     assert!(desc.contains("4096"), "应含 expr 上限: {}", desc);
     assert!(desc.contains("503"), "应含 503 错误语义: {}", desc);
 }
@@ -216,7 +220,11 @@ fn test_list_functions_tool_callable() {
         .expect("list_functions call_tool_internal");
     assert!(!r.is_error.unwrap_or(false), "list_functions 应成功");
     let text = serde_json::to_string(&r.content).unwrap_or_default();
-    assert!(text.contains("arithmetic"), "目录应含 arithmetic 域: {}", text);
+    assert!(
+        text.contains("arithmetic"),
+        "目录应含 arithmetic 域: {}",
+        text
+    );
     assert!(text.contains("symbolic"), "目录应含 symbolic 域: {}", text);
 }
 
@@ -230,6 +238,10 @@ fn test_list_functions_feature_gated_domains() {
     let text = serde_json::to_string(&r.content).unwrap_or_default();
     if cfg!(feature = "fx") {
         // content 经 JSON 字符串化，内层引号已转义；用唯一函数名判定域存在
-        assert!(text.contains("fx_rate"), "fx feature 下目录应含 fx 域: {}", text);
+        assert!(
+            text.contains("fx_rate"),
+            "fx feature 下目录应含 fx 域: {}",
+            text
+        );
     }
 }

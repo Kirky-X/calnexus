@@ -16,9 +16,11 @@
 //! - 跨域函数混入：`sin(1)+convert(...)` 显式报错（消息含函数名）
 //! - Str 仅作为 FunctionCall 实参合法；出现在 BinaryOp/UnaryOp 中报错
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
 use crate::math::unit as math_unit;
 
@@ -175,10 +177,12 @@ impl UnitDomain {
             "convert" => self.eval_convert(args, ctx),
             "mod" => self.eval_mod(args, ctx),
             "abs" => self.eval_abs(args, ctx),
-            _ => Err(CalcError::eval(format!("unknown unit function: {}", name)).with_i18n(
-                "msg.unknown_function",
-                vec![("name".to_string(), name.to_string())],
-            )),
+            _ => Err(
+                CalcError::eval(format!("unknown unit function: {}", name)).with_i18n(
+                    "msg.unknown_function",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            ),
         }
     }
 
@@ -282,7 +286,6 @@ impl UnitDomain {
     }
 }
 
-
 /// 递归检查 AST 是否含 `convert` 函数调用。
 fn contains_unit_function(ast: &AstNode) -> bool {
     match ast {
@@ -304,8 +307,8 @@ fn contains_unit_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

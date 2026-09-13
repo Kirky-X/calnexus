@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus) [![coverage](https://img.shields.io/badge/coverage-97.27%25-brightgreen)](https://github.com/kirky-x/calnexus)
+[![version](https://img.shields.io/github/v/release/kirky-x/calnexus)](https://github.com/kirky-x/calnexus/releases) [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE) [![build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/kirky-x/calnexus) [![coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen)](https://github.com/kirky-x/calnexus)
 
 </div>
 
@@ -72,11 +72,11 @@ A command-line math expression evaluator with 11 core computation domains and 3 
 | Arbitrary precision | `precision(N, expr)` BigRational-based arbitrary precision |
 | Numerical linear algebra | `lu`, `qr`, `eig`, `svd`, `solve` (`numerical` feature, nalgebra f64 approximation) |
 | Three modes | Single expression, REPL (Tab completion + variable binding), parallel batch (rayon) |
-| High-performance cache | Moka L1 cache (10000 entries, BLAKE3 hash, thread-safe, single-flight dedup) |
+| High-performance cache | Direct moka::sync (64MB byte-weight budget + 256KB large-result admission threshold, single-pass BLAKE3 keys, try_get_with production single-flight dedup) |
 | HTTP server | `--serve-http` REST service with health checks (`/health`), metrics export (`/metrics`), graceful shutdown |
 | Implicit multiplication | Auto-recognition of math idioms like `2x`, `3(x+1)` |
 | JSON output | `--json` emits a `result/domain/cache` structure for pipeline integration |
-| Industrial-grade testing | 2693 tests, 97.27% coverage, release build with zero warnings |
+| Industrial-grade testing | 2820 tests (2432 inline lib + 388 integration), 90.4% line coverage (llvm-cov measured, CI gate >=90%), zero warnings across all feature combos |
 
 ### 11 Computation Domains
 
@@ -161,7 +161,7 @@ graph TD
     A[parse] --> B[AstCanonicalizer]
     B --> C[CacheManager]
     C --> D[DomainRouter]
-    D --> E[Domain::evaluate]
+    D --> E[CalculationDomain::evaluate]
     E --> F[ArithmeticDomain]
     E --> G[ScientificDomain]
     E --> H[StatisticsDomain]
@@ -182,7 +182,7 @@ Core module notes:
 
 - **Parser**: mathexpr-based, with implicit multiplication and complex number preprocessing
 - **Canonicalizer**: constant folding, commutative sorting, S-expression canonical form
-- **Cache**: Moka L1 cache (10000 entries, BLAKE3 key hash, thread-safe, single-flight concurrent dedup)
+- **Cache**: direct moka::sync (default 64MB byte-weight budget, configurable via `--cache-size` at entries×4KB approximation; `try_get_with` production single-flight; results >256KB not cached)
 - **Router**: Priority-sorted domain dispatch (first `supports()` wins)
 
 ---
@@ -373,7 +373,7 @@ CalNexus is a Rust library + CLI binary project; the interface docs can be viewe
 
 - **Local rustdoc**: run `cargo doc --features cli --open` and visit `http://localhost:port`
 - **Core entry**: `calnexus::parse()` → `AstCanonicalizer` → `CacheManager` → `DomainRouter`
-- **Domain trait**: each domain implements `Domain::evaluate()` and is routed via `supports()`
+- **CalculationDomain trait**: each domain implements `CalculationDomain::evaluate()` and is routed via `supports()`
 - **CLI help**: `calnexus --help` / `:help` inside `calnexus --repl`
 
 ---
@@ -381,8 +381,9 @@ CalNexus is a Rust library + CLI binary project; the interface docs can be viewe
 ## Testing
 
 ```bash
-# Run all tests (2693+ tests)
-cargo test --features cli,time,unit,fx,server
+# Run all tests (2820 tests; CI matrix additionally covers server / cli,numerical / all-features)
+cargo test --features server                # HTTP/MCP integration (dedicated CI leg)
+cargo test --features "cli,numerical"       # numerical linalg (dedicated CI leg)
 
 # Full test suite with optional domains
 cargo test --features cli,time,unit,fx
@@ -395,15 +396,21 @@ cargo fmt --all
 cargo clippy --features cli --all-targets
 ```
 
-Test scale: 2693 tests (2339 lib + 132 integration + 126 numerical linear algebra + 17 API integration + 13 snapshot + 12 HTTP integration + 12 time/unit/fx integration + 10 security + 10 property + 8 REPL + 6 performance + 2 CLI + 2 other), 97.27% coverage, release build with zero warnings.
+Test scale: 2820 tests (2432 inline lib + 388 tests/ integration), 90.4% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`), zero warnings across all feature combos. Per-suite numbers drift over time; the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`.
 
 ---
 
 ## WebAssembly (wasm32) Support
 
+> **Status: experimental roadmap target, not currently buildable** (badge: experimental).
+
 CalNexus targets `wasm32-unknown-unknown` with `--no-default-features` (excludes CLI / REPL / batch).
 
-**Known limitation**: The `oxcache` dependency uses `tokio`, which depends on `mio` — `mio` does not support `wasm32-unknown-unknown`. To enable wasm32, the cache layer needs to be refactored to use a wasm-compatible backend (planned for v0.2.0). Until then, wasm32 builds fail at the `mio` compilation step.
+**Known limitation**: The cache layer has been refactored to direct `moka::sync` (v0.1.5,
+removing the oxcache→tokio chain), but `tokio::rt` (pulled in by the server feature) still
+does not support wasm32; the CLI-only shape is theoretically buildable but unverified.
+Full wasm32 support requires evaluating tokio-free build combinations. Until then,
+wasm32 builds are **not CI-gated and not guaranteed**.
 
 ```bash
 # Attempted build (currently fails due to tokio/mio):
@@ -467,7 +474,7 @@ This project is open-sourced under the [MIT License](./LICENSE).
 Thanks to the following projects that support this work:
 
 - [mathexpr](https://crates.io/crates/mathexpr) — expression parsing foundation
-- [Moka](https://crates.io/crates/moka) — high-performance concurrent cache
+- [moka](https://crates.io/crates/moka) — high-performance concurrent cache (cache engine uses it directly)
 - [clap](https://crates.io/crates/clap) — CLI argument parsing
 - [rustyline](https://crates.io/crates/rustyline) — REPL line editing and Tab completion
 - [rayon](https://crates.io/crates/rayon) — data-parallel batch evaluation

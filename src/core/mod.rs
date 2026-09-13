@@ -15,16 +15,16 @@ mod evaluator;
 mod parser;
 mod types;
 
-pub use cache::{CacheKeyGen, CacheManager};
 #[cfg(feature = "cli")]
 pub(crate) use cache::DEFAULT_MAX_WEIGHT_BYTES;
+pub use cache::{CacheKeyGen, CacheManager};
 pub use canonicalizer::AstCanonicalizer;
 pub use domain::{CalculationDomain, DomainRouter};
 pub use evaluator::{evaluate, evaluate_with_router};
-pub use parser::parse;
 #[cfg(feature = "cli")]
 pub(crate) use parser::MAX_EXPR_LEN;
+pub use parser::parse;
 pub use types::{
-    check_pow_output_size, AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext,
-    EvalResult, Span, UnaryOp, MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION,
+    AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext, EvalResult,
+    MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION, Span, UnaryOp, check_pow_output_size,
 };

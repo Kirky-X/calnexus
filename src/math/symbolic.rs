@@ -160,9 +160,9 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
     match ast {
         AstNode::Number(n) => Ok(SymbolicExpr::Const(*n)),
         AstNode::BigNumber(s) => {
-            let n: f64 = s.parse().map_err(|_| {
-                CalcError::domain(format!("invalid big number: {}", s))
-            })?;
+            let n: f64 = s
+                .parse()
+                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
             Ok(SymbolicExpr::Const(n))
         }
         AstNode::Variable(name) => match name.as_str() {
@@ -186,9 +186,7 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 }
             })
         }
-        AstNode::UnaryOp(UnaryOp::Neg, e) => {
-            Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?)))
-        }
+        AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?))),
         AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
             Err(CalcError::domain(format!(
                 "unary op not supported in symbolic expressions: {:?}",
@@ -777,9 +775,10 @@ fn limit_recursive(
 pub fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
     match expr {
         SymbolicExpr::Const(n) => Ok(*n),
-        SymbolicExpr::Var(name) => env.get(name).copied().ok_or_else(|| {
-            CalcError::eval(format!("unbound variable: {}", name))
-        }),
+        SymbolicExpr::Var(name) => env
+            .get(name)
+            .copied()
+            .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
         SymbolicExpr::Add(l, r) => {
             let r = eval_symbolic(l, env)? + eval_symbolic(r, env)?;
             check_finite(r)

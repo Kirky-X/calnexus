@@ -1,3 +1,5 @@
+// v015：CalcError 144 字节，函数签名触发 result_large_err——与 lib.rs 同论证
+#![allow(clippy::result_large_err)]
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
 //! time-unit-fx-domains Phase 5 端到端集成测试。
@@ -12,7 +14,7 @@
 
 #![allow(clippy::approx_constant)]
 
-use calnexus::{evaluate, CacheManager, CalcError, ErrorKind, EvalContext, EvalResult};
+use calnexus::{CacheManager, CalcError, ErrorKind, EvalContext, EvalResult, evaluate};
 use std::time::Duration;
 
 /// 辅助：通过公共 evaluate 入口求值，返回 (result, domain, cache_hit, fmt_prec)。

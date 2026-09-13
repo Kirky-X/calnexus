@@ -79,13 +79,13 @@ pub(crate) async fn evaluate_with_timeout(
                     "evaluate task failed",
                     "spawn_blocking",
                     join_err,
-                ))
+                ));
             }
             Err(_) => {
                 return Err(ApiError::service_unavailable(
                     "evaluate",
                     Some(timeout.as_secs()),
-                ))
+                ));
             }
         }
         .map_err(calc_error_to_api_error)?;
@@ -108,10 +108,9 @@ pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
     match e.kind {
         ErrorKind::Timeout => ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS)),
         // v015 T030（R-srv-001）：上游依赖故障 → 503（不再误标为客户端 400）
-        ErrorKind::DependencyUnavailable => ApiError::service_unavailable(
-            "evaluate",
-            Some(REQUEST_TIMEOUT_SECS),
-        ),
+        ErrorKind::DependencyUnavailable => {
+            ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS))
+        }
         kind => ApiError::invalid_input(
             format!("{}: {}", error_kind_prefix(kind), e.message),
             None,

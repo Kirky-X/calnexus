@@ -192,7 +192,7 @@ impl EvaluateResponse {
 /// - `Steps(v)` → `["...",...]`
 /// - `Json(v)` → v（直接透传 serde_json::Value，p4 numerical-linalg 复合返回）
 fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     match result {
         EvalResult::Scalar(v) => {
             if v.is_finite() {

@@ -8,7 +8,7 @@
 mod common;
 use common::calnexus_cli;
 
-use calnexus::{parse, CacheManager, EvalContext};
+use calnexus::{CacheManager, EvalContext, parse};
 use std::time::Instant;
 
 /// SEC-001: 表达式注入 — shell 元字符被词法白名单拒绝。
@@ -255,8 +255,8 @@ fn sec_006_nan_inf_explicit_errors() {
 #[test]
 fn sec_007_symbolic_timeout_bounded() {
     // 1. 显式触发 Timeout：ctx.timeout == 0 → 立即返回 CalcError::timeout()
-    use calnexus::evaluate;
     use calnexus::CalcError;
+    use calnexus::evaluate;
     use std::time::Duration;
 
     let ctx = EvalContext {

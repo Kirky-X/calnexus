@@ -11,7 +11,7 @@
 use crate::core::CalcError;
 
 use super::unit_table::{
-    all_unit_names, from_kelvin, is_temperature_unit, levenshtein, lookup, to_kelvin, Dimension,
+    Dimension, all_unit_names, from_kelvin, is_temperature_unit, levenshtein, lookup, to_kelvin,
 };
 
 /// 温度单位候选集（用于 "did you mean" 建议）。

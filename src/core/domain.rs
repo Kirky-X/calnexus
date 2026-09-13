@@ -224,8 +224,8 @@ fn collect_function_names_recursive(ast: &AstNode, names: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parser::parse;
     use crate::core::ErrorKind;
+    use crate::core::parser::parse;
 
     /// 科学函数集合（Req 2）。
     const SCIENTIFIC_FUNCTIONS: &[&str] = &[

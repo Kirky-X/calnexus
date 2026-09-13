@@ -4,8 +4,8 @@
 
 use nalgebra::DMatrix;
 
-use crate::api::types::{Matrix, Vector};
 use crate::api::CalNexus;
+use crate::api::types::{Matrix, Vector};
 use crate::core::{CalcError, EvalResult};
 use crate::math;
 

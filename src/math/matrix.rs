@@ -38,9 +38,9 @@ pub fn inverse(m: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
             m.ncols()
         )));
     }
-    m.clone().try_inverse().ok_or_else(|| {
-        CalcError::domain("matrix is singular (not invertible)".to_string())
-    })
+    m.clone()
+        .try_inverse()
+        .ok_or_else(|| CalcError::domain("matrix is singular (not invertible)".to_string()))
 }
 
 /// n×n 单位矩阵。n 须 ≤ MAX_MATRIX_DIM。
@@ -59,7 +59,10 @@ pub fn mat_add(a: &DMatrix<f64>, b: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcE
     if a.shape() != b.shape() {
         return Err(CalcError::domain(format!(
             "matrix dimension mismatch for add: {}x{} vs {}x{}",
-            a.nrows(), a.ncols(), b.nrows(), b.ncols()
+            a.nrows(),
+            a.ncols(),
+            b.nrows(),
+            b.ncols()
         )));
     }
     Ok(a + b)
@@ -70,7 +73,10 @@ pub fn mat_sub(a: &DMatrix<f64>, b: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcE
     if a.shape() != b.shape() {
         return Err(CalcError::domain(format!(
             "matrix dimension mismatch for sub: {}x{} vs {}x{}",
-            a.nrows(), a.ncols(), b.nrows(), b.ncols()
+            a.nrows(),
+            a.ncols(),
+            b.nrows(),
+            b.ncols()
         )));
     }
     Ok(a - b)
@@ -81,7 +87,10 @@ pub fn mat_mul(a: &DMatrix<f64>, b: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcE
     if a.ncols() != b.nrows() {
         return Err(CalcError::domain(format!(
             "matrix multiplication dimension mismatch: {}x{} * {}x{}",
-            a.nrows(), a.ncols(), b.nrows(), b.ncols()
+            a.nrows(),
+            a.ncols(),
+            b.nrows(),
+            b.ncols()
         )));
     }
     Ok(a * b)

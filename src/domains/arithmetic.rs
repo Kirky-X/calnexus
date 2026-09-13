@@ -11,11 +11,9 @@
 //! 本实现采用预检查策略：`0/0`→`NaNOrInf`（结果为 NaN），
 //! `x/0` (x≠0)→`DivisionByZero`（预检查除零，更安全且信息更明确）。
 
-use crate::core::CalculationDomain;
-use crate::core::{
-    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
-};
 use super::common::{resolve_variable, unsupported_node_error};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
 /// 算术函数白名单（parser 预处理后的函数名）。
 const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
@@ -177,8 +175,8 @@ fn is_arithmetic_only(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     /// 辅助函数：解析 + 求值，返回 f64
     fn eval(input: &str) -> Result<f64, CalcError> {
