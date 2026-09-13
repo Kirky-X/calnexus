@@ -91,13 +91,28 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
             .with_i18n("msg.core.parse_empty", vec![]));
     }
 
+    // 预处理段快路径短路（v015 T044，R-perf-002）：各段 O(n) 特征扫描，
+    // 无触发字符时跳过整段（complex 段跳过即免 2 次 regex replace_all）。
+    let has_quote = trimmed.contains('"');
+    let has_bracket = trimmed.contains('[');
+    let has_factorial = trimmed.contains('!');
+    let has_imag = trimmed.contains('i') || trimmed.contains('I');
+
     // 预处理字符串字面量：将所有 `"..."` 替换为占位符 `__str_N`
     // 必须在 brackets/bigint 之前执行，防止字符串内的 `[`、长数字被误提取（R-esl-003）
-    let (without_strings, placeholders) = preprocess_strings(trimmed)?;
+    let (without_strings, placeholders) = if has_quote {
+        preprocess_strings(trimmed)?
+    } else {
+        (trimmed.to_string(), Default::default())
+    };
 
     // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
     // 使矩阵/列表字面量可出现在表达式任意位置（如 `det([[1,2]])`、`2*[[1,2]]`）
-    let (without_brackets, mut placeholders) = preprocess_brackets(&without_strings, placeholders)?;
+    let (without_brackets, mut placeholders) = if has_bracket {
+        preprocess_brackets(&without_strings, placeholders)?
+    } else {
+        (without_strings, placeholders)
+    };
 
     // 若整个表达式就是单个括号字面量，直接返回（避免 mathexpr 处理）
     if placeholders.len() == 1 {
@@ -108,7 +123,11 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     }
 
     // 预处理大整数字面量：将 16+ 位整数替换为占位符 `__bn_N`（避免 f64 精度丢失）
-    let without_bigint = preprocess_bigint(&without_brackets, &mut placeholders)?;
+    let without_bigint = if has_long_digit_run(&without_brackets) {
+        preprocess_bigint(&without_brackets, &mut placeholders)?
+    } else {
+        without_brackets
+    };
 
     // 非法连续运算符检查：拒绝 `++`、`**`、`//`、`^^`（保留 `--` 合法性）
     // mathexpr 对 `+3` 当作数字字面量，导致 `2++3` 被静默接受；
@@ -116,11 +135,19 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 此处统一显式拒绝，提供清晰的 "illegal consecutive operators 'XX'" 错误消息。
     validate_no_consecutive_operators(&without_bigint)?;
 
-    // 复数预处理：`3+4i` → `complex(3, 4)`、`2i` → `complex(0, 2)`
-    let after_complex = preprocess_complex(&without_bigint)?;
+    // 复数预处理：`3+4i` → `complex(3, 4)`、`2i` → `complex(0, 2)`（无 `i` 跳过 → 免 2 次 regex）
+    let after_complex = if has_imag {
+        preprocess_complex(&without_bigint)?
+    } else {
+        without_bigint
+    };
 
-    // 阶乘预处理
-    let after_factorial = preprocess_factorial(&after_complex)?;
+    // 阶乘预处理（无 `!` 跳过）
+    let after_factorial = if has_factorial {
+        preprocess_factorial(&after_complex)?
+    } else {
+        after_complex
+    };
 
     // 隐式乘法预处理：`2x` → `2*x`、`3(x+1)` → `3*(x+1)`、`(x+1)(x-1)` → `(x+1)*(x-1)`
     let after_implicit = insert_implicit_multiplication(&after_factorial);
@@ -214,6 +241,22 @@ fn preprocess_complex(input: &str) -> Result<String, CalcError> {
         .to_string();
 
     Ok(result)
+}
+
+/// O(n) 扫描是否存在 16+ 位连续数字（bigint 预处理的触发特征）。
+fn has_long_digit_run(s: &str) -> bool {
+    let mut run = 0usize;
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            run += 1;
+            if run >= 16 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
 }
 
 /// 将 mathexpr 错误的 Display 文案清洗为用户友好形式（v015 T020，R-err-003）。
@@ -629,27 +672,35 @@ fn validate_no_consecutive_operators(input: &str) -> Result<(), CalcError> {
     // 非法连续运算符列表（不含 `--`，因为双重负号合法）
     const ILLEGAL_CONSECUTIVE_OPS: &[&str] = &["++", "**", "//", "^^"];
 
+    // v015 T043（R-perf-001）：消除内层 chars().collect() 分配——
+    // 原实现每字符 × 4 运算符各做一次 Vec 分配（4096 字符表达式 ≈ 16K 次小分配）。
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        // 检查以 chars[i] 开头的非法连续运算符
-        for &op in ILLEGAL_CONSECUTIVE_OPS {
-            let op_chars: Vec<char> = op.chars().collect();
-            // 跳过空格查找第二个字符
-            let mut j = i + 1;
-            while j < chars.len() && chars[j].is_whitespace() {
-                j += 1;
-            }
-            // 检查是否匹配：第一个字符 + (可选空格) + 第二个字符
-            if chars[i] == op_chars[0] && j < chars.len() && chars[j] == op_chars[1] {
-                return Err(
-                    CalcError::parse(format!("illegal consecutive operators '{}'", op))
-                        .with_span(Span::new(i, j + 1))
-                        .with_i18n(
-                            "msg.core.parse_illegal_consecutive_ops",
-                            vec![("op".to_string(), op.to_string())],
-                        ),
-                );
+        let c = chars[i];
+        // 仅当首字符可能是非法运算符首字符时才查第二字符（快路径跳过字母数字）
+        if c == '+' || c == '*' || c == '/' || c == '^' {
+            for &op in ILLEGAL_CONSECUTIVE_OPS {
+                let op_first = op.as_bytes()[0] as char;
+                if c != op_first {
+                    continue;
+                }
+                // 跳过空格查找第二个字符
+                let mut j = i + 1;
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                // 检查是否匹配：第一个字符 + (可选空格) + 第二个字符
+                if j < chars.len() && chars[j] == op.as_bytes()[1] as char {
+                    return Err(
+                        CalcError::parse(format!("illegal consecutive operators '{}'", op))
+                            .with_span(Span::new(i, j + 1))
+                            .with_i18n(
+                                "msg.core.parse_illegal_consecutive_ops",
+                                vec![("op".to_string(), op.to_string())],
+                            ),
+                    );
+                }
             }
         }
         i += 1;

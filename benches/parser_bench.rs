@@ -33,6 +33,24 @@ fn bench_parser_throughput(c: &mut Criterion) {
     group.finish();
 }
 
+/// v015 T045（R-perf-003）：4096 字符大表达式解析基准（优化放大场景）。
+fn bench_parser_large_expression(c: &mut Criterion) {
+    // 构造 ~4090 字符的长算术表达式（50 项 × ~80 字符）
+    let terms: Vec<String> = (0..50)
+        .map(|i| format!("({}+{})*{} - sin({}) + cos({})", i * 37, i * 13, i + 1, i, i * 2))
+        .collect();
+    let large = terms.join(" + ");
+    assert!(large.len() <= 4096, "基准表达式不得超过 4096 上限");
+
+    let mut group = c.benchmark_group("parser_large_expression");
+    group.bench_with_input("4096-char", large.as_str(), |b, e| {
+        b.iter(|| {
+            let _ = black_box(parse(black_box(e)));
+        });
+    });
+    group.finish();
+}
+
 /// BENCH-009: canonicalizer < 10μs（目标：规范化单表达式 < 10μs）
 fn bench_canonicalizer(c: &mut Criterion) {
     let expressions = vec![
@@ -58,5 +76,10 @@ fn bench_canonicalizer(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_parser_throughput, bench_canonicalizer);
+criterion_group!(
+    benches,
+    bench_parser_throughput,
+    bench_canonicalizer,
+    bench_parser_large_expression
+);
 criterion_main!(benches);
