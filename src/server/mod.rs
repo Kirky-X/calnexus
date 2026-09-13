@@ -2,7 +2,7 @@
 
 //! CalNexus Server 接口层：HTTP/MCP 多协议服务封装。
 //!
-//! 基于 sdforge 0.4 框架，将 evaluate 函数暴露为 HTTP API 和 MCP tool。
+//! 基于 sdforge 0.5 框架，将 evaluate 函数暴露为 HTTP API 和 MCP tool。
 //! spec.md R-sdforge-002/R-sdforge-003 定义接口契约。
 //!
 //! # Feature Gate

@@ -1,7 +1,7 @@
 [package]
 name = "calnexus"
 version = "0.1.4"
-edition = "2021"
+edition = "2024"
 authors = ["Kirky.X"]
 license = "MIT"
 rust-version = "1.85"
