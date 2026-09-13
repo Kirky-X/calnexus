@@ -397,3 +397,102 @@ fn sec_infrastructure_present() {
     let _ctx = EvalContext::new();
     // CacheManager 构造成功即证明基础设施可用
 }
+
+// ===== v015 深度防护补齐（R-depth-001/002） =====
+// 审计发现：列表/矩阵字面量递归（parse_list_literal → parse → parse_bracket_literal）
+// 完全绕过 convert_with_depth 的 MAX_AST_DEPTH 检查；mathexpr 递归也先于深度检查执行。
+
+/// SEC-011: 300 层嵌套列表字面量 → DepthExceeded（此前 panic/绕过）。
+#[test]
+fn sec_011_nested_list_depth_exceeded() {
+    // debug 构建下每层 parse 管线（含 regex）栈帧较肥，256 层递归接近 2MiB
+    // 默认测试线程栈；显式放大测试线程栈以承载断言（生产 release 构建帧远更小）。
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(sec_011_nested_list_depth_exceeded_inner)
+        .expect("spawn test thread")
+        .join()
+        .expect("test thread panicked");
+}
+
+fn sec_011_nested_list_depth_exceeded_inner() {
+    let mut expr = String::new();
+    for i in 1..=300 {
+        expr.push('[');
+        expr.push_str(&i.to_string());
+        expr.push(',');
+    }
+    expr.push('1');
+    expr.push_str(&"]".repeat(300));
+
+    let result = parse(&expr);
+    match result {
+        Err(e) => assert_eq!(
+            e.kind,
+            calnexus::ErrorKind::Depth,
+            "300 层嵌套列表应返回 Depth 错误，实际: {}",
+            e.message
+        ),
+        Ok(_) => panic!("300 层嵌套列表应被深度防护拒绝"),
+    }
+}
+
+/// SEC-012: 300 层嵌套矩阵字面量 → DepthExceeded。
+#[test]
+fn sec_012_nested_matrix_depth_exceeded() {
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(sec_012_nested_matrix_depth_exceeded_inner)
+        .expect("spawn test thread")
+        .join()
+        .expect("test thread panicked");
+}
+
+fn sec_012_nested_matrix_depth_exceeded_inner() {
+    let mut expr = String::new();
+    for _ in 0..300 {
+        expr.push_str("[[");
+    }
+    expr.push('1');
+    expr.push_str(&"]]".repeat(300));
+
+    let result = parse(&expr);
+    match result {
+        Err(e) => assert_eq!(e.kind, calnexus::ErrorKind::Depth),
+        Ok(_) => panic!("300 层嵌套矩阵应被深度防护拒绝"),
+    }
+}
+
+/// SEC-013: ~2048 层圆括号（mathexpr 递归窗口）→ DepthExceeded，且不崩溃。
+#[test]
+fn sec_013_deep_paren_prescan_rejects_before_mathexpr() {
+    let depth = 2040; // 4081 字节（表达式上限 4096 内）：足以触发 mathexpr 递归窗口
+    let expr = "(".repeat(depth) + "1" + &")".repeat(depth);
+
+    let result = parse(&expr);
+    match result {
+        Err(e) => assert_eq!(e.kind, calnexus::ErrorKind::Depth),
+        Ok(_) => panic!("2040 层括号应被预检拒绝（防 mathexpr 内部递归溢出）"),
+    }
+}
+
+/// SEC-014: 深度上限内的合法嵌套列表/矩阵仍可正常解析（无误伤）。
+#[test]
+fn sec_014_legal_nested_literals_still_parse() {
+    let result = parse("[1,[2,[3,[4]]]]");
+    assert!(result.is_ok(), "4 层嵌套列表应正常解析: {:?}", result.err());
+
+    let result = parse("[[1,2],[3,4]]");
+    assert!(result.is_ok(), "2x2 矩阵应正常解析: {:?}", result.err());
+
+    let result = parse("[1,[2,[[3]]],[4]]");
+    assert!(result.is_ok(), "混合嵌套应正常解析: {:?}", result.err());
+}
+
+/// SEC-015: 深度错误 hint 引用 MAX_AST_DEPTH 常量（文案随常量联动）。
+#[test]
+fn sec_015_depth_hint_references_constant() {
+    let e = calnexus::CalcError::depth_exceeded();
+    let hint = e.hint.expect("depth_exceeded 应有 hint");
+    assert!(hint.contains("max 256"), "hint 应含当前深度上限: {}", hint);
+}

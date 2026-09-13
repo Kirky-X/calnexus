@@ -67,3 +67,9 @@ temp/
 docs/ADD.md
 docs/PRD.md
 docs/TEST.md
+
+# 运行时剖析产物（v015 T055）
+dhat.out.*
+logs/
+temp/
+strix_runs/

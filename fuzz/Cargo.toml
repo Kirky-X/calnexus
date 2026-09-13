@@ -31,6 +31,10 @@ path = "fuzz_targets/numeric_boundary_fuzz.rs"
 name = "matrix_dim_fuzz"
 path = "fuzz_targets/matrix_dim_fuzz.rs"
 
+[[bin]]
+name = "list_depth_fuzz"
+path = "fuzz_targets/list_depth_fuzz.rs"
+
 [dependencies]
 libfuzzer-sys = { version = "0.4", default-features = false }
 calnexus = { path = ".." }

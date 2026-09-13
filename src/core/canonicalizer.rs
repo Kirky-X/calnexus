@@ -14,8 +14,38 @@
 //! 由于 Req 5 Scen 2 要求 `2*3+1` 与 `1+6` 同形式（必须折叠），
 //! 本实现以**常量折叠优先**解决冲突：全常量表达式折叠为单个 Number。
 
+use crate::core::parser::MAX_AST_DEPTH;
 use crate::core::types::{AstNode, BinaryOp, CalcError, CanonicalForm, UnaryOp};
+use std::cell::Cell;
 use std::cmp::Ordering;
+
+thread_local! {
+    /// 规范化递归深度计数（v015 R-depth-003 纵深防御：解析构造层已封顶，
+    /// 此守卫防御直接构造 AST 绕过解析器的路径，如嵌入方拼装 AST）。
+    static TRANSFORM_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+/// 规范化递归深度 RAII 守卫。
+struct TransformDepthGuard;
+
+impl TransformDepthGuard {
+    fn enter() -> Result<Self, CalcError> {
+        TRANSFORM_DEPTH.with(|d| {
+            let n = d.get() + 1;
+            if n > MAX_AST_DEPTH {
+                return Err(CalcError::depth_exceeded());
+            }
+            d.set(n);
+            Ok(Self)
+        })
+    }
+}
+
+impl Drop for TransformDepthGuard {
+    fn drop(&mut self) {
+        TRANSFORM_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
 
 /// AST 规范化器。
 ///
@@ -63,6 +93,8 @@ impl AstCanonicalizer {
         fold_constants: bool,
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
+        // 深度守卫（v015 R-depth-003）：所有 transform_* 递归的漏斗点
+        let _depth = TransformDepthGuard::enter()?;
         match ast {
             AstNode::Number(n) => {
                 if n.is_nan() || n.is_infinite() {

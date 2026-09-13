@@ -7,6 +7,7 @@
 //! - design.md D1：三 crate 拆分，共享类型放 calnexus-core
 //! - ADD.md §3.4 代码图：v0.2 完整 AstNode 含 BigInt/Matrix/Vector，v0.1 暂不实现
 
+use crate::core::parser::MAX_AST_DEPTH;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
@@ -560,7 +561,7 @@ impl CalcError {
     }
     pub fn depth_exceeded() -> Self {
         Self::new(ErrorKind::Depth, "AST depth exceeded limit")
-            .with_hint("simplify nested expressions (max 256)")
+            .with_hint(format!("simplify nested expressions (max {})", MAX_AST_DEPTH))
             .with_i18n("detail.depth_exceeded", vec![])
     }
     pub fn division_by_zero() -> Self {
@@ -965,7 +966,7 @@ mod tests {
         assert_eq!(e.message, "AST depth exceeded limit");
         assert_eq!(
             e.hint.as_deref(),
-            Some("simplify nested expressions (max 256)")
+            Some(format!("simplify nested expressions (max {})", MAX_AST_DEPTH).as_str())
         );
 
         let e = CalcError::division_by_zero();

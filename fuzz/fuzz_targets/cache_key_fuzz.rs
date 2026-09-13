@@ -6,7 +6,7 @@
 
 #![no_main]
 
-use calnexus::{AstCanonicalizer, CacheManager, EvalContext, parse};
+use calnexus::{AstCanonicalizer, CacheManager, parse};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &str| {
@@ -15,7 +15,6 @@ fuzz_target!(|data: &str| {
         if let Ok((canonical_ast, cf)) = AstCanonicalizer::canonicalize(&ast) {
             // 缓存键生成不应 panic
             let cache = CacheManager::new();
-            let ctx = EvalContext::new();
             // 插入缓存
             cache.insert(&cf, &Ok(calnexus::EvalResult::Scalar(0.0)));
             // 查询缓存（应命中）

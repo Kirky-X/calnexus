@@ -11,12 +11,45 @@
 
 use crate::core::types::{AstNode, BinaryOp, CalcError, Span, UnaryOp};
 use regex::Regex;
+use std::cell::Cell;
 
 /// 最大 AST 深度（spec: AST 深度限制 ≤ 256）。
-const MAX_AST_DEPTH: usize = 256;
+pub(crate) const MAX_AST_DEPTH: usize = 256;
 
 /// 最大表达式长度（spec: 表达式长度限制 ≤ 4096 字符）。
 pub(crate) const MAX_EXPR_LEN: usize = 4096;
+
+thread_local! {
+    /// 括号字面量递归深度计数。
+    ///
+    /// 列表/矩阵字面量的元素解析经 `parse()` 全管线重入
+    /// （parse → preprocess_brackets → parse_bracket_literal → parse_list_literal → parse），
+    /// 深度无法通过参数穿透；thread_local 计数器 + RAII guard 跨重入正确计数
+    /// （v015 R-depth-002，修复审计发现的 `MAX_AST_DEPTH` 绕过缺口）。
+    static LITERAL_PARSE_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+/// 括号字面量解析深度 RAII 守卫：进入时深度 +1（超限报错），Drop 时 -1。
+struct LiteralDepthGuard;
+
+impl LiteralDepthGuard {
+    fn enter() -> Result<Self, CalcError> {
+        LITERAL_PARSE_DEPTH.with(|d| {
+            let n = d.get() + 1;
+            if n > MAX_AST_DEPTH {
+                return Err(CalcError::depth_exceeded());
+            }
+            d.set(n);
+            Ok(Self)
+        })
+    }
+}
+
+impl Drop for LiteralDepthGuard {
+    fn drop(&mut self) {
+        LITERAL_PARSE_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
 
 /// 解析数学表达式字符串为 [`AstNode`]。
 ///
@@ -92,6 +125,28 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 隐式乘法预处理：`2x` → `2*x`、`3(x+1)` → `3*(x+1)`、`(x+1)(x-1)` → `(x+1)*(x-1)`
     let after_implicit = insert_implicit_multiplication(&after_factorial);
 
+    // 括号嵌套迭代预检（v015 R-depth-001）：mathexpr 为递归下降解析器，
+    // 其内部递归发生在 CalNexus convert_with_depth 深度检查**之前**；
+    // ~2048 层 `((((...))))` 会先在 mathexpr 内栈溢出。迭代 O(n) 扫描先行拒绝。
+    // 字符串占位符已替换，`"` 内容中的括号不会误计。
+    {
+        let mut bracket_depth: usize = 0;
+        for ch in after_implicit.chars() {
+            match ch {
+                '(' | '[' | '{' => {
+                    bracket_depth += 1;
+                    if bracket_depth > MAX_AST_DEPTH {
+                        return Err(CalcError::depth_exceeded());
+                    }
+                }
+                ')' | ']' | '}' => {
+                    bracket_depth = bracket_depth.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+    }
+
     // mathexpr 解析
     let expr = mathexpr::parse(&after_implicit).map_err(|e| {
         // T005: Span 指向原始 trimmed 输入而非预处理后的 after_implicit。
@@ -160,6 +215,9 @@ fn preprocess_complex(input: &str) -> Result<String, CalcError> {
 
 /// 解析以 `[` 开头的字面量：矩阵 `[[...]]` 或列表 `[...]`（design.md D3）。
 fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
+    // 深度守卫（v015 R-depth-002）：所有括号字面量递归的单一漏斗点。
+    // 嵌套列表/矩阵此前完全绕过 convert_with_depth 的 MAX_AST_DEPTH 检查。
+    let _depth = LiteralDepthGuard::enter()?;
     let trimmed = input.trim();
     if trimmed.starts_with("[[") {
         parse_matrix_literal(trimmed)
