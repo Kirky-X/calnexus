@@ -28,7 +28,14 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
             "eig() requires a square matrix, got {}x{}",
             matrix.nrows(),
             matrix.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.eig_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
     }
     const SYMMETRY_TOL: f64 = 1e-10;
     let n = matrix.nrows();
@@ -38,7 +45,8 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
             if (matrix[(i, j)] - matrix[(j, i)]).abs() > SYMMETRY_TOL * scale {
                 return Err(CalcError::domain(
                     "eig() requires a real symmetric matrix".to_string(),
-                ));
+                )
+                .with_i18n("msg.numerical.eig_requires_symmetric", vec![]));
             }
         }
     }
@@ -76,12 +84,18 @@ pub type LuTriple = (DMatrix<f64>, DMatrix<f64>, DMatrix<f64>);
 pub fn svd(matrix: &DMatrix<f64>) -> Result<SvdTriple, CalcError> {
     require_finite(matrix.iter().copied())?;
     let decomp = SVD::new(matrix.clone(), true, true);
-    let u = decomp
-        .u
-        .ok_or_else(|| CalcError::domain("SVD decomposition failed: U not available"))?;
-    let vt = decomp
-        .v_t
-        .ok_or_else(|| CalcError::domain("SVD decomposition failed: Vt not available"))?;
+    let u = decomp.u.ok_or_else(|| {
+        CalcError::domain("SVD decomposition failed: U not available").with_i18n(
+            "msg.numerical.svd_failed",
+            vec![("component".to_string(), "U".to_string())],
+        )
+    })?;
+    let vt = decomp.v_t.ok_or_else(|| {
+        CalcError::domain("SVD decomposition failed: Vt not available").with_i18n(
+            "msg.numerical.svd_failed",
+            vec![("component".to_string(), "Vt".to_string())],
+        )
+    })?;
     let s: Vec<f64> = decomp.singular_values.iter().copied().collect();
     Ok((u, s, vt))
 }
@@ -96,7 +110,14 @@ pub fn lu(matrix: &DMatrix<f64>) -> Result<LuTriple, CalcError> {
             "lu() requires a square matrix, got {}x{}",
             matrix.nrows(),
             matrix.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.lu_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
     }
     let n = matrix.nrows();
     let decomp = LU::new(matrix.clone());
@@ -129,7 +150,14 @@ pub fn solve(matrix: &DMatrix<f64>, b: &DVector<f64>) -> Result<DVector<f64>, Ca
             "solve() requires a square coefficient matrix, got {}x{}",
             matrix.nrows(),
             matrix.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.solve_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
     }
     if b.len() != matrix.nrows() {
         return Err(CalcError::domain(format!(
@@ -137,12 +165,21 @@ pub fn solve(matrix: &DMatrix<f64>, b: &DVector<f64>) -> Result<DVector<f64>, Ca
             matrix.nrows(),
             matrix.ncols(),
             b.len()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.solve_dim_mismatch",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+                ("len".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     let lu_decomp = LU::new(matrix.clone());
-    lu_decomp
-        .solve(b)
-        .ok_or_else(|| CalcError::domain("solve(): coefficient matrix is singular".to_string()))
+    lu_decomp.solve(b).ok_or_else(|| {
+        CalcError::domain("solve(): coefficient matrix is singular".to_string())
+            .with_i18n("msg.numerical.solve_singular", vec![])
+    })
 }
 
 /// 矩阵指数 exp(A)。
@@ -156,7 +193,14 @@ pub fn matrix_exp(matrix: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
             "matrix_exp() requires a square matrix, got {}x{}",
             matrix.nrows(),
             matrix.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.numerical.matrix_exp_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
     }
     let n = matrix.nrows();
     // 快速路径：实对称矩阵 → 特征值分解
@@ -235,6 +279,7 @@ fn pade_exp(matrix: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
     let lu = LU::new(d_mat);
     let mut result = lu.solve(&n_mat).ok_or_else(|| {
         CalcError::domain("matrix_exp(): Pade denominator is singular".to_string())
+            .with_i18n("msg.numerical.matrix_exp_pade_singular", vec![])
     })?;
     // 平方回
     for _ in 0..s {

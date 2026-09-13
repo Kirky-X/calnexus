@@ -964,7 +964,18 @@ mod tests {
 
     #[test]
     fn steps_depth_exceeded_returns_error() {
-        // 构造 258 层嵌套加法，超过 MAX_DEPTH=256（line 43）
+        // 构造 258 层嵌套加法，超过 MAX_DEPTH=256（line 43）。
+        // 递归深度 258 在 2MiB 默认测试线程栈上处于边缘（debug 帧 + feature 组合
+        // 代码gen 差异会导致临界溢出），显式 8MiB 线程承载断言。
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(steps_depth_exceeded_inner)
+            .expect("spawn test thread")
+            .join()
+            .expect("test thread panicked");
+    }
+
+    fn steps_depth_exceeded_inner() {
         let mut ast = AstNode::Number(1.0);
         for _ in 0..258 {
             ast = AstNode::BinaryOp(BinaryOp::Add, Box::new(ast), Box::new(AstNode::Number(1.0)));

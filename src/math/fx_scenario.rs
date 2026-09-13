@@ -85,12 +85,14 @@ pub fn budget_calculation(
 ) -> Result<BudgetResult, CalcError> {
     // 输入校验
     if tuition <= 0.0 {
-        return Err(CalcError::domain("tuition must be positive".to_string()));
+        return Err(CalcError::domain("tuition must be positive".to_string())
+            .with_i18n("msg.fxscenario.tuition_positive", vec![]));
     }
     if duration_years == 0 || duration_years > 10 {
         return Err(CalcError::domain(
             "duration_years must be between 1 and 10".to_string(),
-        ));
+        )
+        .with_i18n("msg.fxscenario.duration_range", vec![]));
     }
 
     // 汇率：1 单位 tuition_currency = ? home_currency
@@ -148,32 +150,38 @@ pub fn pricing_calculation(
 ) -> Result<PricingResult, CalcError> {
     // 输入校验
     if cost_cny <= 0.0 {
-        return Err(CalcError::domain("cost_cny must be positive".to_string()));
+        return Err(CalcError::domain("cost_cny must be positive".to_string())
+            .with_i18n("msg.fxscenario.cost_positive", vec![]));
     }
     if target_profit_rate <= 0.0 || target_profit_rate >= 1.0 {
         return Err(CalcError::domain(
             "target_profit_rate must be between 0 and 1 (exclusive)".to_string(),
-        ));
+        )
+        .with_i18n("msg.fxscenario.profit_rate_range", vec![]));
     }
     if !(0.0..1.0).contains(&platform_rate) {
         return Err(CalcError::domain(
             "platform_rate must be in [0, 1)".to_string(),
-        ));
+        )
+        .with_i18n("msg.fxscenario.platform_rate_range", vec![]));
     }
     if !(0.0..=0.5).contains(&safety_buffer) {
         return Err(CalcError::domain(
             "safety_buffer must be in [0, 0.5]".to_string(),
-        ));
+        )
+        .with_i18n("msg.fxscenario.safety_buffer_range", vec![]));
     }
     if currencies.is_empty() {
         return Err(CalcError::domain(
             "currencies list must not be empty".to_string(),
-        ));
+        )
+        .with_i18n("msg.fxscenario.currencies_empty", vec![]));
     }
     if currencies.len() > 10 {
         return Err(CalcError::domain(
             "currencies list must not exceed 10 items".to_string(),
-        ));
+        )
+        .with_i18n("msg.fxscenario.currencies_too_many", vec![]));
     }
 
     let mut pricing = Vec::with_capacity(currencies.len());

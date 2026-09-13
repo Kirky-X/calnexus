@@ -72,20 +72,32 @@ impl NumberTheoryDomain {
                     return Err(CalcError::domain(format!(
                         "number theory domain requires integer, got {}",
                         n
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.numbertheory.requires_integer",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 Ok(EvalResult::Scalar(*n))
             }
             AstNode::BigNumber(s) => {
-                let b: BigInt = s
-                    .parse()
-                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+                let b: BigInt = s.parse().map_err(|_| {
+                    CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                        "msg.invalid_bignumber",
+                        vec![("value".to_string(), s.to_string())],
+                    )
+                })?;
                 Ok(EvalResult::BigInt(b))
             }
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;
                 let b = self.eval_int(r, ctx)?;
@@ -99,6 +111,10 @@ impl NumberTheoryDomain {
                     UnaryOp::Abs => Ok(bigint_to_result(v.abs())),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in number theory domain".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.domain.factorial_not_supported",
+                        vec![("domain".to_string(), "number theory".to_string())],
                     )),
                 }
             }
@@ -113,18 +129,31 @@ impl NumberTheoryDomain {
     fn eval_int(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigInt, CalcError> {
         match ast {
             AstNode::Number(n) => f64_to_bigint(*n, "expected integer argument"),
-            AstNode::BigNumber(s) => s
-                .parse::<BigInt>()
-                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
+            AstNode::BigNumber(s) => s.parse::<BigInt>().map_err(|_| {
+                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                    "msg.invalid_bignumber",
+                    vec![("value".to_string(), s.to_string())],
+                )
+            }),
             AstNode::Variable(name) => {
-                let v = ctx
-                    .get_var(name)
-                    .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name)))?;
+                let v = ctx.get_var(name).ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                })?;
                 if v.fract() != 0.0 {
                     return Err(CalcError::domain(format!(
                         "variable {} is not an integer: {}",
                         name, v
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.core.variable_not_integer",
+                        vec![
+                            ("name".to_string(), name.to_string()),
+                            ("value".to_string(), v.to_string()),
+                        ],
+                    ));
                 }
                 // 使用 f64_to_bigint 代替直接 as i64，防止大值 panic
                 f64_to_bigint(v, &format!("variable {} out of range", name))
@@ -141,6 +170,10 @@ impl NumberTheoryDomain {
                     UnaryOp::Abs => Ok(v.abs()),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in number theory domain".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.domain.factorial_not_supported",
+                        vec![("domain".to_string(), "number theory".to_string())],
                     )),
                 }
             }
@@ -153,7 +186,11 @@ impl NumberTheoryDomain {
                 Err(CalcError::domain(format!(
                     "expected integer expression, got: {:?}",
                     ast
-                )))
+                ))
+                .with_i18n(
+                    "msg.core.expected_integer_expression",
+                    vec![("got".to_string(), format!("{:?}", ast))],
+                ))
             }
         }
     }
@@ -174,7 +211,8 @@ impl NumberTheoryDomain {
                 if b.is_negative() {
                     return Err(CalcError::domain(
                         "negative exponent not supported for integers".to_string(),
-                    ));
+                    )
+                    .with_i18n("msg.core.negative_exponent", vec![]));
                 }
                 // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
                 // 安全审查 CRITICAL 修复：number_theory/combinatorics 域原无防护，
@@ -185,7 +223,14 @@ impl NumberTheoryDomain {
                     return Err(CalcError::domain(format!(
                         "power exponent must not exceed {} (got {})",
                         MAX_POW_EXPONENT, exp_u64
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.core.power_exponent_exceeds",
+                        vec![
+                            ("max".to_string(), MAX_POW_EXPONENT.to_string()),
+                            ("actual".to_string(), exp_u64.to_string()),
+                        ],
+                    ));
                 }
                 // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
                 // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
@@ -231,7 +276,14 @@ impl NumberTheoryDomain {
             return Err(CalcError::domain(format!(
                 "gcd() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.arg_count_2",
+                vec![
+                    ("name".to_string(), "gcd".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let a = self.eval_int(&args[0], ctx)?;
         let b = self.eval_int(&args[1], ctx)?;
@@ -244,7 +296,14 @@ impl NumberTheoryDomain {
             return Err(CalcError::domain(format!(
                 "lcm() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.arg_count_2",
+                vec![
+                    ("name".to_string(), "lcm".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let a = self.eval_int(&args[0], ctx)?;
         let b = self.eval_int(&args[1], ctx)?;
@@ -257,7 +316,14 @@ impl NumberTheoryDomain {
             return Err(CalcError::domain(format!(
                 "is_prime() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.arg_count_1",
+                vec![
+                    ("name".to_string(), "is_prime".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let n = self.eval_int(&args[0], ctx)?;
         let prime = crate::math::number_theory::is_prime(&n);
@@ -274,7 +340,14 @@ impl NumberTheoryDomain {
             return Err(CalcError::domain(format!(
                 "prime_sieve() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.arg_count_1",
+                vec![
+                    ("name".to_string(), "prime_sieve".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let n = self.eval_int(&args[0], ctx)?;
         let primes = crate::math::number_theory::prime_sieve(&n)?;
@@ -293,7 +366,14 @@ impl NumberTheoryDomain {
             return Err(CalcError::domain(format!(
                 "mod_inverse() requires exactly 2 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.arg_count_2",
+                vec![
+                    ("name".to_string(), "mod_inverse".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let a = self.eval_int(&args[0], ctx)?;
         let m = self.eval_int(&args[1], ctx)?;
@@ -307,7 +387,14 @@ impl NumberTheoryDomain {
             return Err(CalcError::domain(format!(
                 "mod_pow() requires exactly 3 arguments, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.arg_count_3",
+                vec![
+                    ("name".to_string(), "mod_pow".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let base = self.eval_int(&args[0], ctx)?;
         let exp = self.eval_int(&args[1], ctx)?;
@@ -322,7 +409,14 @@ impl NumberTheoryDomain {
             return Err(CalcError::domain(format!(
                 "euler_phi() requires exactly 1 argument, got {}",
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.arg_count_1",
+                vec![
+                    ("name".to_string(), "euler_phi".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let n = self.eval_int(&args[0], ctx)?;
         Ok(bigint_to_result(crate::math::number_theory::euler_phi(&n)))
@@ -343,7 +437,13 @@ fn bigint_to_result(b: BigInt) -> EvalResult {
 /// 复用于 `Number` 字面量求值和 `FunctionCall(Scalar)` 结果求值，消除重复检查。
 fn f64_to_bigint(n: f64, err_msg: &str) -> Result<BigInt, CalcError> {
     if n.fract() != 0.0 {
-        return Err(CalcError::domain(format!("{}: {}", err_msg, n)));
+        return Err(CalcError::domain(format!("{}: {}", err_msg, n)).with_i18n(
+            "msg.core.operation_failed",
+            vec![
+                ("detail".to_string(), err_msg.to_string()),
+                ("value".to_string(), n.to_string()),
+            ],
+        ));
     }
     if n > i64::MAX as f64 || n < i64::MIN as f64 {
         return Err(CalcError::overflow());
@@ -363,7 +463,11 @@ fn evalresult_to_bigint(result: EvalResult, ast: &AstNode) -> Result<BigInt, Cal
         _ => Err(CalcError::domain(format!(
             "expected integer result from function call, got {:?}",
             ast
-        ))),
+        ))
+        .with_i18n(
+            "msg.numbertheory.expected_integer_result",
+            vec![("got".to_string(), format!("{:?}", ast))],
+        )),
     }
 }
 

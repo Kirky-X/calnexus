@@ -63,6 +63,7 @@ pub fn asin(x: f64) -> Result<f64, CalcError> {
         return Err(
             CalcError::domain(format!("asin requires argument in [-1, 1], got {}", x))
                 .with_hint("asin domain is [-1, 1]")
+                .with_hint_i18n("hint.asin_domain", vec![])
                 .with_i18n(
                     "msg.scientific.asin_domain",
                     vec![("value".to_string(), x.to_string())],
@@ -78,6 +79,7 @@ pub fn acos(x: f64) -> Result<f64, CalcError> {
         return Err(
             CalcError::domain(format!("acos requires argument in [-1, 1], got {}", x))
                 .with_hint("acos domain is [-1, 1]")
+                .with_hint_i18n("hint.acos_domain", vec![])
                 .with_i18n(
                     "msg.scientific.acos_domain",
                     vec![("value".to_string(), x.to_string())],
@@ -195,6 +197,7 @@ pub fn gamma(x: f64) -> Result<f64, CalcError> {
             x
         ))
         .with_hint("gamma is defined for positive reals and non-integer negatives")
+        .with_hint_i18n("hint.gamma_domain", vec![])
         .with_i18n(
             "msg.scientific.gamma_pole",
             vec![("value".to_string(), x.to_string())],

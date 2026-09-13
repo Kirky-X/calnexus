@@ -19,13 +19,24 @@ pub fn factorial(n: &BigInt) -> Result<BigInt, CalcError> {
         return Err(CalcError::domain(format!(
             "factorial requires non-negative integer, got {}",
             n
-        )));
+        ))
+        .with_i18n(
+            "msg.core.factorial_negative",
+            vec![("value".to_string(), n.to_string())],
+        ));
     }
     if n > &BigInt::from(MAX_FACTORIAL_INPUT) {
         return Err(CalcError::domain(format!(
             "factorial input must not exceed {} (got {})",
             MAX_FACTORIAL_INPUT, n
-        )));
+        ))
+        .with_i18n(
+            "msg.precision.factorial_exceeds_max",
+            vec![
+                ("max".to_string(), MAX_FACTORIAL_INPUT.to_string()),
+                ("value".to_string(), n.to_string()),
+            ],
+        ));
     }
     let mut result = BigInt::one();
     let mut i = BigInt::one();
@@ -93,8 +104,12 @@ pub fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
     if n.fract() == 0.0 && n.abs() <= i64::MAX as f64 {
         Ok(BigRational::from_integer(BigInt::from(n as i64)))
     } else {
-        BigRational::from_float(n)
-            .ok_or_else(|| CalcError::eval(format!("cannot convert {} to BigRational", n)))
+        BigRational::from_float(n).ok_or_else(|| {
+            CalcError::eval(format!("cannot convert {} to BigRational", n)).with_i18n(
+                "msg.precision.cannot_convert_rational",
+                vec![("value".to_string(), n.to_string())],
+            )
+        })
     }
 }
 
@@ -106,7 +121,14 @@ pub fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> 
         return Err(CalcError::domain(format!(
             "{} requires integer operand, got {}",
             ctx, r
-        )));
+        ))
+        .with_i18n(
+            "msg.precision.requires_integer_operand",
+            vec![
+                ("ctx".to_string(), ctx.to_string()),
+                ("value".to_string(), r.to_string()),
+            ],
+        ));
     }
     Ok(r.numer().clone())
 }

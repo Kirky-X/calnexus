@@ -719,12 +719,20 @@ pub fn polynomial_regression(
         return Err(CalcError::domain(format!(
             "polynomial_regression(): degree {} invalid for {} data points",
             degree, n
-        )));
+        ))
+        .with_i18n(
+            "msg.statistics.regression_degree_invalid",
+            vec![
+                ("degree".to_string(), degree.to_string()),
+                ("n".to_string(), n.to_string()),
+            ],
+        ));
     }
     if n != y.len() {
         return Err(CalcError::domain(
             "polynomial_regression(): x and y length mismatch".to_string(),
-        ));
+        )
+        .with_i18n("msg.statistics.regression_xy_length_mismatch", vec![]));
     }
     // 构造 Vandermonde 矩阵 X (n × (degree+1))
     let cols = degree + 1;
@@ -740,6 +748,7 @@ pub fn polynomial_regression(
         CalcError::domain(
             "polynomial_regression(): singular matrix (XᵀX not invertible)".to_string(),
         )
+        .with_i18n("msg.statistics.regression_singular_xtx", vec![])
     })?;
     let beta = xtx_inv * xty;
     let coeffs: Vec<f64> = beta.iter().copied().collect();
@@ -767,19 +776,22 @@ pub fn multiple_regression(x: &[Vec<f64>], y: &[f64]) -> Result<(Vec<f64>, f64),
     if x.is_empty() || y.is_empty() {
         return Err(CalcError::domain(
             "multiple_regression(): empty input".to_string(),
-        ));
+        )
+        .with_i18n("msg.statistics.regression_empty_input", vec![]));
     }
     let n = y.len();
     let p = x.len(); // 特征数
     if x.iter().any(|xi| xi.len() != n) {
         return Err(CalcError::domain(
             "multiple_regression(): feature vector length mismatch".to_string(),
-        ));
+        )
+        .with_i18n("msg.statistics.regression_feature_length_mismatch", vec![]));
     }
     if p >= n {
         return Err(CalcError::domain(
             "multiple_regression(): underdetermined system (features >= samples)".to_string(),
-        ));
+        )
+        .with_i18n("msg.statistics.regression_underdetermined", vec![]));
     }
     // 构造设计矩阵 X (n × (p+1))，第一列为 1（截距）
     let cols = p + 1;
@@ -791,9 +803,10 @@ pub fn multiple_regression(x: &[Vec<f64>], y: &[f64]) -> Result<(Vec<f64>, f64),
     // β = (XᵀX)⁻¹Xᵀy
     let xtx = x_mat.transpose() * &x_mat;
     let xty = x_mat.transpose() * &y_vec;
-    let xtx_inv = xtx
-        .try_inverse()
-        .ok_or_else(|| CalcError::domain("multiple_regression(): singular matrix".to_string()))?;
+    let xtx_inv = xtx.try_inverse().ok_or_else(|| {
+        CalcError::domain("multiple_regression(): singular matrix".to_string())
+            .with_i18n("msg.statistics.regression_singular", vec![])
+    })?;
     let beta = xtx_inv * xty;
     let coeffs: Vec<f64> = beta.iter().copied().collect();
     // R²

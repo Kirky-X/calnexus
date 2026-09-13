@@ -291,7 +291,11 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
                     result.exchange_risk.high,
                     result.exchange_risk.currency
                 ),
-                note: "基于±3%汇率波动估算，建议分批换汇降低风险".to_string(),
+                // 用户可见文案走 i18n 目录（server 为英文默认面；请求 DTO 暂无 lang 字段，
+                // 故用 I18n::default()，键预留未来语言协商）
+                note: crate::i18n::I18n::default()
+                    .t("msg.fx.budget_risk_note")
+                    .to_string(),
             },
             rate_date,
         }),

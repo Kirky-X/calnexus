@@ -28,7 +28,11 @@ pub fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError>
         return Err(CalcError::domain(format!(
             "convert_value requires finite value, got {}",
             value
-        )));
+        ))
+        .with_i18n(
+            "msg.unit.non_finite_value",
+            vec![("value".to_string(), value.to_string())],
+        ));
     }
     let from_is_temp = is_temperature_unit(from).unwrap_or(false);
     let to_is_temp = is_temperature_unit(to).unwrap_or(false);

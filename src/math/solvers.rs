@@ -37,7 +37,11 @@ where
             return Err(CalcError::domain(format!(
                 "newton_raphson: derivative is zero at x={}",
                 x
-            )));
+            ))
+            .with_i18n(
+                "msg.solvers.newton_derivative_zero",
+                vec![("x".to_string(), x.to_string())],
+            ));
         }
         x -= fx / dfx;
     }
@@ -48,7 +52,11 @@ where
     Err(CalcError::domain(format!(
         "newton_raphson: did not converge after {} iterations",
         max_iter
-    )))
+    ))
+    .with_i18n(
+        "msg.solvers.newton_not_converged",
+        vec![("max_iter".to_string(), max_iter.to_string())],
+    ))
 }
 
 /// 二分法求根。
@@ -66,7 +74,14 @@ where
         return Err(CalcError::domain(format!(
             "bisection: f({}) and f({}) have the same sign",
             lo, hi
-        )));
+        ))
+        .with_i18n(
+            "msg.solvers.bisection_same_sign",
+            vec![
+                ("a".to_string(), lo.to_string()),
+                ("b".to_string(), hi.to_string()),
+            ],
+        ));
     }
     for _ in 0..max_iter {
         let mid = (lo + hi) / 2.0;
@@ -99,7 +114,14 @@ where
         return Err(CalcError::domain(format!(
             "brent: f({}) and f({}) have the same sign",
             a, b
-        )));
+        ))
+        .with_i18n(
+            "msg.solvers.brent_same_sign",
+            vec![
+                ("a".to_string(), a.to_string()),
+                ("b".to_string(), b.to_string()),
+            ],
+        ));
     }
     if fa.abs() < fb.abs() {
         std::mem::swap(&mut a, &mut b);
@@ -165,7 +187,11 @@ where
     Err(CalcError::domain(format!(
         "brent: did not converge after {} iterations",
         max_iter
-    )))
+    ))
+    .with_i18n(
+        "msg.solvers.brent_not_converged",
+        vec![("max_iter".to_string(), max_iter.to_string())],
+    ))
 }
 
 #[cfg(test)]

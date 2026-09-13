@@ -60,20 +60,32 @@ impl CombinatoricsDomain {
                     return Err(CalcError::domain(format!(
                         "combinatorics domain requires integer, got {}",
                         n
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.combinatorics.requires_integer",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 Ok(EvalResult::Scalar(*n))
             }
             AstNode::BigNumber(s) => {
-                let b: BigInt = s
-                    .parse()
-                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+                let b: BigInt = s.parse().map_err(|_| {
+                    CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                        "msg.invalid_bignumber",
+                        vec![("value".to_string(), s.to_string())],
+                    )
+                })?;
                 Ok(EvalResult::BigInt(b))
             }
             AstNode::Variable(name) => ctx
                 .get_var(name)
                 .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+                .ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;
                 let b = self.eval_int(r, ctx)?;
@@ -87,6 +99,10 @@ impl CombinatoricsDomain {
                     UnaryOp::Abs => Ok(bigint_to_result(v.abs())),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in combinatorics domain".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.domain.factorial_not_supported",
+                        vec![("domain".to_string(), "combinatorics".to_string())],
                     )),
                 }
             }
@@ -104,25 +120,42 @@ impl CombinatoricsDomain {
                     return Err(CalcError::domain(format!(
                         "expected integer argument, got {}",
                         n
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.core.expected_integer",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 if *n > i64::MAX as f64 || *n < i64::MIN as f64 {
                     return Err(CalcError::overflow());
                 }
                 Ok(BigInt::from(*n as i64))
             }
-            AstNode::BigNumber(s) => s
-                .parse::<BigInt>()
-                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
+            AstNode::BigNumber(s) => s.parse::<BigInt>().map_err(|_| {
+                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                    "msg.invalid_bignumber",
+                    vec![("value".to_string(), s.to_string())],
+                )
+            }),
             AstNode::Variable(name) => {
-                let v = ctx
-                    .get_var(name)
-                    .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name)))?;
+                let v = ctx.get_var(name).ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                })?;
                 if v.fract() != 0.0 {
                     return Err(CalcError::domain(format!(
                         "variable {} is not an integer: {}",
                         name, v
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.core.variable_not_integer",
+                        vec![
+                            ("name".to_string(), name.to_string()),
+                            ("value".to_string(), v.to_string()),
+                        ],
+                    ));
                 }
                 if v > i64::MAX as f64 || v < i64::MIN as f64 {
                     return Err(CalcError::overflow());
@@ -141,6 +174,10 @@ impl CombinatoricsDomain {
                     UnaryOp::Abs => Ok(v.abs()),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in combinatorics domain".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.domain.factorial_not_supported",
+                        vec![("domain".to_string(), "combinatorics".to_string())],
                     )),
                 }
             }
@@ -151,7 +188,11 @@ impl CombinatoricsDomain {
             | AstNode::Str(_) => Err(CalcError::domain(format!(
                 "expected integer expression, got: {:?}",
                 ast
-            ))),
+            ))
+            .with_i18n(
+                "msg.core.expected_integer_expression",
+                vec![("got".to_string(), format!("{:?}", ast))],
+            )),
         }
     }
 
@@ -171,7 +212,8 @@ impl CombinatoricsDomain {
                 if b.is_negative() {
                     return Err(CalcError::domain(
                         "negative exponent not supported for integers".to_string(),
-                    ));
+                    )
+                    .with_i18n("msg.core.negative_exponent", vec![]));
                 }
                 // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
                 // 安全审查 CRITICAL 修复：number_theory/combinatorics 域原无防护，
@@ -182,7 +224,14 @@ impl CombinatoricsDomain {
                     return Err(CalcError::domain(format!(
                         "power exponent must not exceed {} (got {})",
                         MAX_POW_EXPONENT, exp_u64
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.core.power_exponent_exceeds",
+                        vec![
+                            ("max".to_string(), MAX_POW_EXPONENT.to_string()),
+                            ("actual".to_string(), exp_u64.to_string()),
+                        ],
+                    ));
                 }
                 // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
                 // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
@@ -244,7 +293,14 @@ impl CombinatoricsDomain {
                 "{}() requires exactly 2 arguments, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.combinatorics.arg_count_2",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let n = self.eval_int(&args[0], ctx)?;
         let k = self.eval_int(&args[1], ctx)?;
@@ -252,7 +308,11 @@ impl CombinatoricsDomain {
             return Err(CalcError::domain(format!(
                 "{}() requires non-negative arguments",
                 name
-            )));
+            ))
+            .with_i18n(
+                "msg.combinatorics.requires_non_negative",
+                vec![("name".to_string(), name.to_string())],
+            ));
         }
         Ok((n, k))
     }
@@ -271,14 +331,25 @@ impl CombinatoricsDomain {
                 "{}() requires exactly 1 argument, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.combinatorics.arg_count_1",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let n = self.eval_int(&args[0], ctx)?;
         if n.is_negative() {
             return Err(CalcError::domain(format!(
                 "{}() requires non-negative argument",
                 name
-            )));
+            ))
+            .with_i18n(
+                "msg.combinatorics.requires_non_negative_arg",
+                vec![("name".to_string(), name.to_string())],
+            ));
         }
         Ok(n)
     }

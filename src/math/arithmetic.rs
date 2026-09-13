@@ -75,6 +75,7 @@ pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
             a, b
         ))
         .with_hint("use complex numbers for negative base with fractional exponent")
+        .with_hint_i18n("hint.complex_for_neg_base", vec![])
         .with_i18n(
             "msg.arithmetic.neg_base_frac_exp",
             vec![

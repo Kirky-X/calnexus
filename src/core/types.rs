@@ -488,6 +488,11 @@ pub struct CalcError {
     pub message: String,
     pub span: Option<Span>,
     pub hint: Option<String>,
+    /// hint 的国际化消息键 + 参数。存在时 `friendly()`/`to_explain()` 用
+    /// `I18n::tf(hint_i18n_key, hint_i18n_args)` 替换原始 `hint` 文本（与 `message`/`i18n_key`
+    /// 的双重模式一致：`to_json()` 始终输出原始 `hint`，机器契约不变）。
+    pub hint_i18n_key: Option<&'static str>,
+    pub hint_i18n_args: Vec<(String, String)>,
     /// 底层错误链（v015 R-err-001）：保留 ureq/io/serde_json 等原始错误摘要，
     /// Display 呈现为 "{message}: {source}"；Clone 随值复制。
     /// （字段名避开 `source`：thiserror derive 会将其绑定为 Error::source trait 方法。）
@@ -528,6 +533,8 @@ impl CalcError {
             message: message.into(),
             span: None,
             hint: None,
+            hint_i18n_key: None,
+            hint_i18n_args: Vec::new(),
             source_detail: None,
             i18n_key: None,
             i18n_args: Vec::new(),
@@ -551,6 +558,33 @@ impl CalcError {
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
         self
+    }
+
+    /// 附加 hint 的国际化消息键 + 参数（链式）。
+    ///
+    /// 设置后，`friendly()`/`to_explain()` 优先用 `I18n::tf(hint_i18n_key, hint_i18n_args)`
+    /// 渲染 hint；`to_json()` 与 `Display` 不受影响（机器契约）。与 `with_hint` 组合使用：
+    /// `with_hint` 提供英文原文（机器可读），`with_hint_i18n` 提供目录键（人可读本地化）。
+    pub fn with_hint_i18n(mut self, key: &'static str, args: Vec<(String, String)>) -> Self {
+        self.hint_i18n_key = Some(key);
+        self.hint_i18n_args = args;
+        self
+    }
+
+    /// 解析 hint 的显示文本：优先国际化键，回退原始英文文本。
+    fn hint_display(&self, i18n: &crate::i18n::I18n) -> Option<String> {
+        let raw = self.hint.as_ref()?;
+        Some(match self.hint_i18n_key {
+            Some(key) => {
+                let args_ref: Vec<(&str, &str)> = self
+                    .hint_i18n_args
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                i18n.tf(key, &args_ref)
+            }
+            None => raw.clone(),
+        })
     }
 
     /// 附加国际化消息键 + 参数（链式）。
@@ -593,11 +627,16 @@ impl CalcError {
                 "simplify nested expressions (max {})",
                 MAX_AST_DEPTH
             ))
+            .with_hint_i18n(
+                "hint.depth_exceeded",
+                vec![("max".to_string(), MAX_AST_DEPTH.to_string())],
+            )
             .with_i18n("detail.depth_exceeded", vec![])
     }
     pub fn division_by_zero() -> Self {
         Self::new(ErrorKind::DivisionByZero, "division by zero")
             .with_hint("check divisor before division")
+            .with_hint_i18n("hint.division_by_zero", vec![])
             .with_i18n("detail.division_by_zero", vec![])
     }
     /// 上游依赖不可用错误（v015 T030，R-srv-001）。
@@ -612,6 +651,10 @@ impl CalcError {
             format!("undefined symbol: {}", name),
         )
         .with_hint(format!("try defining it first: :let {} = <value>", name))
+        .with_hint_i18n(
+            "hint.undefined_symbol",
+            vec![("name".to_string(), name.to_string())],
+        )
         .with_i18n(
             "msg.undefined_symbol",
             vec![("name".to_string(), name.to_string())],
@@ -620,6 +663,7 @@ impl CalcError {
     pub fn timeout() -> Self {
         Self::new(ErrorKind::Timeout, "evaluation timed out")
             .with_hint("increase --timeout or simplify expression")
+            .with_hint_i18n("hint.timeout", vec![])
             .with_i18n("detail.timeout", vec![])
     }
     pub fn usage(msg: impl Into<String>) -> Self {
@@ -653,7 +697,7 @@ impl CalcError {
             self.message.clone()
         };
         s.push_str(&format!(": {}", detail));
-        if let Some(hint) = &self.hint {
+        if let Some(hint) = self.hint_display(i18n) {
             s.push_str(&format!("\n  {}: {}", i18n.t("label.hint"), hint));
         }
         s
@@ -698,7 +742,7 @@ impl CalcError {
             i18n.t("label.exit_code"),
             self.kind.exit_code()
         ));
-        if let Some(hint) = &self.hint {
+        if let Some(hint) = self.hint_display(i18n) {
             s.push_str(&format!("\n  {}: {}", i18n.t("label.suggestion"), hint));
         }
         s

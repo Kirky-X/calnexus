@@ -60,7 +60,8 @@ impl<'a> SymbolicMathImpl<'a> {
         if _center != 0.0 {
             return Err(CalcError::domain(
                 "taylor_expand with non-zero center not yet available via direct API".to_string(),
-            ));
+            )
+            .with_i18n("msg.symbolic.taylor_center_unsupported", vec![]));
         }
         math::symbolic::taylor(&sym, var, order as u32)
     }
@@ -188,7 +189,8 @@ impl<'a> SymbolicMathImpl<'a> {
                 if opts.len() < 2 {
                     return Err(CalcError::domain(
                         "bisection requires options [a, b]".to_string(),
-                    ));
+                    )
+                    .with_i18n("msg.symbolic.bisection_requires_options", vec![]));
                 }
                 let root = math::solvers::bisection(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
@@ -197,7 +199,8 @@ impl<'a> SymbolicMathImpl<'a> {
                 if opts.len() < 2 {
                     return Err(CalcError::domain(
                         "brent requires options [a, b]".to_string(),
-                    ));
+                    )
+                    .with_i18n("msg.symbolic.brent_requires_options", vec![]));
                 }
                 let root = math::solvers::brent(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
@@ -205,7 +208,11 @@ impl<'a> SymbolicMathImpl<'a> {
             _ => Err(CalcError::domain(format!(
                 "unknown solver method: '{}'. Available: newton, bisection, brent",
                 method
-            ))),
+            ))
+            .with_i18n(
+                "msg.symbolic.unknown_solver_method",
+                vec![("method".to_string(), method.to_string())],
+            )),
         }
     }
 }

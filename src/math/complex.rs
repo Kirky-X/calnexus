@@ -59,7 +59,8 @@ pub fn arg(c: Complex64) -> Result<f64, CalcError> {
     if c.re == 0.0 && c.im == 0.0 {
         return Err(CalcError::domain(
             "arg(0+0i) is undefined (atan2(0,0) is indeterminate)".to_string(),
-        ));
+        )
+        .with_i18n("msg.complex.arg_zero_undefined", vec![]));
     }
     Ok(c.arg())
 }

@@ -93,15 +93,18 @@ impl StatisticsDomain {
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?.as_scalar().ok_or_else(|| {
                     CalcError::domain("binary op requires scalar operands".to_string())
+                        .with_i18n("msg.statistics.requires_scalar_operands", vec![])
                 })?;
                 let b = self.eval_node(r, ctx)?.as_scalar().ok_or_else(|| {
                     CalcError::domain("binary op requires scalar operands".to_string())
+                        .with_i18n("msg.statistics.requires_scalar_operands", vec![])
                 })?;
                 self.eval_binary(*op, a, b).map(EvalResult::Scalar)
             }
             AstNode::UnaryOp(op, e) => {
                 let v = self.eval_node(e, ctx)?.as_scalar().ok_or_else(|| {
                     CalcError::domain("unary op requires scalar operand".to_string())
+                        .with_i18n("msg.statistics.requires_scalar_operand", vec![])
                 })?;
                 match op {
                     UnaryOp::Neg => Ok(EvalResult::Scalar(-v)),
@@ -216,7 +219,11 @@ impl StatisticsDomain {
         Err(CalcError::domain(format!(
             "unhandled statistics function: {}",
             name
-        )))
+        ))
+        .with_i18n(
+            "msg.unknown_function",
+            vec![("name".to_string(), name.to_string())],
+        ))
     }
 
     /// 基础统计函数求值。
@@ -234,16 +241,21 @@ impl StatisticsDomain {
                 return Err(CalcError::domain(format!(
                     "unknown basic stat function: {}",
                     name
-                )));
+                ))
+                .with_i18n(
+                    "msg.unknown_function",
+                    vec![("name".to_string(), name.to_string())],
+                ));
             }
         })
     }
 
     /// 求值标量参数（从 AST 参数列表提取第 idx 个标量）。
     fn eval_scalar_arg(&self, arg: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
-        self.eval_node(arg, ctx)?
-            .as_scalar()
-            .ok_or_else(|| CalcError::domain("expected scalar argument".to_string()))
+        self.eval_node(arg, ctx)?.as_scalar().ok_or_else(|| {
+            CalcError::domain("expected scalar argument".to_string())
+                .with_i18n("msg.statistics.expected_scalar_argument", vec![])
+        })
     }
 
     /// 尝试求值分布函数。返回 Ok(None) 表示不是分布函数。
@@ -357,11 +369,22 @@ impl StatisticsDomain {
                 if data.is_empty() {
                     return Err(CalcError::domain(
                         "t_test_one requires non-empty data".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.statistics.requires_non_empty_data",
+                        vec![("name".to_string(), "t_test_one".to_string())],
                     ));
                 }
                 let map = math_stats::t_test_one(&data, mu);
                 EvalResult::Json(serde_json::to_value(&map).map_err(|e| {
                     CalcError::domain(format!("failed to serialize t_test_one result: {e}"))
+                        .with_i18n(
+                            "msg.core.serialize_failed",
+                            vec![
+                                ("name".to_string(), "t_test_one".to_string()),
+                                ("error".to_string(), e.to_string()),
+                            ],
+                        )
                 })?)
             }
             "t_test_two" => {
@@ -371,11 +394,22 @@ impl StatisticsDomain {
                 if a.is_empty() || b.is_empty() {
                     return Err(CalcError::domain(
                         "t_test_two requires non-empty data".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.statistics.requires_non_empty_data",
+                        vec![("name".to_string(), "t_test_two".to_string())],
                     ));
                 }
                 let map = math_stats::t_test_two(&a, &b);
                 EvalResult::Json(serde_json::to_value(&map).map_err(|e| {
                     CalcError::domain(format!("failed to serialize t_test_two result: {e}"))
+                        .with_i18n(
+                            "msg.core.serialize_failed",
+                            vec![
+                                ("name".to_string(), "t_test_two".to_string()),
+                                ("error".to_string(), e.to_string()),
+                            ],
+                        )
                 })?)
             }
             "chi2_test" => {
@@ -385,6 +419,10 @@ impl StatisticsDomain {
                 if observed.is_empty() || expected.is_empty() {
                     return Err(CalcError::domain(
                         "chi2_test requires non-empty data".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.statistics.requires_non_empty_data",
+                        vec![("name".to_string(), "chi2_test".to_string())],
                     ));
                 }
                 if observed.len() != expected.len() {
@@ -392,11 +430,26 @@ impl StatisticsDomain {
                         "chi2_test: observed ({}) and expected ({}) must have same length",
                         observed.len(),
                         expected.len()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.statistics.list_length_mismatch",
+                        vec![
+                            ("name".to_string(), "chi2_test".to_string()),
+                            ("len1".to_string(), observed.len().to_string()),
+                            ("len2".to_string(), expected.len().to_string()),
+                        ],
+                    ));
                 }
                 let map = math_stats::chi2_test(&observed, &expected);
                 EvalResult::Json(serde_json::to_value(&map).map_err(|e| {
                     CalcError::domain(format!("failed to serialize chi2_test result: {e}"))
+                        .with_i18n(
+                            "msg.core.serialize_failed",
+                            vec![
+                                ("name".to_string(), "chi2_test".to_string()),
+                                ("error".to_string(), e.to_string()),
+                            ],
+                        )
                 })?)
             }
             _ => return Ok(None),
@@ -421,11 +474,26 @@ impl StatisticsDomain {
                         "pearson: x ({}) and y ({}) must have same length",
                         x.len(),
                         y.len()
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.statistics.list_length_mismatch",
+                        vec![
+                            ("name".to_string(), "pearson".to_string()),
+                            ("len1".to_string(), x.len().to_string()),
+                            ("len2".to_string(), y.len().to_string()),
+                        ],
+                    ));
                 }
                 if x.len() < 2 {
                     return Err(CalcError::domain(
                         "pearson requires at least 2 data points".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.statistics.min_data_points",
+                        vec![
+                            ("name".to_string(), "pearson".to_string()),
+                            ("min".to_string(), "2".to_string()),
+                        ],
                     ));
                 }
                 math_stats::pearson(&x, &y)
