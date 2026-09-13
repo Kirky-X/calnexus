@@ -1278,11 +1278,15 @@ fn test_lang_en_parse_error() {
 #[test]
 fn test_json_error_output_exit_1() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    cmd.args(["--json", "2++3"])
-        .assert()
-        .failure()
-        .code(1)
-        .stdout(predicates::str::starts_with(r#"{"error":{"kind":"#));
+    // v015 T019：JSON 键序由 serde_json 决定（字典序），断言改为语义校验（解析后查字段）
+    let output = cmd
+        .args(["--json", "2++3"])
+        .output()
+        .expect("failed to execute");
+    assert_eq!(output.status.code(), Some(1));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("错误输出必须是合法 JSON");
+    assert_eq!(json["error"]["kind"], "Parse");
+    assert_eq!(json["error"]["exit_code"], 1);
 }
 
 /// `--explain --json` 互斥 → clap 报错，退出码 2

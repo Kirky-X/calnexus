@@ -125,7 +125,7 @@ impl<'a> ScalarMathImpl<'a> {
     // ── 精度 ──
 
     pub fn precision_eval(&self, digits: usize, expr: &str) -> Result<EvalResult, CalcError> {
-        let ctx = self.cn.ctx.read().unwrap();
+        let ctx = self.cn.ctx.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let cache = crate::core::CacheManager::new();
         let (result, _, _, _) = crate::core::evaluate(expr, &ctx, Some(digits), &cache)?;
         Ok(result)

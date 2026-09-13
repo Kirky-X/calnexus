@@ -484,6 +484,10 @@ pub struct CalcError {
     pub message: String,
     pub span: Option<Span>,
     pub hint: Option<String>,
+    /// 底层错误链（v015 R-err-001）：保留 ureq/io/serde_json 等原始错误摘要，
+    /// Display 呈现为 "{message}: {source}"；Clone 随值复制。
+    /// （字段名避开 `source`：thiserror derive 会将其绑定为 Error::source trait 方法。）
+    pub source_detail: Option<String>,
     pub i18n_key: Option<&'static str>,
     pub i18n_args: Vec<(String, String)>,
 }
@@ -501,7 +505,12 @@ impl fmt::Display for CalcError {
             ErrorKind::UndefinedSymbol => write!(f, "{}", self.message),
             ErrorKind::Timeout => write!(f, "{}", self.message),
             ErrorKind::Usage => write!(f, "{}", self.message),
+        }?;
+        // 错误链（v015 R-err-001）：有 source 时追加 ": {source}" 保留底层错误摘要
+        if let Some(src) = &self.source_detail {
+            write!(f, ": {}", src)?;
         }
+        Ok(())
     }
 }
 
@@ -512,9 +521,21 @@ impl CalcError {
             message: message.into(),
             span: None,
             hint: None,
+            source_detail: None,
             i18n_key: None,
             i18n_args: Vec::new(),
         }
+    }
+
+    /// 附加底层错误摘要（v015 R-err-001 错误链）。
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source_detail = Some(source.into());
+        self
+    }
+
+    /// 底层错误摘要（错误链访问器）。
+    pub fn source_text(&self) -> Option<&str> {
+        self.source_detail.as_deref()
     }
     pub fn with_span(mut self, span: Span) -> Self {
         self.span = Some(span);
@@ -624,18 +645,27 @@ impl CalcError {
 
     /// JSON 机器可读（--json）。手动构造避免 serde_json 运行时依赖。
     pub fn to_json(&self) -> String {
-        // 条件拼接 span/hint，避免 None 时产生无效 JSON
-        let mut inner = String::new();
-        inner.push_str(&format!("{{\"kind\":\"{:?}\",\"message\":\"{}\"",
-            self.kind, escape_json_string(&self.message)));
+        // serde_json 统一构造（v015 T019）：控制字符/引号/反斜杠由 serde_json 正确转义，
+        // 替代手写 escape_json_string（三套拼接实现并存的坏味道退役）。
+        let mut err = serde_json::json!({
+            "kind": format!("{:?}", self.kind),
+            "message": self.message,
+            "exit_code": self.kind.exit_code(),
+        });
+        let obj = err.as_object_mut().expect("json! literal is an object");
         if let Some(s) = &self.span {
-            inner.push_str(&format!(r#","span":{{"start":{},"end":{}}}"#, s.start, s.end));
+            obj.insert(
+                "span".to_string(),
+                serde_json::json!({ "start": s.start, "end": s.end }),
+            );
         }
         if let Some(h) = &self.hint {
-            inner.push_str(&format!(r#","hint":"{}""#, escape_json_string(h)));
+            obj.insert("hint".to_string(), serde_json::Value::String(h.clone()));
         }
-        inner.push_str(&format!(r#","exit_code":{}}}"#, self.kind.exit_code()));
-        format!("{{\"error\":{}}}", inner)
+        if let Some(src) = &self.source_detail {
+            obj.insert("source".to_string(), serde_json::Value::String(src.clone()));
+        }
+        format!("{{\"error\":{}}}", err)
     }
 
     /// 教育模式（--explain）。design.md §5.5。
@@ -656,22 +686,6 @@ impl CalcError {
         }
         s
     }
-}
-
-pub fn escape_json_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str(r#"\""#),
-            '\\' => out.push_str(r"\\"),
-            '\n' => out.push_str(r"\n"),
-            '\r' => out.push_str(r"\r"),
-            '\t' => out.push_str(r"\t"),
-            c if c.is_control() => out.push_str(&format!(r"\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 /// AST 规范形式（S-表达式字符串）。
@@ -1086,7 +1100,7 @@ mod tests {
         let json = e.to_json();
         assert!(json.contains(r#""kind":"Domain""#));
         assert!(json.contains(r#""message":"asin(2)""#));
-        assert!(json.contains(r#""span":{"start":0,"end":6}"#));
+        assert!(json.contains(r#""span":{"end":6,"start":0}"#)); // serde_json 按键名字典序输出
         assert!(json.contains(r#""hint":"check domain""#));
         assert!(json.contains(r#""exit_code":1"#));
     }

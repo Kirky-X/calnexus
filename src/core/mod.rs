@@ -26,6 +26,3 @@ pub use types::{
     check_pow_output_size, AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext,
     EvalResult, Span, UnaryOp, MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION,
 };
-// escape_json_string 仅 batch.rs（cli feature）使用，条件导出避免非 cli 下的 unused import
-#[cfg(feature = "cli")]
-pub use types::escape_json_string;

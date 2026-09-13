@@ -118,15 +118,23 @@ impl RateProvider for FrankfurterProvider {
             }
         }
 
-        // L2: 文件缓存（TTL 内有效）
-        let cached = self.cache_path.as_ref().and_then(|p| read_cache_file(p));
-        if let Some(ref c) = cached {
-            if !is_expired(c.fetched_at) {
-                let table: RateTable = c.clone().into();
-                *self.in_memory.lock().unwrap() = Some(table.clone());
-                return Ok(table);
+        // L2: 文件缓存（TTL 内有效；损坏自愈为 miss）
+        let cache_read = self
+            .cache_path
+            .as_ref()
+            .map(|p| read_cache_file(p))
+            .unwrap_or(CacheRead::Missing);
+        let cached = match &cache_read {
+            CacheRead::Loaded(c) => {
+                if !is_expired(c.fetched_at) {
+                    let table: RateTable = c.clone().into();
+                    *self.in_memory.lock().unwrap() = Some(table.clone());
+                    return Ok(table);
+                }
+                Some(c.clone())
             }
-        }
+            _ => None,
+        };
 
         // L3: 网络抓取（不持锁，避免阻塞其他线程）
         match fetch_from_network() {
@@ -139,9 +147,12 @@ impl RateProvider for FrankfurterProvider {
                 *self.in_memory.lock().unwrap() = Some(table.clone());
                 Ok(table)
             }
-            Err(_net_err) => {
-                // Stale 策略：网络失败时使用过期缓存（需 ALLOW_STALE=1）
-                apply_stale_policy(cached.as_ref(), read_allow_stale())
+            Err(net_err) => {
+                // Stale 策略：网络失败时使用过期缓存（需 ALLOW_STALE=1）；
+                // 缓存文件损坏时错误分类为 cache_unreadable（v015 T018 三分类）
+                let cache_corrupted = matches!(cache_read, CacheRead::Corrupted);
+                apply_stale_policy(cached.as_ref(), read_allow_stale(), cache_corrupted)
+                    .map_err(|e| e.with_source(net_err.message))
             }
         }
     }
@@ -204,6 +215,7 @@ fn read_allow_stale() -> bool {
 fn apply_stale_policy(
     cached: Option<&CachedRateTable>,
     allow_stale: bool,
+    cache_corrupted: bool,
 ) -> Result<RateTable, CalcError> {
     match cached {
         Some(c) if allow_stale => Ok(c.clone().into()),
@@ -212,17 +224,43 @@ fn apply_stale_policy(
             c.date
         ))
         .with_i18n("msg.fx.network_unreachable", vec![])),
-        None => Err(CalcError::domain(
-            "FX network unreachable, no local cache available".to_string(),
-        )
-        .with_i18n("msg.fx.network_unreachable", vec![])),
+        None => {
+            if cache_corrupted {
+                // 三分类之二：缓存文件损坏（v015 T018 R-err-002）
+                Err(CalcError::domain(
+                    "FX rate cache file is corrupted and network fetch failed".to_string(),
+                )
+                .with_i18n("msg.fx.cache_unreadable", vec![]))
+            } else {
+                // 三分类之一：网络不可达且无本地缓存
+                Err(CalcError::domain(
+                    "FX network unreachable, no local cache available".to_string(),
+                )
+                .with_i18n("msg.fx.network_unreachable", vec![]))
+            }
+        }
     }
 }
 
-/// 读取缓存文件并反序列化。文件不存在或解析失败时返回 None。
-fn read_cache_file(path: &Path) -> Option<CachedRateTable> {
-    let content = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
+/// 缓存文件读取结果（v015 T018：区分缺失与损坏，支撑三分类错误）。
+enum CacheRead {
+    /// 文件不存在（正常首次运行）。
+    Missing,
+    /// 文件存在但读取/解析失败（损坏，可自愈重拉）。
+    Corrupted,
+    /// 成功读取。
+    Loaded(CachedRateTable),
+}
+
+/// 读取缓存文件并反序列化。文件不存在返回 Missing，损坏返回 Corrupted（自愈为 miss）。
+fn read_cache_file(path: &Path) -> CacheRead {
+    match std::fs::read_to_string(path) {
+        Err(_) => CacheRead::Missing,
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(table) => CacheRead::Loaded(table),
+            Err(_) => CacheRead::Corrupted,
+        },
+    }
 }
 
 /// 写入缓存文件（序列化 + 创建父目录）。失败时返回 io::Error（调用方决定是否忽略）。
@@ -253,18 +291,23 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
         .build()
         .call()
         .map_err(|e| {
-            CalcError::domain(format!("FX network request failed: {}", e))
+            CalcError::domain("FX network request failed")
+                .with_source(e.to_string())
                 .with_i18n("msg.fx.network_unreachable", vec![])
         })?;
 
     let body = response.into_body().read_to_string().map_err(|e| {
-        CalcError::domain(format!("FX response read failed: {}", e))
-            .with_i18n("msg.fx.network_unreachable", vec![])
+        // 三分类之二：响应读取失败 → invalid_response（v015 T018 R-err-002）
+        CalcError::domain("FX response read failed")
+            .with_source(e.to_string())
+            .with_i18n("msg.fx.invalid_response", vec![])
     })?;
 
     let parsed: FrankfurterResponse = serde_json::from_str(&body).map_err(|e| {
-        CalcError::domain(format!("FX response parse failed: {}", e))
-            .with_i18n("msg.fx.network_unreachable", vec![])
+        // 三分类之二：响应 JSON 解析失败 → invalid_response（v015 T018 R-err-002）
+        CalcError::domain("FX response parse failed")
+            .with_source(e.to_string())
+            .with_i18n("msg.fx.invalid_response", vec![])
     })?;
 
     Ok(RateTable {

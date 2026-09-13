@@ -46,19 +46,19 @@ impl CalNexus {
 
     /// 设置变量。
     pub fn set_var(&self, name: &str, value: f64) {
-        let mut ctx = self.ctx.write().unwrap();
+        let mut ctx = self.ctx.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         *ctx = ctx.clone().with_var(name, value);
     }
 
     /// 获取变量。
     pub fn get_var(&self, name: &str) -> Option<f64> {
-        let ctx = self.ctx.read().unwrap();
+        let ctx = self.ctx.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         ctx.get_var(name)
     }
 
     /// 清空所有变量。
     pub fn clear_vars(&self) {
-        let mut ctx = self.ctx.write().unwrap();
+        let mut ctx = self.ctx.write().unwrap_or_else(std::sync::PoisonError::into_inner);
         *ctx = EvalContext::new();
     }
 

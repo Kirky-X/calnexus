@@ -187,7 +187,7 @@ impl<'a> SymbolicMathImpl<'a> {
         method: &str,
         options: Option<&[f64]>,
     ) -> Result<EvalResult, CalcError> {
-        let ctx = self.cn.ctx.read().unwrap();
+        let ctx = self.cn.ctx.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let cache = crate::core::CacheManager::new();
         let expr_owned = expr.to_string();
         let var_owned = var.to_string();

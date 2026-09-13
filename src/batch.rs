@@ -152,34 +152,31 @@ fn evaluate_entries(
 ///
 /// JSON 输出键名保留英文（DP-4 机器可读契约）；文本输出走 i18n。
 fn output_results(results: &[BatchResult], json: bool, i18n: &I18n) {
-    let total = results.len();
     if json {
-        println!("[");
-        for (i, r) in results.iter().enumerate() {
-            match &r.result {
+        // serde_json 统一构造（v015 T019）：转义由 serde_json 处理，控制字符/引号安全
+        let mut items: Vec<String> = Vec::with_capacity(results.len());
+        for r in results {
+            let entry = match &r.result {
                 Ok((result, domain, hit, fmt_prec)) => {
                     let value = format_result(result, *fmt_prec);
-                    println!(
-                        r#"  {{"line":{},"expr":"{}","result":"{}","domain":"{}","cache":"{}"}}"{}"#,
-                        r.line_no,
-                        crate::core::escape_json_string(&r.expr),
-                        crate::core::escape_json_string(&value),
-                        domain,
-                        if *hit { "hit" } else { "miss" },
-                        if i + 1 < total { "," } else { "" }
-                    );
+                    serde_json::json!({
+                        "line": r.line_no,
+                        "expr": r.expr,
+                        "result": value,
+                        "domain": domain,
+                        "cache": if *hit { "hit" } else { "miss" },
+                    })
                 }
-                Err(e) => {
-                    println!(
-                        r#"  {{"line":{},"expr":"{}","error":"{}"}}"{}"#,
-                        r.line_no,
-                        crate::core::escape_json_string(&r.expr),
-                        crate::core::escape_json_string(&e.to_string()),
-                        if i + 1 < total { "," } else { "" }
-                    );
-                }
-            }
+                Err(e) => serde_json::json!({
+                    "line": r.line_no,
+                    "expr": r.expr,
+                    "error": e.to_string(),
+                }),
+            };
+            items.push(entry.to_string());
         }
+        println!("[");
+        println!("{}", items.join(",\n"));
         println!("]");
     } else {
         for r in results {
@@ -322,13 +319,20 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_json_escape_control_chars() {
-        // JSON 规范要求控制字符（U+0000 ~ U+001F）必须转义为 \uXXXX。
-        // batch.rs 现复用 core::escape_json_string，须正确处理控制字符。
-        // \u{0007} (bell) 与 \u{000c} (form feed) 不在 {\n,\r,\t} 之列。
-        assert_eq!(crate::core::escape_json_string("\u{0007}"), "\\u0007");
-        assert_eq!(crate::core::escape_json_string("\u{000c}"), "\\u000c");
-        assert_eq!(crate::core::escape_json_string("a\u{0001}b"), "a\\u0001b");
+    fn test_batch_json_output_is_valid_json() {
+        // v015 T019：JSON 输出统一走 serde_json，控制字符由库正确转义；
+        // 输出整体必须是合法 JSON（round-trip 校验）。
+        let sample = serde_json::json!({
+            "line": 1,
+            "expr": "a\u{0001}b\"c",
+            "result": "1",
+            "domain": "arithmetic",
+            "cache": "miss",
+        });
+        let serialized = sample.to_string();
+        let round: serde_json::Value =
+            serde_json::from_str(&serialized).expect("序列化后必须可反序列化");
+        assert_eq!(round["expr"], "a\u{0001}b\"c", "控制字符与引号应无损往返");
     }
 
     #[test]

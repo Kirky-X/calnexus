@@ -341,14 +341,74 @@ fn format_json_output(
 ///
 /// 退出码由 `ErrorKind::exit_code()` 决定（0/1/2/3）。
 fn handle_error(e: &CalcError, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+    // caret 渲染需要原始表达式：位置参数场景直接可得（stdin 场景为 None，无 caret）
+    handle_error_with_expr(e, cli.expression.as_deref(), cli, i18n)
+}
+
+/// 错误渲染（v015 T021）：
+/// - `--json`：结构化输出（无 caret）
+/// - `--explain`：教育模式
+/// - 文本模式：friendly + （有 span 时）表达式行 + `^` 位置指示
+/// - `undefined_symbol` 的 hint 按上下文分发：CLI 给 `--var`，REPL 给 `:let`
+fn handle_error_with_expr(
+    e: &CalcError,
+    expr: Option<&str>,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+) -> i32 {
     if cli.json {
         // to_json() 已返回 {"error":{...}} 完整结构，无需再包装
         println!("{}", e.to_json());
-    } else if cli.explain {
+        return e.kind.exit_code();
+    }
+
+    // undefined_symbol hint 上下文化：CLI 语境给 --var（REPL 语境保留 :let）
+    let mut contextual = e.clone();
+    let is_undefined_symbol = contextual.kind == CalcError::undefined_symbol("").kind
+        || contextual.i18n_key == Some("msg.unbound_variable");
+    if is_undefined_symbol {
+        // 变量名优先取 i18n 参数，其次兼容两种 message 前缀
+        // （undefined_symbol() 前缀 / mathexpr "Unbound variable: x"）
+        let name = contextual
+            .i18n_args
+            .iter()
+            .find(|(k, _)| k == "name")
+            .map(|(_, v)| v.clone())
+            .or_else(|| {
+                contextual
+                    .message
+                    .strip_prefix("undefined symbol: ")
+                    .or_else(|| contextual.message.strip_prefix("Unbound variable: "))
+                    .map(str::to_string)
+            });
+        if let Some(name) = name {
+            contextual.hint = Some(format!("define it via --var {name}=<value>"));
+        }
+    }
+    let e = &contextual;
+
+    if cli.explain {
         eprintln!("{}", e.to_explain(i18n));
     } else {
         eprintln!("{}: {}", i18n.t("cli.error_prefix"), e.friendly(i18n));
     }
+
+    // caret 位置指示（仅文本模式；span 指向原始输入）
+    if let (Some(expr_text), Some(span)) = (expr, &e.span) {
+        let chars: Vec<char> = expr_text.chars().collect();
+        let start = span.start.min(chars.len());
+        let end = span.end.min(chars.len()).max(start).max(start + 1);
+        eprintln!("  | {}", expr_text);
+        eprint!("  | ");
+        for _ in 0..start {
+            eprint!(" ");
+        }
+        for _ in start..end {
+            eprint!("^");
+        }
+        eprintln!();
+    }
+
     e.kind.exit_code()
 }
 
@@ -580,7 +640,9 @@ fn format_complex_list(c: &[(f64, f64)]) -> String {
 }
 
 #[cfg(test)]
-
+mod tests {
+    use super::*;
+    use crate::{AstNode, BinaryOp};
     /// v015 T016（R-cfg-001 验收）：locales 文案中引用的每个 `--flag` 必须真实存在于
     /// clap 定义——防止错误提示再次指向不存在的旗标（`--timeout` 事故回归门）。
     #[test]
@@ -631,9 +693,7 @@ fn format_complex_list(c: &[(f64, f64)]) -> String {
         }
     }
 
-mod tests {
-    use super::*;
-    use crate::{AstNode, BinaryOp};
+
 
     // ===== v1.1 新增 CLI 标志测试 =====
 

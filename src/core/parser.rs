@@ -153,11 +153,14 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
         // 用户看到的是原始输入，错误位置应帮助定位原始输入中的问题；
         // after_implicit 经过隐式乘法等预处理，长度可能与原始输入不同（如 2x → 2*x）。
         // Span 用字符偏移（design.md D1）。
-        CalcError::parse(format!("{}", e))
+        // v015 T020（R-err-003）：Display 文案经清洗，不泄漏 winnow 内部 Debug 结构。
+        let friendly = friendly_mathexpr_error(&e.to_string());
+        CalcError::parse(friendly.clone())
             .with_span(Span::new(0, trimmed.chars().count()))
             .with_i18n(
                 "msg.core.parse_mathexpr_error",
-                vec![("error".to_string(), e.to_string())],
+                // i18n 模板参数同样传清洗后的文案（friendly() 走模板渲染路径）
+                vec![("error".to_string(), friendly)],
             )
     })?;
 
@@ -211,6 +214,34 @@ fn preprocess_complex(input: &str) -> Result<String, CalcError> {
         .to_string();
 
     Ok(result)
+}
+
+/// 将 mathexpr 错误的 Display 文案清洗为用户友好形式（v015 T020，R-err-003）。
+///
+/// mathexpr 0.1 对 winnow 错误使用 `format!("{:?}", e)` 构造消息，会泄漏内部
+/// Debug 结构（如 `Error(Error { input: "(2+3", code: Tag })`）。此处识别该
+/// 形态并提取剩余输入片段，产出 "unexpected input near '...'" 式文案。
+/// 上游修复（mathexpr 0.1.x 直接产出结构化错误）后此函数可退役。
+fn friendly_mathexpr_error(display: &str) -> String {
+    if let Some(idx) = display.find("input: \"") {
+        let rest = &display[idx + "input: \"".len()..];
+        let end = rest
+            .find("\", code")
+            .or_else(|| rest.rfind('"'))
+            .unwrap_or(rest.len());
+        let raw = &rest[..end];
+        if raw.is_empty() {
+            return "unexpected end of expression".to_string();
+        }
+        // 片段截断到 24 字符，避免超长输入刷屏
+        let mut frag: String = raw.chars().take(24).collect();
+        if raw.chars().count() > 24 {
+            frag.push('…');
+        }
+        return format!("unexpected input near '{}'", frag);
+    }
+    // mathexpr 自身 Display 友好的变体（如 "Unexpected trailing input: ..."）原样保留
+    display.to_string()
 }
 
 /// 解析以 `[` 开头的字面量：矩阵 `[[...]]` 或列表 `[...]`（design.md D3）。
