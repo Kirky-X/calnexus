@@ -102,12 +102,18 @@ pub struct ReplSession {
 
 impl ReplSession {
     /// 创建 REPL 会话，初始化空缓存与给定上下文。
+    #[allow(dead_code)] // 纯 build（非 --all-targets）下仅测试使用（CLI 走 with_cache）
     pub fn new(ctx: EvalContext, i18n: I18n) -> Self {
         Self {
             ctx,
             cache: crate::CacheManager::new(),
             i18n,
         }
+    }
+
+    /// 创建 REPL 会话并注入既有缓存（CLI `--cache-size` 预算，v015 R-cfg-002）。
+    pub fn with_cache(ctx: EvalContext, i18n: I18n, cache: crate::CacheManager) -> Self {
+        Self { ctx, cache, i18n }
     }
 
     /// 启动 REPL 主循环（TG4.4）。

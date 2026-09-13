@@ -33,7 +33,20 @@ impl BatchProcessor {
     /// - `i18n`: 国际化上下文，用于本地化错误与汇总消息
     ///
     /// 返回退出码：0=全部成功，1=部分失败，2=系统错误。
+    /// 以默认缓存运行（便捷入口；CLI 配置面走 [`Self::run_with_cache`]）。
+    #[allow(dead_code)] // 纯 build（非 --all-targets）下仅测试使用
     pub fn run(path: &str, ctx: &EvalContext, json: bool, i18n: &I18n) -> i32 {
+        Self::run_with_cache(path, ctx, json, i18n, crate::CacheManager::new())
+    }
+
+    /// 以注入缓存运行批量求值（CLI `--cache-size` 预算，v015 R-cfg-002）。
+    pub fn run_with_cache(
+        path: &str,
+        ctx: &EvalContext,
+        json: bool,
+        i18n: &I18n,
+        cache: crate::CacheManager,
+    ) -> i32 {
         let start = Instant::now();
 
         let entries = match read_and_validate_entries(path, i18n) {
@@ -41,7 +54,7 @@ impl BatchProcessor {
             Err(code) => return code,
         };
 
-        let results = evaluate_entries(&entries, ctx);
+        let results = evaluate_entries(&entries, ctx, &cache);
 
         output_results(&results, json, i18n);
         print_summary(&results, start.elapsed(), i18n);
@@ -117,12 +130,15 @@ fn read_and_validate_entries(path: &str, i18n: &I18n) -> Result<Vec<BatchEntry>,
 }
 
 /// 并行求值所有条目（TG5.3）：每个表达式独立走全链路，结果顺序与输入一致。
-fn evaluate_entries(entries: &[BatchEntry], ctx: &EvalContext) -> Vec<BatchResult> {
-    let cache = crate::CacheManager::new();
+fn evaluate_entries(
+    entries: &[BatchEntry],
+    ctx: &EvalContext,
+    cache: &crate::CacheManager,
+) -> Vec<BatchResult> {
     entries
         .par_iter()
         .map(|entry| {
-            let result = evaluate(&entry.expr, ctx, None, &cache);
+            let result = evaluate(&entry.expr, ctx, None, cache);
             BatchResult {
                 line_no: entry.line_no,
                 expr: entry.expr.clone(),

@@ -15,7 +15,7 @@ mod evaluator;
 mod parser;
 mod types;
 
-pub use cache::{CacheKeyGen, CacheManager};
+pub use cache::{CacheKeyGen, CacheManager, DEFAULT_MAX_WEIGHT_BYTES};
 pub use canonicalizer::AstCanonicalizer;
 pub use domain::{CalculationDomain, DomainRouter};
 pub use evaluator::evaluate;

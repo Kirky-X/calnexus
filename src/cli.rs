@@ -68,6 +68,19 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["json", "latex", "steps", "precision", "repl", "batch"])]
     canonical: bool,
 
+    /// Evaluation timeout in seconds (0.1-3600, default 5; env: CALNEXUS_TIMEOUT)
+    #[arg(long)]
+    timeout: Option<f64>,
+
+    /// Cache entry budget, approximate (entries x 4KB byte cap; env: CALNEXUS_CACHE_SIZE)
+    #[arg(long)]
+    cache_size: Option<u64>,
+
+    /// HTTP server bind address (default 127.0.0.1:3000; env: CALNEXUS_BIND_ADDR)
+    #[cfg(feature = "server")]
+    #[arg(long)]
+    bind: Option<String>,
+
     /// Start HTTP server mode (POST /api/v1/evaluate). Requires `server` feature.
     #[cfg(feature = "server")]
     #[arg(long, conflicts_with_all = ["repl", "batch", "canonical", "latex", "steps", "json", "explain", "precision", "serve_mcp"])]
@@ -84,6 +97,23 @@ pub fn run() -> i32 {
     let cli = Cli::parse();
     let i18n = crate::i18n::I18n::from_str(&cli.lang);
 
+    // 配置面（v015 R-cfg-001/002）：timeout / cache-size 统一解析
+    // （优先级 flag > env > default；非法 env 值显性报错而非静默回退）
+    let timeout_secs = match resolve_timeout(cli.timeout) {
+        Ok(t) => t,
+        Err(msg) => {
+            eprintln!("calnexus: {}", msg);
+            return 2;
+        }
+    };
+    let cache_budget = match cache_budget_bytes(cli.cache_size) {
+        Ok(b) => b,
+        Err(msg) => {
+            eprintln!("calnexus: {}", msg);
+            return 2;
+        }
+    };
+
     // --serve-http / --serve-mcp 模式：启动 server（阻塞运行，内部创建 tokio runtime）
     #[cfg(feature = "server")]
     if cli.serve_http || cli.serve_mcp {
@@ -92,12 +122,12 @@ pub fn run() -> i32 {
 
     // --repl 模式：启动交互式 REPL
     if cli.repl {
-        return run_repl_mode(&cli, &i18n);
+        return run_repl_mode(&cli, &i18n, timeout_secs, cache_budget);
     }
 
     // --batch 模式：批量求值
     if let Some(path) = &cli.batch {
-        return run_batch_mode(path, &cli, &i18n);
+        return run_batch_mode(path, &cli, &i18n, timeout_secs, cache_budget);
     }
 
     // 以下模式需要表达式（位置参数或 stdin）
@@ -111,21 +141,39 @@ pub fn run() -> i32 {
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
     ctx.precision = cli.precision;
+    ctx.timeout = std::time::Duration::from_secs_f64(timeout_secs);
 
     if cli.canonical {
         run_canonical_mode(&expr, &cli, &i18n)
     } else if cli.latex || cli.steps {
         run_latex_steps_mode(&expr, &ctx, &cli, &i18n)
     } else {
-        run_default_mode(&expr, &ctx, &cli, &i18n)
+        run_default_mode(&expr, &ctx, &cli, &i18n, cache_budget)
     }
 }
 
 /// 启动 HTTP/MCP server 模式。
 #[cfg(feature = "server")]
 fn run_server_mode(cli: &Cli) -> i32 {
+    // server 模式同样消费配置面（v015 R-cfg-002/003）
+    let cache_budget = match cache_budget_bytes(cli.cache_size) {
+        Ok(b) => b,
+        Err(msg) => {
+            eprintln!("calnexus: {}", msg);
+            return 2;
+        }
+    };
+    crate::server::init_shared_cache(cache_budget);
+
     let server_result = if cli.serve_http {
-        crate::server::HttpServer::new().run()
+        let bind = match resolve_bind(cli.bind.clone()) {
+            Ok(addr) => addr,
+            Err(msg) => {
+                eprintln!("calnexus: {}", msg);
+                return 2;
+            }
+        };
+        crate::server::HttpServer::new().with_addr(bind).run()
     } else {
         crate::server::McpServer::new().run()
     };
@@ -139,22 +187,37 @@ fn run_server_mode(cli: &Cli) -> i32 {
 }
 
 /// --repl 模式：解析变量绑定并启动交互式 REPL。
-fn run_repl_mode(cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+fn run_repl_mode(
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+    timeout_secs: f64,
+    cache_budget: u64,
+) -> i32 {
     let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
     };
     ctx.precision = cli.precision;
-    crate::repl::ReplSession::new(ctx, i18n.clone()).run()
+    ctx.timeout = std::time::Duration::from_secs_f64(timeout_secs);
+    let cache = crate::CacheManager::with_capacity_bytes(cache_budget);
+    crate::repl::ReplSession::with_cache(ctx, i18n.clone(), cache).run()
 }
 
 /// --batch 模式：解析变量绑定并批量求值。
-fn run_batch_mode(path: &str, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
-    let ctx = match parse_vars(&cli.vars) {
+fn run_batch_mode(
+    path: &str,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+    timeout_secs: f64,
+    cache_budget: u64,
+) -> i32 {
+    let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
     };
-    crate::batch::BatchProcessor::run(path, &ctx, cli.json, i18n)
+    ctx.timeout = std::time::Duration::from_secs_f64(timeout_secs);
+    let cache = crate::CacheManager::with_capacity_bytes(cache_budget);
+    crate::batch::BatchProcessor::run_with_cache(path, &ctx, cli.json, i18n, cache)
 }
 
 /// --canonical 模式：parse → canonicalize_no_fold → 输出 S-expr，跳过求值。
@@ -197,7 +260,7 @@ fn run_latex_steps_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::
 
     // --latex：求值并输出 LaTeX 结果
     if cli.latex {
-        let cache = CacheManager::new();
+        let cache = CacheManager::with_capacity_bytes(crate::core::DEFAULT_MAX_WEIGHT_BYTES);
         match evaluate(expr, ctx, cli.precision, &cache) {
             Ok((result, _domain, _cache_hit, fmt_prec)) => {
                 let latex_str = format_latex(&result, &canonical_ast, expr, fmt_prec);
@@ -210,8 +273,14 @@ fn run_latex_steps_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::
 }
 
 /// 默认模式：求值 + 输出（JSON 或文本）。
-fn run_default_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
-    let cache = CacheManager::new();
+fn run_default_mode(
+    expr: &str,
+    ctx: &EvalContext,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+    cache_budget: u64,
+) -> i32 {
+    let cache = CacheManager::with_capacity_bytes(cache_budget);
     match evaluate(expr, ctx, cli.precision, &cache) {
         Ok((result, domain, cache_hit, fmt_prec)) => {
             if cli.json {
@@ -314,8 +383,61 @@ fn get_expression(cli: &Cli) -> Result<String, CalcError> {
 /// 解析 --var NAME=VALUE 列表为 EvalContext。
 ///
 /// i18n_key 通过 `with_i18n` 附加到 CalcError，渲染时由 `handle_error` 传入 i18n 实例。
-fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
-    let mut ctx = EvalContext::new();
+/// 解析求值超时（秒），优先级 flag > env(`CALNEXUS_TIMEOUT`) > 默认 5.0（v015 R-cfg-001）。
+fn resolve_timeout(cli_value: Option<f64>) -> Result<f64, String> {
+    const DEFAULT_TIMEOUT_SECS: f64 = 5.0;
+    const MIN: f64 = 0.1;
+    const MAX: f64 = 3600.0;
+    let raw = match cli_value {
+        Some(v) => v,
+        None => match std::env::var("CALNEXUS_TIMEOUT") {
+            Ok(s) => s.trim().parse::<f64>().map_err(|_| {
+                format!("invalid CALNEXUS_TIMEOUT '{s}': expected seconds (e.g. 0.1)")
+            })?,
+            Err(_) => DEFAULT_TIMEOUT_SECS,
+        },
+    };
+    if !(MIN..=MAX).contains(&raw) {
+        return Err(format!("--timeout {raw} out of range ({MIN}-{MAX} seconds)"));
+    }
+    Ok(raw)
+}
+
+/// 解析缓存条目预算并换算为字节权重上限（条目 × 4KB，近似语义；v015 R-cfg-002）。
+fn cache_budget_bytes(cli_value: Option<u64>) -> Result<u64, String> {
+    const DEFAULT_CACHE_SIZE: u64 = 10_000;
+    const BYTES_PER_ENTRY: u64 = 4096;
+    let entries = match cli_value {
+        Some(n) => n,
+        None => match std::env::var("CALNEXUS_CACHE_SIZE") {
+            Ok(s) => s.trim().parse::<u64>().map_err(|_| {
+                format!("invalid CALNEXUS_CACHE_SIZE '{s}': expected positive integer")
+            })?,
+            Err(_) => DEFAULT_CACHE_SIZE,
+        },
+    };
+    if entries == 0 {
+        return Err("--cache-size must be a positive integer".to_string());
+    }
+    Ok(entries.saturating_mul(BYTES_PER_ENTRY).max(BYTES_PER_ENTRY))
+}
+
+/// 解析 HTTP 绑定地址，优先级 flag > env(`CALNEXUS_BIND_ADDR`) > 默认 127.0.0.1:3000
+/// （v015 R-cfg-003；仅 server feature）。
+#[cfg(feature = "server")]
+fn resolve_bind(cli_value: Option<String>) -> Result<String, String> {
+    const DEFAULT_BIND: &str = "127.0.0.1:3000";
+    match cli_value {
+        Some(addr) => Ok(addr),
+        None => match std::env::var("CALNEXUS_BIND_ADDR") {
+            Ok(s) if !s.trim().is_empty() => Ok(s.trim().to_string()),
+            Ok(_) => Err("invalid CALNEXUS_BIND_ADDR: empty value".to_string()),
+            Err(_) => Ok(DEFAULT_BIND),
+        },
+    }
+}
+
+fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {    let mut ctx = EvalContext::new();
     for v in vars {
         let parts: Vec<&str> = v.splitn(2, '=').collect();
         if parts.len() != 2 {
@@ -458,6 +580,57 @@ fn format_complex_list(c: &[(f64, f64)]) -> String {
 }
 
 #[cfg(test)]
+
+    /// v015 T016（R-cfg-001 验收）：locales 文案中引用的每个 `--flag` 必须真实存在于
+    /// clap 定义——防止错误提示再次指向不存在的旗标（`--timeout` 事故回归门）。
+    #[test]
+    fn locale_hint_flags_exist_in_clap_definition() {
+        use clap::CommandFactory;
+        let mut seen: Vec<String> = Vec::new();
+        let cmd = Cli::command();
+        let long_flags: Vec<String> = cmd
+            .get_arguments()
+            .filter_map(|a| a.get_long().map(|l| l.to_string()))
+            .collect();
+
+        for locale in ["en", "zh"] {
+            let path = format!("locales/{locale}.json");
+            let raw = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let value: serde_json::Value = serde_json::from_str(&raw)
+                .unwrap_or_else(|e| panic!("parse {path}: {e}"));
+            collect_json_strings(&value, &mut seen);
+        }
+
+        let flag_re = regex::Regex::new(r"--[a-z][a-z0-9_-]*").unwrap();
+        // `--features` 属于 cargo 构建旗标（非 calnexus CLI 旗标），合法出现于特性提示
+        let external_flags = ["features"];
+        let mut violations: Vec<String> = Vec::new();
+        for text in &seen {
+            for m in flag_re.find_iter(text) {
+                let flag = m.as_str().trim_start_matches('-').to_string();
+                if !long_flags.contains(&flag) && !external_flags.contains(&flag.as_str()) {
+                    violations.push(format!("{text:?} 引用不存在的 --{flag}"));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "locales 中存在指向不存在旗标的 hint:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    /// 递归收集 JSON 中所有字符串叶子。
+    fn collect_json_strings(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::Array(a) => a.iter().for_each(|x| collect_json_strings(x, out)),
+            serde_json::Value::Object(o) => o.values().for_each(|x| collect_json_strings(x, out)),
+            _ => {}
+        }
+    }
+
 mod tests {
     use super::*;
     use crate::{AstNode, BinaryOp};

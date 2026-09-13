@@ -1553,3 +1553,102 @@ fn test_repl_batch_conflict_exit_2() {
         output.status
     );
 }
+
+// ===== v015 配置面（R-cfg-001/002/003） =====
+
+/// CFG-001: --timeout 0.1 使慢表达式超时，退出码 3（Timeout）。
+#[test]
+fn timeout_flag_slow_expression_exits_3() {
+    // debug 构建下 sieve(10_000_000) 远超 0.1s；超时在 evaluate 阶段边界命中
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let output = cmd
+        .args(["--timeout", "0.1", "prime_sieve(10000000)"])
+        .env_remove("CALNEXUS_TIMEOUT")
+        .output()
+        .expect("failed to execute");
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "--timeout 0.1 慢表达式应以退出码 3（Timeout）结束，实际 {:?}，stderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// CFG-001b: CALNEXUS_TIMEOUT env 生效（无 flag 时）；非法 env 值报错退出码 2。
+#[test]
+fn timeout_env_var_fallback_and_validation() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let output = cmd
+        .args(["prime_sieve(10000000)"])
+        .env("CALNEXUS_TIMEOUT", "0.1")
+        .output()
+        .expect("failed to execute");
+    assert_eq!(output.status.code(), Some(3), "env CALNEXUS_TIMEOUT=0.1 应超时退出 3");
+
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let output = cmd
+        .args(["--timeout", "9999", "1+1"])
+        .env_remove("CALNEXUS_TIMEOUT")
+        .output()
+        .expect("failed to execute");
+    assert_eq!(output.status.code(), Some(2), "--timeout 9999 超范围应退出 2");
+}
+
+/// CFG-002: --cache-size 旗标被接受；0 值被拒绝（退出码 2）。
+#[test]
+fn cache_size_flag_accepted_and_validated() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.args(["--cache-size", "2", "1+1"])
+        .env_remove("CALNEXUS_CACHE_SIZE")
+        .assert()
+        .success()
+        .stdout("2\n");
+
+    let output = Command::cargo_bin("calnexus")
+        .unwrap()
+        .args(["--cache-size", "0", "1+1"])
+        .output()
+        .expect("failed to execute");
+    assert_eq!(output.status.code(), Some(2), "--cache-size 0 应被拒绝（退出码 2）");
+}
+
+/// CFG-003: --serve-http --bind 自定义端口可监听；flag 优先于 CALNEXUS_BIND_ADDR。
+/// 需要 server feature（CI server 腿执行）。
+#[cfg(feature = "server")]
+#[test]
+fn bind_flag_serve_http_listens_on_custom_port() {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    // 找一个空闲端口
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let mut child = cmd
+        .args(["--serve-http", "--bind", &format!("127.0.0.1:{port}")])
+        // flag 优先：env 故意给一个会被覆盖的值
+        .env("CALNEXUS_BIND_ADDR", "127.0.0.1:1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn --serve-http");
+
+    let mut connected = false;
+    for _ in 0..100 {
+        match std::net::TcpStream::connect(("127.0.0.1", port)) {
+            Ok(mut s) => {
+                let _ = s.read_exact(&mut [0u8; 0]);
+                connected = true;
+                break;
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(connected, "--bind {port} 应可连接（flag 生效且优先于 env）");
+}
