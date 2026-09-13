@@ -20,7 +20,7 @@ pub use cache::{CacheKeyGen, CacheManager};
 pub(crate) use cache::DEFAULT_MAX_WEIGHT_BYTES;
 pub use canonicalizer::AstCanonicalizer;
 pub use domain::{CalculationDomain, DomainRouter};
-pub use evaluator::evaluate;
+pub use evaluator::{evaluate, evaluate_with_router};
 pub use parser::parse;
 #[cfg(feature = "cli")]
 pub(crate) use parser::MAX_EXPR_LEN;

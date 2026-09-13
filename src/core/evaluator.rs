@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::core::{
-    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CanonicalForm, EvalContext,
-    EvalResult, MAX_PRECISION,
+    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CanonicalForm, DomainRouter,
+    EvalContext, EvalResult, MAX_PRECISION,
 };
 use crate::domains::{build_default_router, build_precision_domain};
 
@@ -41,6 +41,32 @@ pub fn evaluate(
     precision: Option<usize>,
     cache: &CacheManager,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
+    evaluate_with_router(expr, ctx, precision, cache, &build_default_router())
+}
+
+/// 路由器可注入求值（v015 T040，R-api-001）：与 [`evaluate`] 语义一致，
+/// 但路由器由调用方提供——下游/测试可注入自定义 `CalculationDomain`
+/// （默认 [`evaluate`] 绑定进程级 OnceLock 单例路由器）。
+///
+/// # 示例
+///
+/// ```
+/// use calnexus::{evaluate_with_router, CacheManager, CalculationDomain, DomainRouter, EvalContext};
+///
+/// let router = DomainRouter::new(); // 空路由器（无内置域）
+/// let cache = CacheManager::new();
+/// let ctx = EvalContext::new();
+/// // 空路由器下任何表达式都返回路由错误，证明路由器确实被注入消费
+/// let err = evaluate_with_router("1+1", &ctx, None, &cache, &router).unwrap_err();
+/// assert!(err.message.contains("no registered domain") || err.message.contains("route"));
+/// ```
+pub fn evaluate_with_router(
+    expr: &str,
+    ctx: &EvalContext,
+    precision: Option<usize>,
+    cache: &CacheManager,
+    router: &DomainRouter,
+) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     let start = Instant::now();
     // 阶段 1: 输入校验（timeout=0 + precision 上界）
     validate_inputs(ctx, precision)?;
@@ -56,7 +82,7 @@ pub fn evaluate(
     if precision.is_some() {
         eval_precision_mode(&canonical_ast, ctx, cache, &cache_cf, precision, start)
     } else {
-        eval_regular_mode(&canonical_ast, ctx, cache, &cache_cf, start)
+        eval_regular_mode(&canonical_ast, ctx, cache, &cache_cf, start, router)
     }
 }
 
@@ -176,9 +202,8 @@ fn eval_regular_mode(
     cache: &CacheManager,
     cache_cf: &CanonicalForm,
     start: Instant,
+    router: &DomainRouter,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
-    let router = build_default_router();
-
     // 非确定性函数旁路缓存（R-ncb-003）：跳过 cache.get 与 cache.insert
     if router.is_nondeterministic(canonical_ast) {
         let domain = router.route(canonical_ast)?;
@@ -243,6 +268,17 @@ fn extract_format_precision(ast: &AstNode) -> Option<usize> {
 mod tests {
     use super::*;
     use crate::core::{BinaryOp, ErrorKind, EvalContext};
+
+    /// v015 T040（R-api-001）：evaluate_with_router 注入自定义路由器。
+    /// 空路由器无内置域 → 任意表达式路由失败，证明 router 参数被真实消费。
+    #[test]
+    fn test_evaluate_with_router_injection() {
+        let router = DomainRouter::new();
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let r = evaluate_with_router("1+1", &ctx, None, &cache, &router);
+        assert!(r.is_err(), "空路由器应无法路由 1+1");
+    }
 
     // 覆盖 extract_format_precision：当 precision(N, expr) 中 N 为 Number 但非正整数（如浮点数）时，
     // 内层 if 条件为 false，返回 None。
