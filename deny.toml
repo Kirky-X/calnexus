@@ -1,4 +1,4 @@
-# cargo-deny 配置（v015 T050，R-ci-004）：许可证/漏洞/重复依赖治理
+# cargo-deny 配置：许可证/漏洞/重复依赖治理
 # 文档：https://embarkstudios.github.io/cargo-deny/
 
 [graph]

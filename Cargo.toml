@@ -32,7 +32,7 @@ time = ["dep:jiff"]
 unit = []
 # FX: 汇率换算（frankfurter.dev API + 本地缓存）
 fx = ["dep:ureq", "dep:dirs"]
-# Numerical: 高级数值计算（eig/SVD 等，P3 实现）
+# Numerical: 高级数值计算（eig/SVD 等）
 numerical = []
 # Server: HTTP + MCP 聚合
 server = ["http", "mcp"]
