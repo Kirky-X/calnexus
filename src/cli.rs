@@ -4,7 +4,7 @@
 //!
 //! 全链路：Parser → Canonicalizer → CacheManager → DomainRouter → Domain::evaluate
 //!
-//! 退出码（design.md §5.6）：
+//! 退出码：
 //! - 0：成功
 //! - 1：计算错误 / 解析错误
 //! - 2：用法错误
@@ -108,7 +108,7 @@ pub fn run() -> i32 {
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     let i18n = crate::i18n::I18n::from_str(&cli.lang);
 
-    // 配置面（v015 R-cfg-001/002）：timeout / cache-size 统一解析
+    // 配置面：timeout / cache-size 统一解析
     // （优先级 flag > env > default；非法 env 值显性报错而非静默回退）
     let timeout_secs = match resolve_timeout(&i18n, cli.timeout) {
         Ok(t) => t,
@@ -131,7 +131,7 @@ pub fn run() -> i32 {
         return run_server_mode(&cli, &i18n);
     }
 
-    // --list-functions：运行时函数目录（v015 T038，R-mcp-002）
+    // --list-functions：运行时函数目录
     if cli.list_functions {
         return run_list_functions();
     }
@@ -203,7 +203,7 @@ fn run_list_functions() -> i32 {
 /// 启动 HTTP/MCP server 模式。
 #[cfg(feature = "server")]
 fn run_server_mode(cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
-    // server 模式同样消费配置面（v015 R-cfg-002/003）
+    // server 模式同样消费配置面
     let cache_budget = match cache_budget_bytes(i18n, cli.cache_size) {
         Ok(b) => b,
         Err(msg) => {
@@ -348,7 +348,7 @@ fn format_json_output(
     cache_hit: bool,
     fmt_prec: Option<usize>,
 ) -> String {
-    // v015 T023（R-json-001/002）：serde_json 统一构造 + 契约版本字段 "v":1。
+    // serde_json 统一构造 + 契约版本字段 "v":1。
     // result 类型判别：Scalar 为数值、Complex 为 {re,im}、Steps 为字符串数组，
     // 其余变体为文本形态字符串。契约详见 docs/schema/result-v1.json。
     let cache_str = if cache_hit { "hit" } else { "miss" };
@@ -379,7 +379,7 @@ fn handle_error(e: &CalcError, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
     handle_error_with_expr(e, cli.expression.as_deref(), cli, i18n)
 }
 
-/// 错误渲染（v015 T021）：
+/// 错误渲染：
 /// - `--json`：结构化输出（无 caret）
 /// - `--explain`：教育模式
 /// - 文本模式：friendly + （有 span 时）表达式行 + `^` 位置指示
@@ -484,7 +484,7 @@ fn get_expression(cli: &Cli, i18n: &crate::i18n::I18n) -> Result<String, CalcErr
     Ok(trimmed)
 }
 
-/// 解析求值超时（秒），优先级 flag > env(`CALNEXUS_TIMEOUT`) > 默认 5.0（v015 R-cfg-001）。
+/// 解析求值超时（秒），优先级 flag > env(`CALNEXUS_TIMEOUT`) > 默认 5.0。
 ///
 /// 错误文案经 `i18n` 本地化（键 cli.invalid_timeout_env / cli.timeout_out_of_range），
 /// 英文渲染与历史硬编码文案逐字节一致。
@@ -516,7 +516,7 @@ fn resolve_timeout(i18n: &crate::i18n::I18n, cli_value: Option<f64>) -> Result<f
     Ok(raw)
 }
 
-/// 解析缓存条目预算并换算为字节权重上限（条目 × 4KB，近似语义；v015 R-cfg-002）。
+/// 解析缓存条目预算并换算为字节权重上限（条目 × 4KB，近似语义）。
 ///
 /// 错误文案经 `i18n` 本地化（键 cli.invalid_cache_size_env / cli.cache_size_invalid），
 /// 英文渲染与历史硬编码文案逐字节一致。
@@ -541,7 +541,7 @@ fn cache_budget_bytes(i18n: &crate::i18n::I18n, cli_value: Option<u64>) -> Resul
 }
 
 /// 解析 HTTP 绑定地址，优先级 flag > env(`CALNEXUS_BIND_ADDR`) > 默认 127.0.0.1:3000
-/// （v015 R-cfg-003；仅 server feature）。
+/// （仅 server feature）。
 ///
 /// 错误文案经 `i18n` 本地化（键 cli.invalid_bind_addr），
 /// 英文渲染与历史硬编码文案逐字节一致。
@@ -598,7 +598,7 @@ pub(crate) fn format_result(result: &EvalResult, fmt_prec: Option<usize>) -> Str
         EvalResult::LaTeX(s) => s.clone(),
         EvalResult::Steps(v) => v.join("\n"),
         EvalResult::Json(v) => v.to_string(),
-        // DateTime（time-unit-fx-domains D2）：RFC3339 字符串直接输出
+        // DateTime：RFC3339 字符串直接输出
         EvalResult::DateTime(s) => s.clone(),
     }
 }
@@ -705,7 +705,7 @@ fn format_complex_list(c: &[(f64, f64)]) -> String {
 mod tests {
     use super::*;
     use crate::{AstNode, BinaryOp};
-    /// v015 T016（R-cfg-001 验收）：locales 文案中引用的每个 `--flag` 必须真实存在于
+    /// locales 文案中引用的每个 `--flag` 必须真实存在于
     /// clap 定义——防止错误提示再次指向不存在的旗标（`--timeout` 事故回归门）。
     #[test]
     fn locale_hint_flags_exist_in_clap_definition() {
@@ -744,7 +744,7 @@ mod tests {
         );
     }
 
-    /// v015 T063（R-json-003 验收）：CLI 不可达变体（Steps/LaTeX/Json/DateTime）
+    /// CLI 不可达变体（Steps/LaTeX/Json/DateTime）
     /// 经 format_json_output 输出合法 JSON 且含 v=1。
     #[test]
     fn test_json_contract_non_cli_reachable_variants() {

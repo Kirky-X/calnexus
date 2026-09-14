@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! 函数目录（v015 T038，R-mcp-002）：按域分组的全量函数名静态表。
+//! 函数目录：按域分组的全量函数名静态表。
 //!
 //! 单一事实源：REPL Tab 补全、CLI `--list-functions`、MCP `list_functions` tool
 //! 共用本表。feature 门控域（time/unit/fx/numerical）由消费方按 cfg 过滤。
 //!
-//! 审计背景：原 REPL KNOWN_FUNCTIONS 缺失 feature 门控函数（convert/fx/now 等），
+//! 此前 REPL KNOWN_FUNCTIONS 曾缺失 feature 门控函数（convert/fx/now 等），
 //! 统一目录后此类漂移不再发生。
 
 /// 各域函数目录：`(域名, 函数名列表)`。

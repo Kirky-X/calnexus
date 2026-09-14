@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! REPL 模式：基于 rustyline 的交互式读-求值-打印循环（TG4）。
+//! REPL 模式：基于 rustyline 的交互式读-求值-打印循环。
 //!
 //! 设计依据：
-//! - design.md D3（ReplSession 持有 DomainRouter + CacheManager + EvalContext）
+//! - ReplSession 持有 DomainRouter + CacheManager + EvalContext
 //! - v1.0 repl-mode spec
 //!
 //! 命令（以 `:` 开头）：
@@ -23,13 +23,13 @@ use rustyline::{Editor, Helper, Highlighter, Hinter, Result as RlResult, Validat
 /// REPL 命令补全候选：函数名 + REPL 命令。
 const REPL_COMMANDS: &[&str] = &[":let", ":vars", ":quit", ":q", ":help", ":clear"];
 
-/// 已知函数名（用于 Tab 补全；v015 起由统一函数目录派生，
+/// 已知函数名（用于 Tab 补全；由统一函数目录派生，
 /// 含 feature 门控函数——修复审计发现的 convert/fx/now 缺失）。
 fn known_functions() -> Vec<&'static str> {
     crate::function_catalog::all_function_names()
 }
 
-/// REPL 会话：持有路由器、缓存、变量上下文、i18n（TG4.1）。
+/// REPL 会话：持有路由器、缓存、变量上下文、i18n。
 pub struct ReplSession {
     ctx: EvalContext,
     cache: crate::CacheManager,
@@ -47,12 +47,12 @@ impl ReplSession {
         }
     }
 
-    /// 创建 REPL 会话并注入既有缓存（CLI `--cache-size` 预算，v015 R-cfg-002）。
+    /// 创建 REPL 会话并注入既有缓存（CLI `--cache-size` 预算）。
     pub fn with_cache(ctx: EvalContext, i18n: I18n, cache: crate::CacheManager) -> Self {
         Self { ctx, cache, i18n }
     }
 
-    /// 启动 REPL 主循环（TG4.4）。
+    /// 启动 REPL 主循环。
     ///
     /// 读取输入 → 若 `:` 开头解析为 REPL 命令 → 否则 parse → evaluate → 打印结果。
     /// 错误打印到 stderr 但不退出。返回退出码 0。
@@ -103,7 +103,7 @@ impl ReplSession {
         }
     }
 
-    /// 处理 REPL 命令（TG4.2）。
+    /// 处理 REPL 命令。
     fn handle_command(&mut self, line: &str) -> CommandResult {
         let parts: Vec<&str> = line.splitn(2, char::is_whitespace).collect();
         let cmd = parts[0];
@@ -137,7 +137,7 @@ impl ReplSession {
         }
     }
 
-    /// 处理 `:let NAME = VALUE` 变量绑定（TG4.2）。
+    /// 处理 `:let NAME = VALUE` 变量绑定。
     fn handle_let(&mut self, args: &str) {
         // 解析 NAME = VALUE
         let eq_parts: Vec<&str> = args.splitn(2, '=').collect();
@@ -219,7 +219,7 @@ impl ReplSession {
         println!("{}", self.i18n.t("repl.help_examples"));
     }
 
-    /// 求值一行表达式并打印结果（TG4.4）。
+    /// 求值一行表达式并打印结果。
     fn evaluate_line(&mut self, expr: &str) {
         match evaluate(expr, &self.ctx, self.ctx.precision, &self.cache) {
             Ok((result, domain, cache_hit, fmt_prec)) => {
@@ -258,7 +258,7 @@ enum CommandResult {
     Quit,
 }
 
-/// rustyline Helper：提供 Tab 补全（TG4.3）。
+/// rustyline Helper：提供 Tab 补全。
 ///
 /// 手动实现 `Completer`（自定义补全逻辑），其余三个 trait 通过 derive 生成默认空实现。
 /// `Helper` 是 marker trait（要求 `Completer + Hinter + Highlighter + Validator`），derive 自动生成。
@@ -278,7 +278,7 @@ impl Completer for ReplHelper {
     }
 }
 
-/// 纯函数：根据当前输入行和光标位置计算补全候选（TG4.3）。
+/// 纯函数：根据当前输入行和光标位置计算补全候选。
 ///
 /// 抽离自 `Completer::complete` 以便单元测试无需构造 rustyline Context。
 fn complete_candidates(line: &str, pos: usize) -> (usize, Vec<String>) {
@@ -319,7 +319,7 @@ fn complete_candidates(line: &str, pos: usize) -> (usize, Vec<String>) {
     (start, candidates)
 }
 
-// ============================ 单元测试 (TG4.6) ============================
+// ============================ 单元测试 ============================
 
 #[cfg(test)]
 mod tests {
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn test_handle_let_expression() {
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
-        // :let y = 2+3*4 → y = 14
+        // let y = 2+3*4 → y = 14
         session.handle_let("y = 2+3*4");
         assert_eq!(session.ctx.get_var("y"), Some(14.0));
     }
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_command_clear() {
-        // :clear 命令：打印 ANSI 清屏序列，返回 Continue
+        // clear 命令：打印 ANSI 清屏序列，返回 Continue
         // 覆盖 lines 173-176（:clear 分支）
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":clear");
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_handle_let_non_scalar_result() {
-        // :let x = 3+4i → evaluate 返回 Complex（非 Scalar）
+        // let x = 3+4i → evaluate 返回 Complex（非 Scalar）
         // 覆盖 lines 222-226（Ok 分支但结果非 Scalar）
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x = 3+4i");
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_handle_let_eval_error() {
-        // :let x = 2++3 → parse 失败 → evaluate 返回 Err
+        // let x = 2++3 → parse 失败 → evaluate 返回 Err
         // 覆盖 lines 228-230（evaluate 错误分支）
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x = 2++3");

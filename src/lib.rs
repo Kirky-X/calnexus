@@ -2,7 +2,7 @@
 
 //! CalNexus 计算引擎：表达式解析、AST 规范化、L1 缓存、域路由。
 //!
-// v015：CalcError 携带 source_detail 后为 144 字节，超过 clippy::result_large_err
+// CalcError 携带 source_detail 后为 144 字节，超过 clippy::result_large_err
 // 默认阈值（128）。错误类型按值传递（Clone 语义被缓存/测试广泛依赖）是既定 API
 // 设计，Box 化属于破坏性变更——crate 级豁免并在此记录论证（规则：豁免必须显性化）。
 #![allow(clippy::result_large_err)]
@@ -22,7 +22,7 @@ mod core;
 ///
 /// # 内部 API
 ///
-/// 本模块为**内部 API，非 Semver 承诺**（v015 R-api-003）：嵌入式调用方应优先使用
+/// 本模块为**内部 API，非 Semver 承诺**：嵌入式调用方应优先使用
 /// crate 根的门面（`api::CalNexus`）与五个分组 trait（ScalarMath/LinearAlgebra/…）。
 /// 本模块的函数签名可能在 minor 版本间调整而不另行公告。
 pub mod domains;
@@ -32,7 +32,7 @@ mod i18n;
 ///
 /// # 内部 API
 ///
-/// 本模块为**内部 API，非 Semver 承诺**（v015 R-api-003）：领域逻辑经
+/// 本模块为**内部 API，非 Semver 承诺**：领域逻辑经
 /// `crate::domains` 委托暴露；直接依赖本模块的下游在升级时可能需要适配。
 pub mod math;
 mod output;
@@ -69,7 +69,7 @@ pub use i18n::{I18n, Lang};
 pub use cli::run;
 #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
 pub use domains::format_bigrational;
-/// Server 接口层具名导出（v015 T041，R-api-002：取消通配导出，冻结确定面）。
+/// Server 接口层具名导出（取消通配导出，冻结确定面）。
 #[cfg(any(feature = "http", feature = "mcp"))]
 pub use server::{
     EvaluateRequest, EvaluateResponse, ListFunctionsRequest, ListFunctionsResponse, ServerError,

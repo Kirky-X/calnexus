@@ -2,7 +2,7 @@
 
 //! ICU4X 国际化模块：中英双语消息目录。
 //!
-//! 设计依据：design.md §4 (ICU4X 设计)
+//! 设计依据：(ICU4X 设计)
 //! - `I18n` 结构体始终可用（不受 feature gate 限制）
 //! - `icu` feature 仅控制是否使用 `icu::locale` 解析 BCP-47 语言标签
 //! - 无 `icu` feature 时，`from_str` 使用简单字符串匹配
@@ -42,7 +42,7 @@ static ZH_MESSAGES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::ne
 fn en_messages() -> &'static HashMap<&'static str, &'static str> {
     EN_MESSAGES.get_or_init(|| {
         let json = include_str!("../locales/en.json");
-        // 编译时 JSON 损坏是开发期错误，panic 提示修复（规则12 失败显性化）
+        // 编译时 JSON 损坏是开发期错误，panic 提示修复（失败显性化）
         serde_json::from_str(json).unwrap_or_else(|e| panic!("locales/en.json 解析失败: {e}"))
     })
 }
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(I18n::from_str("!!!").lang(), Lang::En);
     }
 
-    /// T010 Red: "zhongwen" 以 "zh" 开头但不是有效的中文语言代码，应回退到 En
+    /// "zhongwen" 以 "zh" 开头但不是有效的中文语言代码，应回退到 En
     #[test]
     fn test_from_str_zhongwen_falls_back_to_en() {
         let i18n = I18n::from_str("zhongwen");
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(en.t("error.undefined_symbol"), "Undefined symbol");
         assert_eq!(en.t("error.timeout"), "Evaluation timed out");
         assert_eq!(en.t("error.usage"), "Usage error");
-        // 5 个标签键（T002 diting HIGH-1 修复）
+        // 5 个标签键
         assert_eq!(en.t("label.position"), "Position");
         assert_eq!(en.t("label.hint"), "Hint");
         assert_eq!(en.t("label.error_kind"), "Error Kind");
@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(zh.t("error.undefined_symbol"), "未定义符号");
         assert_eq!(zh.t("error.timeout"), "求值超时");
         assert_eq!(zh.t("error.usage"), "用法错误");
-        // 5 个标签键（T002 diting HIGH-1 修复）
+        // 5 个标签键
         assert_eq!(zh.t("label.position"), "位置");
         assert_eq!(zh.t("label.hint"), "提示");
         assert_eq!(zh.t("label.error_kind"), "错误类别");

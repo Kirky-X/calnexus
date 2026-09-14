@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! 批量处理：从文件或 stdin 并行求值表达式（TG5）。
+//! 批量处理：从文件或 stdin 并行求值表达式。
 //!
 //! 设计依据：
-//! - design.md D4（BatchProcessor::run + rayon 并行）
+//! - BatchProcessor::run + rayon 并行
 //! - v1.0 batch-processing spec
 //!
 //! 约束：单条 ≤ 4096 字符、总条数 ≤ 1000；超限返回错误并标明行号。
@@ -21,11 +21,11 @@ use std::time::Instant;
 /// 批量最大条数。
 const MAX_BATCH_COUNT: usize = 1000;
 
-/// 批量处理器（TG5.1）。
+/// 批量处理器。
 pub struct BatchProcessor;
 
 impl BatchProcessor {
-    /// 执行批量求值（TG5.1-TG5.4）。
+    /// 执行批量求值。
     ///
     /// - `path`: 文件路径，`"-"` 表示从 stdin 读取
     /// - `ctx`: 变量上下文
@@ -39,7 +39,7 @@ impl BatchProcessor {
         Self::run_with_cache(path, ctx, json, i18n, crate::CacheManager::new())
     }
 
-    /// 以注入缓存运行批量求值（CLI `--cache-size` 预算，v015 R-cfg-002）。
+    /// 以注入缓存运行批量求值（CLI `--cache-size` 预算）。
     pub fn run_with_cache(
         path: &str,
         ctx: &EvalContext,
@@ -64,7 +64,7 @@ impl BatchProcessor {
     }
 }
 
-/// 读取并验证批量条目（TG5.1-TG5.2）：跳过注释/空行，校验长度与数量上限。
+/// 读取并验证批量条目：跳过注释/空行，校验长度与数量上限。
 /// 返回 `Err(exit_code)` 表示系统错误（exit_code=2）。
 fn read_and_validate_entries(path: &str, i18n: &I18n) -> Result<Vec<BatchEntry>, i32> {
     let lines = match read_lines(path) {
@@ -125,7 +125,7 @@ fn read_and_validate_entries(path: &str, i18n: &I18n) -> Result<Vec<BatchEntry>,
     Ok(entries)
 }
 
-/// 并行求值所有条目（TG5.3）：每个表达式独立走全链路，结果顺序与输入一致。
+/// 并行求值所有条目：每个表达式独立走全链路，结果顺序与输入一致。
 fn evaluate_entries(
     entries: &[BatchEntry],
     ctx: &EvalContext,
@@ -144,12 +144,12 @@ fn evaluate_entries(
         .collect()
 }
 
-/// 输出结果（TG5.4）：JSON 数组或文本行，保持原始顺序。
+/// 输出结果：JSON 数组或文本行，保持原始顺序。
 ///
 /// JSON 输出键名保留英文（DP-4 机器可读契约）；文本输出走 i18n。
 fn output_results(results: &[BatchResult], json: bool, i18n: &I18n) {
     if json {
-        // serde_json 统一构造（v015 T019）：转义由 serde_json 处理，控制字符/引号安全
+        // serde_json 统一构造：转义由 serde_json 处理，控制字符/引号安全
         let mut items: Vec<String> = Vec::with_capacity(results.len());
         for r in results {
             let entry = match &r.result {
@@ -259,7 +259,7 @@ struct BatchResult {
 }
 
 /// 读取文件或 stdin 的行，返回 (行号, 原始行) 列表。
-/// 行号从 1 开始（TG5.1）。
+/// 行号从 1 开始。
 fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
     let mut lines: Vec<(usize, String)> = Vec::new();
     if path == "-" {
@@ -291,7 +291,7 @@ fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
     Ok(lines)
 }
 
-// ============================ 单元测试 (TG5.6) ============================
+// ============================ 单元测试 ============================
 
 #[cfg(test)]
 mod tests {
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_batch_json_output_is_valid_json() {
-        // v015 T019：JSON 输出统一走 serde_json，控制字符由库正确转义；
+        // JSON 输出统一走 serde_json，控制字符由库正确转义；
         // 输出整体必须是合法 JSON（round-trip 校验）。
         let sample = serde_json::json!({
             "line": 1,
