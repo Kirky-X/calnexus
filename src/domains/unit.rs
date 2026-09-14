@@ -2,7 +2,7 @@
 
 //! 物理单位换算域：8 量纲线性/仿射换算。
 //!
-//! 设计依据：design.md D5（自建换算表 + 温度仿射特例）+ D8（混合表达式求值语义）
+//! 设计依据：自建换算表 + 温度仿射特例 + 混合表达式求值语义
 //! Feature 门控：`unit = []`
 //!
 //! 函数表：
@@ -27,7 +27,7 @@ use crate::math::unit as math_unit;
 /// 单位换算函数白名单。
 ///
 /// `mod`/`abs` 由 parser 将 `x%y`/`abs(x)` 转换为函数调用形式（见 parser.rs），
-/// 当它们包围 `convert` 结果时需路由至本域处理（算术包围语义，对齐 design.md D8）。
+/// 当它们包围 `convert` 结果时需路由至本域处理（算术包围语义）。
 const UNIT_FUNCTIONS: &[&str] = &["convert", "mod", "abs"];
 
 /// 单位换算域：支持 `convert(value, "from", "to")` 覆盖 8 个量纲。
@@ -369,7 +369,7 @@ mod tests {
         assert!(!UnitDomain.supports(&ast));
     }
 
-    // ===== R-unit-001: 线性单位换算 =====
+    // ===== 线性单位换算 =====
 
     #[test]
     fn test_convert_length_m_to_km() {
@@ -437,7 +437,7 @@ mod tests {
         assert!((eval_scalar(r#"convert(42,"m","m")"#).unwrap() - 42.0).abs() < 1e-9);
     }
 
-    // ===== R-unit-002: 温度仿射换算 =====
+    // ===== 温度仿射换算 =====
 
     #[test]
     fn test_convert_temperature_c_to_f_100() {
@@ -470,7 +470,7 @@ mod tests {
         assert!((eval_scalar(r#"convert(300,"K","F")"#).unwrap() - 80.33).abs() < 1e-9);
     }
 
-    // ===== R-unit-003: 错误显性化 =====
+    // ===== 错误显性化 =====
 
     #[test]
     fn test_convert_dimension_mismatch() {
@@ -562,7 +562,7 @@ mod tests {
         assert_eq!(err.i18n_key, Some("msg.unit.invalid_argument"));
     }
 
-    // ===== R-unit-004: 算术包围与跨域函数混入 =====
+    // ===== 算术包围与跨域函数混入 =====
 
     #[test]
     fn test_arithmetic_wrapping_mul() {
@@ -846,7 +846,7 @@ mod tests {
         assert!(UnitDomain.supports(&ast));
     }
 
-    // ===== 8 量纲端到端覆盖（spec R-unit-001 全部验收点）=====
+    // ===== 8 量纲端到端覆盖 =====
 
     #[test]
     fn test_all_8_dimensions_end_to_end() {

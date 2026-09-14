@@ -2,7 +2,7 @@
 
 //! 汇率数据提供者：RateProvider trait + FrankfurterProvider 实现。
 //!
-//! 设计依据：design.md D6（ureq + dirs 本地缓存 + stale 策略）
+//! 设计依据：ureq + dirs 本地缓存 + stale 策略
 //! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
 //!
 //! 三级缓存读取链：
@@ -48,7 +48,7 @@ const DEFAULT_BREAKER_THRESHOLD: u32 = 3;
 /// 熔断默认冷却：30 秒（与 limiteron circuit 默认一致）。
 const DEFAULT_BREAKER_COOLDOWN: Duration = Duration::from_secs(30);
 
-/// 响应体读取上限：1 MB（v015 T028，防源站异常导致内存膨胀）。
+/// 响应体读取上限：1 MB（防源站异常导致内存膨胀）。
 const MAX_RESPONSE_BODY_BYTES: u64 = 1024 * 1024;
 
 /// 缓存目录名。
@@ -110,7 +110,7 @@ pub struct FrankfurterProvider {
     cache_path: Option<PathBuf>,
     /// L1 内存缓存。
     in_memory: Mutex<Option<RateTable>>,
-    /// 拉取单飞锁（v015 T027，R-fx-002）：L1 miss 后持锁 double-check，
+    /// 拉取单飞锁：L1 miss 后持锁 double-check，
     /// 消除 TTL 过期瞬间 N 个并发请求 × N 次外网 GET 的惊群。
     fetch_lock: Mutex<()>,
     /// 网络熔断器（吸收 limiteron circuit 三态机）：连续失败达阈值后 Open
@@ -195,7 +195,7 @@ impl RateProvider for FrankfurterProvider {
             }
         }
 
-        // L3' 拉取单飞（v015 T027，R-fx-002）：持锁后 double-check L1，
+        // L3' 拉取单飞：持锁后 double-check L1，
         // 过期瞬间 N 个并发请求只有 leader 走 L2/L3，其余共享结果。
         let _flight = self
             .fetch_lock
@@ -245,7 +245,7 @@ impl RateProvider for FrankfurterProvider {
             Err(breaker_err) => {
                 // 熔断拒绝与网络失败同等进入 stale 策略：Open 期间仍可用
                 // ALLOW_STALE=1 服务过期快照；缓存文件损坏时错误分类为
-                // cache_unreadable（v015 T018 三分类）
+                // cache_unreadable（三分类）
                 let net_err = match breaker_err {
                     CircuitError::Inner(err) => err,
                     CircuitError::Open => CalcError::dependency_unavailable(
@@ -345,7 +345,7 @@ fn apply_stale_policy(
         .with_i18n("msg.fx.network_unreachable", vec![])),
         None => {
             if cache_corrupted {
-                // 三分类之二：缓存文件损坏（v015 T018 R-err-002）
+                // 三分类之二：缓存文件损坏
                 Err(CalcError::dependency_unavailable(
                     "FX rate cache file is corrupted and network fetch failed".to_string(),
                 )
@@ -361,7 +361,7 @@ fn apply_stale_policy(
     }
 }
 
-/// 缓存文件读取结果（v015 T018：区分缺失与损坏，支撑三分类错误）。
+/// 缓存文件读取结果（区分缺失与损坏，支撑三分类错误）。
 #[derive(Debug)]
 enum CacheRead {
     /// 文件不存在（正常首次运行）。
@@ -398,7 +398,7 @@ fn write_cache_file(path: &Path, table: &RateTable, fetched_at: u64) -> std::io:
         let _ = std::fs::create_dir_all(parent);
     }
 
-    // 原子写（v015 T026，R-fx-001）：同目录 temp 文件 + rename 替换，
+    // 原子写：同目录 temp 文件 + rename 替换，
     // 并发读取方只会看到完整旧文件或完整新文件（杜绝 torn write）。
     let file_name = path
         .file_name()
@@ -432,7 +432,7 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
     let response = ureq::get(FRANKFURTER_URL)
         .config()
         .timeout_global(Some(HTTP_TIMEOUT))
-        .https_only(true) // v015 T028（R-fx-003）：拒绝降级到明文/重定向到 http
+        .https_only(true) // 拒绝降级到明文/重定向到 http
         .build()
         .call()
         .map_err(|e| {
@@ -441,21 +441,21 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
                 .with_i18n("msg.fx.network_unreachable", vec![])
         })?;
 
-    // 响应体读取上限 1MB（v015 T028，R-fx-003）：源站被劫持/异常时防止内存膨胀
+    // 响应体读取上限 1MB：源站被劫持/异常时防止内存膨胀
     let body = response
         .into_body()
         .with_config()
         .limit(MAX_RESPONSE_BODY_BYTES)
         .read_to_string()
         .map_err(|e| {
-            // 三分类之二：响应读取失败 → invalid_response（v015 T018 R-err-002）
+            // 三分类之二：响应读取失败 → invalid_response
             CalcError::dependency_unavailable("FX response read failed")
                 .with_source(e.to_string())
                 .with_i18n("msg.fx.invalid_response", vec![])
         })?;
 
     let parsed: FrankfurterResponse = serde_json::from_str(&body).map_err(|e| {
-        // 三分类之二：响应 JSON 解析失败 → invalid_response（v015 T018 R-err-002）
+        // 三分类之二：响应 JSON 解析失败 → invalid_response
         CalcError::dependency_unavailable("FX response parse failed")
             .with_source(e.to_string())
             .with_i18n("msg.fx.invalid_response", vec![])
@@ -506,7 +506,7 @@ mod tests {
         }
     }
 
-    // ===== R-fx-001: 三角换算（经 base EUR）=====
+    // ===== 三角换算（经 base EUR） =====
 
     #[test]
     fn test_triangle_conversion_usd_to_cny() {
@@ -541,7 +541,7 @@ mod tests {
         assert_eq!(table.rates.len(), 4);
     }
 
-    // ===== R-fx-002: TTL 判断 =====
+    // ===== TTL 判断 =====
 
     #[test]
     fn test_parse_ttl_hours_default() {
@@ -559,7 +559,7 @@ mod tests {
         assert_eq!(parse_ttl_hours(Some("0.5")), 1800);
     }
 
-    // ===== 熔断参数解析（CALNEXUS_FX_BREAKER_*）=====
+    // ===== 熔断参数解析（CALNEXUS_FX_BREAKER_*） =====
 
     #[test]
     fn test_parse_breaker_threshold_default() {
@@ -635,7 +635,7 @@ mod tests {
         assert!(!is_expired_at(fetched_at, now, ttl));
     }
 
-    // ===== R-fx-002: 文件缓存读写 =====
+    // ===== 文件缓存读写 =====
 
     #[test]
     fn test_write_and_read_cache_file() {
@@ -710,7 +710,7 @@ mod tests {
         assert_eq!(table.rates.len(), 4);
     }
 
-    // ===== R-fx-003: Stale 策略 =====
+    // ===== Stale 策略 =====
 
     #[test]
     fn test_stale_policy_no_cache_no_allow_stale() {
@@ -766,7 +766,7 @@ mod tests {
         assert_eq!(table.rates.len(), 4);
     }
 
-    // ===== v015 T066（R-fx-002 验收）：拉取单飞并发一致性 =====
+    // ===== 拉取单飞并发一致性 =====
 
     #[test]
     fn test_fetch_lock_concurrent_consistency() {
@@ -806,7 +806,7 @@ mod tests {
         }
     }
 
-    // ===== 网络熔断器集成（吸收 limiteron circuit 设计；注入 fetcher，不出网）=====
+    // ===== 网络熔断器集成（吸收 limiteron circuit 设计；注入 fetcher，不出网） =====
 
     #[test]
     fn test_breaker_opens_after_consecutive_fetch_failures() {
@@ -863,7 +863,7 @@ mod tests {
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
-    // ===== FrankfurterProvider 基本行为（不出网）=====
+    // ===== FrankfurterProvider 基本行为（不出网） =====
 
     #[test]
     fn test_default_cache_path_returns_some_on_normal_platform() {

@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - number-theory-domain spec：7 个 requirements / 15+ scenarios
-//! - design.md D4（Miller-Rabin）、D7（num-integer 依赖）
+//! - Miller-Rabin、num-integer 依赖
 //! - priority=25
 //!
 //! 路由策略：AST 含数论函数调用（gcd/lcm/is_prime/prime_sieve/mod_inverse/mod_pow/euler_phi）时路由至本域。
@@ -211,7 +211,6 @@ impl NumberTheoryDomain {
                     .with_i18n("msg.core.negative_exponent", vec![]));
                 }
                 // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
-                // 安全审查 CRITICAL 修复：number_theory/combinatorics 域原无防护，
                 // 攻击者可通过 `gcd(1,1) + 2^4000000000` 绕过 precision.rs 的防护
                 // （24 字节请求触发 ~1.2GB 输出导致 OOM）。
                 let exp_u64 = b.to_u64().ok_or(CalcError::overflow())?;
@@ -505,63 +504,63 @@ mod tests {
         eval(input).map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
-    // ===== UT-NUM-001: GCD =====
+    // ===== GCD =====
 
     #[test]
     fn test_gcd_basic() {
         assert_eq!(eval_scalar("gcd(12,18)").unwrap(), 6.0);
     }
 
-    // ===== UT-NUM-002: LCM =====
+    // ===== LCM =====
 
     #[test]
     fn test_lcm_basic() {
         assert_eq!(eval_scalar("lcm(4,6)").unwrap(), 12.0);
     }
 
-    // ===== UT-NUM-003: 小素数判定 =====
+    // ===== 小素数判定 =====
 
     #[test]
     fn test_is_prime_small() {
         assert_eq!(eval_scalar("is_prime(7)").unwrap(), 1.0); // 1 = true
     }
 
-    // ===== UT-NUM-004: 大素数判定 =====
+    // ===== 大素数判定 =====
 
     #[test]
     fn test_is_prime_large() {
         assert_eq!(eval_scalar("is_prime(1000000007)").unwrap(), 1.0);
     }
 
-    // ===== UT-NUM-005: 合数判定 =====
+    // ===== 合数判定 =====
 
     #[test]
     fn test_is_prime_composite() {
         assert_eq!(eval_scalar("is_prime(9)").unwrap(), 0.0); // 0 = false
     }
 
-    // ===== UT-NUM-006: 边界 0 =====
+    // ===== 边界 0 =====
 
     #[test]
     fn test_is_prime_zero() {
         assert_eq!(eval_scalar("is_prime(0)").unwrap(), 0.0);
     }
 
-    // ===== UT-NUM-007: 边界 1 =====
+    // ===== 边界 1 =====
 
     #[test]
     fn test_is_prime_one() {
         assert_eq!(eval_scalar("is_prime(1)").unwrap(), 0.0);
     }
 
-    // ===== UT-NUM-008: 边界 2 =====
+    // ===== 边界 2 =====
 
     #[test]
     fn test_is_prime_two() {
         assert_eq!(eval_scalar("is_prime(2)").unwrap(), 1.0);
     }
 
-    // ===== UT-NUM-009: 素数筛 =====
+    // ===== 素数筛 =====
 
     #[test]
     fn test_prime_sieve_basic() {
@@ -577,42 +576,42 @@ mod tests {
         assert_eq!(result.as_vector().unwrap(), &Vec::<f64>::new());
     }
 
-    // ===== UT-NUM-010: 模逆 =====
+    // ===== 模逆 =====
 
     #[test]
     fn test_mod_inverse_basic() {
         assert_eq!(eval_scalar("mod_inverse(3,11)").unwrap(), 4.0);
     }
 
-    // ===== UT-NUM-011: 模幂 =====
+    // ===== 模幂 =====
 
     #[test]
     fn test_mod_pow_basic() {
         assert_eq!(eval_scalar("mod_pow(2,10,1000)").unwrap(), 24.0);
     }
 
-    // ===== UT-NUM-012: 欧拉函数 =====
+    // ===== 欧拉函数 =====
 
     #[test]
     fn test_euler_phi_basic() {
         assert_eq!(eval_scalar("euler_phi(10)").unwrap(), 4.0);
     }
 
-    // ===== UT-NUM-013: 负数处理 =====
+    // ===== 负数处理 =====
 
     #[test]
     fn test_gcd_negative() {
         assert_eq!(eval_scalar("gcd(-12,18)").unwrap(), 6.0);
     }
 
-    // ===== UT-NUM-014: 边界 0 =====
+    // ===== 边界 0 =====
 
     #[test]
     fn test_gcd_zero() {
         assert_eq!(eval_scalar("gcd(0,5)").unwrap(), 5.0);
     }
 
-    // ===== UT-NUM-015: 大数 =====
+    // ===== 大数 =====
 
     #[test]
     fn test_is_prime_large_10e18() {

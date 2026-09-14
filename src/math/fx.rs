@@ -2,7 +2,7 @@
 
 //! 汇率换算核心数学函数。
 //!
-//! 设计依据：design.md D6（base 三角换算）
+//! 设计依据：base 三角换算
 //! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
 //!
 //! 从 `domains/fx.rs` 提取的纯函数：汇率表结构 + 三角换算逻辑 + 错误构造。

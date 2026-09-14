@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - vector-domain spec：7 个 requirements / 13+ scenarios
-//! - design.md D2（复用 AstNode::List）、D6（priority=30）
+//! - 复用 AstNode::List、priority=30
 //!
 //! 路由策略：
 //! - AST 含向量函数调用（dot/cross/norm/angle/normalize/scalar_triple/
@@ -656,7 +656,7 @@ mod tests {
         );
     }
 
-    // ===== UT-VEC-001: 向量加法 =====
+    // ===== 向量加法 =====
 
     #[test]
     fn test_vector_add() {
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(result, vec![5.0, 7.0, 9.0]);
     }
 
-    // ===== UT-VEC-002: 向量减法 =====
+    // ===== 向量减法 =====
 
     #[test]
     fn test_vector_sub() {
@@ -672,7 +672,7 @@ mod tests {
         assert_eq!(result, vec![4.0, 5.0, 6.0]);
     }
 
-    // ===== UT-VEC-003: 向量数乘 =====
+    // ===== 向量数乘 =====
 
     #[test]
     fn test_vector_scalar_mul() {
@@ -686,14 +686,14 @@ mod tests {
         assert_eq!(result, vec![3.0, 6.0, 9.0]);
     }
 
-    // ===== UT-VEC-004: 点积 =====
+    // ===== 点积 =====
 
     #[test]
     fn test_dot_product() {
         assert_eq!(eval_scalar("dot([1,2,3],[4,5,6])").unwrap(), 32.0);
     }
 
-    // ===== UT-VEC-005: 叉积 =====
+    // ===== 叉积 =====
 
     #[test]
     fn test_cross_product() {
@@ -701,14 +701,14 @@ mod tests {
         assert_eq!(result, vec![0.0, 0.0, 1.0]);
     }
 
-    // ===== UT-VEC-006: 模长 =====
+    // ===== 模长 =====
 
     #[test]
     fn test_norm() {
         assert_eq!(eval_scalar("norm([3,4])").unwrap(), 5.0);
     }
 
-    // ===== UT-VEC-007: 夹角 =====
+    // ===== 夹角 =====
 
     #[test]
     fn test_angle() {
@@ -716,7 +716,7 @@ mod tests {
         assert_approx(result, std::f64::consts::PI / 2.0);
     }
 
-    // ===== UT-VEC-008: 混合积 =====
+    // ===== 混合积 =====
 
     #[test]
     fn test_scalar_triple() {
@@ -726,7 +726,7 @@ mod tests {
         );
     }
 
-    // ===== UT-VEC-009: 维度不匹配 =====
+    // ===== 维度不匹配 =====
 
     #[test]
     fn test_dimension_mismatch_dot() {
@@ -734,7 +734,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== UT-VEC-010: 零向量 =====
+    // ===== 零向量 =====
 
     #[test]
     fn test_zero_vector_norm() {

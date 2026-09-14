@@ -8,9 +8,9 @@
 //! - `--steps "(2+9)*7-6"` 输出 `2+9=11 → 11*7=77 → 77-6=71`
 //!
 //! 设计依据：
-//! - design.md D3：步骤是 CLI 侧展示关注点，纯 AST walker
-//! - design.md Risks：复用 256 深度限制防止栈溢出
-//! - tasks.md 3.1：post-order 遍历 + 256 深度上限
+//! - 步骤是 CLI 侧展示关注点，纯 AST walker
+//! - 复用 256 深度限制防止栈溢出
+//! - post-order 遍历 + 256 深度上限
 
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, UnaryOp};
 
@@ -133,7 +133,7 @@ fn walk(
 ///
 /// BigNumber 设计用于高精度整数，但 steps 模式只支持 f64 计算。
 /// 当 BigNumber 超过 f64 安全整数范围（2^53 ≈ 9e15）时，parse::<f64>()
-/// 会丢失精度，应显式报错（Rule 12: 失败显性化）而非静默丢失。
+/// 会丢失精度，应显式报错（失败显性化）而非静默丢失。
 ///
 /// 安全范围内的小 BigNumber（如 "42"、"1234567890123456"）正常解析。
 fn parse_bignumber_for_steps(s: &str) -> Result<f64, CalcError> {
@@ -1092,11 +1092,11 @@ mod tests {
         assert_eq!(result, 0.0);
     }
 
-    // ===== Matrix 节点静默返回 Ok(0.0) 违反 Rule 12 =====
+    // ===== Matrix 节点静默返回 Ok(0.0) 违反 =====
 
     #[test]
     fn steps_matrix_leaf_returns_error_not_silent_zero() {
-        // Matrix 节点不应静默返回 Ok(0.0)，应显式报错（Rule 12: 失败显性化）
+        // Matrix 节点不应静默返回 Ok(0.0)，应显式报错（失败显性化）
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
         assert!(

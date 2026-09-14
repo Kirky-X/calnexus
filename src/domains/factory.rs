@@ -65,7 +65,7 @@ pub(crate) fn build_precision_domain() -> Box<dyn CalculationDomain> {
 mod tests {
     use super::*;
 
-    // ===== 域优先级测试（从 core/domain.rs 迁移，消除 core → domains 类型依赖）=====
+    // ===== 域优先级测试（从 core/domain.rs 迁移，消除 core → domains 类型依赖） =====
     //
     // priority 是 domains 层的属性，测试应在 domains 层进行（规则 25 + DIP）。
     // 原测试位于 core/domain.rs，直接构造具体域类型，违反 ARCHITECTURE.md §2.3

@@ -7,7 +7,7 @@
 //! - `steps::generate_steps`：遍历 AST 生成逐步求值字符串列表
 //! - `canonical::format_canonical`：暴露 `CanonicalForm` 的字符串形式
 //!
-//! 设计依据：design.md D1 — 独立模块避免 `src/cli.rs` 进一步膨胀。
+//! 设计依据：独立模块避免 `src/cli.rs` 进一步膨胀。
 
 mod canonical;
 mod latex;

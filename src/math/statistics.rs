@@ -88,7 +88,7 @@ pub fn count(values: &[f64]) -> f64 {
     values.len() as f64
 }
 
-// ===== 特殊函数（原 stats_special.rs）=====
+// ===== 特殊函数（原 stats_special.rs） =====
 
 /// 计算 ln(Γ(z))，z > 0。Lanczos 近似（g=7, 9 系数）。
 /// z <= 0 时返回 f64::NAN 而非产生误导性结果。
@@ -264,7 +264,7 @@ pub fn ln_binomial(n: u64, k: u64) -> f64 {
     ln_factorial(n) - ln_factorial(k) - ln_factorial(n - k)
 }
 
-// ===== 分布函数（原 stats_distributions.rs）=====
+// ===== 分布函数（原 stats_distributions.rs） =====
 
 /// 正态分布 PDF。
 pub fn norm_pdf(x: f64, mu: f64, sigma: f64) -> f64 {
@@ -533,7 +533,7 @@ pub fn binom_cdf(k: f64, n: f64, p: f64) -> f64 {
     1.0 - regularized_beta_inc(ki as f64 + 1.0, ni as f64 - ki as f64, p)
 }
 
-// ===== 检验与相关函数（原 stats_tests.rs）=====
+// ===== 检验与相关函数（原 stats_tests.rs） =====
 
 /// 单样本 t 检验（双尾）。返回 {"t", "df", "p", "mean"}。
 pub fn t_test_one(data: &[f64], mu: f64) -> HashMap<String, f64> {

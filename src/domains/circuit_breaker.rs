@@ -11,7 +11,7 @@
 //! - 纯同步实现（`Mutex` + `Instant`），无 tokio（CalNexus CLI 为纯同步代码）；
 //! - 半开探针准入依赖上层单飞锁（fx_provider `fetch_lock` 串行化），同一时刻至多
 //!   1 个探针在途，无需 limiteron 的 `half_open_max_calls` CAS 准入；
-//! - 无慢调用率熔断与错误分类器：fx 端点编译期固定（design.md D6），超时/连接/
+//! - 无慢调用率熔断与错误分类器：fx 端点编译期固定，超时/连接/
 //!   读取/解析全部视为源站故障，等价于 limiteron 默认 `ErrorClassifier` 对瞬态
 //!   错误的全量归类。
 //!

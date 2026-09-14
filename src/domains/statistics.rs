@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - statistics-domain spec：10 个 requirements / 21 个 scenarios
-//! - design.md D6：自研实现，无外部依赖，priority=20
+//! - 自研实现，无外部依赖，priority=20
 //!
 //! 路由策略：AST 含统计函数调用（mean/variance/std/median/min/max/sum/count）时路由至本域。
 //! 输入为 List 节点；空列表与非数值元素（含嵌套 List/Matrix/Complex）返回 DomainError。
@@ -612,7 +612,7 @@ impl Default for StatisticsDomain {
     }
 }
 
-/// 递归检查 AST 是否含统计函数调用（spec Req 10）。
+/// 递归检查 AST 是否含统计函数调用（spec）。
 fn contains_statistics_function(ast: &AstNode) -> bool {
     match ast {
         AstNode::FunctionCall(name, _) if STATISTICS_FUNCTIONS.contains(&name.as_str()) => true,
@@ -657,17 +657,17 @@ mod tests {
             .map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
-    // ===== Requirement 1: 列表字面量解析（通过 count 间接验证）=====
+    // ===== Requirement 1: 列表字面量解析（通过 count 间接验证） =====
 
     #[test]
     fn test_standard_list_parse() {
-        // count([1,2,3,4,5]) → 5（Req 1 Scen 1，5 元素 List）
+        // count([1,2,3,4,5]) → 5（5 元素 List）
         assert_eq!(eval("count([1,2,3,4,5])").unwrap(), 5.0);
     }
 
     #[test]
     fn test_single_element_list_parse() {
-        // count([42]) → 1（Req 1 Scen 2，1 元素 List）
+        // count([42]) → 1（1 元素 List）
         assert_eq!(eval("count([42])").unwrap(), 1.0);
     }
 
@@ -675,27 +675,27 @@ mod tests {
 
     #[test]
     fn test_mean_standard() {
-        // mean([1,2,3,4,5]) → 3.0（Req 2 Scen 1）
+        // mean([1,2,3,4,5]) → 3.0
         assert_eq!(eval("mean([1,2,3,4,5])").unwrap(), 3.0);
     }
 
     #[test]
     fn test_mean_single_element() {
-        // mean([5]) → 5.0（Req 2 Scen 2）
+        // mean([5]) → 5.0
         assert_eq!(eval("mean([5])").unwrap(), 5.0);
     }
 
-    // ===== Requirement 3: 方差（总体方差，除以 N）=====
+    // ===== Requirement 3: 方差（总体方差，除以 N） =====
 
     #[test]
     fn test_variance_standard() {
-        // variance([1,2,3,4,5]) → 2.0（Req 3 Scen 1，总体方差）
+        // variance([1,2,3,4,5]) → 2.0（总体方差）
         assert_eq!(eval("variance([1,2,3,4,5])").unwrap(), 2.0);
     }
 
     #[test]
     fn test_variance_identical_elements() {
-        // variance([3,3,3,3]) → 0.0（Req 3 Scen 2）
+        // variance([3,3,3,3]) → 0.0
         assert_eq!(eval("variance([3,3,3,3])").unwrap(), 0.0);
     }
 
@@ -703,13 +703,13 @@ mod tests {
 
     #[test]
     fn test_std_standard() {
-        // std([1,2,3,4,5]) → √2 ≈ 1.4142135623730951（Req 4 Scen 1）
+        // std([1,2,3,4,5]) → √2 ≈ 1.4142135623730951
         assert_approx(eval("std([1,2,3,4,5])").unwrap(), 1.4142135623730951);
     }
 
     #[test]
     fn test_std_identical_elements() {
-        // std([5,5,5]) → 0.0（Req 4 Scen 2）
+        // std([5,5,5]) → 0.0
         assert_eq!(eval("std([5,5,5])").unwrap(), 0.0);
     }
 
@@ -717,19 +717,19 @@ mod tests {
 
     #[test]
     fn test_median_odd_length() {
-        // median([1,2,3,4,5]) → 3.0（Req 5 Scen 1）
+        // median([1,2,3,4,5]) → 3.0
         assert_eq!(eval("median([1,2,3,4,5])").unwrap(), 3.0);
     }
 
     #[test]
     fn test_median_even_length() {
-        // median([1,2,3,4]) → 2.5（Req 5 Scen 2）
+        // median([1,2,3,4]) → 2.5
         assert_eq!(eval("median([1,2,3,4])").unwrap(), 2.5);
     }
 
     #[test]
     fn test_median_unsorted() {
-        // median([3,1,4,1,5]) → 3.0（Req 5 Scen 3，排序后取中位数）
+        // median([3,1,4,1,5]) → 3.0（排序后取中位数）
         assert_eq!(eval("median([3,1,4,1,5])").unwrap(), 3.0);
     }
 
@@ -737,13 +737,13 @@ mod tests {
 
     #[test]
     fn test_min() {
-        // min([3,1,4,1,5,9,2,6]) → 1.0（Req 6 Scen 1）
+        // min([3,1,4,1,5,9,2,6]) → 1.0
         assert_eq!(eval("min([3,1,4,1,5,9,2,6])").unwrap(), 1.0);
     }
 
     #[test]
     fn test_max() {
-        // max([3,1,4,1,5,9,2,6]) → 9.0（Req 6 Scen 2）
+        // max([3,1,4,1,5,9,2,6]) → 9.0
         assert_eq!(eval("max([3,1,4,1,5,9,2,6])").unwrap(), 9.0);
     }
 
@@ -751,13 +751,13 @@ mod tests {
 
     #[test]
     fn test_sum() {
-        // sum([1,2,3,4,5]) → 15.0（Req 7 Scen 1）
+        // sum([1,2,3,4,5]) → 15.0
         assert_eq!(eval("sum([1,2,3,4,5])").unwrap(), 15.0);
     }
 
     #[test]
     fn test_count() {
-        // count([1,2,3,4,5]) → 5.0（Req 7 Scen 2）
+        // count([1,2,3,4,5]) → 5.0
         assert_eq!(eval("count([1,2,3,4,5])").unwrap(), 5.0);
     }
 
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn test_empty_list_mean() {
-        // mean([]) → DomainError（Req 8 Scen 1）
+        // mean([]) → DomainError
         let result = eval("mean([])");
         assert!(result.is_err());
         assert!(
@@ -777,7 +777,7 @@ mod tests {
 
     #[test]
     fn test_empty_list_sum() {
-        // sum([]) → DomainError（Req 8 Scen 2）
+        // sum([]) → DomainError
         let result = eval("sum([])");
         assert!(result.is_err());
         assert!(
@@ -791,7 +791,7 @@ mod tests {
 
     #[test]
     fn test_nested_list_rejected() {
-        // mean([1, [2,3], 4]) → DomainError（Req 9 Scen 2，含嵌套列表）
+        // mean([1, [2,3], 4]) → DomainError（含嵌套列表）
         let result = eval("mean([1, [2,3], 4])");
         assert!(result.is_err());
         assert!(
@@ -803,7 +803,7 @@ mod tests {
 
     #[test]
     fn test_matrix_in_list_rejected() {
-        // max([1, [[2,3],[4,5]], 6]) → DomainError（Req 9 Scen 2，含矩阵）
+        // max([1, [[2,3],[4,5]], 6]) → DomainError（含矩阵）
         let result = eval("max([1, [[2,3],[4,5]], 6])");
         assert!(result.is_err());
         assert!(
@@ -817,7 +817,7 @@ mod tests {
 
     #[test]
     fn test_route_statistics_function() {
-        // mean([1,2,3,4,5]) → 含统计函数，路由到 StatisticsDomain（Req 10 Scen 1）
+        // mean([1,2,3,4,5]) → 含统计函数，路由到 StatisticsDomain
         let ast = parse("mean([1,2,3,4,5])").unwrap();
         let domain = StatisticsDomain;
         assert!(domain.supports(&ast));
@@ -825,7 +825,7 @@ mod tests {
 
     #[test]
     fn test_route_nested_statistics() {
-        // max([1,2,3]) + min([4,5,6]) → 含统计函数，路由到 StatisticsDomain（Req 10 Scen 2）
+        // max([1,2,3]) + min([4,5,6]) → 含统计函数，路由到 StatisticsDomain
         let ast = parse("max([1,2,3]) + min([4,5,6])").unwrap();
         let domain = StatisticsDomain;
         assert!(domain.supports(&ast));
@@ -1120,7 +1120,7 @@ mod tests {
         assert!(domain.supports(&ast));
     }
 
-    // ===== proptest 属性测试（任务 14.7）=====
+    // ===== proptest 属性测试 =====
 
     use proptest::prelude::*;
 
@@ -1187,7 +1187,7 @@ mod tests {
         }
     }
 
-    // ===== Phase 4 集成测试：分布函数、检验函数、相关函数 =====
+    // ===== 集成测试：分布函数、检验函数、相关函数 =====
 
     fn eval_to_result(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();

@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - polynomial-domain spec：9 个 requirements / 14+ scenarios
-//! - design.md D3（系数向量升幂存储 + 直接表达式输入）、D6（priority=25）
+//! - 系数向量升幂存储 + 直接表达式输入、priority=25
 //!
 //! 路由策略：AST 含多项式函数调用（poly_add/poly_sub/poly_mul/poly_div/poly_eval/
 //! poly_diff/poly_integrate/roots/factor）时路由至本域。
@@ -665,7 +665,7 @@ mod tests {
         }
     }
 
-    // ===== UT-POL-001: 多项式加法 =====
+    // ===== 多项式加法 =====
 
     #[test]
     fn test_poly_add() {
@@ -673,7 +673,7 @@ mod tests {
         assert_vec_approx(&result, &[2.0, 3.0, 1.0]); // x^2+3x+2
     }
 
-    // ===== UT-POL-002: 多项式减法 =====
+    // ===== 多项式减法 =====
 
     #[test]
     fn test_poly_sub() {
@@ -681,7 +681,7 @@ mod tests {
         assert_vec_approx(&result, &[0.0, 1.0, 1.0]); // x^2+x
     }
 
-    // ===== UT-POL-003: 多项式乘法 =====
+    // ===== 多项式乘法 =====
 
     #[test]
     fn test_poly_mul() {
@@ -689,7 +689,7 @@ mod tests {
         assert_vec_approx(&result, &[2.0, 3.0, 1.0]); // x^2+3x+2
     }
 
-    // ===== UT-POL-004: 多项式除法 =====
+    // ===== 多项式除法 =====
 
     #[test]
     fn test_poly_div() {
@@ -697,7 +697,7 @@ mod tests {
         assert_vec_approx(&result, &[1.0, 1.0]); // x+1
     }
 
-    // ===== UT-POL-005: 求根（实根）=====
+    // ===== 求根（实根） =====
 
     #[test]
     fn test_roots_real() {
@@ -708,7 +708,7 @@ mod tests {
         assert_approx(roots[1], -2.0);
     }
 
-    // ===== UT-POL-006: 因式分解 =====
+    // ===== 因式分解 =====
 
     #[test]
     fn test_factor() {
@@ -720,7 +720,7 @@ mod tests {
         );
     }
 
-    // ===== UT-POL-007: 求值 =====
+    // ===== 求值 =====
 
     #[test]
     fn test_poly_eval() {
@@ -741,7 +741,7 @@ mod tests {
         assert_approx(result, 2.0 * std::f64::consts::PI + 1.0);
     }
 
-    // ===== UT-POL-008: 微分 =====
+    // ===== 微分 =====
 
     #[test]
     fn test_poly_diff() {
@@ -750,7 +750,7 @@ mod tests {
         assert_vec_approx(&result, &[2.0, 0.0, 3.0]);
     }
 
-    // ===== UT-POL-009: 积分 =====
+    // ===== 积分 =====
 
     #[test]
     fn test_poly_integrate() {
@@ -759,7 +759,7 @@ mod tests {
         assert_vec_approx(&result, &[0.0, 0.0, 1.0]);
     }
 
-    // ===== UT-POL-010: 无实根（复根）=====
+    // ===== 无实根（复根） =====
 
     #[test]
     fn test_roots_complex() {
@@ -1840,7 +1840,7 @@ mod tests {
         assert!(!PolynomialDomain.supports(&ast));
     }
 
-    // ===== 覆盖率补充测试（第二轮：覆盖剩余未覆盖路径）=====
+    // ===== 覆盖率补充测试（第二轮：覆盖剩余未覆盖路径） =====
     // 注：eval_function 中 line 210 的 `_ => unreachable!("checked above")` 分支
     // 在逻辑上不可达——name 已在 line 99 通过 POLYNOMIAL_FUNCTIONS 白名单校验，
     // match 覆盖了全部 9 个白名单函数，故该分支无法被测试触发且不应被触发。

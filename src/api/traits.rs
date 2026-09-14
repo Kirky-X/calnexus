@@ -314,7 +314,7 @@ pub trait AppliedMath {
     #[cfg(feature = "time")]
     /// 计算 `from_timestamp`（语义详见 docs/API_GUIDE.md 对应章节）。
     /// 命名说明：`from_*` 惯例无 self，但本 trait 全方法统一 `&self` 求值门面签名
-    /// （v015 命名权衡，与 timestamp/now 等一致），故豁免 clippy::wrong_self_convention。
+    /// （命名权衡，与 timestamp/now 等一致），故豁免 clippy::wrong_self_convention。
     #[allow(clippy::wrong_self_convention)]
     fn from_timestamp(&self, secs: i64, tz: Option<&str>) -> Result<EvalResult, CalcError>;
 

@@ -63,7 +63,7 @@ impl SymbolicExpr {
     }
 }
 
-// ============================ 格式化 (TG3.1) ============================
+// ============================ 格式化 ============================
 
 /// 将 [`SymbolicExpr`] 格式化为可读字符串。
 pub fn symbolic_to_string(expr: &SymbolicExpr) -> String {
@@ -251,7 +251,7 @@ fn unary_symbolic_arg(name: &str, args: &[AstNode]) -> Result<Box<SymbolicExpr>,
     Ok(Box::new(ast_to_symbolic(&args[0])?))
 }
 
-// ============================ 符号求导 diff (TG3.2) ============================
+// ============================ 符号求导 diff ============================
 
 /// 符号求导 `diff(expr, var)`。
 ///
@@ -421,7 +421,7 @@ fn diff_ln(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
     )
 }
 
-// ============================ 符号积分 integrate (TG3.3) ============================
+// ============================ 符号积分 integrate ============================
 
 /// 符号积分 `integrate(expr, var)`。
 ///
@@ -597,7 +597,7 @@ fn is_var(expr: &SymbolicExpr, var: &str) -> bool {
     matches!(expr, SymbolicExpr::Var(name) if name == var)
 }
 
-// ============================ 表达式化简 simplify (TG3.4) ============================
+// ============================ 表达式化简 simplify ============================
 
 /// 表达式化简 `simplify(expr)`。
 ///
@@ -749,7 +749,7 @@ fn simplify_neg(e: &SymbolicExpr) -> SymbolicExpr {
     SymbolicExpr::Neg(Box::new(e.clone()))
 }
 
-// ============================ 极限 limit (TG3.5) ============================
+// ============================ 极限 limit ============================
 
 /// 符号极限 `limit(expr, var, point)`。
 ///
@@ -892,7 +892,7 @@ fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcErro
     Ok(v.ln())
 }
 
-// ============================ 泰勒级数 taylor (TG3.6) ============================
+// ============================ 泰勒级数 taylor ============================
 
 /// 泰勒级数 `taylor(expr, var, order)`。
 ///

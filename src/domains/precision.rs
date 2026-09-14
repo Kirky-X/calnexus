@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - precision-domain spec：10 个 requirements / 21 个 scenarios
-//! - design.md D7：基于 `num_bigint::BigInt` + `num_rational::BigRational`，priority=25
+//! - 基于 `num_bigint::BigInt` + `num_rational::BigRational`，priority=25
 //!
 //! 路由策略：
 //! - AST 含 `BigNumber` 节点（16+ 位整数字面量）→ 路由至本域
@@ -148,7 +148,7 @@ impl PrecisionDomain {
             BinaryOp::Pow => {
                 let exp = math_prec::rational_to_int(&b, "power exponent")?;
                 // 安全约束1：拒绝超大指数（绝对值），防止 DoS。
-                // tiangang SAST CRITICAL 修复 + 复审 C-1 修复：
+                // 修复 + 修复：
                 // `BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
                 // 即先计算 `a^|exp|`（巨大中间值）再取倒数。故负指数绝对值超限同样会 DoS
                 // （`2^(-2000000000)` 计算 `2^2000000000` ~6 亿位数字）。必须用 `abs()` 检查。
@@ -166,7 +166,7 @@ impl PrecisionDomain {
                     ));
                 }
                 // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
-                // 安全审查 HIGH（C-1 复审发现）：`(10^10000)^99999` 可产生 ~1GB 输出。
+                // `(10^10000)^99999` 可产生 ~1GB 输出。
                 // 指数已受约束1限制，但底数 `a` 可为任意大小 BigInt，故需复合限制。
                 // 复用 core 层 `check_pow_output_size`，number_theory/combinatorics 域共用同一检查。
                 let abs_exp_u64 = u64::try_from(&exp.abs()).map_err(|_| {
@@ -296,7 +296,7 @@ impl PrecisionDomain {
 
 /// 递归检查 AST 是否应路由至 PrecisionDomain。
 ///
-/// 路由条件（spec Req 9）：
+/// 路由条件（spec）：
 /// - 含 `BigNumber` 节点（大整数字面量）
 /// - 含 `precision()` 函数调用
 fn contains_precision(ast: &AstNode) -> bool {
@@ -400,7 +400,7 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
         );
     }
     // 安全约束：拒绝超大精度值，防止 format_decimal 循环 DoS
-    // （tiangang SAST CRITICAL：precision(N, expr) 表达式语法绕过 server 层校验）
+    // （precision(N, expr) 表达式语法绕过 server 层校验）
     if v > MAX_PRECISION {
         return Err(CalcError::domain(format!(
             "precision N must not exceed {} (got {})",
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_big_integer_addition() {
-        // 12345678901234567890 + 1 → 12345678901234567891（Req 1 Scen 1）
+        // 12345678901234567890 + 1 → 12345678901234567891
         let ast = parse("12345678901234567890 + 1").unwrap();
         let domain = PrecisionDomain;
         assert!(domain.supports(&ast));
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_big_integer_multiplication() {
-        // 999999999999 * 999999999999 → 精确大整数（Req 1 Scen 2）
+        // 999999999999 * 999999999999 → 精确大整数
         let ast = parse("999999999999 * 999999999999").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn test_fraction_addition() {
-        // 1/3 + 1/6 → 1/2（Req 2 Scen 1）
+        // 1/3 + 1/6 → 1/2
         let ast = parse("1/3 + 1/6").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_fraction_reduction() {
-        // 2/4 → 1/2（Req 2 Scen 2）
+        // 2/4 → 1/2
         let ast = parse("2/4").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn test_factorial_100() {
-        // factorial(100) → 精确大整数（Req 4 Scen 1）
+        // factorial(100) → 精确大整数
         let ast = parse("factorial(100)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn test_factorial_5() {
-        // factorial(5) → 120（Req 4 Scen 2）
+        // factorial(5) → 120
         let ast = parse("factorial(5)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn test_power_2_100() {
-        // 2^100 → 精确大整数（Req 6 Scen 1）
+        // 2^100 → 精确大整数
         let ast = parse("2^100").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -597,7 +597,7 @@ mod tests {
 
     #[test]
     fn test_power_10_50() {
-        // 10^50 → 1 后跟 50 个 0（Req 6 Scen 2）
+        // 10^50 → 1 后跟 50 个 0
         let ast = parse("10^50").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -609,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_fraction_times_integer() {
-        // 1/3 * 3 → 1（Req 7 Scen 1）
+        // 1/3 * 3 → 1
         let ast = parse("1/3 * 3").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn test_fraction_division() {
-        // (1/2) / (1/4) → 2（Req 7 Scen 2）
+        // (1/2) / (1/4) → 2
         let ast = parse("(1/2) / (1/4)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_bigint_plus_fraction() {
-        // 12345678901234567890 + 1/3 → BigRational（Req 8 Scen 1）
+        // 12345678901234567890 + 1/3 → BigRational
         let ast = parse("12345678901234567890 + 1/3").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -639,7 +639,7 @@ mod tests {
 
     #[test]
     fn test_mixed_fraction_reduction() {
-        // 2/3 * (3 + 1/2) → 2/3 * 7/2 = 14/6 = 7/3（Req 8 Scen 2）
+        // 2/3 * (3 + 1/2) → 2/3 * 7/2 = 14/6 = 7/3
         let ast = parse("2/3 * (3 + 1/2)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -650,7 +650,7 @@ mod tests {
 
     #[test]
     fn test_precision_function_routes() {
-        // precision(50, 1/3) → 路由到 PrecisionDomain（Req 9 Scen 1）
+        // precision(50, 1/3) → 路由到 PrecisionDomain
         let ast = parse("precision(50, 1/3)").unwrap();
         let domain = PrecisionDomain;
         assert!(domain.supports(&ast));
@@ -1213,7 +1213,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== 覆盖 extract_precision_value BigNumber("0") 路径（lines 265-268）=====
+    // ===== 覆盖 extract_precision_value BigNumber("0") 路径（lines 265-268） =====
 
     #[test]
     fn test_precision_bignumber_zero() {
@@ -1229,7 +1229,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== 覆盖测试辅助函数的 panic 分支（lines 382, 395）=====
+    // ===== 覆盖测试辅助函数的 panic 分支（lines 382, 395） =====
 
     #[test]
     #[should_panic(expected = "expected BigInt")]
@@ -1245,7 +1245,7 @@ mod tests {
         assert_bigrational(&EvalResult::BigInt(BigInt::from(1)), "1", "2");
     }
 
-    // ===== 安全审查 CRITICAL 修复：factorial/pow 上界（T025）=====
+    // ===== factorial/pow 上界 =====
 
     /// factorial(MAX_FACTORIAL_INPUT) 应成功（边界值）。
     #[test]
@@ -1354,13 +1354,13 @@ mod tests {
         assert_bigrational(&result, "1", "2");
     }
 
-    /// 安全审查 CRITICAL C-1 修复：`a^(-(MAX_POW_EXPONENT+1))` 应返回 Domain 错误。
+    /// `a^(-(MAX_POW_EXPONENT+1))` 应返回 Domain 错误。
     ///
     /// 漏洞：`BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
     /// 即先计算 `a^|exp|`（巨大中间值），再取倒数。`2^(-100001)` 会计算 `2^100001`（~30104 位数字），
     /// 而 `2^(-2000000000)` 会计算 `2^2000000000`（~6 亿位数字，~600MB）导致内存爆炸 + CPU 挂死。
     ///
-    /// 修复：对指数取 `abs()` 后与 `MAX_POW_EXPONENT` 比较，负指数绝对值超限同样拒绝。
+    /// 对指数取 `abs()` 后与 `MAX_POW_EXPONENT` 比较，负指数绝对值超限同样拒绝。
     #[test]
     fn test_pow_oversized_negative_exponent_returns_error() {
         let oversized_neg = -(MAX_POW_EXPONENT as i64 + 1); // -100001
@@ -1379,7 +1379,7 @@ mod tests {
         );
     }
 
-    // ===== 底数复合限制测试（安全审查 HIGH 修复）=====
+    // ===== 底数复合限制测试 =====
 
     /// `check_pow_output_size` 单元测试：小底数 × 大指数应通过。
     ///

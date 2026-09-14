@@ -3,7 +3,7 @@
 //! Symbolic 计算域：符号微分、积分、化简、极限、泰勒级数。
 //!
 //! 设计依据：
-//! - design.md D2（SymbolicExpr 枚举 + AST 变换 + 字符串输出）
+//! - SymbolicExpr 枚举 + AST 变换 + 字符串输出
 //! - v1.0 symbolic-domain spec
 //!
 //! 路由策略：AST 含 diff/integrate/simplify/limit/taylor 函数调用时路由至本域。
@@ -12,7 +12,7 @@
 //! 核心数据结构 [`SymbolicExpr`] 与 [`AstNode`] 双向转换，符号变换后格式化为
 //! 字符串返回 [`EvalResult::Symbolic`]。
 //!
-//! T021 重构：纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
+//! 重构：纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, CalcError, EvalContext, EvalResult, UnaryOp};
@@ -27,9 +27,9 @@ const SYMBOLIC_FUNCTIONS: &[&str] = &["diff", "integrate", "simplify", "limit", 
 // ============================ AstNode ↔ SymbolicExpr 转换 ============================
 // ast_to_symbolic 已迁移至 math::symbolic，此处保留 re-export 供向后兼容。
 
-// ============================ SymbolicDomain (TG3.7) ============================
+// ============================ SymbolicDomain ============================
 
-/// Symbolic 计算域（TG3.7）。
+/// Symbolic 计算域。
 ///
 /// priority=30，路由触发词：diff/integrate/simplify/limit/taylor。
 pub struct SymbolicDomain;
@@ -246,7 +246,7 @@ fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
     }
 }
 
-// ============================ 单元测试 (TG3.9) ============================
+// ============================ 单元测试 ============================
 
 #[cfg(test)]
 mod tests {
@@ -258,7 +258,7 @@ mod tests {
     use crate::math::symbolic::SymbolicExpr;
     use std::collections::HashMap;
 
-    // ----- TG3.1 转换测试 -----
+    // ----- 转换测试 -----
 
     #[test]
     fn test_ast_to_symbolic_number() {
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(math_sym::symbolic_to_string(&sym), "2+x");
     }
 
-    // ----- TG3.2 求导测试 -----
+    // ----- 求导测试 -----
 
     #[test]
     fn test_diff_power_rule() {
@@ -380,7 +380,7 @@ mod tests {
         assert!(s.contains("cos(x)"), "expected cos(x) in: {}", s);
     }
 
-    // ----- TG3.3 积分测试 -----
+    // ----- 积分测试 -----
 
     #[test]
     fn test_integrate_power() {
@@ -437,7 +437,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ----- TG3.4 化简测试 -----
+    // ----- 化简测试 -----
 
     #[test]
     fn test_simplify_add_zero() {
@@ -512,7 +512,7 @@ mod tests {
         assert_eq!(result, SymbolicExpr::Const(5.0));
     }
 
-    // ----- TG3.5 极限测试 -----
+    // ----- 极限测试 -----
 
     #[test]
     fn test_limit_direct_substitution() {
@@ -563,7 +563,7 @@ mod tests {
         }
     }
 
-    // ----- TG3.6 泰勒级数测试 -----
+    // ----- 泰勒级数测试 -----
 
     #[test]
     fn test_taylor_exp() {
@@ -597,7 +597,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ----- TG3.7 路由测试 -----
+    // ----- 路由测试 -----
 
     #[test]
     fn test_domain_name_and_priority() {
@@ -627,7 +627,7 @@ mod tests {
         assert!(domain.supports(&ast));
     }
 
-    // ----- TG3.7 端到端 evaluate 测试 -----
+    // ----- 端到端 evaluate 测试 -----
 
     #[test]
     fn test_evaluate_diff_power() {
@@ -719,7 +719,7 @@ mod tests {
         assert_eq!(math_sym::eval_symbolic(&expr, &env).unwrap(), 5.0);
     }
 
-    // ----- TG3.10 proptest 属性测试 -----
+    // ----- proptest 属性测试 -----
 
     use proptest::prelude::*;
 
@@ -1450,7 +1450,7 @@ mod tests {
         );
     }
 
-    // ===== TG9.2 补充覆盖：integrate/simplify/limit/taylor 未覆盖路径 =====
+    // ===== 补充覆盖：integrate/simplify/limit/taylor 未覆盖路径 =====
 
     #[test]
     fn test_integrate_add_linearity() {

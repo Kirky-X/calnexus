@@ -16,7 +16,7 @@
 //! 设计依据：
 //! - PRD §3.2.4 / §4.1.1：`--latex "diff(x^2,x)"` → `\frac{d}{dx}\left(x^{2}\right) = 2x`
 //! - ADD §3.4：`CalcResult::LaTeX(String)` 变体
-//! - design.md D3：LaTeX 由 SymbolicDomain 直接产出（domain 拥有 AST 上下文）
+//! - LaTeX 由 SymbolicDomain 直接产出（domain 拥有 AST 上下文）
 
 use crate::core::{AstNode, EvalResult};
 use num_traits::Signed;
@@ -428,7 +428,7 @@ pub fn format_latex(
         // Json 是结构化复合结果（lu/qr/eig/svd 分解），LaTeX 无标准矩阵分解表示形式；
         // 主要走 --json 输出，此处 fallback 输出 JSON 字符串。
         EvalResult::Json(v) => v.to_string(),
-        // DateTime（time-unit-fx-domains D2）：RFC3339 字符串用 \text{} 包装，
+        // DateTime：RFC3339 字符串用 \text{} 包装，
         // 避免 LaTeX 数学模式将日期/时间中的 `-`、`:` 解释为减法/除法。
         EvalResult::DateTime(s) => format!("\\text{{{}}}", s),
     }
