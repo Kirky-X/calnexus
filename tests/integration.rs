@@ -1,11 +1,11 @@
-// v015：CalcError 144 字节，闭包返回值触发 result_large_err——与 lib.rs 同论证
+// CalcError 144 字节，闭包返回值触发 result_large_err——与 lib.rs 同论证
 #![allow(clippy::result_large_err)]
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 #![allow(clippy::approx_constant, non_snake_case)]
 
 //! 跨能力集成测试：解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出全链路。
 //!
-//! 任务 9.1-9.3：使用真实 ArithmeticDomain + ScientificDomain 验证端到端管线。
+//! -9.3：使用真实 ArithmeticDomain + ScientificDomain 验证端到端管线。
 //! 覆盖：
 //! - 9.1 全链路成功路径（算术 + 科学 + 混合 + 变量绑定）
 //! - 9.2 L1 缓存去重（交换律等价 / 常量折叠等价 共享缓存）
@@ -490,7 +490,7 @@ fn test_cache_hit_performance() {
 
 // ===== 17.1 跨域集成测试：Complex/Matrix/Statistics/Precision 全链路 =====
 //
-// 任务 17.1：扩展 tests/integration.rs，覆盖 v0.5 四个新域的
+// 扩展 tests/integration.rs，覆盖 四个新域的
 // 解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出 全链路。
 
 // ----- Complex 域全链路 -----
@@ -901,11 +901,11 @@ fn test_error_precision_division_by_zero() {
     );
 }
 
-// ----- 元测试：v0.8 全域路由覆盖 -----
+// ----- 元测试：全域路由覆盖 -----
 
 #[test]
 fn test_all_ten_domains_routed() {
-    // 元测试：验证 v0.8 全部 10 个域均能被路由器正确分发
+    // 元测试：验证 全部 10 个域均能被路由器正确分发
     let cases: &[(&str, &str)] = &[
         ("2+3", "arithmetic"),
         ("sin(pi/2)", "scientific"),
@@ -934,7 +934,7 @@ fn test_all_ten_domains_routed() {
     }
 }
 
-// ===== v0.8 新增域端到端集成测试（TG8）=====
+// ===== 新增域端到端集成测试 =====
 
 // ----- 8.2 NumberTheory 跨域集成测试 -----
 
@@ -1213,7 +1213,7 @@ fn test_v08_error_non_polynomial_expression() {
     assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
 }
 
-// ===== TG7.1 Symbolic 域集成测试 =====
+// ===== Symbolic 域集成测试 =====
 
 #[test]
 fn test_v10_symbolic_diff_power_rule() {
@@ -1281,7 +1281,7 @@ fn test_v10_symbolic_taylor_exp() {
     assert!(s.contains("x"), "expected x term in '{}'", s);
 }
 
-// ===== TG7.2 BigNumber 路由修复测试 =====
+// ===== BigNumber 路由修复测试 =====
 
 #[test]
 fn test_v10_bignumber_is_prime_routes_to_number_theory() {
@@ -1313,7 +1313,7 @@ fn test_v10_bignumber_pure_routes_to_precision() {
     assert_eq!(domain.domain_name(), "precision");
 }
 
-// ===== TG7.3 隐式乘法集成测试 =====
+// ===== 隐式乘法集成测试 =====
 
 #[test]
 fn test_v10_implicit_mult_2x() {
@@ -1338,7 +1338,7 @@ fn test_v10_implicit_mult_paren() {
     assert_eq!(result, 12.0);
 }
 
-// ===== TG7.4 多项式除法与高次求根测试 =====
+// ===== 多项式除法与高次求根测试 =====
 
 #[test]
 fn test_v10_poly_div_exact() {
@@ -1405,9 +1405,9 @@ fn test_v10_roots_quartic_repeated() {
     assert!(!v.is_empty());
 }
 
-// ===== P2: 公开 API 稳定性测试（模块移动后不应破坏） =====
+// ===== 公开 API 稳定性测试（模块移动后不应破坏） =====
 //
-// T002: 验证 evaluator/symbolic 模块移动到 core/domains 后，
+// 验证 evaluator/symbolic 模块移动到 core/domains 后，
 // calnexus:: 公开 API 导出列表保持不变。编译时验证：若 re-export
 // 断裂，本测试无法编译。
 
@@ -1457,20 +1457,17 @@ fn test_public_api_unchanged_after_move() {
     assert_eq!(fmt_prec, None);
 }
 
-// ===== P2 T006: SymbolicDomain 通过 domains 命名空间访问测试（Red → Green） =====
+// ===== SymbolicDomain 通过 domains 命名空间访问测试 =====
 //
-// R-domains-001 验收标准：`calnexus::SymbolicDomain` 和 `calnexus::domains::SymbolicDomain`
-// 都可访问。Red 阶段：当前 `mod domains` 为私有 mod，`calnexus::domains::SymbolicDomain`
-// 不可访问，本测试应编译失败。Green 阶段（T007）：将 `mod domains` 改为 `pub mod domains`，
-// 并在 `src/domains/mod.rs` 添加 `pub mod symbolic;` + `pub use symbolic::SymbolicDomain;`，
-// 本测试编译并通过。
+// `calnexus::SymbolicDomain` 和 `calnexus::domains::SymbolicDomain`
+// 都可通过以下两个路径访问。
 
 #[test]
 fn test_symbolic_domain_accessible_via_domains() {
     // 路径 1：通过 crate 根 re-export 访问（当前已可用）
     let _: calnexus::SymbolicDomain = calnexus::SymbolicDomain;
 
-    // 路径 2：通过 domains 子模块命名空间访问（Red 阶段编译失败，Green 阶段可用）
+    // 路径 2：通过 domains 子模块命名空间访问
     let _: calnexus::domains::SymbolicDomain = calnexus::domains::SymbolicDomain;
 
     // 两条路径应指向同一类型

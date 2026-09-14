@@ -2,8 +2,8 @@
 
 //! HTTP server 集成测试：`POST /api/v1/evaluate` 端点（`#[forge]` 宏生成）。
 //!
-//! P3（sdforge-forge-migration）：路由由 `#[forge]` 声明式生成，错误响应遵循
-//! sdforge `ApiError` 标准契约（spec.md R-sdforge-002）：
+//! 路由由 `#[forge]` 声明式生成，错误响应遵循
+//! sdforge `ApiError` 标准契约：
 //! - 计算错误（Parse/DivisionByZero/...）→ 400 `{"type":"InvalidInput","message":"{Kind}: ...",...}`
 //! - validate vars/precision 超限 → 422 `{"type":"ValidationError","field":"...","constraint":"..."}`
 //!
@@ -83,7 +83,7 @@ async fn test_http_evaluate_precision() {
 
 /// 缓存行为：首次请求 miss，第二次请求 hit。
 ///
-/// spec.md R-sdforge-002 缓存语义：相同表达式第二次请求命中缓存。
+/// 缓存语义：相同表达式第二次请求命中缓存。
 #[tokio::test]
 async fn test_http_evaluate_cache_miss() {
     // 首次请求：缓存未命中
@@ -101,7 +101,7 @@ async fn test_http_evaluate_cache_miss() {
     assert_eq!(body["result"], 15);
 }
 
-/// 计算错误（1/0）→ ApiError::InvalidInput 契约（spec.md R-sdforge-002）。
+/// 计算错误（1/0）→ ApiError::InvalidInput 契约。
 ///
 /// 400 + `{"type":"InvalidInput","message":"DivisionByZero: ...","field":null,"value":null}`
 #[tokio::test]
@@ -120,7 +120,7 @@ async fn test_http_evaluate_calc_error_invalid_input() {
     );
 }
 
-/// validate precision 超限 → ApiError::ValidationError 契约（spec.md R-sdforge-002）。
+/// validate precision 超限 → ApiError::ValidationError 契约。
 ///
 /// 422 + `{"type":"ValidationError","field":"precision","constraint":"10001 exceeds limit 10000"}`
 #[tokio::test]
@@ -139,7 +139,7 @@ async fn test_http_evaluate_validation_error_oversized_precision() {
     );
 }
 
-/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约（spec.md R-sdforge-002）。
+/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约。
 ///
 /// 422 + `{"type":"ValidationError","field":"vars","constraint":"size 1025 exceeds limit 1024"}`
 #[tokio::test]
@@ -300,7 +300,7 @@ async fn test_metrics_json_format() {
     assert!(json.is_object(), "JSON metrics 应返回对象");
 }
 
-// ===== v015 服务化最小包（R-srv-003/004） =====
+// ===== 服务化最小包 =====
 
 /// REQ-ID-01: 无标识请求 → 响应回写生成的 X-Request-ID（req-* 前缀）。
 #[tokio::test]

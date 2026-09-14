@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! FUZZ-002: 深度嵌套输入 → 应返回 DepthExceeded 或解析错误，不 panic / 不栈溢出。
+//! 深度嵌套输入 → 应返回 DepthExceeded 或解析错误，不 panic / 不栈溢出。
 //!
-//! v015（R-depth-004）：移除 min(512) 截断——输入长度由表达式全局上限（4096 字符）
+//! 移除 min(512) 截断——输入长度由表达式全局上限（4096 字符）
 //! 约束，截断恰好绕开了 513-2048 层的真实风险窗口。
 //!
 //! 运行：`cargo +nightly fuzz run ast_depth_fuzz`

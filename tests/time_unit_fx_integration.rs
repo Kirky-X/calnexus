@@ -1,8 +1,8 @@
-// v015：CalcError 144 字节，函数签名触发 result_large_err——与 lib.rs 同论证
+// CalcError 144 字节，函数签名触发 result_large_err——与 lib.rs 同论证
 #![allow(clippy::result_large_err)]
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! time-unit-fx-domains Phase 5 端到端集成测试。
+//! 端到端集成测试。
 //!
 //! 经公共 `calnexus::evaluate()` 入口验证 TimeDomain / UnitDomain / FxDomain 的全链路
 //! 行为（parse → canonicalize → cache → route → evaluate）。覆盖：
@@ -40,14 +40,14 @@ fn eval_scalar(expr: &str) -> f64 {
 // TimeDomain 端到端
 // ============================================================================
 
-/// T029 用例 1：`date_diff("2026-01-01","2026-07-25")` = 205（day 单位缺省）。
+/// 用例 1：`date_diff("2026-01-01","2026-07-25")` = 205（day 单位缺省）。
 #[test]
 fn test_time_date_diff_days_end_to_end() {
     let value = eval_scalar(r#"date_diff("2026-01-01","2026-07-25")"#);
     assert_eq!(value, 205.0);
 }
 
-/// T029 用例 2：`date("25 Jul 2026")` 与 `date("2026-07-25")` 结果相等（多格式识别）。
+/// 用例 2：`date("25 Jul 2026")` 与 `date("2026-07-25")` 结果相等（多格式识别）。
 #[test]
 fn test_time_date_multi_format_equality() {
     let ctx = EvalContext::new();
@@ -71,7 +71,7 @@ fn test_time_date_multi_format_equality() {
     }
 }
 
-/// T029 用例 3：`reformat_date("25/07/2026","%d/%m/%Y","%Y-%m-%d")` = Symbolic("2026-07-25")。
+/// 用例 3：`reformat_date("25/07/2026","%d/%m/%Y","%Y-%m-%d")` = Symbolic("2026-07-25")。
 #[test]
 fn test_time_reformat_date_end_to_end() {
     let ctx = EvalContext::new();
@@ -93,28 +93,28 @@ fn test_time_reformat_date_end_to_end() {
 // UnitDomain 端到端
 // ============================================================================
 
-/// T029 用例 4：`convert(100,"cm","m")` = 1。
+/// 用例 4：`convert(100,"cm","m")` = 1。
 #[test]
 fn test_unit_convert_length_end_to_end() {
     let value = eval_scalar(r#"convert(100,"cm","m")"#);
     assert!((value - 1.0).abs() < 1e-9, "expected 1.0, got {}", value);
 }
 
-/// T029 用例 5：`convert(0,"C","F")` = 32（温度仿射路径）。
+/// 用例 5：`convert(0,"C","F")` = 32（温度仿射路径）。
 #[test]
 fn test_unit_convert_temperature_end_to_end() {
     let value = eval_scalar(r#"convert(0,"C","F")"#);
     assert!((value - 32.0).abs() < 1e-9, "expected 32.0, got {}", value);
 }
 
-/// T029 用例 6：`convert(100,"cm","m")*2` = 2（算术包围）。
+/// 用例 6：`convert(100,"cm","m")*2` = 2（算术包围）。
 #[test]
 fn test_unit_arithmetic_wrapping_end_to_end() {
     let value = eval_scalar(r#"convert(100,"cm","m")*2"#);
     assert!((value - 2.0).abs() < 1e-9, "expected 2.0, got {}", value);
 }
 
-/// T029 用例 9：`sin(1)+convert(1,"km","m")` 返回 DomainError（跨域函数混入）。
+/// 用例 9：`sin(1)+convert(1,"km","m")` 返回 DomainError（跨域函数混入）。
 #[test]
 fn test_unit_cross_domain_function_rejected_end_to_end() {
     let ctx = EvalContext::new();
@@ -139,14 +139,14 @@ fn test_unit_cross_domain_function_rejected_end_to_end() {
 // FxDomain 端到端（网络容错）
 // ============================================================================
 
-/// T029 用例 7：fx 表达式经公共 evaluate 入口求值。
+/// 用例 7：fx 表达式经公共 evaluate 入口求值。
 ///
 /// 公共 API 无法注入 mock provider，FrankfurterProvider 会尝试访问 frankfurter.dev。
 /// 测试环境可能无网络，故接受两种结果：
 /// - Ok：网络可达，fx 路由至 fx 域并返回 Scalar
 /// - Err(DomainError)：网络不可达或缓存过期且不允许 stale
 ///
-/// 关键验收点：表达式不会 panic，且不会路由到错误域（domain 名应为 "fx"）。
+/// 验证：表达式不会 panic，且不会路由到错误域（domain 名应为 "fx"）。
 #[test]
 fn test_fx_expression_end_to_end_network_tolerant() {
     let ctx = EvalContext::new();
@@ -185,7 +185,7 @@ fn test_fx_expression_end_to_end_network_tolerant() {
 // 非确定性函数缓存旁路
 // ============================================================================
 
-/// T029 用例 8：`now()` 两次求值 cache_hit 均为 false（R-ncb-003 缓存旁路）。
+/// 用例 8：`now()` 两次求值 cache_hit 均为 false（缓存旁路）。
 #[test]
 fn test_now_cache_bypass_end_to_end() {
     let ctx = EvalContext::new();
@@ -220,7 +220,7 @@ fn test_now_cache_bypass_end_to_end() {
 // Str 参与 BinaryOp 的显式 Domain 错误
 // ============================================================================
 
-/// T029 用例 10：`1+"a"` 返回 kind=Domain 错误（Str 在 BinaryOp 中无域匹配，R-esl-005）。
+/// 用例 10：`1+"a"` 返回 kind=Domain 错误（Str 在 BinaryOp 中无域匹配）。
 #[test]
 fn test_str_in_binary_op_returns_domain_error() {
     let ctx = EvalContext::new();

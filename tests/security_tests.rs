@@ -249,7 +249,7 @@ fn sec_006_nan_inf_explicit_errors() {
 
 /// SEC-007: 超时应触发 `CalcError::Timeout`（退出码 3），且复杂符号计算不会无限阻塞。
 ///
-/// design.md §6.3：P0 阶段不实现基于 elapsed 的自动超时（留 P3），
+/// 不实现基于 elapsed 的自动超时，
 /// 但通过 `EvalContext { timeout: Duration::ZERO }` 显式触发 Timeout 错误路径。
 /// 同时验证 `integrate(exp(x^2),x)` 不会无限阻塞（有界运行）。
 #[test]
@@ -398,7 +398,7 @@ fn sec_infrastructure_present() {
     // CacheManager 构造成功即证明基础设施可用
 }
 
-// ===== v015 深度防护补齐（R-depth-001/002） =====
+// ===== 深度防护补齐 =====
 // 审计发现：列表/矩阵字面量递归（parse_list_literal → parse → parse_bracket_literal）
 // 完全绕过 convert_with_depth 的 MAX_AST_DEPTH 检查；mathexpr 递归也先于深度检查执行。
 

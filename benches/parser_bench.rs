@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Parser & canonicalizer benchmarks (TEST.md §6, BENCH-001 / BENCH-009).
+//! Parser & canonicalizer benchmarks (TEST.md §6).
 //!
 //! 运行：`cargo bench --bench parser_bench`
 //! 基线：`target/criterion/` 目录。
@@ -9,7 +9,7 @@ use calnexus::{AstCanonicalizer, parse};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-/// BENCH-001: parser throughput ≥ 10000 expr/s（目标：单表达式解析 < 100μs）
+/// parser throughput ≥ 10000 expr/s（目标：单表达式解析 < 100μs）
 fn bench_parser_throughput(c: &mut Criterion) {
     let expressions = vec![
         "2+3",
@@ -33,7 +33,7 @@ fn bench_parser_throughput(c: &mut Criterion) {
     group.finish();
 }
 
-/// v015 T045（R-perf-003）：4096 字符大表达式解析基准（优化放大场景）。
+/// 4096 字符大表达式解析基准（优化放大场景）。
 fn bench_parser_large_expression(c: &mut Criterion) {
     // 构造 ~4090 字符的长算术表达式（50 项 × ~80 字符）
     let terms: Vec<String> = (0..50)
@@ -60,7 +60,7 @@ fn bench_parser_large_expression(c: &mut Criterion) {
     group.finish();
 }
 
-/// BENCH-009: canonicalizer < 10μs（目标：规范化单表达式 < 10μs）
+/// canonicalizer < 10μs（目标：规范化单表达式 < 10μs）
 fn bench_canonicalizer(c: &mut Criterion) {
     let expressions = vec![
         "2+3",

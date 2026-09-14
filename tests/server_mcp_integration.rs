@@ -2,7 +2,7 @@
 
 //! MCP server 集成测试：`evaluate` tool（`#[forge]` 宏生成）。
 //!
-//! P3（sdforge-forge-migration）：tool 由 `#[forge]` 声明式生成（sdforge-macros codegen）。
+//! tool 由 `#[forge]` 声明式生成（sdforge-macros codegen）。
 //!
 //! **输入格式**：`{"req":{"expr":"2+3","vars":{...},"precision":N}}` —— `req` 是
 //! `#[forge]` 函数参数名，macros 生成 `struct Params { req: EvaluateRequest }`
@@ -35,7 +35,7 @@ fn extract_result_json(result: &CallToolResult) -> Value {
     serde_json::from_str(text).expect("text content should be valid JSON")
 }
 
-/// 测试 tool list 包含 evaluate tool（spec.md R-sdforge-003）。
+/// 测试 tool list 包含 evaluate tool。
 #[test]
 fn test_mcp_tool_list_contains_evaluate() {
     let server = build_mcp_server();
@@ -49,7 +49,6 @@ fn test_mcp_tool_list_contains_evaluate() {
 }
 
 /// 标量求值：evaluate "2+3" → {"result":5,"domain":"arithmetic","cache":"miss"}
-/// spec.md R-sdforge-003。
 #[test]
 fn test_mcp_tool_evaluate_scalar() {
     let server = build_mcp_server();
@@ -65,7 +64,7 @@ fn test_mcp_tool_evaluate_scalar() {
 }
 
 /// 带变量求值：evaluate "x+1" vars {x:10} → result 11
-/// spec.md R-sdforge-003 参照 R-sdforge-002 变量语义。
+/// 参照 变量语义。
 #[test]
 fn test_mcp_tool_evaluate_with_vars() {
     let server = build_mcp_server();
@@ -83,7 +82,7 @@ fn test_mcp_tool_evaluate_with_vars() {
 }
 
 /// 精度模式：evaluate "1/3" precision 2 → result "0.33"
-/// spec.md R-sdforge-002/R-sdforge-003：precision 模式 result 是格式化字符串。
+/// precision 模式 result 是格式化字符串。
 #[test]
 fn test_mcp_tool_evaluate_precision() {
     let server = build_mcp_server();
@@ -101,7 +100,7 @@ fn test_mcp_tool_evaluate_precision() {
     assert_eq!(body["result"].as_str(), Some("0.33"));
 }
 
-/// 计算错误：evaluate "2++3" → ApiError::InvalidInput 契约（spec.md R-sdforge-003）。
+/// 计算错误：evaluate "2++3" → ApiError::InvalidInput 契约。
 ///
 /// `is_error=Some(true)` + content 为 `{"type":"InvalidInput","message":"Parse: ...",...}`
 /// （macros codegen 用 `serde_json::to_value(ApiError)` 序列化，与 HTTP 错误 body 同构）。
@@ -129,7 +128,7 @@ fn test_mcp_tool_evaluate_calc_error_invalid_input() {
     );
 }
 
-/// validate precision 超限 → ApiError::ValidationError 契约（spec.md R-sdforge-003）。
+/// validate precision 超限 → ApiError::ValidationError 契约。
 ///
 /// `is_error=Some(true)` + content 为
 /// `{"type":"ValidationError","field":"precision","constraint":"10001 exceeds limit 10000"}`
@@ -149,7 +148,7 @@ fn test_mcp_tool_evaluate_validation_error_oversized_precision() {
     assert_eq!(body["field"], "precision");
 }
 
-/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约（spec.md R-sdforge-003）。
+/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约。
 ///
 /// `is_error=Some(true)` + content 为
 /// `{"type":"ValidationError","field":"vars","constraint":"size 1025 exceeds limit 1024"}`
@@ -176,7 +175,7 @@ fn test_mcp_tool_evaluate_validation_error_oversized_vars() {
 
 /// 无效输入：evaluate null → Err(ErrorData)
 ///
-/// spec.md R-sdforge-003：`req` 字段缺失，macros codegen serde 解析
+/// `req` 字段缺失，macros codegen serde 解析
 /// `Params{req:EvaluateRequest}` 失败（macros lib.rs:1311-1316），返回
 /// `Err(ErrorData)`（协议层错误，非 CallToolResult）。
 #[test]
@@ -186,7 +185,7 @@ fn test_mcp_tool_evaluate_invalid_input_null() {
     assert!(result.is_err(), "null input should return Err(ErrorData)");
 }
 
-// ===== v015 MCP 增强（R-mcp-001/002） =====
+// ===== MCP 增强 =====
 
 /// MCP-DESC-01: evaluate 工具 description 自包含（req 包装示例 + 上限 + 错误语义）。
 #[test]

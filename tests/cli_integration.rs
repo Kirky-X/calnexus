@@ -12,14 +12,14 @@ use assert_cmd::Command;
 
 #[test]
 fn test_basic_addition() {
-    // "2+3" → stdout contains "5", exit 0 (Req 1 Scen 1)
+    // "2+3" → stdout contains "5", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("2+3").assert().success().stdout("5\n");
 }
 
 #[test]
 fn test_complex_arithmetic() {
-    // "(2+9)*7-6" → stdout contains "71", exit 0 (Req 1 Scen 2)
+    // "(2+9)*7-6" → stdout contains "71", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("(2+9)*7-6").assert().success().stdout("71\n");
 }
@@ -28,14 +28,14 @@ fn test_complex_arithmetic() {
 
 #[test]
 fn test_stdin_simple_expression() {
-    // echo "2+3" | calnexus → stdout contains "5", exit 0 (Req 2 Scen 1)
+    // echo "2+3" | calnexus → stdout contains "5", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("2+3").assert().success().stdout("5\n");
 }
 
 #[test]
 fn test_stdin_scientific_expression() {
-    // echo "sin(pi/2)" | calnexus → stdout contains "1", exit 0 (Req 2 Scen 2)
+    // echo "sin(pi/2)" | calnexus → stdout contains "1", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("sin(pi/2)")
         .assert()
@@ -47,7 +47,7 @@ fn test_stdin_scientific_expression() {
 
 #[test]
 fn test_json_arithmetic() {
-    // --json "2+3" → {"result":5,"domain":"arithmetic","cache":"miss"} (Req 3 Scen 1)
+    // --json "2+3" → {"result":5,"domain":"arithmetic","cache":"miss"}
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json").arg("2+3").assert().success().stdout(
         r#"{"cache":"miss","domain":"arithmetic","result":5.0,"v":1}
@@ -57,7 +57,7 @@ fn test_json_arithmetic() {
 
 #[test]
 fn test_json_scientific() {
-    // --json "sin(pi/2)" → domain="scientific", result=1, cache="miss" (Req 3 Scen 2)
+    // --json "sin(pi/2)" → domain="scientific", result=1, cache="miss"
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
         .arg("sin(pi/2)")
@@ -73,7 +73,7 @@ fn test_json_scientific() {
 
 #[test]
 fn test_single_var_arithmetic() {
-    // --var x=10 "x*2" → 20 (Req 4 Scen 2)
+    // --var x=10 "x*2" → 20
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
         .arg("x=10")
@@ -85,7 +85,7 @@ fn test_single_var_arithmetic() {
 
 #[test]
 fn test_single_var_scientific() {
-    // --var x=1 "sin(x)" → sin(1) ≈ 0.8414709848078965 (Req 4 Scen 1)
+    // --var x=1 "sin(x)" → sin(1) ≈ 0.8414709848078965
     // 注：spec 给出的期望值 0.9999996829318346 与 sin(3.14) 不符（sin(3.14)≈0.00159），
     // 此处用 x=1 验证变量代入功能，期望值为 sin(1) 的正确结果。
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -101,7 +101,7 @@ fn test_single_var_scientific() {
 
 #[test]
 fn test_two_variables() {
-    // --var x=1 --var y=2 "x+y" → 3 (Req 5 Scen 1)
+    // --var x=1 --var y=2 "x+y" → 3
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
         .arg("x=1")
@@ -115,7 +115,7 @@ fn test_two_variables() {
 
 #[test]
 fn test_three_variables() {
-    // --var x=1 --var y=2 --var z=3 "x+y+z" → 6 (Req 5 Scen 2)
+    // --var x=1 --var y=2 --var z=3 "x+y+z" → 6
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
         .arg("x=1")
@@ -133,14 +133,14 @@ fn test_three_variables() {
 
 #[test]
 fn test_division_by_zero_exit_code() {
-    // "5/0" → exit 1, stderr non-empty (Req 6 Scen 1)
+    // "5/0" → exit 1, stderr non-empty
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("5/0").assert().failure().code(1);
 }
 
 #[test]
 fn test_modulo_by_zero_exit_code() {
-    // "10%0" → exit 1, stderr non-empty (Req 6 Scen 2)
+    // "10%0" → exit 1, stderr non-empty
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("10%0").assert().failure().code(1);
 }
@@ -149,14 +149,14 @@ fn test_modulo_by_zero_exit_code() {
 
 #[test]
 fn test_double_operator_exit_code() {
-    // "2++3" → exit 1, stderr contains parse error (Req 7 Scen 1)
+    // "2++3" → exit 1, stderr contains parse error
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("2++3").assert().failure().code(1);
 }
 
 #[test]
 fn test_unbalanced_parens_exit_code() {
-    // "(2+3" → exit 1, stderr contains parse error (Req 7 Scen 2)
+    // "(2+3" → exit 1, stderr contains parse error
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("(2+3").assert().failure().code(1);
 }
@@ -165,7 +165,7 @@ fn test_unbalanced_parens_exit_code() {
 
 #[test]
 fn test_unknown_flag_exit_code() {
-    // --unknown-flag → exit 2 (Req 8 Scen 2, clap default)
+    // --unknown-flag → exit 2 (, clap default)
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--unknown-flag")
         .arg("2+3")
@@ -178,14 +178,14 @@ fn test_unknown_flag_exit_code() {
 
 #[test]
 fn test_no_args_piped_stdin() {
-    // echo "2+3" | calnexus (no args) → stdout contains "5", exit 0 (Req 9 Scen 1)
+    // echo "2+3" | calnexus (no args) → stdout contains "5", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("2+3").assert().success().stdout("5\n");
 }
 
 #[test]
 fn test_no_args_piped_stdin_scientific() {
-    // echo "cos(0)" | calnexus → stdout contains "1", exit 0 (Req 9 Scen 2)
+    // echo "cos(0)" | calnexus → stdout contains "1", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("cos(0)").assert().success().stdout("1\n");
 }
@@ -194,7 +194,7 @@ fn test_no_args_piped_stdin_scientific() {
 
 #[test]
 fn test_long_version_flag() {
-    // --version → stdout contains "calnexus", exit 0 (Req 11 Scen 1)
+    // --version → stdout contains "calnexus", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd
         .arg("--version")
@@ -213,7 +213,7 @@ fn test_long_version_flag() {
 
 #[test]
 fn test_short_version_flag() {
-    // -V → stdout contains "calnexus", exit 0 (Req 11 Scen 2)
+    // -V → stdout contains "calnexus", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd.arg("-V").assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8(output).unwrap();
@@ -228,7 +228,7 @@ fn test_short_version_flag() {
 
 #[test]
 fn test_long_help_flag() {
-    // --help → stdout contains help text, exit 0 (Req 12 Scen 1)
+    // --help → stdout contains help text, exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd
         .arg("--help")
@@ -248,7 +248,7 @@ fn test_long_help_flag() {
 
 #[test]
 fn test_short_help_flag() {
-    // -h → stdout contains help text, exit 0 (Req 12 Scen 2)
+    // -h → stdout contains help text, exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd.arg("-h").assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8(output).unwrap();
@@ -489,7 +489,7 @@ fn test_invalid_var_non_numeric_value_exit_code() {
 
 #[test]
 fn test_empty_stdin_exit_code() {
-    // echo "" | calnexus（空 stdin）→ exit 2（T007: ErrorKind::Usage 用法错误）
+    // echo "" | calnexus（空 stdin）→ exit 2（ErrorKind::Usage 用法错误）
     // 覆盖 cli.rs get_expression empty stdin 错误走 handle_error → exit_code 2
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("").assert().failure().code(2);
@@ -497,7 +497,7 @@ fn test_empty_stdin_exit_code() {
 
 #[test]
 fn test_whitespace_only_stdin_exit_code() {
-    // echo "   " | calnexus（仅空白 stdin）→ exit 2（T007: ErrorKind::Usage 用法错误）
+    // echo " " | calnexus（仅空白 stdin）→ exit 2（ErrorKind::Usage 用法错误）
     // 覆盖 cli.rs get_expression empty stdin 错误走 handle_error → exit_code 2
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("   \n  ").assert().failure().code(2);
@@ -525,7 +525,7 @@ fn test_bigint_subtraction_output() {
         .stdout("123456789012345678901234567889\n");
 }
 
-// ===== Statistics 域 CLI 端到端测试（任务 17.2） =====
+// ===== Statistics 域 CLI 端到端测试 =====
 
 #[test]
 fn test_statistics_mean_cli() {
@@ -588,7 +588,7 @@ fn test_statistics_empty_list_error_cli() {
     cmd.arg("mean([])").assert().failure().code(1);
 }
 
-// ===== v0.8 新增域 CLI 端到端测试（TG9）=====
+// ===== 新增域 CLI 端到端测试 =====
 
 // ----- 9.1 NumberTheory CLI 测试 -----
 
@@ -721,7 +721,7 @@ fn test_cli_polynomial_factor() {
         .stdout("(x-2)*(x+2)\n");
 }
 
-// ===== TG7.5 REPL CLI 测试 =====
+// ===== REPL CLI 测试 =====
 
 #[test]
 fn test_cli_repl_start_and_quit() {
@@ -769,7 +769,7 @@ fn test_cli_repl_vars_command() {
         .stdout(predicates::str::contains("42"));
 }
 
-// ===== TG7.6 批量 CLI 测试 =====
+// ===== 批量 CLI 测试 =====
 
 #[test]
 fn test_cli_batch_basic() {
@@ -843,7 +843,7 @@ fn test_cli_batch_nonexistent_file() {
         .code(2);
 }
 
-// ===== TG7.7 Symbolic CLI 测试 =====
+// ===== Symbolic CLI 测试 =====
 
 #[test]
 fn test_cli_symbolic_diff_power() {
@@ -878,7 +878,7 @@ fn test_cli_symbolic_limit() {
         .stdout(predicates::str::contains("1"));
 }
 
-// ===== JSON 输出路径覆盖（lines 125,127,131,133,137,139,143）=====
+// ===== JSON 输出路径覆盖（lines 125,127,131,133,137,139,143） =====
 
 #[test]
 fn test_json_vector_output() {
@@ -940,7 +940,7 @@ fn test_json_symbolic_output() {
         );
 }
 
-// ===== parse_vars 错误路径覆盖（lines 55-57, 68-70）=====
+// ===== parse_vars 错误路径覆盖（lines 55-57, 68-70） =====
 
 #[test]
 fn test_repl_invalid_var_exit_code() {
@@ -974,7 +974,7 @@ fn test_batch_invalid_var_exit_code() {
         .code(2);
 }
 
-// ===== REPL format_result 分支覆盖（lines 296-302）=====
+// ===== REPL format_result 分支覆盖（lines 296-302） =====
 // format_result 在 REPL evaluate_line 中调用，需通过 REPL 触发各 EvalResult 变体
 
 #[test]
@@ -1063,7 +1063,7 @@ fn test_repl_complex_list_format_result() {
         .stdout(predicates::str::contains("1i"));
 }
 
-// ===== format_polynomial 分支覆盖（lines 343,349,351,357-360,362,369,375）=====
+// ===== format_polynomial 分支覆盖（lines 343,349,351,357-360,362,369,375） =====
 
 #[test]
 fn test_polynomial_sub_x2_minus_x() {
@@ -1115,9 +1115,9 @@ fn test_polynomial_general_coef_high_degree() {
         .stdout("2x^2\n");
 }
 
-// ===== IT-CLI-003/009/010: v1.1 新增 CLI 标志集成测试 =====
+// ===== /009/010: v1.1 新增 CLI 标志集成测试 =====
 
-/// IT-CLI-003: `--latex "diff(x^2,x)"` 输出 LaTeX 格式
+/// `--latex "diff(x^2,x)"` 输出 LaTeX 格式
 #[test]
 fn it_cli_003_latex_output() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1127,7 +1127,7 @@ fn it_cli_003_latex_output() {
         .stdout(predicates::str::contains("\\frac{d}{dx}"));
 }
 
-/// IT-CLI-009: `--canonical "3+2"` → `(+ 2 3)`（PRD §3.2.4）
+/// `--canonical "3+2"` → `(+ 2 3)`（PRD §3.2.4）
 #[test]
 fn it_cli_009_canonical_output() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1137,7 +1137,7 @@ fn it_cli_009_canonical_output() {
         .stdout("(+ 2 3)\n");
 }
 
-/// IT-CLI-010: `--steps "(2+9)*7-6"` → 步骤输出
+/// `--steps "(2+9)*7-6"` → 步骤输出
 #[test]
 fn it_cli_010_steps_output() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1278,7 +1278,7 @@ fn test_lang_en_parse_error() {
 #[test]
 fn test_json_error_output_exit_1() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    // v015 T019：JSON 键序由 serde_json 决定（字典序），断言改为语义校验（解析后查字段）
+    // JSON 键序由 serde_json 决定（字典序），断言改为语义校验（解析后查字段）
     let output = cmd
         .args(["--json", "2++3"])
         .output()
@@ -1318,10 +1318,10 @@ fn test_explain_domain_hint() {
         .stderr(predicates::str::contains("asin domain is [-1, 1]"));
 }
 
-/// `--explain --lang en "2++3"` → stderr 不含任何中文字符（diting HIGH-1）
+/// `--explain --lang en "2++3"` → stderr 不含任何中文字符
 ///
 /// 验证 friendly()/to_explain() 中的 5 个硬编码中文标签（位置/提示/错误类别/退出码/建议）
-/// 在 --lang en 时不出现。T001 Red 阶段：此测试应失败（当前代码含中文标签）。
+/// 在 --lang en 时不出现。
 #[test]
 fn test_explain_lang_en_no_chinese_labels() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1342,14 +1342,14 @@ fn test_explain_lang_en_no_chinese_labels() {
     );
 }
 
-// ===== T007: --json 模式下 parse_vars / get_expression 错误应走 JSON 输出 =====
+// ===== --json 模式下 parse_vars / get_expression 错误应走 JSON 输出 =====
 // 当前 Bug：parse_vars() 返回 Result<_, String>，get_expression() 返回 Result<_, i32>，
 // 错误时直接 eprintln 文本 + 返回退出码，绕过 handle_error()，
 // 导致 --json/--explain 模式下错误输出格式不一致（总是 eprintln 文本而非 JSON）。
 
 /// `--json --var invalid 2+3` → stdout 应含 `"error"` JSON 字段，stderr 不应含 `error: invalid --var`。
 ///
-/// T007 Red 阶段：此测试应失败（当前 parse_vars 错误走 eprintln 文本路径，不走 JSON）。
+/// parse_vars 错误必须走 JSON 输出路径（而非 eprintln 文本路径）。
 #[test]
 fn test_json_mode_var_error_output_format() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1377,7 +1377,7 @@ fn test_json_mode_var_error_output_format() {
 
 /// `echo "" | calnexus --json`（空 stdin）→ stdout 应含 `"error"` JSON 字段，stderr 不应含 `error: empty expression`。
 ///
-/// T007 Red 阶段：此测试应失败（当前 get_expression 错误走 eprintln 文本路径，不走 JSON）。
+/// get_expression 错误必须走 JSON 输出路径（而非 eprintln 文本路径）。
 #[test]
 fn test_json_mode_empty_stdin_error_output_format() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1400,7 +1400,7 @@ fn test_json_mode_empty_stdin_error_output_format() {
     );
 }
 
-/// T008: --lang 未知值时 clap 退出码 2（fail-loud）
+/// --lang 未知值时 clap 退出码 2（fail-loud）
 ///
 /// PossibleValuesParser 限制 --lang 只接受 "en"/"zh"，
 /// 传入 "fr" 时 clap 报错并退出码 2。
@@ -1417,9 +1417,9 @@ fn test_lang_invalid_value_exit_2() {
     );
 }
 
-// ===== T021: --serve-http/--serve-mcp flag 冲突与 feature 门控 =====
+// ===== --serve-http/--serve-mcp flag 冲突与 feature 门控 =====
 
-/// T021: --serve-http 与 --repl 冲突时 clap 退出码 2（server feature 启用）。
+/// --serve-http 与 --repl 冲突时 clap 退出码 2（server feature 启用）。
 #[cfg(feature = "server")]
 #[test]
 fn test_serve_http_flag_conflicts_repl() {
@@ -1434,7 +1434,7 @@ fn test_serve_http_flag_conflicts_repl() {
     );
 }
 
-/// T021: --serve-mcp 与 --batch 冲突时 clap 退出码 2（server feature 启用）。
+/// --serve-mcp 与 --batch 冲突时 clap 退出码 2（server feature 启用）。
 #[cfg(feature = "server")]
 #[test]
 fn test_serve_mcp_flag_conflicts_batch() {
@@ -1449,7 +1449,7 @@ fn test_serve_mcp_flag_conflicts_batch() {
     );
 }
 
-/// T021: --serve-http 与 --serve-mcp 互相冲突时 clap 退出码 2。
+/// --serve-http 与 --serve-mcp 互相冲突时 clap 退出码 2。
 /// 防止静默吞 flag（规则 12：失败必须显性化）。
 #[cfg(feature = "server")]
 #[test]
@@ -1465,7 +1465,7 @@ fn test_serve_http_conflicts_serve_mcp() {
     );
 }
 
-/// T021: --serve-http 与 --json 冲突时 clap 退出码 2（server feature 启用）。
+/// --serve-http 与 --json 冲突时 clap 退出码 2（server feature 启用）。
 #[cfg(feature = "server")]
 #[test]
 fn test_serve_http_conflicts_json() {
@@ -1480,7 +1480,7 @@ fn test_serve_http_conflicts_json() {
     );
 }
 
-/// T021: 无 server feature 时 --serve-http 是 unknown argument，clap 退出码 2。
+/// 无 server feature 时 --serve-http 是 unknown argument，clap 退出码 2。
 /// 验证 feature 门控正确：无 server feature 时 flag 不存在。
 #[cfg(not(feature = "server"))]
 #[test]
@@ -1499,7 +1499,7 @@ fn test_serve_http_without_server_feature() {
 /// `--batch --precision` 组合应显式冲突退出码 2。
 ///
 /// 原行为：`batch.rs:88` 硬编码 `None` 忽略 precision，违反规则 12（失败必须显性化）。
-/// 修复：添加 `conflicts_with_all` 互斥，clap 在参数解析阶段拒绝组合。
+/// 添加 `conflicts_with_all` 互斥，clap 在参数解析阶段拒绝组合。
 ///
 /// 使用临时文件（非 stdin）确保 batch 模式实际运行：未修复时退出 0（静默忽略 precision），
 /// 修复后退出 2（冲突）。若用 stdin，空输入也会退出 2，无法区分冲突与空输入。
@@ -1529,7 +1529,7 @@ fn test_batch_precision_conflict_exit_2() {
 
 /// 测试矩阵 A802：`--repl --batch` 互斥。
 ///
-/// 修复：此前 `repl` 与 `batch` 未声明互相 conflicts_with_all，运行时优先级链
+/// 此前 `repl` 与 `batch` 未声明互相 conflicts_with_all，运行时优先级链
 /// (`run()` 中 `if cli.repl { ... }` 先于 `if let Some(path) = &cli.batch`) 会导致
 /// batch 被 silent 吞掉（静默 fallback 到 REPL，隐性失败，违反规则 12 显性化）。
 /// 添加双向 conflict 后 clap 在解析阶段拒绝，退出 2。
@@ -1559,7 +1559,7 @@ fn test_repl_batch_conflict_exit_2() {
     );
 }
 
-// ===== v015 配置面（R-cfg-001/002/003） =====
+// ===== 配置面 =====
 
 /// CFG-001: --timeout 0.1 使慢表达式超时，退出码 3（Timeout）。
 #[test]
@@ -1667,7 +1667,6 @@ fn bind_flag_serve_http_listens_on_custom_port() {
     assert!(connected, "--bind {port} 应可连接（flag 生效且优先于 env）");
 }
 
-// ===== v015 T064（R-err-004/005 验收） =====
 
 /// ERR-CARET: 文本模式 stderr 含表达式行 + caret 指示。
 #[test]

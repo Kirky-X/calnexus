@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Direct API vs expression-path benchmark (trait-api-toolkit T041).
+//! Direct API vs expression-path benchmark.
 //!
 //! 运行：`cargo bench --bench api_bench`
 //! 对比直接 API 调用与表达式解析路径的性能差异。

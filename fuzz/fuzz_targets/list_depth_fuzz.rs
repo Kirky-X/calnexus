@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! FUZZ-007: 嵌套列表/矩阵字面量 → 不 panic；结果为 Ok 或 DepthExceeded。
+//! 嵌套列表/矩阵字面量 → 不 panic；结果为 Ok 或 DepthExceeded。
 //!
-//! v015 新增（R-depth-004）：既有 ast_depth_fuzz 只覆盖圆括号，恰好绕开审计发现的
+//! 既有 ast_depth_fuzz 只覆盖圆括号，恰好绕开审计发现的
 //! 列表/矩阵字面量深度守卫缺口（parse_list_literal 递归无计数）。
 //!
 //! 运行：`cargo +nightly fuzz run list_depth_fuzz`
