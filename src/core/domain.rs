@@ -3,14 +3,14 @@
 //! 计算域接口与路由器。
 //!
 //! 设计依据：
-//! - design.md D4：trait-kit 作为域接口（fallback：自研 trait + 手动注册表）
+//! - trait-kit 作为域接口（fallback：自研 trait + 手动注册表）
 //! - domain-routing spec：6 个 requirements / 21 个 scenarios
 //!
 //! 核心类型：
 //! - [`CalculationDomain`]：所有计算域必须实现的 trait
 //! - [`DomainRouter`]：按优先级降序遍历域，选择第一个 `supports()` 返回 true 的域
 //!
-//! **设计偏差**：design.md D4 原计划使用 trait-kit `ModuleInterface`，
+//! **设计偏差**： 原计划使用 trait-kit `ModuleInterface`，
 //! 但 trait-kit API 不明确且 crates.io 下载量为 0。采用设计文档中预批准的 fallback
 //! 方案（"自研 trait + 手动注册表"），功能等价且更可控。
 
@@ -24,7 +24,7 @@ use std::collections::HashSet;
 /// - `supports()` 判断是否能处理某 AST
 /// - `evaluate()` 执行实际计算
 /// - 优先级（数值越大越优先）
-/// - `nondeterministic_functions()` 申报非确定性函数（time-unit-fx-domains R-ncb-001）
+/// - `nondeterministic_functions()` 申报非确定性函数
 pub trait CalculationDomain: Send + Sync {
     /// 域名称（如 `"arithmetic"`、`"scientific"`）。
     fn domain_name(&self) -> &str;
@@ -42,7 +42,7 @@ pub trait CalculationDomain: Send + Sync {
     /// 优先级（数值越大优先级越高，同优先级按注册顺序）。
     fn priority(&self) -> u8;
 
-    /// 申报本域的非确定性函数名列表（time-unit-fx-domains R-ncb-001）。
+    /// 申报本域的非确定性函数名列表。
     ///
     /// 默认返回空表（既有 11 个域不覆写，行为零变化）。
     /// TimeDomain 申报 `["now","today"]`；FxDomain 申报 `["fx","fx_rate"]`。
@@ -56,7 +56,7 @@ pub trait CalculationDomain: Send + Sync {
 ///
 /// 线程安全（`Send + Sync`），支持并发路由查询。
 ///
-/// time-unit-fx-domains R-ncb-002：在 register() 时增量聚合各域申报的非确定性函数名，
+/// 在 register() 时增量聚合各域申报的非确定性函数名，
 /// 提供 `is_nondeterministic(ast)` 检测 AST 是否含非确定性函数调用。
 pub struct DomainRouter {
     domains: Vec<Box<dyn CalculationDomain>>,
@@ -76,7 +76,7 @@ impl DomainRouter {
     /// 注册计算域。
     ///
     /// 注册后按 `priority()` 降序稳定排序（同优先级保持注册顺序）。
-    /// 同时聚合该域申报的非确定性函数名到内部 HashSet（R-ncb-002）。
+    /// 同时聚合该域申报的非确定性函数名到内部 HashSet。
     pub fn register(&mut self, domain: Box<dyn CalculationDomain>) {
         let name = domain.domain_name().to_string();
         if self.domains.iter().any(|d| d.domain_name() == name) {
@@ -88,7 +88,7 @@ impl DomainRouter {
                 .insert(func_name.to_string());
         }
         self.domains.push(domain);
-        // 稳定排序：同优先级时保持注册顺序（Req 4 Scen 2）
+        // 稳定排序：同优先级时保持注册顺序
         self.domains
             .sort_by_key(|d| std::cmp::Reverse(d.priority()));
     }
@@ -96,7 +96,7 @@ impl DomainRouter {
     /// 路由 AST 到第一个支持的域。
     ///
     /// 按 `priority()` 降序遍历，返回第一个 `supports()` 返回 `true` 的域引用。
-    /// 若无域支持，返回 `CalcError::DomainError`，错误信息包含 AST 中的函数名（Req 5 Scen 3）。
+    /// 若无域支持，返回 `CalcError::DomainError`，错误信息包含 AST 中的函数名。
     pub fn route(&self, ast: &AstNode) -> Result<&dyn CalculationDomain, CalcError> {
         for domain in &self.domains {
             if domain.supports(ast) {
@@ -133,12 +133,12 @@ impl DomainRouter {
         self.domains.iter().map(|d| d.domain_name()).collect()
     }
 
-    /// 检测 AST 是否包含非确定性函数调用（time-unit-fx-domains R-ncb-002）。
+    /// 检测 AST 是否包含非确定性函数调用。
     ///
     /// 递归扫描 AST 中全部 FunctionCall 名，任一命中已注册域的申报表即返回 true。
-    /// 用于 evaluator 在常规模式下旁路缓存读写（R-ncb-003）。
+    /// 用于 evaluator 在常规模式下旁路缓存读写。
     ///
-    /// 验收标准：
+    /// 行为约定：
     /// - 申报 `["now"]` 的域注册后：`now()` → true、`now()+1` → true、`sin(now())` → true
     /// - 无任何申报时恒 false
     /// - 检测开销为 O(AST 节点数) 的 HashSet 查询
@@ -164,7 +164,7 @@ const _: () = {
     assert_send_sync::<DomainRouter>();
 };
 
-/// 递归收集 AST 中的所有函数名（用于错误信息，Req 5 Scen 3）。
+/// 递归收集 AST 中的所有函数名（用于错误信息）。
 fn collect_function_names(ast: &AstNode) -> Vec<String> {
     let mut names = Vec::new();
     collect_function_names_recursive(ast, &mut names);
@@ -227,13 +227,13 @@ mod tests {
     use crate::core::ErrorKind;
     use crate::core::parser::parse;
 
-    /// 科学函数集合（Req 2）。
+    /// 科学函数集合。
     const SCIENTIFIC_FUNCTIONS: &[&str] = &[
         "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log", "exp", "sinh", "cosh", "tanh",
         "gamma", "erf",
     ];
 
-    /// 算术函数集合（Req 1：`!`→`factorial`、`%`→`mod`、`abs`）。
+    /// 算术函数集合（`!`→`factorial`、`%`→`mod`、`abs`）。
     const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
 
     /// 递归检查 AST 是否包含科学函数调用。
@@ -268,7 +268,7 @@ mod tests {
         }
     }
 
-    /// Mock Arithmetic 域：仅支持算术表达式（Req 1）。
+    /// Mock Arithmetic 域：仅支持算术表达式。
     struct MockArithmeticDomain;
 
     impl CalculationDomain for MockArithmeticDomain {
@@ -286,7 +286,7 @@ mod tests {
         }
     }
 
-    /// Mock Scientific 域：支持含科学函数的表达式（Req 2）。
+    /// Mock Scientific 域：支持含科学函数的表达式。
     struct MockScientificDomain;
 
     impl CalculationDomain for MockScientificDomain {
@@ -304,7 +304,7 @@ mod tests {
         }
     }
 
-    /// 可配置 Mock 域（用于优先级测试，Req 4）。
+    /// 可配置 Mock 域（用于优先级测试）。
     struct ConfigurableMockDomain {
         name: String,
         priority: u8,
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_route_arithmetic_basic() {
-        // (2+9)*7-6 → Arithmetic (Req 1 Scen 1)
+        // (2+9)*7-6 → Arithmetic
         let router = default_router();
         let ast = parse("(2+9)*7-6").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_route_arithmetic_power_factorial() {
-        // 2^10 + 5! → Arithmetic (Req 1 Scen 2)
+        // 2^10 + 5! → Arithmetic
         let router = default_router();
         let ast = parse("2^10 + factorial(5)").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn test_route_arithmetic_mod_abs() {
-        // 10%3 + abs(-2) → Arithmetic (Req 1 Scen 3)
+        // 10%3 + abs(-2) → Arithmetic
         let router = default_router();
         let ast = parse("mod(10,3) + abs(-2)").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_route_arithmetic_constant() {
-        // 42 → Arithmetic (默认域, Req 1 Scen 4)
+        // 42 → Arithmetic (默认域, )
         let router = default_router();
         let ast = parse("42").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_route_scientific_trig() {
-        // sin(pi/2) → Scientific (Req 2 Scen 1)
+        // sin(pi/2) → Scientific
         let router = default_router();
         let ast = parse("sin(pi/2)").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_route_scientific_log() {
-        // log(100, 10) → Scientific (Req 2 Scen 2)
+        // log(100, 10) → Scientific
         let router = default_router();
         let ast = parse("log(100, 10)").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -394,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_route_scientific_gamma_erf() {
-        // gamma(5) + erf(1) → Scientific (Req 2 Scen 3)
+        // gamma(5) + erf(1) → Scientific
         let router = default_router();
         let ast = parse("gamma(5) + erf(1)").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_route_scientific_hyperbolic() {
-        // sinh(1) + cosh(1) → Scientific (Req 2 Scen 4)
+        // sinh(1) + cosh(1) → Scientific
         let router = default_router();
         let ast = parse("sinh(1) + cosh(1)").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_mixed_expression_routes_to_scientific() {
-        // sin(x) + 2*3 → Scientific (Req 3 Scen 1)
+        // sin(x) + 2*3 → Scientific
         let router = default_router();
         let ast = parse("sin(x) + 2*3").unwrap();
         let domain = router.route(&ast).unwrap();
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_scientific_priority_higher_than_arithmetic() {
-        // Scientific priority > Arithmetic priority (Req 3 Scen 2)
+        // Scientific priority > Arithmetic priority
         let arithmetic = MockArithmeticDomain;
         let scientific = MockScientificDomain;
         assert!(scientific.priority() > arithmetic.priority());
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_pure_arithmetic_not_supported_by_scientific() {
-        // 2+3*4 → Scientific.supports = false (Req 3 Scen 3)
+        // 2+3*4 → Scientific.supports = false
         let scientific = MockScientificDomain;
         let ast = parse("2+3*4").unwrap();
         assert!(!scientific.supports(&ast));
@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_higher_priority_wins() {
-        // Domain B (priority=20) wins over Domain A (priority=10) (Req 4 Scen 1)
+        // Domain B (priority=20) wins over Domain A (priority=10)
         let mut router = DomainRouter::new();
         router.register(Box::new(ConfigurableMockDomain {
             name: "A".to_string(),
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_same_priority_registration_order_wins() {
-        // Same priority → first registered wins (Req 4 Scen 2)
+        // Same priority → first registered wins
         let mut router = DomainRouter::new();
         router.register(Box::new(ConfigurableMockDomain {
             name: "first".to_string(),
@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_only_one_supports_selected() {
-        // Only one domain supports → selected regardless of priority (Req 4 Scen 3)
+        // Only one domain supports → selected regardless of priority
         let mut router = DomainRouter::new();
         router.register(Box::new(ConfigurableMockDomain {
             name: "high_not_supporting".to_string(),
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_unknown_function_no_match() {
-        // foo(1) → no domain supports (Req 5 Scen 1)
+        // foo(1) → no domain supports
         let router = default_router();
         let ast = parse("foo(1)").unwrap();
         let result = router.route(&ast);
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_no_domains_registered_error() {
-        // No domains registered → error (Req 5 Scen 2)
+        // No domains registered → error
         let router = DomainRouter::new();
         let ast = parse("1+2").unwrap();
         let result = router.route(&ast);
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn test_error_message_contains_function_name() {
-        // bar(2) → error message contains "bar" (Req 5 Scen 3)
+        // bar(2) → error message contains "bar"
         let router = default_router();
         let ast = parse("bar(2)").unwrap();
         let err = router.route(&ast).err().expect("expected error");
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_router_loads_registered_domains() {
-        // Router loads registered domains (Req 6 Scen 1)
+        // Router loads registered domains
         let router = default_router();
         assert_eq!(router.domain_count(), 2);
         let names = router.domain_names();
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_register_then_route() {
-        // Register new domain → can route to it (Req 6 Scen 2)
+        // Register new domain → can route to it
         let mut router = DomainRouter::new();
         router.register(Box::new(ConfigurableMockDomain {
             name: "custom".to_string(),
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn test_domains_sorted_by_priority_desc() {
-        // Domains sorted by priority descending (Req 6 Scen 3)
+        // Domains sorted by priority descending
         let mut router = DomainRouter::new();
         router.register(Box::new(MockArithmeticDomain)); // priority=10
         router.register(Box::new(MockScientificDomain)); // priority=20
@@ -594,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_unimplemented_trait_cannot_register() {
-        // Types not implementing CalculationDomain cannot register (Req 6 Scen 4)
+        // Types not implementing CalculationDomain cannot register
         // 编译期检查：register 只接受 Box<dyn CalculationDomain>
         // 以下代码若取消注释将无法编译：
         // router.register(Box::new(42_i32));
@@ -693,7 +693,7 @@ mod tests {
     // 原始 bug：`format!("functions: {:?}", functions)` 对包含大量函数的 AST
     // 产生无界长度的错误消息。如 `foo1(x) + foo2(x) + ... + foo1000(x)` 会产生
     // ~10KB 的错误消息，污染日志、可能导致 UI 显示问题。
-    // 修复：限制 functions 列表显示数量（默认 5 个），超过时显示 "... and N more"。
+    // 限制 functions 列表显示数量（默认 5 个），超过时显示 "... and N more"。
     #[test]
     fn test_route_error_truncates_long_function_list() {
         // 构造含 50 个未知函数的 AST，错误消息应截断而非全量展示
@@ -788,12 +788,12 @@ mod tests {
         }
     }
 
-    // ===== v0.8 新增域路由测试（TG6）=====
+    // ===== 新增域路由测试 =====
     //
-    // H2 修复（架构审查）：删除原 v08_full_router() 本地构造函数，改用
+    // 删除原 v08_full_router() 本地构造函数，改用
     // crate::domains::build_default_router()，消除 src/core 测试代码对 11 个
     // 具体域类型的硬编码引用（霰弹手术风险：新增域需同步改两份注册清单）。
-    // P2 架构审查 HIGH-1 修复：priority 测试迁移至 domains/factory.rs 测试模块，
+    // priority 测试迁移至 domains/factory.rs 测试模块，
     // 彻底消除 src/core 测试代码对 crate::domains::XxxDomain 的类型依赖。
 
     // ----- 6.1 验证 collect_function_names_recursive 已支持 FunctionCall 递归 -----
@@ -835,7 +835,7 @@ mod tests {
 
     // ----- 6.3 优先级测试 -----
     //
-    // priority 测试已迁移至 src/domains/factory.rs 测试模块（架构审查 HIGH-1 修复）。
+    // priority 测试已迁移至 src/domains/factory.rs 测试模块。
     // 原因：priority 是 domains 层属性，core 层测试直接构造具体域类型违反
     // ARCHITECTURE.md §2.3 "core → domains 类型依赖 = 0" 声明。
     // 迁移后 core/domain.rs 测试模块不再引用任何 crate::domains::XxxDomain 类型。
@@ -877,7 +877,7 @@ mod tests {
         );
     }
 
-    // ----- 6.6 非确定性函数检测测试（time-unit-fx-domains T005）-----
+    // ----- 6.6 非确定性函数检测测试 -----
 
     /// 申报非确定性函数的 Mock 域（用于 is_nondeterministic 测试）。
     struct NondeterministicMockDomain {
@@ -904,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_is_nondeterministic_empty_router() {
-        // 空申报路由器恒 false（验收标准：无任何申报时恒 false）
+        // 空申报路由器恒 false（无任何申报时恒 false）
         let router = DomainRouter::new();
         let ast = parse("now()").unwrap();
         assert!(!router.is_nondeterministic(&ast));

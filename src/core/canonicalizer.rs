@@ -2,16 +2,16 @@
 
 //! AST 规范化器：将解析后的 `AstNode` 转换为规范形式，用于 L1 缓存去重。
 //!
-//! 三大变换（design.md / tasks 3.3）：
+//! 三大变换：
 //! 1. **SortCommutative**：对 `+`/`*` 操作数按规范顺序排列（数值升序，变量字典序）
 //! 2. **ConstantFolder**：全常量子表达式预计算，检测溢出/NaN/Inf/除零
 //! 3. **UnaryNormalizer**：双重负号 `--x` 消除为 `x`
 //!
 //! 规范形式序列化为 S-表达式字符串（`CanonicalForm`）。
 //!
-//! **Spec 冲突说明**：Req 1 Scen 1-2 期望 `3+2` → `(+ 2 3)`（仅排序），
-//! 但 Req 3 Scen 1 和 Req 7 Scen 1 期望 `2+3` → `5`（折叠）。
-//! 由于 Req 5 Scen 2 要求 `2*3+1` 与 `1+6` 同形式（必须折叠），
+//! **Spec 冲突说明**：期望 `3+2` → `(+ 2 3)`（仅排序），
+//! 但 和 期望 `2+3` → `5`（折叠）。
+//! 由于 要求 `2*3+1` 与 `1+6` 同形式（必须折叠），
 //! 本实现以**常量折叠优先**解决冲突：全常量表达式折叠为单个 Number。
 
 use crate::core::parser::MAX_AST_DEPTH;
@@ -20,7 +20,7 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 
 thread_local! {
-    /// 规范化递归深度计数（v015 R-depth-003 纵深防御：解析构造层已封顶，
+    /// 规范化递归深度计数（纵深防御：解析构造层已封顶，
     /// 此守卫防御直接构造 AST 绕过解析器的路径，如嵌入方拼装 AST）。
     static TRANSFORM_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
@@ -83,8 +83,8 @@ impl AstCanonicalizer {
     /// 3. 一元归一化（双重负号消除始终执行；一元常量折叠仅当 `fold_unary = true`）
     ///
     /// `transform` 与 `transform_no_fold` 的全部差异通过两个布尔参数控制：
-    /// - `transform`           = `transform_inner(ast, true,  true)`
-    /// - `transform_no_fold`   = `transform_inner(ast, false, false)`
+    /// - `transform` = `transform_inner(ast, true, true)`
+    /// - `transform_no_fold` = `transform_inner(ast, false, false)`
     ///
     /// 双重负号消除（`--x → x`）属于结构性归一化，两个公开入口均执行，
     /// 因此**不**由 `fold_unary` 控制。
@@ -93,7 +93,7 @@ impl AstCanonicalizer {
         fold_constants: bool,
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
-        // 深度守卫（v015 R-depth-003）：所有 transform_* 递归的漏斗点
+        // 深度守卫：所有 transform_* 递归的漏斗点
         let _depth = TransformDepthGuard::enter()?;
         match ast {
             AstNode::Number(n) => {
@@ -360,7 +360,7 @@ impl AstCanonicalizer {
                 let elems_str: Vec<String> = elements.iter().map(Self::serialize).collect();
                 format!("(list {})", elems_str.join(" "))
             }
-            // Str 节点：按字节序列参与 CanonicalForm 哈希（R-esl-004）。
+            // Str 节点：按字节序列参与 CanonicalForm 哈希。
             // 用 (str ...) 包装使不同字符串产生不同规范形式，且与变量/函数名空间隔离，
             // 避免被误识别为其他 AST 节点。
             AstNode::Str(s) => format!("(str {})", s),
@@ -380,7 +380,7 @@ impl AstCanonicalizer {
 #[cfg(test)]
 mod tests {
 
-    /// v015 T062（R-depth-003 验收）：绕过解析器直接构造 258 层深 AST，
+    /// 绕过解析器直接构造 258 层深 AST，
     /// canonicalize 必须返回 DepthExceeded 且不 panic（TransformDepthGuard 纵深防御）。
     #[test]
     fn test_deep_constructed_ast_returns_depth_exceeded() {
@@ -592,8 +592,8 @@ mod tests {
     #[test]
     fn test_serialize_variable_with_folded() {
         // x*(1+2) → (* 3 x)（常量 1+2 折叠为 3，数值优先于变量）
-        // 注：spec Req 7 Scen 2 原写 `(* x 3)`，与 Req 1 Scen 4 的"数值优先"规则矛盾，
-        // 本实现遵循 Req 1 的排序规则（数值优先于变量）。
+        // 注：spec 原写 `(* x 3)`，与 的"数值优先"规则矛盾，
+        // 本实现遵循 的排序规则（数值优先于变量）。
         assert_eq!(canon("x*(1+2)").unwrap(), "(* 3 x)");
     }
 
@@ -904,7 +904,7 @@ mod tests {
     //
     // 原始 bug：`x.partial_cmp(y).unwrap_or(Ordering::Equal)` 对 NaN 返回 Equal，
     // 导致 NaN 与任何数比较都"相等"，违反全序关系。
-    // 修复：用 `x.total_cmp(y)` 替代，提供 IEEE 754 totalOrder 全序。
+    // 用 `x.total_cmp(y)` 替代，提供 IEEE 754 totalOrder 全序。
     #[test]
     fn test_compare_nodes_nan_is_consistent_total_order() {
         use std::cmp::Ordering;
@@ -935,7 +935,7 @@ mod tests {
     //
     // 原始代码：`BinaryOp::Pow => a.powf(b)` 隐式依赖 f64::powf(0.0, 0.0) = 1.0。
     // 虽然结果正确，但意图不显式，且与 scientific.rs/statistics.rs 的显式处理不一致。
-    // 修复：显式 case 处理 0^0 → 1.0（IEEE 754 约定），与所有 domain 行为一致。
+    // 显式 case 处理 0^0 → 1.0（IEEE 754 约定），与所有 domain 行为一致。
     #[test]
     fn test_canonicalize_zero_pow_zero_is_one() {
         // 0^0 → 1.0（IEEE 754 约定，与 scientific.rs / statistics.rs 一致）
@@ -1004,7 +1004,7 @@ mod tests {
         assert_eq!(cf.as_str(), "(+ 2 3)");
     }
 
-    // ===== proptest 属性测试（任务 3.5） =====
+    // ===== proptest 属性测试 =====
 
     use proptest::prelude::*;
 
@@ -1053,9 +1053,9 @@ mod tests {
         }
     }
 
-    // ===== T022: transform_inner per-variant 回归测试（Phase 7 Red）=====
+    // ===== transform_inner per-variant 回归测试 =====
     //
-    // 目的：重构 transform_inner（cyc=24 → ≤15）前后行为不变。
+    // 目的：重构 transform_inner 前后行为不变。
     // 覆盖所有 AstNode variant：Leaf（Number/Variable/Complex/BigNumber）、
     // BinaryOp（Add/Sub/Mul/Div/Pow/Mod + fold + sort）、
     // UnaryOp（Neg 双重消除/Neg fold/Factorial/Abs）、

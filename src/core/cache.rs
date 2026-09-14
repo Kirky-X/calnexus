@@ -2,7 +2,7 @@
 
 //! L1 缓存管理器：直连 moka::sync 的进程内缓存，BLAKE3 单次哈希生成 256-bit 键。
 //!
-//! 设计依据（v015-comprehensive-optimization D1，替代 oxcache 封装）：
+//! 设计依据（替代 oxcache 封装）：
 //! - ADD ADR-001：L1-only（进程内），无 L2/Redis
 //! - moka::sync 直连：消除 JSON 序列化存储、临时 tokio runtime（sync_block_on）、双次哈希与 hex 分配
 //! - single-flight：moka `try_get_with` per-key 并发去重；compute 错误传播给所有等待者且不缓存
@@ -20,7 +20,7 @@ use moka::sync::Cache;
 
 use crate::core::types::{CalcError, CanonicalForm, EvalResult};
 
-/// 默认字节权重预算：64 MB（v015 D1）。
+/// 默认字节权重预算：64 MB。
 pub const DEFAULT_MAX_WEIGHT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// 单条结果准入阈值：估算超过此值（256 KB）的结果不入缓存。
@@ -48,7 +48,7 @@ pub struct CacheKeyGen;
 impl CacheKeyGen {
     /// 对 `CanonicalForm` 生成 256-bit BLAKE3 哈希键。
     ///
-    /// 返回 `[u8; 32]`，BLAKE3 对空输入也有定义输出（Req 4 Scen 4）。
+    /// 返回 `[u8; 32]`，BLAKE3 对空输入也有定义输出。
     pub fn hash(cf: &CanonicalForm) -> [u8; 32] {
         *blake3::hash(cf.as_str().as_bytes()).as_bytes()
     }
@@ -204,7 +204,7 @@ impl Default for CacheManager {
     }
 }
 
-// 编译期 Send + Sync 约束检查（Req 6 Scen 1）
+// 编译期 Send + Sync 约束检查
 // coverage 运行时排除：const fn 在编译期执行，无法被行覆盖
 #[cfg(not(coverage))]
 const _: () = {
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(12.0)));
     }
 
-    // ===== v015 single-flight 语义（R-cache-002） =====
+    // ===== single-flight 语义 =====
 
     #[test]
     fn test_get_or_compute_single_flight_dedup_exact_one() {
@@ -563,7 +563,7 @@ mod tests {
 
     #[test]
     fn test_follower_receives_real_error_not_backend_error() {
-        // R-cache-002：compute 错误原样传播给所有等待者（含 follower），
+        // compute 错误原样传播给所有等待者（含 follower），
         // 不得出现 oxcache 时代的 "cache backend error" 包装。
         let cache = Arc::new(CacheManager::new());
         let cf = canon("err-path/0");
@@ -594,7 +594,7 @@ mod tests {
         assert_eq!(cache.get(&cf), None);
     }
 
-    // ===== v015 字节权重与大结果准入（R-cache-003） =====
+    // ===== 字节权重与大结果准入 =====
 
     #[test]
     fn test_large_result_not_cached_but_returned() {

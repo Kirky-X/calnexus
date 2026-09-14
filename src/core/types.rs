@@ -3,9 +3,9 @@
 //! CalNexus 共享类型：所有计算域、解析器、缓存、CLI 共用。
 //!
 //! 设计依据：
-//! - proposal.md §Capabilities：v0.1 AstNode 只含 Number/Variable/BinaryOp/UnaryOp/FunctionCall
-//! - design.md D1：三 crate 拆分，共享类型放 calnexus-core
-//! - ADD.md §3.4 代码图：v0.2 完整 AstNode 含 BigInt/Matrix/Vector，v0.1 暂不实现
+//! - proposal.md §Capabilities：AstNode 只含 Number/Variable/BinaryOp/UnaryOp/FunctionCall
+//! - 三 crate 拆分，共享类型放 calnexus-core
+//! - ADD.md §3.4 代码图：完整 AstNode 含 BigInt/Matrix/Vector，暂不实现
 
 use crate::core::parser::MAX_AST_DEPTH;
 use std::collections::HashMap;
@@ -24,24 +24,24 @@ pub const MAX_PRECISION: usize = 10_000;
 
 /// 阶乘输入上限（防止 `factorial(N)` / `N!` 循环 DoS）。
 ///
-/// 安全审查 CRITICAL：`factorial(1000000000)` 可在 24 字节请求内永久挂死服务器。
+/// `factorial(1000000000)` 可在 24 字节请求内永久挂死服务器。
 /// 此常量限制阶乘输入，`factorial(10000)` 产生 ~35660 位数字（~35KB 字符串），
 /// 兼顾合法重计算场景与 DoS 防护。
 pub const MAX_FACTORIAL_INPUT: u64 = 10_000;
 
 /// 幂运算指数上限（防止 `a^b` 产生超大输出 DoS）。
 ///
-/// 安全审查 CRITICAL：`2^2000000000` 可在 17 字节请求内产生 ~6 亿位数字。
+/// `2^2000000000` 可在 17 字节请求内产生 ~6 亿位数字。
 /// 此常量限制指数绝对值，`2^100000` 产生 ~30103 位数字（~30KB 字符串）。
 ///
-/// **复审 C-1 修复**：负指数同样受限。`BigRational::pow(neg_i32)` 内部实现为
+/// 负指数同样受限。`BigRational::pow(neg_i32)` 内部实现为
 /// `Pow::pow(self, (-exp) as u64).reciprocal()`，即先计算 `a^|exp|`（巨大中间值）
 /// 再取倒数。`2^(-2000000000)` 会计算 `2^2000000000`（~6 亿位数字）导致内存爆炸。
 pub const MAX_POW_EXPONENT: u64 = 100_000;
 
 /// 幂运算输出上限（bits），防止大底数 × 大指数产生超大输出 DoS。
 ///
-/// 安全审查 HIGH（C-1 复审发现）：`(10^10000) ^ 99999` 可产生 ~1GB 输出。
+/// `(10^10000) ^ 99999` 可产生 ~1GB 输出。
 /// 指数已受 `MAX_POW_EXPONENT` 约束，但底数 `a` 可为任意大小 BigInt。
 /// 此常量限制 `底数bits × |指数|`，对应 ~1_000_000 位十进制数字（~1MB 输出）。
 /// `2^100000` 的底数 2 的 bits=2（二进制 `10`），2×100000=200000 ≤ 3320000，通过。
@@ -52,7 +52,7 @@ pub const MAX_POW_OUTPUT_BITS: u64 = 3_320_000;
 ///
 /// 复合限制公式：`底数bits × |指数| ≤ MAX_POW_OUTPUT_BITS`。
 ///
-/// 安全审查 HIGH（C-1 复审发现）：`(10^10000) ^ 99999` 可产生 ~1GB 输出。
+/// `(10^10000) ^ 99999` 可产生 ~1GB 输出。
 /// 指数已受 `MAX_POW_EXPONENT` 约束（≤ 100_000），但底数 `a` 可为任意大小 BigInt，
 /// 故需对"底数位数 × 指数绝对值"做复合限制。
 ///
@@ -84,8 +84,8 @@ pub fn check_pow_output_size(base_bits: u64, abs_exp: u64) -> Result<(), CalcErr
 
 /// 表达式抽象语法树节点。
 ///
-/// v0.1 支持 5 种节点；v0.5 扩展 Complex/Matrix/List（design.md D2）；
-/// time-unit-fx-domains D1 新增 Str（字符串字面量，仅作为 FunctionCall 实参合法）。
+/// 支持 5 种节点；扩展 Complex/Matrix/List；
+/// 新增 Str（字符串字面量，仅作为 FunctionCall 实参合法）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {
     /// 数字字面量（浮点）。
@@ -135,10 +135,10 @@ pub enum UnaryOp {
 
 /// 求值结果。
 ///
-/// v0.1 仅支持标量；v0.5 扩展 Complex（design.md D4）与 Matrix（design.md D5）。
+/// 仅支持标量；扩展 Complex 与 Matrix。
 /// 派生 Serialize/Deserialize 以支持 JSON 输出与缓存层调试序列化（ADD ADR-001）。
 ///
-/// time-unit-fx-domains D2 新增 DateTime（RFC3339 字符串），
+/// 新增 DateTime（RFC3339 字符串），
 /// 用于 TimeDomain/FxDomain 的 now()/today()/fx() 等返回时间或汇率字符串的结果。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EvalResult {
@@ -152,22 +152,22 @@ pub enum EvalResult {
     BigInt(num_bigint::BigInt),
     /// 精确分数结果。
     BigRational(num_rational::BigRational),
-    /// 向量结果（v0.8 新增）：向量域 cross/normalize 输出、素数筛、实根列表。
+    /// 向量结果（新增）：向量域 cross/normalize 输出、素数筛、实根列表。
     Vector(Vec<f64>),
-    /// 多项式结果（v0.8 新增）：系数向量，升幂存储（coef[i] 为 x^i 的系数）。
+    /// 多项式结果（新增）：系数向量，升幂存储（coef[i] 为 x^i 的系数）。
     Polynomial(Vec<f64>),
-    /// 复数列表结果（v0.8 新增）：复根列表，元素为 (实部, 虚部)。
+    /// 复数列表结果（新增）：复根列表，元素为 (实部, 虚部)。
     ComplexList(Vec<(f64, f64)>),
-    /// 符号字符串结果（v0.8 新增）：因式分解等符号输出。
+    /// 符号字符串结果（新增）：因式分解等符号输出。
     Symbolic(String),
     /// LaTeX 渲染结果（v1.1 新增，ADD §3.4）：已格式化的 LaTeX 字符串。
     LaTeX(String),
     /// 求值步骤列表（v1.1 新增，ADD §3.4）：每行一步 `lhs op rhs = result`。
     Steps(Vec<String>),
-    /// JSON 复合结果（p4 新增，numerical-linalg）：lu/qr/eig/svd 分解的多矩阵结构化返回。
+    /// JSON 复合结果：lu/qr/eig/svd 分解的多矩阵结构化返回。
     /// 持有 serde_json::Value；eval_result_to_json 直接透传，typed 访问器返回 None。
     Json(serde_json::Value),
-    /// DateTime 结果（time-unit-fx-domains D2 新增）：RFC3339 字符串。
+    /// DateTime 结果（新增）：RFC3339 字符串。
     /// 用于 TimeDomain（now()/today()）与 FxDomain（fx()）等返回时间或汇率字符串。
     /// 非确定性函数的结果通过此变体返回，不参与 L1 缓存（evaluator 旁路）。
     DateTime(String),
@@ -386,7 +386,7 @@ impl EvalResult {
 
 /// 源代码跨度（字符偏移）。
 ///
-/// 用于精确定位错误在输入表达式中的位置。design.md §5.1（D1：字符偏移语义）。
+/// 用于精确定位错误在输入表达式中的位置。（字符偏移语义）。
 /// 注意：`str::len()` 返回字节长度，`str::chars().count()` 返回字符数量；
 /// 多字节 UTF-8 字符（如中文）的 Span 必须用字符偏移，否则位置错误。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -419,7 +419,7 @@ impl fmt::Display for Span {
     }
 }
 
-/// 错误分类，决定退出码和呈现策略。design.md §5.2。
+/// 错误分类，决定退出码和呈现策略。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ErrorKind {
     Parse,
@@ -432,13 +432,13 @@ pub enum ErrorKind {
     UndefinedSymbol,
     Timeout,
     Usage,
-    /// 上游依赖不可用（v015 T030，R-srv-001）：fx 汇率源等外部服务故障。
+    /// 上游依赖不可用：fx 汇率源等外部服务故障。
     /// 与客户端输入错误（400）严格区分，服务化部署下映射 503。
     DependencyUnavailable,
 }
 
 impl ErrorKind {
-    /// 退出码契约：0=成功, 1=计算错误, 2=用法错误, 3=超时。design.md §5.6。
+    /// 退出码契约：0=成功, 1=计算错误, 2=用法错误, 3=超时。
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::Timeout | Self::DependencyUnavailable => 3,
@@ -471,12 +471,12 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-/// 计算错误。结构化设计：kind + message + span + hint + i18n。design.md §5.3。
+/// 计算错误。结构化设计：kind + message + span + hint + i18n。
 ///
 /// 覆盖解析、求值、溢出、除零、定义域、深度、NaN/Inf 等所有错误路径。
-/// design.md D7 要求错误必须显性化（Rule 12: Fail Loud）。
+/// 要求错误必须显性化（Fail Loud）。
 ///
-/// i18n 字段（Phase 4.3 新增，方案 B 最小侵入）：
+/// i18n 字段（新增，方案 B 最小侵入）：
 /// - `i18n_key`: 参数化消息键（如 `"msg.unbound_variable"`），指向 `locales/{en,zh}.json`
 /// - `i18n_args`: 占位符参数（如 `[("name", "x")]`），用于 `I18n::tf()` 替换 `{name}`
 ///
@@ -493,7 +493,7 @@ pub struct CalcError {
     /// 的双重模式一致：`to_json()` 始终输出原始 `hint`，机器契约不变）。
     pub hint_i18n_key: Option<&'static str>,
     pub hint_i18n_args: Vec<(String, String)>,
-    /// 底层错误链（v015 R-err-001）：保留 ureq/io/serde_json 等原始错误摘要，
+    /// 底层错误链：保留 ureq/io/serde_json 等原始错误摘要，
     /// Display 呈现为 "{message}: {source}"；Clone 随值复制。
     /// （字段名避开 `source`：thiserror derive 会将其绑定为 Error::source trait 方法。）
     pub source_detail: Option<String>,
@@ -518,7 +518,7 @@ impl fmt::Display for CalcError {
                 write!(f, "dependency unavailable: {}", self.message)
             }
         }?;
-        // 错误链（v015 R-err-001）：有 source 时追加 ": {source}" 保留底层错误摘要
+        // 错误链：有 source 时追加 ": {source}" 保留底层错误摘要
         if let Some(src) = &self.source_detail {
             write!(f, ": {}", src)?;
         }
@@ -541,7 +541,7 @@ impl CalcError {
         }
     }
 
-    /// 附加底层错误摘要（v015 R-err-001 错误链）。
+    /// 附加底层错误摘要（错误链）。
     pub fn with_source(mut self, source: impl Into<String>) -> Self {
         self.source_detail = Some(source.into());
         self
@@ -639,7 +639,7 @@ impl CalcError {
             .with_hint_i18n("hint.division_by_zero", vec![])
             .with_i18n("detail.division_by_zero", vec![])
     }
-    /// 上游依赖不可用错误（v015 T030，R-srv-001）。
+    /// 上游依赖不可用错误。
     pub fn dependency_unavailable(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::DependencyUnavailable, message)
             .with_i18n("detail.dependency_unavailable", vec![])
@@ -670,9 +670,9 @@ impl CalcError {
         Self::new(ErrorKind::Usage, msg)
     }
 
-    /// 中文友好文本（终端默认）。design.md §5.5。
+    /// 中文友好文本（终端默认）。
     ///
-    /// Phase 4.3: 当 `i18n_key` 存在时，detail 部分用 `I18n::tf(key, args)` 替换
+    /// 当 `i18n_key` 存在时，detail 部分用 `I18n::tf(key, args)` 替换
     /// `message`，实现参数化消息国际化。kind 前缀始终用 `ErrorKind::i18n_key()`。
     /// `Display` impl 和 `to_json()` 不受影响（始终用 `message`，机器可读契约不变）。
     pub fn friendly(&self, i18n: &crate::i18n::I18n) -> String {
@@ -705,7 +705,7 @@ impl CalcError {
 
     /// JSON 机器可读（--json）。手动构造避免 serde_json 运行时依赖。
     pub fn to_json(&self) -> String {
-        // serde_json 统一构造（v015 T019）：控制字符/引号/反斜杠由 serde_json 正确转义，
+        // serde_json 统一构造：控制字符/引号/反斜杠由 serde_json 正确转义，
         // 替代手写 escape_json_string（三套拼接实现并存的坏味道退役）。
         let mut err = serde_json::json!({
             "kind": format!("{:?}", self.kind),
@@ -725,11 +725,11 @@ impl CalcError {
         if let Some(src) = &self.source_detail {
             obj.insert("source".to_string(), serde_json::Value::String(src.clone()));
         }
-        // v015 T023（R-json-001）：错误契约同版本化
+        // 错误契约同版本化
         serde_json::json!({ "v": 1, "error": err }).to_string()
     }
 
-    /// 教育模式（--explain）。design.md §5.5。
+    /// 教育模式（--explain）。
     pub fn to_explain(&self, i18n: &crate::i18n::I18n) -> String {
         let mut s = self.friendly(i18n);
         s.push_str(&format!(
@@ -752,7 +752,7 @@ impl CalcError {
 /// AST 规范形式（S-表达式字符串）。
 ///
 /// 用于 L1 缓存的键生成：等价表达式（如 `2+3` 与 `3+2`）规范化后生成相同的 `CanonicalForm`，
-/// 再经 BLAKE3 哈希得到缓存键（design.md D5）。
+/// 再经 BLAKE3 哈希得到缓存键。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CanonicalForm(pub String);
 
@@ -781,7 +781,7 @@ impl fmt::Display for CanonicalForm {
 pub struct EvalContext {
     /// 变量名到值的映射。
     pub vars: HashMap<String, f64>,
-    /// 任意精度位数（v0.1 未实现 Precision 域，预留字段）。
+    /// 任意精度位数（未实现 Precision 域，预留字段）。
     pub precision: Option<usize>,
     /// 计算超时时间。
     pub timeout: Duration,
@@ -1193,7 +1193,7 @@ mod tests {
         let e = CalcError::division_by_zero().with_hint("check divisor");
         let explain = e.to_explain(&i18n);
         assert!(explain.contains("Division by zero"));
-        // T002 diting HIGH-1 修复：--lang en 时所有标签应为英文，不得混入中文
+        // --lang en 时所有标签应为英文，不得混入中文
         assert!(explain.contains("Error Kind: DivisionByZero"));
         assert!(explain.contains("Exit Code: 1"));
         assert!(explain.contains("Suggestion: check divisor"));
@@ -1213,7 +1213,7 @@ mod tests {
         assert!(explain.contains("退出码: 3"));
     }
 
-    // ===== Phase 4.3: i18n_key + i18n_args 字段测试 =====
+    // ===== i18n_key + i18n_args 字段测试 =====
 
     #[test]
     fn calc_error_new_has_no_i18n_key() {
@@ -1410,7 +1410,7 @@ mod tests {
         assert!(debug.contains("Number"));
     }
 
-    // ===== v0.5 新节点测试：Complex / Matrix / List =====
+    // ===== 新节点测试：Complex / Matrix / List =====
 
     #[test]
     fn ast_node_complex_construct_and_match() {
@@ -1540,7 +1540,7 @@ mod tests {
         assert!(elements.is_empty());
     }
 
-    // ===== EvalResult helper methods 覆盖（v0.5 新增类型） =====
+    // ===== EvalResult helper methods 覆盖（新增类型） =====
 
     #[test]
     fn eval_result_as_scalar_non_scalar_variants() {
@@ -1559,7 +1559,7 @@ mod tests {
             .as_scalar(),
             None
         );
-        // v0.8 新变体
+        // 新变体
         assert_eq!(EvalResult::Vector(vec![1.0, 2.0]).as_scalar(), None);
         assert_eq!(EvalResult::Polynomial(vec![1.0, 2.0]).as_scalar(), None);
         assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_scalar(), None);
@@ -1590,7 +1590,7 @@ mod tests {
             .as_complex(),
             None
         );
-        // v0.8 新变体
+        // 新变体
         assert_eq!(EvalResult::Vector(vec![1.0]).as_complex(), None);
         assert_eq!(EvalResult::Polynomial(vec![1.0]).as_complex(), None);
         assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_complex(), None);
@@ -1624,7 +1624,7 @@ mod tests {
             .as_matrix(),
             None
         );
-        // v0.8 新变体
+        // 新变体
         assert_eq!(EvalResult::Vector(vec![1.0]).as_matrix(), None);
         assert_eq!(EvalResult::Polynomial(vec![1.0]).as_matrix(), None);
         assert_eq!(EvalResult::ComplexList(vec![(1.0, 2.0)]).as_matrix(), None);
@@ -1705,7 +1705,7 @@ mod tests {
         );
     }
 
-    // ===== v0.8 新增变体测试：Vector / Polynomial / ComplexList / Symbolic =====
+    // ===== 新增变体测试：Vector / Polynomial / ComplexList / Symbolic =====
 
     #[test]
     fn eval_result_vector_construct_and_as_vector() {
@@ -1946,7 +1946,7 @@ mod tests {
         assert_eq!(steps.as_symbolic(), None);
     }
 
-    // ===== p4 新增 Json 变体测试（numerical-linalg） =====
+    // ===== 新增 Json 变体测试（numerical-linalg） =====
 
     #[test]
     fn eval_result_json_construct_and_match() {
