@@ -10,6 +10,11 @@
 //! 2. 文件缓存 `dirs::cache_dir()/calnexus/fx_rates.json`（TTL 内有效）
 //! 3. 网络 GET `https://api.frankfurter.dev/v1/latest?base=EUR`（成功后写回文件）
 //!
+//! 网络抓取经同步熔断器包装（`circuit_breaker`，吸收 limiteron circuit 三态机设计）：
+//! 连续失败达阈值后 Open 快速失败（`CALNEXUS_FX_BREAKER_THRESHOLD` /
+//! `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`），避免 server 长驻模式下源站故障期间
+//! 每笔请求白付 HTTP 超时；Open 拒绝与网络失败同等进入 stale 策略。
+//!
 //! 失败显性化（规则 12）：
 //! - 网络失败 + 文件过期 + 未设 `CALNEXUS_FX_ALLOW_STALE` → CalcError::domain
 //! - 网络失败 + 文件过期 + `CALNEXUS_FX_ALLOW_STALE=1` → 使用过期缓存
@@ -17,11 +22,14 @@
 
 use std::collections::HashMap;
 use std::env;
+#[cfg(test)]
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::core::CalcError;
+use crate::domains::circuit_breaker::{CircuitBreaker, CircuitError};
 use crate::math::fx::RateTable;
 
 /// Frankfurter API 固定端点（编译期常量，无 SSRF 面）。
@@ -32,6 +40,13 @@ const DEFAULT_TTL_SECONDS: u64 = 24 * 3600;
 
 /// HTTP 请求超时：5 秒。
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 熔断默认阈值：连续 3 次网络失败后打开（每次失败已付 5s 超时，取比 limiteron
+/// 默认 5 更小的值；server 长驻模式下 3 次 × 5s ≈ 15s 即进入快速失败）。
+const DEFAULT_BREAKER_THRESHOLD: u32 = 3;
+
+/// 熔断默认冷却：30 秒（与 limiteron circuit 默认一致）。
+const DEFAULT_BREAKER_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// 响应体读取上限：1 MB（v015 T028，防源站异常导致内存膨胀）。
 const MAX_RESPONSE_BODY_BYTES: u64 = 1024 * 1024;
@@ -56,6 +71,17 @@ struct FrankfurterResponse {
     rates: HashMap<String, f64>,
 }
 
+/// 测试注入的网络抓取闭包（`Box<dyn Fn>` 不满足 `Debug`，手动实现以保住外层 derive）。
+#[cfg(test)]
+struct TestFetcher(Box<dyn Fn() -> Result<RateTable, CalcError> + Send + Sync>);
+
+#[cfg(test)]
+impl fmt::Debug for TestFetcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TestFetcher")
+    }
+}
+
 /// 缓存文件格式：RateTable + 抓取时间戳。
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 struct CachedRateTable {
@@ -77,7 +103,7 @@ impl From<CachedRateTable> for RateTable {
 
 /// FrankfurterProvider：生产环境汇率数据提供者。
 ///
-/// 三级缓存读取链 + stale 策略。线程安全（Send + Sync）。
+/// 三级缓存读取链 + stale 策略 + 网络熔断。线程安全（Send + Sync）。
 #[derive(Debug)]
 pub struct FrankfurterProvider {
     /// 缓存文件路径（None 时降级为仅内存缓存）。
@@ -87,6 +113,12 @@ pub struct FrankfurterProvider {
     /// 拉取单飞锁（v015 T027，R-fx-002）：L1 miss 后持锁 double-check，
     /// 消除 TTL 过期瞬间 N 个并发请求 × N 次外网 GET 的惊群。
     fetch_lock: Mutex<()>,
+    /// 网络熔断器（吸收 limiteron circuit 三态机）：连续失败达阈值后 Open
+    /// 快速失败；实际被 fetch_lock 串行化，状态迁移无并发竞争。
+    breaker: CircuitBreaker,
+    /// 测试专用网络注入点（生产恒为 None → fetch_from_network）。
+    #[cfg(test)]
+    fetcher: Option<TestFetcher>,
 }
 
 impl FrankfurterProvider {
@@ -96,6 +128,16 @@ impl FrankfurterProvider {
             cache_path: default_cache_path(),
             in_memory: Mutex::new(None),
             fetch_lock: Mutex::new(()),
+            breaker: CircuitBreaker::new(
+                parse_breaker_threshold(env::var("CALNEXUS_FX_BREAKER_THRESHOLD").ok().as_deref()),
+                parse_breaker_cooldown(
+                    env::var("CALNEXUS_FX_BREAKER_COOLDOWN_SECS")
+                        .ok()
+                        .as_deref(),
+                ),
+            ),
+            #[cfg(test)]
+            fetcher: None,
         }
     }
 
@@ -106,7 +148,34 @@ impl FrankfurterProvider {
             cache_path: Some(path),
             in_memory: Mutex::new(None),
             fetch_lock: Mutex::new(()),
+            breaker: CircuitBreaker::new(DEFAULT_BREAKER_THRESHOLD, DEFAULT_BREAKER_COOLDOWN),
+            fetcher: None,
         }
+    }
+
+    /// 测试专用构造函数：注入网络抓取闭包与熔断参数（不出网的确定性测试）。
+    #[cfg(test)]
+    fn with_fetcher(
+        fetcher: Box<dyn Fn() -> Result<RateTable, CalcError> + Send + Sync>,
+        threshold: u32,
+        cooldown: Duration,
+    ) -> Self {
+        Self {
+            cache_path: None,
+            in_memory: Mutex::new(None),
+            fetch_lock: Mutex::new(()),
+            breaker: CircuitBreaker::new(threshold, cooldown),
+            fetcher: Some(TestFetcher(fetcher)),
+        }
+    }
+
+    /// 网络抓取入口：生产走 `fetch_from_network`，测试走注入闭包。
+    #[cfg(test)]
+    fn fetch(&self) -> Result<RateTable, CalcError> {
+        if let Some(f) = &self.fetcher {
+            return (f.0)();
+        }
+        fetch_from_network()
     }
 }
 
@@ -157,8 +226,13 @@ impl RateProvider for FrankfurterProvider {
             _ => None,
         };
 
-        // 真正的网络抓取（此时已持单飞锁，全进程仅一次在途请求）
-        match fetch_from_network() {
+        // 真正的网络抓取（此时已持单飞锁，全进程仅一次在途请求），经熔断器包装：
+        // 连续失败达阈值后 Open 快速失败，源站故障期间不再每笔白付 HTTP 超时
+        #[cfg(test)]
+        let fetched = self.breaker.call(|| self.fetch());
+        #[cfg(not(test))]
+        let fetched = self.breaker.call(fetch_from_network);
+        match fetched {
             Ok(table) => {
                 // 写回文件缓存（best-effort，失败静默降级）
                 if let Some(path) = &self.cache_path {
@@ -168,9 +242,17 @@ impl RateProvider for FrankfurterProvider {
                 *self.in_memory.lock().unwrap() = Some(table.clone());
                 Ok(table)
             }
-            Err(net_err) => {
-                // Stale 策略：网络失败时使用过期缓存（需 ALLOW_STALE=1）；
-                // 缓存文件损坏时错误分类为 cache_unreadable（v015 T018 三分类）
+            Err(breaker_err) => {
+                // 熔断拒绝与网络失败同等进入 stale 策略：Open 期间仍可用
+                // ALLOW_STALE=1 服务过期快照；缓存文件损坏时错误分类为
+                // cache_unreadable（v015 T018 三分类）
+                let net_err = match breaker_err {
+                    CircuitError::Inner(err) => err,
+                    CircuitError::Open => CalcError::dependency_unavailable(
+                        "FX rate source circuit is open after repeated failures",
+                    )
+                    .with_i18n("msg.fx.circuit_open", vec![]),
+                };
                 let cache_corrupted = matches!(cache_read, CacheRead::Corrupted);
                 apply_stale_policy(cached.as_ref(), read_allow_stale(), cache_corrupted)
                     .map_err(|e| e.with_source(net_err.message))
@@ -208,6 +290,22 @@ fn parse_ttl_hours(hours_str: Option<&str>) -> u64 {
 /// 获取 TTL（秒），读取 `CALNEXUS_FX_TTL_HOURS` 环境变量。
 fn ttl_seconds() -> u64 {
     parse_ttl_hours(env::var("CALNEXUS_FX_TTL_HOURS").ok().as_deref())
+}
+
+/// 解析熔断阈值（`CALNEXUS_FX_BREAKER_THRESHOLD`），非法或 <1 时回退默认值。
+/// 纯函数，便于单元测试。
+fn parse_breaker_threshold(raw: Option<&str>) -> u32 {
+    raw.and_then(|s| s.parse::<u32>().ok())
+        .filter(|&t| t >= 1)
+        .unwrap_or(DEFAULT_BREAKER_THRESHOLD)
+}
+
+/// 解析熔断冷却秒数（`CALNEXUS_FX_BREAKER_COOLDOWN_SECS`），非法时回退默认值；
+/// 0 表示关闭快速失败（冷却到期即刻放行探针）。纯函数，便于单元测试。
+fn parse_breaker_cooldown(raw: Option<&str>) -> Duration {
+    raw.and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_BREAKER_COOLDOWN)
 }
 
 /// 检查 fetched_at 时间戳是否过期（基于当前时间 + 环境 TTL）。
@@ -461,6 +559,37 @@ mod tests {
         assert_eq!(parse_ttl_hours(Some("0.5")), 1800);
     }
 
+    // ===== 熔断参数解析（CALNEXUS_FX_BREAKER_*）=====
+
+    #[test]
+    fn test_parse_breaker_threshold_default() {
+        assert_eq!(parse_breaker_threshold(None), 3);
+        assert_eq!(parse_breaker_threshold(Some("")), 3);
+        assert_eq!(parse_breaker_threshold(Some("invalid")), 3);
+        // <1 非法，回退默认
+        assert_eq!(parse_breaker_threshold(Some("0")), 3);
+    }
+
+    #[test]
+    fn test_parse_breaker_threshold_override() {
+        assert_eq!(parse_breaker_threshold(Some("1")), 1);
+        assert_eq!(parse_breaker_threshold(Some("5")), 5);
+    }
+
+    #[test]
+    fn test_parse_breaker_cooldown_default() {
+        assert_eq!(parse_breaker_cooldown(None), Duration::from_secs(30));
+        assert_eq!(parse_breaker_cooldown(Some("")), Duration::from_secs(30));
+        assert_eq!(parse_breaker_cooldown(Some("bad")), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_parse_breaker_cooldown_override() {
+        assert_eq!(parse_breaker_cooldown(Some("60")), Duration::from_secs(60));
+        // 0 = 关闭快速失败（冷却到期即刻放行探针）
+        assert_eq!(parse_breaker_cooldown(Some("0")), Duration::ZERO);
+    }
+
     #[test]
     fn test_is_expired_25h_old_default_ttl() {
         // 25h 前的时间戳 + 默认 24h TTL → 过期
@@ -675,6 +804,63 @@ mod tests {
                 _ => panic!("并发 rates() 结果不一致"),
             }
         }
+    }
+
+    // ===== 网络熔断器集成（吸收 limiteron circuit 设计；注入 fetcher，不出网）=====
+
+    #[test]
+    fn test_breaker_opens_after_consecutive_fetch_failures() {
+        // 阈值 2：前两次失败真实执行注入闭包（计数增长），第三次被熔断拒绝（计数停增）
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter = calls.clone();
+        let provider = FrankfurterProvider::with_fetcher(
+            Box::new(move || {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(CalcError::dependency_unavailable("synthetic fx outage"))
+            }),
+            2,
+            Duration::from_secs(30),
+        );
+        for _ in 0..2 {
+            let err = provider.rates().expect_err("fetcher always fails");
+            assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
+        }
+        // 第 3 次：熔断已打开，闭包不再执行；stale 策略仍给出显性错误（规则 12）
+        let err = provider.rates().expect_err("circuit should be open");
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_breaker_recovers_via_half_open_probe_success() {
+        // 阈值 2 + 冷却 0：两次失败后打开，下一调用立即探针；探针成功回闭合
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let counter = calls.clone();
+        let provider = FrankfurterProvider::with_fetcher(
+            Box::new(move || {
+                let n = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if n < 2 {
+                    Err(CalcError::dependency_unavailable("synthetic fx outage"))
+                } else {
+                    Ok(RateTable {
+                        base: "EUR".to_string(),
+                        date: "2026-09-15".to_string(),
+                        rates: HashMap::new(),
+                    })
+                }
+            }),
+            2,
+            Duration::ZERO,
+        );
+        assert!(provider.rates().is_err());
+        assert!(provider.rates().is_err()); // 达阈值，熔断打开
+        // Open + 冷却 0 → 半开探针成功 → 回闭合
+        let table = provider.rates().expect("half-open probe should succeed");
+        assert_eq!(table.base, "EUR");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+        // 探针成功后 L1 已填充：下一次调用经 L1 命中放行，不再触发网络（计数不增）
+        assert!(provider.rates().is_ok());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
     // ===== FrankfurterProvider 基本行为（不出网）=====

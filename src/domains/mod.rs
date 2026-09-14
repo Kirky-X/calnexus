@@ -6,6 +6,8 @@
 //! 工厂函数（build_default_router / build_precision_domain）位于 `factory.rs`。
 
 mod arithmetic;
+#[cfg(feature = "fx")]
+pub(crate) mod circuit_breaker;
 mod combinatorics;
 mod common;
 mod complex;

@@ -94,6 +94,7 @@
   "msg.function_arg_count": "Function {name} expects {expected} args, got {actual}",
   "msg.fx.budget_risk_note": "Estimated using a ±3% exchange-rate fluctuation band; converting in batches is recommended to reduce risk.",
   "msg.fx.cache_unreadable": "Exchange rate service is unreachable. Check your network connection and try again, or set CALNEXUS_FX_ALLOW_STALE=1 to use the last cached snapshot.",
+  "msg.fx.circuit_open": "The exchange-rate service failed repeatedly and the circuit breaker is open. Try again later, or set CALNEXUS_FX_ALLOW_STALE=1 to use the last cached snapshot.",
   "msg.fx.expected_scalar": "expected scalar result from: {node}",
   "msg.fx.factorial_not_supported": "factorial not supported in fx domain",
   "msg.fx.invalid_response": "Exchange rate service is unreachable. Check your network connection and try again, or set CALNEXUS_FX_ALLOW_STALE=1 to use the last cached snapshot.",
