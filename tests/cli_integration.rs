@@ -1667,7 +1667,6 @@ fn bind_flag_serve_http_listens_on_custom_port() {
     assert!(connected, "--bind {port} 应可连接（flag 生效且优先于 env）");
 }
 
-
 /// ERR-CARET: 文本模式 stderr 含表达式行 + caret 指示。
 #[test]
 fn parse_error_text_mode_shows_caret() {

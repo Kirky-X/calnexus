@@ -72,7 +72,7 @@ num-traits = { version = "0.2", default-features = false, features = ["std"] }
 rustyline = { version = "18.0", default-features = false, features = ["derive"], optional = true }
 rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化（仅 compiled_data，禁用默认特性）
-icu = { version = "2.2", default-features = false, features = ["compiled_data"], optional = true }
+icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
 # sdforge: CLI/HTTP/MCP 接口封装层（禁用默认特性，按需启用 cli/http/mcp）
 sdforge = { version = "0.5.0-rc.4", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
