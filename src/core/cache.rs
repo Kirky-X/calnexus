@@ -1,22 +1,20 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! L1 缓存管理器：直连 moka::sync 的进程内缓存，BLAKE3 单次哈希生成 256-bit 键。
+//! L1 缓存管理器：oxcache 同步字节权重缓存（`byte-weight` feature）的领域封装，
+//! BLAKE3 单次哈希生成 256-bit 键。
 //!
-//! 设计依据（替代 oxcache 封装）：
-//! - ADD ADR-001：L1-only（进程内），无 L2/Redis
-//! - moka::sync 直连：消除 JSON 序列化存储、临时 tokio runtime（sync_block_on）、双次哈希与 hex 分配
-//! - single-flight：moka `try_get_with` per-key 并发去重；compute 错误传播给所有等待者且不缓存
-//! - 容量：字节权重预算（默认 64MB，`with_capacity_bytes` 可配）；`insert` 显式跳过
-//!   超过 [`MAX_CACHEABLE_BYTES`] 的大结果（大结果不入缓存），`get_or_compute` 路径由 weigher 兜底
+//! 分层（ADD ADR-001：L1-only 进程内，无 L2/Redis）：
+//! - 机制层 `oxcache::sync::ByteWeightCache`：字节权重预算驱逐、single-flight
+//!   （moka `try_get_with` per-key 并发去重，compute 错误传播给所有等待者且不缓存）、
+//!   命中计数（leader 计 miss / follower 计 hit）
+//! - 领域层（本模块）：`CanonicalForm` → BLAKE3 256-bit 键（无 hex 中间分配）、
+//!   `EvalResult` 体积估算（权重与准入共用）、仅缓存 `Ok(EvalResult)` 语义
 //!
 //! 核心类型：
 //! - [`CacheKeyGen`]：将 `CanonicalForm` 单次 BLAKE3 哈希为 `[u8; 32]` 键
 //! - [`CacheManager`]：线程安全的 L1 缓存，仅存储 `Ok(EvalResult)`，字节权重预算驱逐
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-
-use moka::sync::Cache;
+use oxcache::sync::ByteWeightCache;
 
 use crate::core::types::{CalcError, CanonicalForm, EvalResult};
 
@@ -92,20 +90,13 @@ fn estimate_json_bytes(v: &serde_json::Value) -> u64 {
     }
 }
 
-/// weigher 权重：字节数截断到 u32（64MB 预算远小于 u32::MAX）。
-fn result_weight(v: &Arc<EvalResult>) -> u32 {
-    estimate_result_bytes(v).min(u32::MAX as u64) as u32
-}
-
 /// L1 缓存管理器。
 ///
-/// 直连 `moka::sync`（Send + Sync），进程内有效，仅缓存 `Ok(EvalResult)`。
-/// 容量为字节权重预算（默认 64MB），无时间 TTL（仅权重驱逐）。
-/// 命中/未命中计数由本类型维护（moka 0.12 不内建计数器）。
+/// 封装 `oxcache::sync::ByteWeightCache`（Send + Sync），进程内有效，
+/// 仅缓存 `Ok(EvalResult)`。容量为字节权重预算（默认 64MB），无时间 TTL
+/// （仅权重驱逐）；命中/未命中计数由 oxcache 层维护。
 pub struct CacheManager {
-    inner: Cache<[u8; 32], Arc<EvalResult>>,
-    hits: AtomicU64,
-    misses: AtomicU64,
+    inner: ByteWeightCache<[u8; 32], EvalResult, fn(&EvalResult) -> u64>,
 }
 
 impl CacheManager {
@@ -119,81 +110,49 @@ impl CacheManager {
     /// CLI `--cache-size N` 按平均 4KB/条换算为 `N * 4096` 字节预算
     /// （moka weigher 模型下容量单位为权重字节，help 文档注明近似语义）。
     pub fn with_capacity_bytes(max_bytes: u64) -> Self {
-        let inner = Cache::builder()
-            .max_capacity(max_bytes)
-            .weigher(|_k, v: &Arc<EvalResult>| result_weight(v))
-            .build();
         Self {
-            inner,
-            hits: AtomicU64::new(0),
-            misses: AtomicU64::new(0),
+            inner: ByteWeightCache::new(max_bytes, estimate_result_bytes as fn(&EvalResult) -> u64)
+                .with_max_entry_bytes(MAX_CACHEABLE_BYTES),
         }
     }
 
     /// 查询缓存。命中返回 `EvalResult` 克隆，未命中返回 `None`。
     pub fn get(&self, cf: &CanonicalForm) -> Option<EvalResult> {
-        match self.inner.get(&CacheKeyGen::hash(cf)) {
-            Some(v) => {
-                self.hits.fetch_add(1, Ordering::Relaxed);
-                Some((*v).clone())
-            }
-            None => {
-                self.misses.fetch_add(1, Ordering::Relaxed);
-                None
-            }
-        }
+        self.inner.get(&CacheKeyGen::hash(cf))
     }
 
     /// 写入缓存（仅成功结果；估算超过 [`MAX_CACHEABLE_BYTES`] 的大结果跳过写入）。
     pub fn insert(&self, cf: &CanonicalForm, result: &Result<EvalResult, CalcError>) {
         if let Ok(value) = result {
-            if estimate_result_bytes(value) > MAX_CACHEABLE_BYTES {
-                return;
-            }
-            self.inner
-                .insert(CacheKeyGen::hash(cf), Arc::new(value.clone()));
+            self.inner.insert(CacheKeyGen::hash(cf), value.clone());
         }
     }
 
     /// 查询或计算（single-flight）。
     ///
-    /// 基于 moka `try_get_with`：并发相同 key 仅 leader 执行 `compute`，
-    /// 等待者共享 leader 结果；`compute` 返回 `Err` 时错误原样传播给所有
-    /// 等待者（真实 CalcError 语义，无 "cache backend error" 包装）且不写缓存。
+    /// 基于 oxcache 层的 moka `try_get_with`：并发相同 key 仅 leader 执行
+    /// `compute`，等待者共享 leader 结果；`compute` 返回 `Err` 时错误原样
+    /// 传播给所有等待者（真实 CalcError 语义，无 "cache backend error" 包装）
+    /// 且不写缓存。
     pub fn get_or_compute<F>(&self, cf: &CanonicalForm, compute: F) -> Result<EvalResult, CalcError>
     where
         F: FnOnce() -> Result<EvalResult, CalcError>,
     {
-        let ran = AtomicBool::new(false);
-        let outcome = self.inner.try_get_with(CacheKeyGen::hash(cf), || {
-            ran.store(true, Ordering::Relaxed);
-            compute().map(Arc::new)
-        });
-        if ran.load(Ordering::Relaxed) {
-            // leader 实际执行 compute：计一次 miss（follower 共享结果计 hit）
-            self.misses.fetch_add(1, Ordering::Relaxed);
-        } else {
-            self.hits.fetch_add(1, Ordering::Relaxed);
-        }
-        match outcome {
-            Ok(v) => Ok(Arc::unwrap_or_clone(v)),
-            Err(e) => Err(Arc::unwrap_or_clone(e)),
-        }
+        self.inner.get_or_compute(CacheKeyGen::hash(cf), compute)
     }
 
     /// 当前缓存条目数（先同步执行 moka 待维护任务，保证读取时点准确）。
     pub fn entry_count(&self) -> u64 {
-        self.inner.run_pending_tasks();
         self.inner.entry_count()
     }
 
     /// 缓存统计（/metrics 端点消费）。
     pub fn stats(&self) -> CacheStats {
-        self.inner.run_pending_tasks();
+        let stats = self.inner.stats();
         CacheStats {
-            hits: self.hits.load(Ordering::Relaxed),
-            misses: self.misses.load(Ordering::Relaxed),
-            entry_count: self.inner.entry_count(),
+            hits: stats.hits,
+            misses: stats.misses,
+            entry_count: stats.entry_count,
         }
     }
 }
@@ -218,6 +177,7 @@ mod tests {
     use super::*;
     use crate::core::canonicalizer::AstCanonicalizer;
     use crate::core::parser::parse;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
     use std::time::Duration;

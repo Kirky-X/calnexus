@@ -31,14 +31,14 @@ time = ["dep:jiff"]
 # Unit: 物理单位换算（8 量纲，feature 门控）
 unit = []
 # FX: 汇率换算（frankfurter.dev API + 本地缓存）
-fx = ["dep:ureq", "dep:dirs"]
+fx = ["dep:ureq", "dep:dirs", "dep:limiteron"]
 # Numerical: 高级数值计算（eig/SVD 等）
 numerical = []
 # Server: HTTP + MCP 聚合
 server = ["http", "mcp"]
 # Ratelimit: HTTP 限流中间件（sdforge/ratelimit-http：RateLimitLayer + HttpRequestRateLimiter 契约；
 # 策略为 src/server/ratelimit.rs 固定窗口，经 Clone 桥接层挂载，CALNEXUS_RATELIMIT_* 可配）
-ratelimit = ["dep:sdforge", "sdforge/ratelimit-http"]
+ratelimit = ["dep:sdforge", "sdforge/ratelimit-http", "dep:limiteron"]
 # Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
 docs = ["dep:sdforge", "sdforge/docs"]
 # Observability: tracing 日志（server 模式 EnvFilter 消费 RUST_LOG）
@@ -47,8 +47,9 @@ observability = ["dep:tracing", "dep:tracing-subscriber"]
 [dependencies]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
-# 缓存层（moka::sync 直连：字节权重预算 + try_get_with single-flight，禁用默认特性避免 quanta/async-lock）
-moka = { version = "0.12", default-features = false, features = ["sync"] }
+# 缓存层（oxcache byte-weight：同步字节权重预算 + try_get_with single-flight；
+# 禁用默认特性避免 tokio/redis 等后端栈；键生成与 EvalResult 体积估算留在 src/core/cache.rs）
+oxcache = { version = "0.5.0-rc.4", default-features = false, features = ["byte-weight"] }
 # 错误派生（仅 std，禁用默认特性）
 thiserror = { version = "2.0", default-features = false }
 # 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
@@ -91,6 +92,9 @@ jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bun
 ureq = { version = "3.4", default-features = false, features = ["rustls"], optional = true }
 # dirs: 跨平台缓存目录（仅 fx feature 启用；7.0 为最新稳定 major，API 兼容仅用 cache_dir）
 dirs = { version = "7.0", default-features = false, optional = true }
+# limiteron: 同步限流原语（sync = tokio-free 熔断器/固定窗口；default = []，仅 std + parking_lot）。
+# fx feature 消费 SyncCircuitBreaker（汇率源熔断），ratelimit feature 消费 SyncFixedWindowLimiter
+limiteron = { version = "0.3.0-rc.4", default-features = false, features = ["sync"], optional = true }
 
 [dev-dependencies]
 proptest = { version = "1.11", default-features = false, features = ["std"] }
@@ -173,3 +177,11 @@ required-features = ["cli", "time", "unit", "fx"]
 [[test]]
 name = "numerical_linalg_test"
 required-features = ["cli", "numerical"]
+
+# base 自研库本地先行改动（随 base 发版后移除补丁）：
+# - limiteron：sync 模块（SyncCircuitBreaker / SyncFixedWindowLimiter）
+# - sdforge：extract_client_ip 公开化、RateLimitLayer Clone、ConnectInfo serve 变体
+[patch.crates-io]
+sdforge = { path = "/home/kirky/projects/base/sdforge" }
+limiteron = { path = "/home/kirky/projects/base/limiteron" }
+oxcache = { path = "/home/kirky/projects/base/oxcache" }

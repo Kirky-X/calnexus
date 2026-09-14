@@ -67,7 +67,7 @@ pub(crate) async fn evaluate_with_timeout(
     let ctx = req.to_eval_context();
     let precision = req.precision;
     let expr = req.expr.clone();
-    // spawn_blocking 把同步 evaluate（内部 CacheManager 为 moka::sync 同步实现）
+    // spawn_blocking 把同步 evaluate（内部 CacheManager 为 oxcache 同步字节权重实现）
     // 移到无 runtime context 的阻塞线程池，避免 "Cannot start a runtime from within a runtime"。
     let join_handle = tokio::task::spawn_blocking(move || {
         let cache = shared_cache();

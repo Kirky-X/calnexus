@@ -11,9 +11,10 @@
 //! 与 `ApiError` 契约，行为等价；`#[forge]` 保留 MCP tool 注册与 schema 推导职责。
 //!
 //! sdforge 能力吸收（基座迁移，替代手写实现）：
-//! - 优雅关闭：`sdforge::http::serve_with_graceful_shutdown` +
+//! - 优雅关闭：`sdforge::http::serve_with_graceful_shutdown_connect_info` +
 //!   `default_shutdown_signal`（`graceful` feature），替代手写信号 select 与
 //!   drain 超时包装；SIGTERM 在 select 前注册（早期信号缓冲，消除竞态）。
+//!   ConnectInfo 变体使每笔请求携带真实对端地址（限流按对端 IP 生效）。
 //! - 健康探针：`sdforge::health::{healthz_handler, readyz_handler}`（`health`
 //!   feature）挂载 `/live` 与 `/health`、`/ready`，缓存状态经
 //!   `register_readiness_check_fn` 注册为 readiness check。
@@ -22,9 +23,7 @@
 //!   替代手写 request_id 中间件。
 //! - 限流（`ratelimit` feature）：`sdforge::security::RateLimitLayer` +
 //!   `HttpRequestRateLimiter` 契约，仅作用于 API 业务路由（探针/metrics 豁免）；
-//!   策略为本模块固定窗口实现（`super::ratelimit`），经 Clone 桥接层挂载
-//!   （sdforge 0.5.0-rc.4 的 `RateLimitLayer` 未派生 Clone，已在 base 上游修复，
-//!   待发布后可移除桥接）。
+//!   策略为 limiteron 同步固定窗口（`super::ratelimit`）。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -58,7 +57,7 @@ pub fn build_router() -> Router {
     {
         let limiter: Arc<dyn HttpRequestRateLimiter> =
             Arc::new(super::ratelimit::FixedWindowLimiter::from_env());
-        finish_router(api_router().layer(super::ratelimit::shareable_rate_limit_layer(limiter)))
+        finish_router(api_router().layer(sdforge::security::RateLimitLayer::new(limiter)))
     }
     #[cfg(not(feature = "ratelimit"))]
     {
@@ -72,7 +71,7 @@ pub fn build_router() -> Router {
 /// 生产路径一致（单一事实源）。
 #[cfg(all(test, feature = "ratelimit"))]
 pub(crate) fn build_router_with_limiter(limiter: Arc<dyn HttpRequestRateLimiter>) -> Router {
-    finish_router(api_router().layer(super::ratelimit::shareable_rate_limit_layer(limiter)))
+    finish_router(api_router().layer(sdforge::security::RateLimitLayer::new(limiter)))
 }
 
 /// API 业务路由（限流作用域：evaluate / list_functions / fx 工具）。
@@ -311,17 +310,18 @@ impl HttpServer {
 
     /// 内部 async 启动逻辑：bind TcpListener + sdforge 优雅关闭序列。
     ///
-    /// `serve_with_graceful_shutdown`（sdforge `graceful` feature）执行生产关闭
-    /// 序列：停止 accept → drain 最长 [`DRAIN_TIMEOUT`]（超时强退，k8s
-    /// terminationGracePeriod 语义）→ stop hooks。`default_shutdown_signal`
+    /// `serve_with_graceful_shutdown_connect_info`（sdforge `graceful` feature）
+    /// 执行生产关闭序列：停止 accept → drain 最长 [`DRAIN_TIMEOUT`]（超时强退，
+    /// k8s terminationGracePeriod 语义）→ stop hooks；`default_shutdown_signal`
     /// 在 select 前注册 SIGTERM handler（早期信号缓冲，无竞态窗口）。
+    /// ConnectInfo 变体使请求携带真实对端地址（`super::ratelimit` 标识提取消费）。
     async fn start_inner(&self) -> Result<(), ServerError> {
         crate::server::init_observability();
         let listener = tokio::net::TcpListener::bind(&self.addr)
             .await
             .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
         let router = build_router();
-        sdforge::http::serve_with_graceful_shutdown(
+        sdforge::http::serve_with_graceful_shutdown_connect_info(
             router,
             listener,
             sdforge::http::default_shutdown_signal(),
@@ -513,7 +513,7 @@ mod tests {
         use tower::ServiceExt;
 
         /// 限流挂载回归：小阈值限流器下第 3 个请求 429 + Retry-After。
-        /// 验证 `shareable_rate_limit_layer` 桥接层在 Router::layer 路径可用。
+        /// 验证限流层在 Router::layer 路径可用（sdforge RateLimitLayer 直挂）。
         #[tokio::test]
         async fn test_ratelimit_small_threshold_rejects_with_429() {
             use crate::server::ratelimit::FixedWindowLimiter;

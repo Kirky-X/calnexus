@@ -10,7 +10,7 @@
 //! 2. 文件缓存 `dirs::cache_dir()/calnexus/fx_rates.json`（TTL 内有效）
 //! 3. 网络 GET `https://api.frankfurter.dev/v1/latest?base=EUR`（成功后写回文件）
 //!
-//! 网络抓取经同步熔断器包装（`circuit_breaker`，吸收 limiteron circuit 三态机设计）：
+//! 网络抓取经 limiteron 同步熔断器（`SyncCircuitBreaker`，tokio-free）包装：
 //! 连续失败达阈值后 Open 快速失败（`CALNEXUS_FX_BREAKER_THRESHOLD` /
 //! `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`），避免 server 长驻模式下源站故障期间
 //! 每笔请求白付 HTTP 超时；Open 拒绝与网络失败同等进入 stale 策略。
@@ -29,8 +29,8 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::core::CalcError;
-use crate::domains::circuit_breaker::{CircuitBreaker, CircuitError};
 use crate::math::fx::RateTable;
+use limiteron::sync::{CircuitCallError, SyncCircuitBreaker};
 
 /// Frankfurter API 固定端点（编译期常量，无 SSRF 面）。
 const FRANKFURTER_URL: &str = "https://api.frankfurter.dev/v1/latest?base=EUR";
@@ -113,9 +113,9 @@ pub struct FrankfurterProvider {
     /// 拉取单飞锁：L1 miss 后持锁 double-check，
     /// 消除 TTL 过期瞬间 N 个并发请求 × N 次外网 GET 的惊群。
     fetch_lock: Mutex<()>,
-    /// 网络熔断器（吸收 limiteron circuit 三态机）：连续失败达阈值后 Open
+    /// 网络熔断器（limiteron 同步版 `SyncCircuitBreaker`）：连续失败达阈值后 Open
     /// 快速失败；实际被 fetch_lock 串行化，状态迁移无并发竞争。
-    breaker: CircuitBreaker,
+    breaker: SyncCircuitBreaker,
     /// 测试专用网络注入点（生产恒为 None → fetch_from_network）。
     #[cfg(test)]
     fetcher: Option<TestFetcher>,
@@ -128,7 +128,7 @@ impl FrankfurterProvider {
             cache_path: default_cache_path(),
             in_memory: Mutex::new(None),
             fetch_lock: Mutex::new(()),
-            breaker: CircuitBreaker::new(
+            breaker: SyncCircuitBreaker::new(
                 parse_breaker_threshold(env::var("CALNEXUS_FX_BREAKER_THRESHOLD").ok().as_deref()),
                 parse_breaker_cooldown(
                     env::var("CALNEXUS_FX_BREAKER_COOLDOWN_SECS")
@@ -148,7 +148,7 @@ impl FrankfurterProvider {
             cache_path: Some(path),
             in_memory: Mutex::new(None),
             fetch_lock: Mutex::new(()),
-            breaker: CircuitBreaker::new(DEFAULT_BREAKER_THRESHOLD, DEFAULT_BREAKER_COOLDOWN),
+            breaker: SyncCircuitBreaker::new(DEFAULT_BREAKER_THRESHOLD, DEFAULT_BREAKER_COOLDOWN),
             fetcher: None,
         }
     }
@@ -164,7 +164,7 @@ impl FrankfurterProvider {
             cache_path: None,
             in_memory: Mutex::new(None),
             fetch_lock: Mutex::new(()),
-            breaker: CircuitBreaker::new(threshold, cooldown),
+            breaker: SyncCircuitBreaker::new(threshold, cooldown),
             fetcher: Some(TestFetcher(fetcher)),
         }
     }
@@ -247,8 +247,8 @@ impl RateProvider for FrankfurterProvider {
                 // ALLOW_STALE=1 服务过期快照；缓存文件损坏时错误分类为
                 // cache_unreadable（三分类）
                 let net_err = match breaker_err {
-                    CircuitError::Inner(err) => err,
-                    CircuitError::Open => CalcError::dependency_unavailable(
+                    CircuitCallError::Inner(err) => err,
+                    CircuitCallError::Open => CalcError::dependency_unavailable(
                         "FX rate source circuit is open after repeated failures",
                     )
                     .with_i18n("msg.fx.circuit_open", vec![]),

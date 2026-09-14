@@ -420,14 +420,15 @@ dependencies = [
  "icu",
  "insta",
  "jiff",
+ "limiteron",
  "mathexpr",
- "moka",
  "nalgebra",
  "num-bigint",
  "num-complex",
  "num-integer",
  "num-rational",
  "num-traits",
+ "oxcache",
  "predicates",
  "proptest",
  "rayon",
@@ -2002,8 +2003,6 @@ dependencies = [
 [[package]]
 name = "limiteron"
 version = "0.3.0-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc73be0cd6c8f66d28fe6897b5412a3c03827ffe9a7550de37b66e6690c85d1b"
 dependencies = [
  "ahash",
  "async-trait",
@@ -2306,8 +2305,6 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "oxcache"
 version = "0.5.0-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6c9870fdf44705199a23baf0ecfa891ba9b4b58fe56d556fb2afacf7e507f4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3029,8 +3026,6 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdforge"
 version = "0.5.0-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68a378126f32116e626245d59d9226dfd82d6b984baca4b2cda90a1b86c367c8"
 dependencies = [
  "anyhow",
  "axum",
@@ -3063,8 +3058,6 @@ dependencies = [
 [[package]]
 name = "sdforge-macros"
 version = "0.5.0-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5f7a1ad330bdfaabd93f1eb4129df97d183ffaca1cfdd2cf389eca34058bf36"
 dependencies = [
  "proc-macro2",
  "quote",
