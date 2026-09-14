@@ -15,7 +15,7 @@ proptest! {
         ..ProptestConfig::default()
     })]
 
-    ///  `a+b == b+a`（交换律，对 i32 范围内整数成立）
+    /// `a+b == b+a`（交换律，对 i32 范围内整数成立）
     #[test]
     fn prop_001_addition_commutative(a in -1000i32..1000, b in -1000i32..1000) {
         let cache = CacheManager::new();
@@ -27,7 +27,7 @@ proptest! {
         prop_assert_eq!(r1, r2);
     }
 
-    ///  `a*b == b*a`（乘法交换律）
+    /// `a*b == b*a`（乘法交换律）
     #[test]
     fn prop_002_multiplication_commutative(a in -100i32..100, b in -100i32..100) {
         let cache = CacheManager::new();
@@ -39,7 +39,7 @@ proptest! {
         prop_assert_eq!(r1, r2);
     }
 
-    ///  `(a+b)+c == a+(b+c)`（加法结合律）
+    /// `(a+b)+c == a+(b+c)`（加法结合律）
     #[test]
     fn prop_003_addition_associative(a in -100i32..100, b in -100i32..100, c in -100i32..100) {
         let cache = CacheManager::new();
@@ -51,7 +51,7 @@ proptest! {
         prop_assert_eq!(r1, r2);
     }
 
-    ///  `(a*b)*c == a*(b*c)`（乘法结合律）
+    /// `(a*b)*c == a*(b*c)`（乘法结合律）
     #[test]
     fn prop_004_multiplication_associative(a in -10i32..10, b in -10i32..10, c in -10i32..10) {
         let cache = CacheManager::new();
@@ -63,7 +63,7 @@ proptest! {
         prop_assert_eq!(r1, r2);
     }
 
-    ///  `a*(b+c) == a*b + a*c`（分配律）
+    /// `a*(b+c) == a*b + a*c`（分配律）
     #[test]
     fn prop_005_distributive_law(a in -10i32..10, b in -10i32..10, c in -10i32..10) {
         let cache = CacheManager::new();
@@ -75,7 +75,7 @@ proptest! {
         prop_assert_eq!(r1, r2);
     }
 
-    ///  常量折叠等价性：`a*b+c` 求值结果正确
+    /// 常量折叠等价性：`a*b+c` 求值结果正确
     #[test]
     fn prop_006_constant_folding_equivalence(a in 1i32..20, b in 1i32..20, c in 1i32..20) {
         let cache = CacheManager::new();
@@ -86,7 +86,7 @@ proptest! {
         prop_assert_eq!(r, EvalResult::Scalar(expected));
     }
 
-    ///  `canonicalize(a+b)` 与 `canonicalize(b+a)` 字符串相等（缓存键去重）
+    /// `canonicalize(a+b)` 与 `canonicalize(b+a)` 字符串相等（缓存键去重）
     #[test]
     fn prop_007_canonical_form_equivalence_for_commutative(a in 0i32..100, b in 0i32..100) {
         let ast1 = parse(&format!("{}+{}", a, b)).unwrap();
@@ -96,7 +96,7 @@ proptest! {
         prop_assert_eq!(cf1.as_str(), cf2.as_str());
     }
 
-    ///  `canonicalize(canonicalize(x)) == canonicalize(x)`（幂等性）
+    /// `canonicalize(canonicalize(x)) == canonicalize(x)`（幂等性）
     #[test]
     fn prop_008_canonicalize_idempotent(a in 0i32..50, b in 0i32..50) {
         let ast = parse(&format!("{}+{}", a, b)).unwrap();
@@ -105,7 +105,7 @@ proptest! {
         prop_assert_eq!(cf1.as_str(), cf2.as_str());
     }
 
-    ///  `a-b == a+(-b)`（减法等价于加负数）
+    /// `a-b == a+(-b)`（减法等价于加负数）
     #[test]
     fn prop_009_subtraction_as_addition_of_negation(a in -100i32..100, b in -100i32..100) {
         let cache = CacheManager::new();
@@ -122,7 +122,7 @@ proptest! {
         }
     }
 
-    ///  `a/b*b == a`（对 b != 0）
+    /// `a/b*b == a`（对 b != 0）
     #[test]
     fn prop_010_division_then_multiplication_restores(a in -100.0f64..100.0, b in 1.0f64..100.0) {
         let cache = CacheManager::new();
@@ -136,7 +136,7 @@ proptest! {
         }
     }
 
-    ///  同一表达式第二次求值应命中缓存（cache:hit）
+    /// 同一表达式第二次求值应命中缓存（cache:hit）
     #[test]
     fn prop_011_cache_hit_on_second_eval(a in 0i32..100, b in 0i32..100) {
         let cache = CacheManager::new();
@@ -147,7 +147,7 @@ proptest! {
         prop_assert!(cache_hit, "second eval should hit cache");
     }
 
-    ///  `|sin(x)^2 + cos(x)^2 - 1| < 1e-10`（毕达哥拉斯恒等式）
+    /// `|sin(x)^2 + cos(x)^2 - 1| < 1e-10`（毕达哥拉斯恒等式）
     #[test]
     fn prop_012_pythagorean_trig_identity(x in 0.0f64..6.283185307179586) {
         let cache = CacheManager::new();

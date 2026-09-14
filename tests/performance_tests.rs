@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Performance regression tests (TEST.md §8).
+//! Performance regression tests (TEST.md §9).
 //!
 //! 使用 `assert_cmd` + `std::time::Instant`（无新 dev-deps）。
 //! PRD §5.1 性能目标 + 2x CI headroom。
@@ -11,7 +11,7 @@ use common::calnexus_cli;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-///  criterion 基线比较。
+/// criterion 基线比较。
 /// 若 `target/criterion/main.baseline` 不存在，跳过测试。
 #[test]
 fn perf_001_criterion_baseline_comparison() {
@@ -30,7 +30,7 @@ fn perf_001_criterion_baseline_comparison() {
     }
 }
 
-///  若任一 benchmark 相对基线回归 >10%，则失败。
+/// 若任一 benchmark 相对基线回归 >10%，则失败。
 /// 若无基线，跳过。
 #[test]
 fn perf_002_regression_threshold_10pct() {
@@ -45,7 +45,7 @@ fn perf_002_regression_threshold_10pct() {
     assert!(count > 0, "baseline should contain at least one entry");
 }
 
-///  CLI 冷启动 < 100ms（2x headroom：硬失败 200ms）。
+/// CLI 冷启动 < 100ms（2x headroom：硬失败 200ms）。
 #[test]
 fn perf_003_cold_start_under_100ms() {
     // 预编译二进制（避免首次编译时间计入测量）
@@ -73,7 +73,7 @@ fn perf_003_cold_start_under_100ms() {
     );
 }
 
-///  1000 表达式批量求值 < 1s（2x headroom：硬失败 2s）。
+/// 1000 表达式批量求值 < 1s（2x headroom：硬失败 2s）。
 #[test]
 fn perf_004_batch_1000_under_1s() {
     // 生成 1000 表达式的批量文件
@@ -113,7 +113,7 @@ fn perf_004_batch_1000_under_1s() {
     );
 }
 
-///  valgrind DHAT 内存泄漏检查。
+/// valgrind DHAT 内存泄漏检查。
 /// 若 valgrind 未安装，跳过。
 #[test]
 fn perf_005_valgrind_dhat_memory_check() {

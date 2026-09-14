@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Security tests (TEST.md §7).
+//! Security tests (TEST.md §10).
 //!
 //! 使用 `assert_cmd` + `predicates`（已有 dev-deps）。
 //! 通过 CLI 二进制 + 库 API 双重验证安全边界。
@@ -11,7 +11,7 @@ use common::calnexus_cli;
 use calnexus::{CacheManager, EvalContext, parse};
 use std::time::Instant;
 
-///  表达式注入 — shell 元字符被词法白名单拒绝。
+/// 表达式注入 — shell 元字符被词法白名单拒绝。
 /// `"; rm -rf /"` 应在词法阶段被拒绝（退出码 1），不进入 shell。
 #[test]
 fn sec_001_expression_injection_rejected() {
@@ -31,7 +31,7 @@ fn sec_001_expression_injection_rejected() {
     );
 }
 
-///  257 层括号嵌套应返回 DepthExceeded，而非栈溢出。
+/// 257 层括号嵌套应返回 DepthExceeded，而非栈溢出。
 ///
 /// 注：当前 canonicalizer 未在递归中强制深度上限；257 层嵌套会触发栈溢出。
 /// 此测试用 100 层嵌套验证合理深度不会崩溃，并标记 `#[ignore]` 的 257 层用例
@@ -60,7 +60,7 @@ fn sec_002_deep_nesting_no_overflow() {
     );
 }
 
-///b: 257 层嵌套括号 — 深度强制已实现（`parser.rs::convert_with_depth` 校验
+/// 257 层嵌套括号 — 深度强制已实现（`parser.rs::convert_with_depth` 校验
 /// `MAX_AST_DEPTH=256`），超过即返回 `CalcError::depth_exceeded()`，无栈溢出。默认运行。
 #[test]
 fn sec_002b_257_level_nesting_depth_exceeded() {
@@ -76,7 +76,7 @@ fn sec_002b_257_level_nesting_depth_exceeded() {
     );
 }
 
-///  `1000000!` 应被阶乘上限（10000）拒绝。
+/// `1000000!` 应被阶乘上限（10000）拒绝。
 #[test]
 fn sec_003_factorial_dos_rejected() {
     let output = calnexus_cli()
@@ -98,7 +98,7 @@ fn sec_003_factorial_dos_rejected() {
     );
 }
 
-///  1001×1001 矩阵应被维度上限拒绝。
+/// 1001×1001 矩阵应被维度上限拒绝。
 /// 由于 1001×1001 矩阵表达式远超 4096 字符上限（且无法作为 CLI 参数传递），
 /// 此测试通过 stdin 传递超大矩阵表达式，验证长度检查拒绝。
 #[test]
@@ -142,7 +142,7 @@ fn sec_004_matrix_dimension_dos_rejected() {
     );
 }
 
-///b: 大参数 stirling/catalan/P/C 应被 DoS 上界拒绝（返回错误，不 OOM）。
+/// 大参数 stirling/catalan/P/C 应被 DoS 上界拒绝（返回错误，不 OOM）。
 /// `stirling(100000, 50000)` 和 `catalan(100000)` 应触发上界检查返回 Overflow。
 #[test]
 fn sec_004b_combinatorics_dos_rejected() {
@@ -183,7 +183,7 @@ fn sec_004b_combinatorics_dos_rejected() {
     );
 }
 
-///  `i64::MAX + 1` 不应 panic（使用 checked_* 或升级 BigInt）。
+/// `i64::MAX + 1` 不应 panic（使用 checked_* 或升级 BigInt）。
 #[test]
 fn sec_005_integer_overflow_no_panic() {
     // i64::MAX = 9223372036854775807，+1 应升级到 BigInt 或返回 Overflow
@@ -217,7 +217,7 @@ fn sec_005_integer_overflow_no_panic() {
     }
 }
 
-///  `1/0` → DivisionByZero，`log(-1)` → DomainError。
+/// `1/0` → DivisionByZero，`log(-1)` → DomainError。
 #[test]
 fn sec_006_nan_inf_explicit_errors() {
     // 1/0 → DivisionByZero
@@ -247,7 +247,7 @@ fn sec_006_nan_inf_explicit_errors() {
     );
 }
 
-///  超时应触发 `CalcError::Timeout`（退出码 3），且复杂符号计算不会无限阻塞。
+/// 超时应触发 `CalcError::Timeout`（退出码 3），且复杂符号计算不会无限阻塞。
 ///
 /// 不实现基于 elapsed 的自动超时，
 /// 但通过 `EvalContext { timeout: Duration::ZERO }` 显式触发 Timeout 错误路径。
@@ -298,7 +298,7 @@ fn sec_007_symbolic_timeout_bounded() {
     );
 }
 
-///  无 CLI 标志可写入工作目录外文件。
+/// 无 CLI 标志可写入工作目录外文件。
 /// 当前未实现 `--output` 标志，此测试验证现有标志不接受路径参数。
 #[test]
 fn sec_008_no_path_traversal_via_cli() {
@@ -327,7 +327,7 @@ fn sec_008_no_path_traversal_via_cli() {
     );
 }
 
-///  控制字符表达式应在缓存键生成前被清理或拒绝。
+/// 控制字符表达式应在缓存键生成前被清理或拒绝。
 #[test]
 fn sec_009_control_chars_sanitized_or_rejected() {
     // 包含控制字符（非 NUL，NUL 无法通过 CLI argv 传递）的表达式
@@ -359,7 +359,7 @@ fn sec_009_control_chars_sanitized_or_rejected() {
     );
 }
 
-///  4097 字符表达式应被长度上限拒绝。
+/// 4097 字符表达式应被长度上限拒绝。
 #[test]
 fn sec_010_overlong_input_rejected() {
     // 构造 4097 字符的表达式：4090 个 "1+" 后跟 "1"
@@ -402,7 +402,7 @@ fn sec_infrastructure_present() {
 // 审计发现：列表/矩阵字面量递归（parse_list_literal → parse → parse_bracket_literal）
 // 完全绕过 convert_with_depth 的 MAX_AST_DEPTH 检查；mathexpr 递归也先于深度检查执行。
 
-///  300 层嵌套列表字面量 → DepthExceeded（此前 panic/绕过）。
+/// 300 层嵌套列表字面量 → DepthExceeded（此前 panic/绕过）。
 #[test]
 fn sec_011_nested_list_depth_exceeded() {
     // debug 构建下每层 parse 管线（含 regex）栈帧较肥，256 层递归接近 2MiB
@@ -437,7 +437,7 @@ fn sec_011_nested_list_depth_exceeded_inner() {
     }
 }
 
-///  300 层嵌套矩阵字面量 → DepthExceeded。
+/// 300 层嵌套矩阵字面量 → DepthExceeded。
 #[test]
 fn sec_012_nested_matrix_depth_exceeded() {
     std::thread::Builder::new()
@@ -463,7 +463,7 @@ fn sec_012_nested_matrix_depth_exceeded_inner() {
     }
 }
 
-///  ~2048 层圆括号（mathexpr 递归窗口）→ DepthExceeded，且不崩溃。
+/// ~2048 层圆括号（mathexpr 递归窗口）→ DepthExceeded，且不崩溃。
 #[test]
 fn sec_013_deep_paren_prescan_rejects_before_mathexpr() {
     let depth = 2040; // 4081 字节（表达式上限 4096 内）：足以触发 mathexpr 递归窗口
@@ -476,7 +476,7 @@ fn sec_013_deep_paren_prescan_rejects_before_mathexpr() {
     }
 }
 
-///  深度上限内的合法嵌套列表/矩阵仍可正常解析（无误伤）。
+/// 深度上限内的合法嵌套列表/矩阵仍可正常解析（无误伤）。
 #[test]
 fn sec_014_legal_nested_literals_still_parse() {
     let result = parse("[1,[2,[3,[4]]]]");
@@ -489,7 +489,7 @@ fn sec_014_legal_nested_literals_still_parse() {
     assert!(result.is_ok(), "混合嵌套应正常解析: {:?}", result.err());
 }
 
-///  深度错误 hint 引用 MAX_AST_DEPTH 常量（文案随常量联动）。
+/// 深度错误 hint 引用 MAX_AST_DEPTH 常量（文案随常量联动）。
 #[test]
 fn sec_015_depth_hint_references_constant() {
     let e = calnexus::CalcError::depth_exceeded();
