@@ -342,3 +342,14 @@ flowchart LR
    `--list-functions` / MCP `list_functions` 单一事实源）。
 7. **规格流程**：openspec/ 已收敛并入 `specmark/specs/`（27 个能力域），
    **specmark 为唯一 SDD 流程**。
+8. **sdforge 基座吸收（手写基础设施迁移）**：优雅关闭切换
+   `sdforge::http::serve_with_graceful_shutdown` + `default_shutdown_signal`
+   （`http` feature 内联 `sdforge/graceful`，空 feature `graceful-shutdown` 移除）；
+   `/health` `/ready` 切换 `sdforge::health::readyz_handler`（checks 数组契约，
+   cache 经 `register_readiness_check_fn` 注册）、`/live` 切换 `healthz_handler`；
+   请求标识切换 `sdforge::context::context_middleware`（+W3C traceparent 提取
+   trace_id 回写 `X-Trace-ID`，task-local 上下文）。`ratelimit` feature 接通：
+   `src/server/ratelimit.rs` 固定窗口 per-IP 策略实现 sdforge
+   `HttpRequestRateLimiter` 契约，经 Clone 桥接层挂载（上游 `RateLimitLayer`
+   Clone 已在 base 修复，发版后移除桥接），`CALNEXUS_RATELIMIT_LIMIT/WINDOW_SECS`
+   可配，探针/metrics 豁免限流。

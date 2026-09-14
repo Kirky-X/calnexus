@@ -102,7 +102,7 @@ The following 3 optional domains are gated by Cargo features and enabled with `-
 | --- | --- | --- | --- |
 | **TimeDomain** | `time` | `date` / `datetime` / `timestamp` / `from_timestamp` / `date_diff` / `date_add` / `parse_date` / `format_date` / `reformat_date` / `weekday` / `day_of_year` / `is_leap_year` / `now` / `today` | Built on jiff 0.2 with bundled IANA tzdb; supports cross-timezone date/time construction, arithmetic intervals, and multi-format auto-recognition (ISO 8601 / Chinese / English month names). `now` / `today` are nondeterministic and bypass the L1 cache on every evaluation. |
 | **UnitDomain** | `unit` | `convert(value, "from", "to")` | Linear conversion across 8 dimensions (length / mass / volume / area / speed / data / time) plus affine temperature conversion (C/F/K/R). Unknown units receive Levenshtein ≤2 suggestions. |
-| **FxDomain** | `fx` | `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")` | Pulls European Central Bank reference rates from the frankfurter.dev open API with a 3-level cache (memory → file → network). Honors `CALNEXUS_FX_TTL_HOURS` (default 24) and `CALNEXUS_FX_ALLOW_STALE` (whether to serve a stale snapshot on network failure). `fx` / `fx_rate` are nondeterministic and bypass the cache. |
+| **FxDomain** | `fx` | `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")` | Pulls European Central Bank reference rates from the frankfurter.dev open API with a 3-level cache (memory → file → network) plus a network circuit breaker (fast-fail after consecutive failures). Honors `CALNEXUS_FX_TTL_HOURS` (default 24), `CALNEXUS_FX_ALLOW_STALE` (whether to serve a stale snapshot on network failure) and `CALNEXUS_FX_BREAKER_THRESHOLD` / `CALNEXUS_FX_BREAKER_COOLDOWN_SECS` (breaker threshold / cooldown, default 3 / 30 s). `fx` / `fx_rate` are nondeterministic and bypass the cache. |
 
 Enabling:
 
@@ -150,14 +150,15 @@ Optional feature enhancements:
 
 | Feature | Description |
 | --- | --- |
-| `ratelimit` | HTTP rate limiting middleware (LimiteronAdapter) |
+| `ratelimit` | HTTP rate limiting middleware (sdforge `RateLimitLayer` + fixed-window policy; `CALNEXUS_RATELIMIT_LIMIT` default 120, `CALNEXUS_RATELIMIT_WINDOW_SECS` default 60, probes/metrics exempt) |
 | `docs` | Swagger UI (`/swagger-ui`, OpenAPI documentation) |
-| `graceful-shutdown` | Enhanced graceful shutdown (connection tracking + configurable drain timeout) |
 | `observability` | OpenTelemetry observability (tracing integration) |
+
+Graceful shutdown is built into the `http` feature (based on sdforge `graceful`: SIGTERM/Ctrl+C → drain up to 30s → force abort, K8s terminationGracePeriod semantics).
 
 ```bash
 # Enable all HTTP enhancements
-cargo build --release --features cli,server,ratelimit,graceful-shutdown,observability
+cargo build --release --features cli,server,ratelimit,observability
 ```
 
 ---
@@ -203,7 +204,7 @@ Ensure your environment meets the following requirements before running this pro
 
 | Dependency | Version | Notes |
 | --- | --- | --- |
-| Rust | >= 1.70 | Toolchain (install via `rustup` recommended) |
+| Rust | >= 1.97.1 | Toolchain (install via `rustup` recommended) |
 | Cargo | bundled with Rust | Build and package manager |
 | `cli` feature | optional | Enables CLI / REPL / batch (includes `clap`, `rustyline`, `rayon`) |
 | `numerical` feature | optional | Enables numerical linear algebra decomposition (`lu`/`qr`/`eig`/`svd`/`solve`, includes `nalgebra`) |

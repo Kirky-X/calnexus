@@ -23,6 +23,8 @@ mod fx_tools;
 mod http;
 #[cfg(feature = "mcp")]
 mod mcp;
+#[cfg(feature = "ratelimit")]
+mod ratelimit;
 
 pub(crate) use cache::shared_cache;
 

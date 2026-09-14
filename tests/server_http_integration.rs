@@ -181,38 +181,51 @@ async fn send_get_request(uri: &str) -> (StatusCode, Value) {
     (status, json)
 }
 
-/// GET /health → 200 + {"status": "healthy", "checks": {"cache": {...}}}
+/// GET /health → 200 + {"status": "ready", "checks": [{"name": "cache", ...}]}
+/// （sdforge health 迁移后契约：checks 为数组，cache 检查含 entry_count 明细）
 #[tokio::test]
 async fn test_health_endpoint_healthy() {
     let (status, body) = send_get_request("/health").await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "healthy");
-    assert!(body["checks"]["cache"].is_object(), "应包含 cache 检查器");
-    assert_eq!(body["checks"]["cache"]["status"], "healthy");
+    assert_eq!(body["status"], "ready");
+    let checks = body["checks"].as_array().expect("checks 应为数组");
+    let cache = checks
+        .iter()
+        .find(|c| c["name"] == "cache")
+        .expect("应包含 cache 检查器");
+    assert_eq!(cache["healthy"], true);
+    assert!(
+        cache["details"]["entry_count"].is_u64(),
+        "cache 检查应携带 entry_count 明细"
+    );
 }
 
-/// GET /live → 200 + {"status": "healthy", "checks": {}}
+/// GET /live → 200 + {"status": "healthy", "version": ...}（sdforge 存活探针，
+/// 无 checks 字段）
 #[tokio::test]
 async fn test_liveness_endpoint_healthy() {
     let (status, body) = send_get_request("/live").await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "healthy");
-    assert!(
-        body["checks"].as_object().unwrap().is_empty(),
-        "/live 不应包含检查器"
-    );
+    assert!(body.get("checks").is_none(), "/live 不应包含检查器");
 }
 
-/// GET /ready → 200 + 同 /health
+/// GET /ready → 200 + 同 /health（sdforge readyz：status=ready + checks 数组）
 #[tokio::test]
 async fn test_readiness_endpoint_healthy() {
     let (status, body) = send_get_request("/ready").await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "healthy");
-    assert!(body["checks"]["cache"].is_object(), "应包含 cache 检查器");
+    assert_eq!(body["status"], "ready");
+    let checks = body["checks"].as_array().expect("checks 应为数组");
+    assert!(
+        checks
+            .iter()
+            .any(|c| c["name"] == "cache" && c["healthy"] == true),
+        "应包含健康的 cache 检查器"
+    );
 }
 
 // ===== Metrics 端点测试（lib-feature-absorption） =====

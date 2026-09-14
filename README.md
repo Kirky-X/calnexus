@@ -102,7 +102,7 @@
 | --- | --- | --- | --- |
 | **TimeDomain** | `time` | `date` / `datetime` / `timestamp` / `from_timestamp` / `date_diff` / `date_add` / `parse_date` / `format_date` / `reformat_date` / `weekday` / `day_of_year` / `is_leap_year` / `now` / `today` | 基于 jiff 0.2，内嵌 IANA tzdb，支持跨时区日期/时间构造、算术间隔与多格式自动识别（ISO 8601 / 中文 / 英文月份名）。`now` / `today` 为非确定性函数，每次求值旁路 L1 缓存。 |
 | **UnitDomain** | `unit` | `convert(value, "from", "to")` | 8 量纲线性换算（长度 / 质量 / 体积 / 面积 / 速度 / 数据 / 时间）+ 温度仿射换算（C/F/K/R）。未知单位附 Levenshtein 距离 ≤2 的相近建议。 |
-| **FxDomain** | `fx` | `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")` | 经 frankfurter.dev 开放 API 拉取欧洲央行汇率，三级缓存（内存 → 文件 → 网络），支持 `CALNEXUS_FX_TTL_HOURS`（默认 24）与 `CALNEXUS_FX_ALLOW_STALE`（网络失败时是否使用过期快照）环境变量。`fx` / `fx_rate` 为非确定性函数，旁路缓存。 |
+| **FxDomain** | `fx` | `fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")` | 经 frankfurter.dev 开放 API 拉取欧洲央行汇率，三级缓存（内存 → 文件 → 网络）+ 网络熔断（连续失败快速失败），支持 `CALNEXUS_FX_TTL_HOURS`（默认 24）、`CALNEXUS_FX_ALLOW_STALE`（网络失败时是否使用过期快照）与 `CALNEXUS_FX_BREAKER_THRESHOLD` / `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`（熔断阈值 / 冷却，默认 3 次 / 30 秒）环境变量。`fx` / `fx_rate` 为非确定性函数，旁路缓存。 |
 
 启用方式：
 
@@ -150,14 +150,15 @@ curl -X POST localhost:8080/api/v1/evaluate -H 'content-type: application/json' 
 
 | Feature | 说明 |
 | --- | --- |
-| `ratelimit` | HTTP 限流中间件（LimiteronAdapter） |
+| `ratelimit` | HTTP 限流中间件（sdforge `RateLimitLayer` + 固定窗口策略；`CALNEXUS_RATELIMIT_LIMIT` 默认 120、`CALNEXUS_RATELIMIT_WINDOW_SECS` 默认 60，探针/metrics 豁免） |
 | `docs` | Swagger UI（`/swagger-ui`，OpenAPI 文档） |
-| `graceful-shutdown` | 增强优雅关闭（连接追踪 + 可配置 drain timeout） |
 | `observability` | OpenTelemetry 可观测性（tracing 集成） |
+
+优雅关闭随 `http` feature 内建（基于 sdforge `graceful`：SIGTERM/Ctrl+C → drain 最长 30s → 强退，K8s terminationGracePeriod 语义）。
 
 ```bash
 # 启用全部 HTTP 增强功能
-cargo build --release --features cli,server,ratelimit,graceful-shutdown,observability
+cargo build --release --features cli,server,ratelimit,observability
 ```
 
 ---
@@ -203,7 +204,7 @@ graph TD
 
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
-| Rust | >= 1.85 | 工具链（推荐使用 `rustup` 安装） |
+| Rust | >= 1.97.1 | 工具链（推荐使用 `rustup` 安装） |
 | Cargo | 随 Rust | 构建与包管理 |
 | `cli` feature | 可选 | 启用 CLI / REPL / batch（含 `clap`、`rustyline`、`rayon`） |
 | `numerical` feature | 可选 | 启用数值线性代数分解（`lu`/`qr`/`eig`/`svd`/`solve`，含 `nalgebra`） |
