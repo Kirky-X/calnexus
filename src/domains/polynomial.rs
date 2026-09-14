@@ -461,7 +461,7 @@ fn coeffs_from_pow(
     }
     // Number ^ Number → 常数
     if let (AstNode::Number(a), AstNode::Number(b)) = (l, r) {
-        // 检查 NaN/Inf（如 (-1)^0.5 = NaN），失败显性化（规则 12）
+        // 检查 NaN/Inf（如 (-1)^0.5 = NaN），失败显性化
         if *a == 0.0 && *b == 0.0 {
             return Ok((vec![1.0], String::new()));
         }

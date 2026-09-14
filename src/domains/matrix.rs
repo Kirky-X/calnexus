@@ -628,7 +628,7 @@ fn validate_matrix_dimensions(rows: &[Vec<AstNode>]) -> Result<usize, CalcError>
 
 /// 递归检查 AST 是否应路由至 MatrixDomain。
 ///
-/// 路由条件（spec）：
+/// 路由条件：
 /// - 含 `Matrix` 节点
 /// - 含 `det()`/`transpose()`/`inverse()`/`identity()` 函数调用
 fn contains_matrix(ast: &AstNode) -> bool {

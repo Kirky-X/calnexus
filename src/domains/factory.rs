@@ -2,7 +2,7 @@
 
 //! 计算域工厂函数：构建默认路由器与 precision 域实例。
 //!
-//! 设计依据：规则 25（mod.rs 只放 trait/struct/re-export，实现拆到独立文件）。
+//! 设计依据：mod.rs 只放 trait/struct/re-export，实现拆到独立文件。
 //! 将工厂函数从 mod.rs 移到本文件，避免 mod.rs 包含实现逻辑。
 //!
 //! 注册职责归 domains 层（知道自己有哪些实现），避免 src/core 反向依赖
@@ -67,7 +67,7 @@ mod tests {
 
     // ===== 域优先级测试（从 core/domain.rs 迁移，消除 core → domains 类型依赖） =====
     //
-    // priority 是 domains 层的属性，测试应在 domains 层进行（规则 25 + DIP）。
+    // priority 是 domains 层的属性，测试应在 domains 层进行（模块分层约定 + DIP）。
     // 原测试位于 core/domain.rs，直接构造具体域类型，违反 ARCHITECTURE.md §2.3
     // "core → domains 类型依赖 = 0" 声明。
 

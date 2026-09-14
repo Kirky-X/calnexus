@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! LaTeX 输出格式化器（v1.1 新增）。
+//! LaTeX 输出格式化器。
 //!
 //! 将 `EvalResult` 渲染为 LaTeX 字符串，覆盖所有变体：
 //! - 标量 → `42` 或 `3.14`

@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - SymbolicExpr 枚举 + AST 变换 + 字符串输出
-//! - v1.0 symbolic-domain spec
+//! - symbolic-domain spec
 //!
 //! 路由策略：AST 含 diff/integrate/simplify/limit/taylor 函数调用时路由至本域。
 //! priority=30，与 Complex/Matrix/Vector 同级。

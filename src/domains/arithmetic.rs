@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_modulo_negative_dividend() {
-        // -7%3 → -1.0 (, Rust % 语义：结果取被除数符号)
+        // -7%3 → -1.0（Rust % 语义：结果取被除数符号）
         assert_eq!(eval("mod(-7,3)").unwrap(), -1.0);
     }
 
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_zero_divided_by_zero() {
-        // 0/0 → NaNOrInf (, 0.0/0.0 = NaN)
+        // 0/0 → NaNOrInf（0.0/0.0 = NaN）
         let result = eval("0/0");
         assert!(result.is_err());
         assert!(
@@ -362,9 +362,9 @@ mod tests {
     #[test]
     fn test_one_divided_by_zero() {
         // 1/0 → NaNOrInf
-        // Spec 冲突：说 5/0 → DivisionByZero，说 1/0 → NaNOrInf。
+        // Spec 冲突：一处规定 5/0 → DivisionByZero，另一处规定 1/0 → NaNOrInf。
         // 本实现统一预检查除零：x/0 (x≠0) → DivisionByZero。
-        // 这是对 的偏离：返回 DivisionByZero 而非 NaNOrInf。
+        // 这是对后者的偏离：返回 DivisionByZero 而非 NaNOrInf。
         let result = eval("1/0");
         assert!(result.is_err());
         // 接受 DivisionByZero 或 NaNOrInf（取决于实现策略）

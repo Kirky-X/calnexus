@@ -165,7 +165,7 @@ fn test_unbalanced_parens_exit_code() {
 
 #[test]
 fn test_unknown_flag_exit_code() {
-    // --unknown-flag → exit 2 (, clap default)
+    // --unknown-flag → exit 2（clap default）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--unknown-flag")
         .arg("2+3")
@@ -1115,7 +1115,7 @@ fn test_polynomial_general_coef_high_degree() {
         .stdout("2x^2\n");
 }
 
-// ===== /009/010: v1.1 新增 CLI 标志集成测试 =====
+// ===== 新增 CLI 标志集成测试 =====
 
 /// `--latex "diff(x^2,x)"` 输出 LaTeX 格式
 #[test]
@@ -1450,7 +1450,7 @@ fn test_serve_mcp_flag_conflicts_batch() {
 }
 
 /// --serve-http 与 --serve-mcp 互相冲突时 clap 退出码 2。
-/// 防止静默吞 flag（规则 12：失败必须显性化）。
+/// 防止静默吞 flag（失败必须显性化）。
 #[cfg(feature = "server")]
 #[test]
 fn test_serve_http_conflicts_serve_mcp() {
@@ -1498,7 +1498,7 @@ fn test_serve_http_without_server_feature() {
 
 /// `--batch --precision` 组合应显式冲突退出码 2。
 ///
-/// 原行为：`batch.rs:88` 硬编码 `None` 忽略 precision，违反规则 12（失败必须显性化）。
+/// 原行为：`batch.rs:88` 硬编码 `None` 忽略 precision，违反失败显性化原则。
 /// 添加 `conflicts_with_all` 互斥，clap 在参数解析阶段拒绝组合。
 ///
 /// 使用临时文件（非 stdin）确保 batch 模式实际运行：未修复时退出 0（静默忽略 precision），
@@ -1531,7 +1531,7 @@ fn test_batch_precision_conflict_exit_2() {
 ///
 /// 此前 `repl` 与 `batch` 未声明互相 conflicts_with_all，运行时优先级链
 /// (`run()` 中 `if cli.repl { ... }` 先于 `if let Some(path) = &cli.batch`) 会导致
-/// batch 被 silent 吞掉（静默 fallback 到 REPL，隐性失败，违反规则 12 显性化）。
+/// batch 被 silent 吞掉（静默 fallback 到 REPL，隐性失败，违反失败显性化）。
 /// 添加双向 conflict 后 clap 在解析阶段拒绝，退出 2。
 #[test]
 fn test_repl_batch_conflict_exit_2() {

@@ -266,7 +266,7 @@ impl ComplexDomain {
 
 /// 内部求值结果：标量或复数。
 ///
-/// 用于区分 `abs()`/`arg()` 返回标量与其他运算返回复数（spec）。
+/// 用于区分 `abs()`/`arg()` 返回标量与其他运算返回复数。
 enum ComplexValue {
     Scalar(f64),
     Complex(Complex64),
@@ -284,7 +284,7 @@ impl ComplexValue {
 
 /// 递归检查 AST 是否应路由至 ComplexDomain。
 ///
-/// 路由条件（spec）：
+/// 路由条件：
 /// - 含 `Complex` 节点
 /// - 含 `complex()`/`conj()`/`arg()` 函数调用（复数专用函数）
 /// - `abs()`/`exp()`/`ln()` 的参数含 `Complex` 节点（共享函数，仅复数参数时路由）

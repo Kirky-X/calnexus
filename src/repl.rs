@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - ReplSession 持有 DomainRouter + CacheManager + EvalContext
-//! - v1.0 repl-mode spec
+//! - repl-mode spec
 //!
 //! 命令（以 `:` 开头）：
 //! - `:let NAME = VALUE` — 绑定变量

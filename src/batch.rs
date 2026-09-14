@@ -4,7 +4,7 @@
 //!
 //! 设计依据：
 //! - BatchProcessor::run + rayon 并行
-//! - v1.0 batch-processing spec
+//! - batch-processing spec
 //!
 //! 约束：单条 ≤ 4096 字符、总条数 ≤ 1000；超限返回错误并标明行号。
 //! 流程：读取 → 解析验证 → 预规范化（串行）→ 并行求值（rayon）→ 按序输出 + 缓存统计。

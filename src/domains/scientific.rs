@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_gamma_five() {
-        // gamma(5) → 24.0 (, Γ(5) = 4! = 24)
+        // gamma(5) → 24.0（Γ(5) = 4! = 24）
         assert!(approx(eval("gamma(5)").unwrap(), 24.0));
     }
 

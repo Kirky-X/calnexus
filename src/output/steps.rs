@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! 求值步骤生成器（v1.1 新增）。
+//! 求值步骤生成器。
 //!
 //! 遍历 AST 以求值顺序生成步骤列表，每行格式 `lhs op rhs = partial_result`。
 //!

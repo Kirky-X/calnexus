@@ -5,11 +5,10 @@
 
 //! 跨能力集成测试：解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出全链路。
 //!
-//! -9.3：使用真实 ArithmeticDomain + ScientificDomain 验证端到端管线。
-//! 覆盖：
-//! - 9.1 全链路成功路径（算术 + 科学 + 混合 + 变量绑定）
-//! - 9.2 L1 缓存去重（交换律等价 / 常量折叠等价 共享缓存）
-//! - 9.3 错误传播链（7 种 CalcError 各自正确传播）
+//! 使用真实 ArithmeticDomain + ScientificDomain 验证端到端管线。覆盖：
+//! - 全链路成功路径（算术 + 科学 + 混合 + 变量绑定）
+//! - L1 缓存去重（交换律等价 / 常量折叠等价 共享缓存）
+//! - 错误传播链（7 种 CalcError 各自正确传播）
 
 mod common;
 use common::default_router;
@@ -73,7 +72,7 @@ fn evaluate_precision(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcE
     Ok(result)
 }
 
-// ===== 9.1 全链路成功路径 =====
+// ===== 全链路成功路径 =====
 
 #[test]
 fn test_full_pipeline_arithmetic_basic() {
@@ -148,7 +147,7 @@ fn test_full_pipeline_pi_e_constants() {
     assert!((result - 1.0).abs() < 1e-10);
 }
 
-// ===== 9.2 L1 缓存去重 =====
+// ===== L1 缓存去重 =====
 
 #[test]
 fn test_cache_dedup_commutative_addition() {
@@ -260,7 +259,7 @@ fn test_cache_does_not_store_errors() {
     assert_eq!(cache.get(&cf), None, "错误结果不应写入缓存");
 }
 
-// ===== 9.3 错误传播链 =====
+// ===== 错误传播链 =====
 
 #[test]
 fn test_error_parse_error() {
@@ -423,11 +422,11 @@ fn test_all_seven_error_variants_covered() {
     }
 }
 
-// ===== 9.6 / 9.7 性能验证 =====
+// ===== 性能验证 =====
 
 #[test]
 fn test_cold_start_performance() {
-    // 9.6 验证冷启动性能：全链路求值（parse → canonicalize → cache → route → evaluate）
+    // 验证冷启动性能：全链路求值（parse → canonicalize → cache → route → evaluate）
     // 目标 < 100ms（release 构建）。debug 构建可能较慢，仅作参考。
     let start = std::time::Instant::now();
     let result = evaluate("2+3").unwrap();
@@ -445,7 +444,7 @@ fn test_cold_start_performance() {
 
 #[test]
 fn test_cache_hit_performance() {
-    // 9.7 验证缓存命中性能：重复求值同一表达式 < 100μs
+    // 验证缓存命中性能：重复求值同一表达式 < 100μs
     // 预填充缓存后，测量 cache.get() 的耗时
     use calnexus::CanonicalForm;
 
@@ -488,9 +487,9 @@ fn test_cache_hit_performance() {
     );
 }
 
-// ===== 17.1 跨域集成测试：Complex/Matrix/Statistics/Precision 全链路 =====
+// ===== 跨域集成测试：Complex/Matrix/Statistics/Precision 全链路 =====
 //
-// 扩展 tests/integration.rs，覆盖 四个新域的
+// 扩展 tests/integration.rs，覆盖 Complex/Matrix/Statistics/Precision 四个新域的
 // 解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出 全链路。
 
 // ----- Complex 域全链路 -----

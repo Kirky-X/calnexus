@@ -160,9 +160,9 @@ pub enum EvalResult {
     ComplexList(Vec<(f64, f64)>),
     /// 符号字符串结果（新增）：因式分解等符号输出。
     Symbolic(String),
-    /// LaTeX 渲染结果（v1.1 新增，ADD §3.4）：已格式化的 LaTeX 字符串。
+    /// LaTeX 渲染结果（ADD §3.4）：已格式化的 LaTeX 字符串。
     LaTeX(String),
-    /// 求值步骤列表（v1.1 新增，ADD §3.4）：每行一步 `lhs op rhs = result`。
+    /// 求值步骤列表（ADD §3.4）：每行一步 `lhs op rhs = result`。
     Steps(Vec<String>),
     /// JSON 复合结果：lu/qr/eig/svd 分解的多矩阵结构化返回。
     /// 持有 serde_json::Value；eval_result_to_json 直接透传，typed 访问器返回 None。
@@ -1829,7 +1829,7 @@ mod tests {
         assert!(format!("{:?}", EvalResult::Symbolic("s".to_string())).contains("Symbolic"));
     }
 
-    // ===== v1.1 新增 LaTeX / Steps 变体测试（ADD §3.4） =====
+    // ===== LaTeX / Steps 变体测试（ADD §3.4） =====
 
     #[test]
     fn eval_result_latex_construct_and_match() {

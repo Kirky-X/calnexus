@@ -820,7 +820,7 @@ mod tests {
         );
     }
 
-    // ===== v1.1 新增 CLI 标志测试 =====
+    // ===== 新增 CLI 标志测试 =====
 
     #[test]
     fn test_canonicalize_no_fold_basic_addition() {

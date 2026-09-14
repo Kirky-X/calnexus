@@ -15,7 +15,7 @@
 //! `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`），避免 server 长驻模式下源站故障期间
 //! 每笔请求白付 HTTP 超时；Open 拒绝与网络失败同等进入 stale 策略。
 //!
-//! 失败显性化（规则 12）：
+//! 失败显性化：
 //! - 网络失败 + 文件过期 + 未设 `CALNEXUS_FX_ALLOW_STALE` → CalcError::domain
 //! - 网络失败 + 文件过期 + `CALNEXUS_FX_ALLOW_STALE=1` → 使用过期缓存
 //! - 缓存目录不可写 → 静默降级为仅内存缓存（不报错）
@@ -825,7 +825,7 @@ mod tests {
             let err = provider.rates().expect_err("fetcher always fails");
             assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
         }
-        // 第 3 次：熔断已打开，闭包不再执行；stale 策略仍给出显性错误（规则 12）
+        // 第 3 次：熔断已打开，闭包不再执行；stale 策略仍给出显性错误
         let err = provider.rates().expect_err("circuit should be open");
         assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);

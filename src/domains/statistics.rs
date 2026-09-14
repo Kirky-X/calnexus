@@ -612,7 +612,7 @@ impl Default for StatisticsDomain {
     }
 }
 
-/// 递归检查 AST 是否含统计函数调用（spec）。
+/// 递归检查 AST 是否含统计函数调用。
 fn contains_statistics_function(ast: &AstNode) -> bool {
     match ast {
         AstNode::FunctionCall(name, _) if STATISTICS_FUNCTIONS.contains(&name.as_str()) => true,

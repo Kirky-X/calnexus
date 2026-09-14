@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! CalNexus 输出格式化模块（v1.1 新增）。
+//! CalNexus 输出格式化模块。
 //!
 //! 提供 LaTeX / 步骤 / 规范形式三种输出格式化器：
 //! - `latex::format_latex`：将 `EvalResult` + `AstNode` 渲染为 LaTeX 字符串

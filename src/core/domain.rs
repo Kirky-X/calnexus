@@ -10,7 +10,7 @@
 //! - [`CalculationDomain`]：所有计算域必须实现的 trait
 //! - [`DomainRouter`]：按优先级降序遍历域，选择第一个 `supports()` 返回 true 的域
 //!
-//! **设计偏差**： 原计划使用 trait-kit `ModuleInterface`，
+//! **设计偏差**：原计划使用 trait-kit `ModuleInterface`，
 //! 但 trait-kit API 不明确且 crates.io 下载量为 0。采用设计文档中预批准的 fallback
 //! 方案（"自研 trait + 手动注册表"），功能等价且更可控。
 
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_route_arithmetic_constant() {
-        // 42 → Arithmetic (默认域, )
+        // 42 → Arithmetic（默认域）
         let router = default_router();
         let ast = parse("42").unwrap();
         let domain = router.route(&ast).unwrap();

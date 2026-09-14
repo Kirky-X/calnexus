@@ -425,7 +425,7 @@ fn diff_ln(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
 
 /// 符号积分 `integrate(expr, var)`。
 ///
-/// v1.0 仅支持：
+/// 支持范围：
 /// - 多项式积分：`x^n → x^(n+1)/(n+1)`（n ≠ -1）
 /// - 基本初等函数：sin→-cos、cos→sin、exp→exp、1/x→ln|x|
 /// - 线性性：∫(f±g) = ∫f ± ∫g

@@ -296,7 +296,7 @@ impl PrecisionDomain {
 
 /// 递归检查 AST 是否应路由至 PrecisionDomain。
 ///
-/// 路由条件（spec）：
+/// 路由条件：
 /// - 含 `BigNumber` 节点（大整数字面量）
 /// - 含 `precision()` 函数调用
 fn contains_precision(ast: &AstNode) -> bool {
