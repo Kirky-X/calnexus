@@ -4,7 +4,8 @@ version = "0.1.4"
 edition = "2024"
 authors = ["Kirky.X"]
 license = "MIT"
-rust-version = "1.85"
+# MSRV 与 base 生态一致基线对齐（sdforge 0.5.0-rc 系要求 1.97.1；CI msrv 任务同步）
+rust-version = "1.97.1"
 description = "A command-line math expression evaluator with 11 core and 4 optional (numerical/time/unit/fx) computation domains, symbolic calculus, REPL, batch processing, HTTP and MCP servers"
 keywords = ["math", "calculator", "symbolic", "repl", "cli"]
 categories = ["command-line-utilities", "mathematics", "science"]
@@ -18,8 +19,11 @@ cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口（基于 sdforge/http）
-# tokio/signal: BUG-S-M-003 graceful shutdown（Ctrl+C / SIGTERM）
-http = ["dep:sdforge", "sdforge/http", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
+# tokio/signal: 优雅关闭信号驱动（sdforge graceful 序列消费 Ctrl+C / SIGTERM）
+# sdforge/graceful: 优雅关闭序列（serve_with_graceful_shutdown，替代手写信号 select）
+# sdforge/health: 健康探针（/health /ready /live 挂载 sdforge handler + ReadinessCheck）
+# sdforge/context: 请求标识传播（context_middleware 替代手写 request_id 中间件）
+http = ["dep:sdforge", "sdforge/http", "sdforge/graceful", "sdforge/health", "sdforge/context", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # Time: 时间计算（日期差、时间戳、格式解析，feature 门控）
@@ -32,12 +36,11 @@ fx = ["dep:ureq", "dep:dirs"]
 numerical = []
 # Server: HTTP + MCP 聚合
 server = ["http", "mcp"]
-# Ratelimit: HTTP 限流中间件（sdforge/ratelimit-http）
+# Ratelimit: HTTP 限流中间件（sdforge/ratelimit-http：RateLimitLayer + HttpRequestRateLimiter 契约；
+# 策略为 src/server/ratelimit.rs 固定窗口，经 Clone 桥接层挂载，CALNEXUS_RATELIMIT_* 可配）
 ratelimit = ["dep:sdforge", "sdforge/ratelimit-http"]
 # Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
 docs = ["dep:sdforge", "sdforge/docs"]
-# Graceful shutdown: 优雅关闭（axum with_graceful_shutdown + tokio signal，不依赖 sdforge）
-graceful-shutdown = []
 # Observability: tracing 日志（server 模式 EnvFilter 消费 RUST_LOG）
 observability = ["dep:tracing", "dep:tracing-subscriber"]
 
@@ -59,6 +62,7 @@ regex = { version = "1.0", default-features = false, features = ["std", "unicode
 # 数值计算（均禁用默认特性，仅启用 std + serde）
 num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
+# num-bigint: 锁定 0.4——num-rational 0.4.2（最新）固定 ^0.4，且 precision.rs 跨库传递 BigInt 类型，0.5 会破坏 BigRational 互操作
 num-bigint = { version = "0.4", default-features = false, features = ["std", "serde"] }
 num-rational = { version = "0.4", default-features = false, features = ["std", "serde", "num-bigint"] }
 num-integer = { version = "0.1", default-features = false, features = ["std"] }
@@ -69,7 +73,7 @@ rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化（仅 compiled_data，禁用默认特性）
 icu = { version = "2.2", default-features = false, features = ["compiled_data"], optional = true }
 # sdforge: CLI/HTTP/MCP 接口封装层（禁用默认特性，按需启用 cli/http/mcp）
-sdforge = { version = "0.5.0-rc.2", default-features = false, optional = true }
+sdforge = { version = "0.5.0-rc.4", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
@@ -85,8 +89,8 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
 ureq = { version = "3.4", default-features = false, features = ["rustls"], optional = true }
-# dirs: 跨平台缓存目录（仅 fx feature 启用）
-dirs = { version = "6.0", default-features = false, optional = true }
+# dirs: 跨平台缓存目录（仅 fx feature 启用；7.0 为最新稳定 major，API 兼容仅用 cache_dir）
+dirs = { version = "7.0", default-features = false, optional = true }
 
 [dev-dependencies]
 proptest = { version = "1.11", default-features = false, features = ["std"] }
