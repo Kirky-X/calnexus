@@ -73,7 +73,7 @@ pub use domains::format_bigrational;
 #[cfg(any(feature = "http", feature = "mcp"))]
 pub use server::{
     EvaluateRequest, EvaluateResponse, ListFunctionsRequest, ListFunctionsResponse, ServerError,
-    calc_error_to_api_error,
+    calc_error_to_api_error, calc_error_to_api_error_i18n,
 };
 #[cfg(feature = "http")]
 pub use server::{HttpServer, build_router};

@@ -362,3 +362,65 @@ async fn test_metrics_http_requests_total() {
         "/metrics 应含 HTTP 请求计数"
     );
 }
+
+// === 语言协商（lang 请求字段）===
+
+/// 默认（无 lang）错误消息保持英文机器契约：`"Eval: unbound variable: foo"`。
+#[tokio::test]
+async fn test_http_evaluate_default_lang_english_error() {
+    let (status, body) = send_request(json!({"expr": "foo + 1"})).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["type"], "InvalidInput");
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("Eval:") && m.contains("unbound variable: foo")),
+        "默认语言应保持英文契约: {}",
+        body["message"]
+    );
+}
+
+/// lang=zh 错误消息切换中文：kind 标签 + 参数化 detail 均本地化。
+#[tokio::test]
+async fn test_http_evaluate_zh_lang_localized_error() {
+    let (status, body) = send_request(json!({"expr": "foo + 1", "lang": "zh"})).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["type"], "InvalidInput");
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("求值错误")
+                && m.contains("未绑定变量")
+                && m.contains("foo")),
+        "zh 协商应返回中文消息: {}",
+        body["message"]
+    );
+    // 机器可读 kind 字段保持英文协议值
+    assert_eq!(body["type"], "InvalidInput");
+}
+
+/// lang=en 显式请求：与缺省行为逐字节一致（契约回归）。
+#[tokio::test]
+async fn test_http_evaluate_explicit_en_matches_default() {
+    let (_, default_body) = send_request(json!({"expr": "foo + 1"})).await;
+    let (_, en_body) = send_request(json!({"expr": "foo + 1", "lang": "en"})).await;
+
+    assert_eq!(default_body["message"], en_body["message"]);
+}
+
+/// 未知 lang 值宽松回退英文（与 CLI --lang 行为一致）。
+#[tokio::test]
+async fn test_http_evaluate_unknown_lang_falls_back_to_english() {
+    let (status, body) = send_request(json!({"expr": "foo + 1", "lang": "xx-Klingon"})).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("Eval:") && m.contains("unbound variable")),
+        "未知 lang 应回退英文: {}",
+        body["message"]
+    );
+}

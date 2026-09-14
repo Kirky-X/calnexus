@@ -195,7 +195,10 @@ impl ComplexDomain {
                         return Err(CalcError::domain(
                             "complex() requires scalar arguments".to_string(),
                         )
-                        .with_i18n("msg.output.requires_scalar", vec![]));
+                        .with_i18n(
+                            "msg.output.requires_scalar",
+                            vec![("name".to_string(), "complex()".to_string())],
+                        ));
                     }
                 };
                 let im = match self.eval(&args[1], ctx)? {
@@ -204,7 +207,10 @@ impl ComplexDomain {
                         return Err(CalcError::domain(
                             "complex() requires scalar arguments".to_string(),
                         )
-                        .with_i18n("msg.output.requires_scalar", vec![]));
+                        .with_i18n(
+                            "msg.output.requires_scalar",
+                            vec![("name".to_string(), "complex()".to_string())],
+                        ));
                     }
                 };
                 Ok(ComplexValue::Complex(Complex64::new(re, im)))

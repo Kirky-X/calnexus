@@ -14,6 +14,7 @@
 mod cache;
 mod catalog;
 mod evaluate;
+mod lang;
 mod types;
 
 #[cfg(all(feature = "fx", feature = "mcp"))]
@@ -45,7 +46,7 @@ pub(crate) fn init_observability() {}
 #[cfg(feature = "cli")]
 pub(crate) use cache::init_shared_cache;
 pub use catalog::{ListFunctionsRequest, ListFunctionsResponse};
-pub use evaluate::calc_error_to_api_error;
+pub use evaluate::{calc_error_to_api_error, calc_error_to_api_error_i18n};
 pub use types::{EvaluateRequest, EvaluateResponse, ServerError};
 
 #[cfg(feature = "http")]

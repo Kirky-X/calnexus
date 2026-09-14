@@ -32,6 +32,10 @@ pub struct FxBudgetRequest {
     pub duration_years: u32,
     /// 本币代码（ISO 4217，如 "CNY"）。
     pub home_currency: String,
+    /// 响应语言（可选，语言协商：BCP-47 标签，如 "en"/"zh-CN"；缺省/未知值回退英文）。
+    /// 影响 `exchange_risk.note` 文案与错误消息；协议字段保持英文。
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 /// `fx_budget` 响应。
@@ -77,6 +81,10 @@ pub struct FxPricingRequest {
     /// 汇率安全缓冲（0 <= buffer <= 0.5，如 0.05 = 5%）。
     #[serde(default = "default_safety_buffer")]
     pub safety_buffer: f64,
+    /// 响应语言（可选，语言协商：BCP-47 标签，如 "en"/"zh-CN"；缺省/未知值回退英文）。
+    /// 影响错误消息；协议字段保持英文。
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 fn default_platform_rate() -> f64 {
@@ -236,11 +244,13 @@ impl FxPricingRequest {
     path = "/fx_budget",
     method = "POST",
     tool_name = "fx_budget",
-    description = "Calculate study abroad budget with currency conversion. Args MUST be wrapped in a req object with fields: tuition, tuition_currency, home_currency, optional living_cost_monthly, duration_years. Returns tuition/living/total in home currency plus a 3-percent exchange-rate risk range and rate_date (snapshot date). Errors: 400 InvalidInput (unknown currency), 503 ServiceUnavailable (FX upstream unreachable)."
+    description = "Calculate study abroad budget with currency conversion. Args MUST be wrapped in a req object with fields: tuition, tuition_currency, home_currency, optional living_cost_monthly, duration_years, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns tuition/living/total in home currency plus a 3-percent exchange-rate risk range and rate_date (snapshot date). Errors: 400 InvalidInput (unknown currency), 503 ServiceUnavailable (FX upstream unreachable)."
 )]
 pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, ApiError> {
     req.validate()?;
 
+    // 语言协商：请求级 lang 字段 → I18n（缺省/未知值回退英文，见 lang::resolve_i18n）
+    let i18n = super::lang::resolve_i18n(req.lang.as_deref());
     let tuition = req.tuition;
     let tuition_currency = req.tuition_currency.clone();
     let living_cost = req.living_cost_monthly;
@@ -248,6 +258,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     let home_currency = req.home_currency.clone();
 
     // spawn_blocking 隔离同步 RateProvider 调用
+    let i18n_in_task = i18n.clone();
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
         let table = provider.rates().map_err(|e| {
@@ -268,7 +279,14 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
             &table,
         )
         .map(|result| (result, rate_date))
-        .map_err(|e| ApiError::invalid_input(e.message, None, None))
+        // 语言协商：CalcError 携带 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
+        .map_err(|e| {
+            ApiError::invalid_input(
+                super::evaluate::localized_error_detail(&e, &i18n_in_task),
+                None,
+                None,
+            )
+        })
     })
     .await;
 
@@ -291,11 +309,8 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
                     result.exchange_risk.high,
                     result.exchange_risk.currency
                 ),
-                // 用户可见文案走 i18n 目录（server 为英文默认面；请求 DTO 暂无 lang 字段，
-                // 故用 I18n::default()，键预留未来语言协商）
-                note: crate::i18n::I18n::default()
-                    .t("msg.fx.budget_risk_note")
-                    .to_string(),
+                // 用户可见文案走 i18n 目录 + 请求级语言协商（缺省英文）
+                note: i18n.t("msg.fx.budget_risk_note").to_string(),
             },
             rate_date,
         }),
@@ -317,11 +332,13 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     path = "/fx_pricing",
     method = "POST",
     tool_name = "fx_pricing",
-    description = "Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer. Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable)."
+    description = "Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable)."
 )]
 pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingResponse, ApiError> {
     req.validate()?;
 
+    // 语言协商：请求级 lang 字段 → I18n（缺省/未知值回退英文，见 lang::resolve_i18n）
+    let i18n = super::lang::resolve_i18n(req.lang.as_deref());
     let cost = req.cost_cny;
     let profit_rate = req.target_profit_rate;
     let platform_rate = req.platform_rate;
@@ -354,7 +371,14 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
             &table,
         )
         .map(|result| (result, rate_date))
-        .map_err(|e| ApiError::invalid_input(e.message, None, None))
+        // 语言协商：CalcError 携带 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
+        .map_err(|e| {
+            ApiError::invalid_input(
+                super::evaluate::localized_error_detail(&e, &i18n),
+                None,
+                None,
+            )
+        })
     })
     .await;
 
@@ -464,6 +488,7 @@ mod tests {
             living_cost_monthly: Some(2000.0),
             duration_years: 4,
             home_currency: "CNY".into(),
+            lang: None,
         };
         assert!(req.validate().is_ok());
     }
@@ -476,6 +501,7 @@ mod tests {
             living_cost_monthly: None,
             duration_years: 2,
             home_currency: "CNY".into(),
+            lang: None,
         };
         assert!(req.validate().is_err());
     }
@@ -488,6 +514,7 @@ mod tests {
             living_cost_monthly: None,
             duration_years: 0,
             home_currency: "CNY".into(),
+            lang: None,
         };
         assert!(req.validate().is_err());
     }
@@ -500,6 +527,7 @@ mod tests {
             living_cost_monthly: None,
             duration_years: 2,
             home_currency: "CNY".into(),
+            lang: None,
         };
         assert!(req.validate().is_err());
     }
@@ -512,6 +540,7 @@ mod tests {
             currencies: "USD,EUR".into(),
             platform_rate: 0.15,
             safety_buffer: 0.05,
+            lang: None,
         };
         assert!(req.validate().is_ok());
     }
@@ -524,6 +553,7 @@ mod tests {
             currencies: "".into(),
             platform_rate: 0.15,
             safety_buffer: 0.05,
+            lang: None,
         };
         assert!(req.validate().is_err());
     }
@@ -536,6 +566,7 @@ mod tests {
             currencies: "USD,EUR,GBP,JPY,CNY,KRW,AUD,CAD,CHF,SGD,NZD".into(),
             platform_rate: 0.15,
             safety_buffer: 0.05,
+            lang: None,
         };
         assert!(req.validate().is_err());
     }
@@ -548,6 +579,7 @@ mod tests {
             currencies: "USD".into(),
             platform_rate: 0.15,
             safety_buffer: 0.05,
+            lang: None,
         };
         assert!(req.validate().is_err());
     }
@@ -560,6 +592,7 @@ mod tests {
             currencies: "USD".into(),
             platform_rate: 0.15,
             safety_buffer: 0.05,
+            lang: None,
         };
         assert!(req.validate().is_err());
     }

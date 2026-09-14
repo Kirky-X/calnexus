@@ -677,7 +677,7 @@ fn eval_today(args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcErr
     let now = Zoned::now().with_time_zone(tz.clone());
     let today = now.date().to_zoned(tz).map_err(|_| {
         CalcError::domain("failed to construct today midnight".to_string())
-            .with_i18n("msg.time.invalid_date", vec![])
+            .with_i18n("msg.time.midnight_construct_failed", vec![])
     })?;
     Ok(EvalResult::DateTime(math_time::zoned_to_rfc3339(&today)))
 }

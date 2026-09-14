@@ -245,3 +245,42 @@ fn test_list_functions_feature_gated_domains() {
         );
     }
 }
+
+// === 语言协商（lang 请求字段，MCP tool args 与 HTTP body 同构）===
+
+/// MCP-COLLANG-01: evaluate tool args 带 lang=zh → 错误消息本地化为中文。
+#[test]
+fn test_mcp_evaluate_zh_lang_localized_error() {
+    let server = build_mcp_server();
+    let r = server
+        .call_tool_internal(
+            "evaluate",
+            Some(serde_json::json!({"req": {"expr": "foo + 1", "lang": "zh"}})),
+        )
+        .expect("evaluate call_tool_internal");
+    assert!(r.is_error.unwrap_or(false), "未定义变量应报错");
+    let text = serde_json::to_string(&r.content).unwrap_or_default();
+    assert!(
+        text.contains("求值错误") || text.contains("未绑定变量"),
+        "zh 协商应返回中文消息: {}",
+        text
+    );
+}
+
+/// MCP-COLLANG-02: 缺省 lang → 英文契约不变。
+#[test]
+fn test_mcp_evaluate_default_lang_english_error() {
+    let server = build_mcp_server();
+    let r = server
+        .call_tool_internal(
+            "evaluate",
+            Some(serde_json::json!({"req": {"expr": "foo + 1"}})),
+        )
+        .expect("evaluate call_tool_internal");
+    let text = serde_json::to_string(&r.content).unwrap_or_default();
+    assert!(
+        text.contains("unbound variable"),
+        "缺省 lang 应保持英文契约: {}",
+        text
+    );
+}

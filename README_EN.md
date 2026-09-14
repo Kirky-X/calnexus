@@ -138,6 +138,14 @@ calnexus --serve-http
 | `/ready` | GET | Readiness probe |
 | `/metrics` | GET | Cache metrics export (Prometheus format by default, `?format=json` for JSON) |
 
+**Language negotiation**: the `evaluate`, `fx_budget` and `fx_pricing` request bodies accept an optional `lang` field (BCP-47 tag, e.g. `"en"`/`"zh-CN"`). Missing or unknown values fall back to English (the protocol default); `"zh"` switches human-readable content (error messages, FX risk note) to Chinese while machine-readable fields (`type` protocol names) keep the English contract. MCP tool arguments support the same `lang` field.
+
+```bash
+curl -X POST localhost:8080/api/v1/evaluate -H 'content-type: application/json' \
+  -d '{"expr": "foo + 1", "lang": "zh"}'
+# → {"type":"InvalidInput","message":"求值错误: 未绑定变量: foo",...}
+```
+
 Optional feature enhancements:
 
 | Feature | Description |

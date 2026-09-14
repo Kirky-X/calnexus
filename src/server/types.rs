@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 /// HTTP/MCP 求值请求。
 ///
-/// 反序列化 JSON：`{"expr":"2+3","vars":{"x":1.0},"precision":null}`
+/// 反序列化 JSON：`{"expr":"2+3","vars":{"x":1.0},"precision":null,"lang":null}`
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct EvaluateRequest {
     /// 表达式字符串（必填）。
@@ -25,6 +25,10 @@ pub struct EvaluateRequest {
     /// 任意精度位数（可选，None=常规模式）。
     #[serde(default)]
     pub precision: Option<usize>,
+    /// 响应语言（可选，语言协商：BCP-47 标签，如 "en"/"zh-CN"；缺省/未知值回退英文）。
+    /// 仅影响人可读文案（错误消息）；机器可读字段（kind 协议名等）保持英文契约。
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 /// HTTP/MCP 求值响应。
@@ -292,6 +296,7 @@ mod tests {
             expr: "x+1".to_string(),
             vars,
             precision: Some(3),
+            lang: None,
         };
         let ctx = req.to_eval_context();
         assert_eq!(ctx.vars.get("x"), Some(&5.0));
@@ -461,6 +466,7 @@ mod tests {
             expr: "2+3".into(),
             vars: HashMap::new(),
             precision: None,
+            lang: None,
         };
         assert!(req.validate().is_ok());
     }
@@ -471,6 +477,7 @@ mod tests {
             expr: "1/3".into(),
             vars: HashMap::new(),
             precision: Some(MAX_PRECISION),
+            lang: None,
         };
         assert!(req.validate().is_ok());
     }
@@ -481,6 +488,7 @@ mod tests {
             expr: "1/3".into(),
             vars: HashMap::new(),
             precision: Some(MAX_PRECISION + 1),
+            lang: None,
         };
         let err = req.validate().unwrap_err();
         // 422 VALIDATION_ERROR，field="precision"（spec.md R-sdforge-002 契约）
@@ -497,6 +505,7 @@ mod tests {
             expr: "v1".into(),
             vars,
             precision: None,
+            lang: None,
         };
         let err = req.validate().unwrap_err();
         // 422 VALIDATION_ERROR，field="vars"（spec.md R-sdforge-002 契约）
@@ -514,6 +523,7 @@ mod tests {
                 expr: "x".into(),
                 vars,
                 precision: None,
+                lang: None,
             };
             let err = req.validate().unwrap_err();
             // 422 VALIDATION_ERROR，field="vars"（输入值不合法）
@@ -534,6 +544,7 @@ mod tests {
             expr: String::new(),
             vars: HashMap::new(),
             precision: None,
+            lang: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -548,6 +559,7 @@ mod tests {
             expr: "x".repeat(MAX_EXPR_LEN + 1),
             vars: HashMap::new(),
             precision: None,
+            lang: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -562,6 +574,7 @@ mod tests {
             expr: "1+\0+2".to_string(),
             vars: HashMap::new(),
             precision: None,
+            lang: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -582,6 +595,7 @@ mod tests {
             expr: "x".into(),
             vars,
             precision: None,
+            lang: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -598,6 +612,7 @@ mod tests {
             expr: "x".into(),
             vars,
             precision: None,
+            lang: None,
         };
         assert!(req.validate().is_ok(), "max var name length should pass");
     }
@@ -610,6 +625,7 @@ mod tests {
             expr: "x".into(),
             vars,
             precision: None,
+            lang: None,
         };
         let err = req.validate().unwrap_err();
         assert!(

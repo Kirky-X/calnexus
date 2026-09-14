@@ -138,6 +138,14 @@ calnexus --serve-http
 | `/ready` | GET | 就绪探针（readiness） |
 | `/metrics` | GET | 缓存指标导出（默认 Prometheus 格式，`?format=json` 返回 JSON） |
 
+**语言协商**：`evaluate`、`fx_budget`、`fx_pricing` 请求体均支持可选 `lang` 字段（BCP-47 标签，如 `"en"`/`"zh-CN"`）。缺省或未知值回退英文（协议默认）；`"zh"` 时错误消息与 fx 风险提示等人类可读文案切换中文，机器可读字段（`type` 协议名等）保持英文契约。MCP tool args 同构支持 `lang`。
+
+```bash
+curl -X POST localhost:8080/api/v1/evaluate -H 'content-type: application/json' \
+  -d '{"expr": "foo + 1", "lang": "zh"}'
+# → {"type":"InvalidInput","message":"求值错误: 未绑定变量: foo",...}
+```
+
 可选 feature 增强：
 
 | Feature | 说明 |
