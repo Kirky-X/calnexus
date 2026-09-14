@@ -2,8 +2,8 @@
 
 //! Server evaluate 接口层：`#[forge]` 声明式封装 + `CalcError` → `ApiError` 映射。
 //!
-//! spec.md R-sdforge-007：单个 `#[forge]` async fn 同时生成 HTTP 路由与 MCP tool，
-//! 取代 p1 阶段的 `inventory::submit!` + `SdForgeTool` 手写封装 + `preserve_*` 链接器 hack。
+//! 单个 `#[forge]` async fn 同时生成 HTTP 路由与 MCP tool，
+//! 取代手写的 `inventory::submit!` + `SdForgeTool` 封装 + `preserve_*` 链接器 hack。
 //! 链接器 inventory 保留由 `sdforge::init_all_plugins()` 托管（http.rs/mcp.rs 调用）。
 
 use super::lang::resolve_i18n;
@@ -18,7 +18,7 @@ use std::time::Duration;
 
 /// 请求级超时（秒）：防止慢攻击（slowloris）与无限循环表达式耗尽连接资源。
 ///
-/// spec.md R-sdforge-002 安全约束：HTTP/MCP 请求必须在合理时间内返回（成功或 503）。
+/// 安全约束：HTTP/MCP 请求必须在合理时间内返回（成功或 503）。
 /// 与 `CalcError::Timeout`（计算层超时，由 evaluate 内部 Alarm 控制）互补：
 /// - 计算层超时：精确中断 evaluate 内部的循环
 /// - 请求级超时：兜底保护，覆盖 spawn_blocking 启动 / 缓存写入等任何意外延迟
@@ -29,7 +29,7 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// `#[forge]` 宏自动生成 axum handler（消费 `EvaluateRequest` body + `ApiError::into_response`
 /// 错误路径）与 MCP tool struct/schema（input_schema 从 `EvaluateRequest` 字段推导），
 /// 并 `inventory::submit!` 注册。`name="evaluate"` + `version=1` 决定路径前缀 `/api/v1`，
-/// 叠加 `path="/evaluate"` → 最终路由 `/api/v1/evaluate`（spec.md R-sdforge-002）。
+/// 叠加 `path="/evaluate"` → 最终路由 `/api/v1/evaluate`。
 ///
 /// 函数体内保留 `spawn_blocking` 隔离同步求值（避免阻塞 tokio 异步运行时）：
 /// `#[forge]` 只生成外层路由/tool 外壳，函数体仍是 CalNexus 代码，隔离策略不变。
@@ -98,16 +98,16 @@ pub(crate) async fn evaluate_with_timeout(
     ))
 }
 
-/// 将 `CalcError` 映射为 sdforge 标准 `ApiError`（spec.md R-sdforge-002/003 错误契约）。
+/// 将 `CalcError` 映射为 sdforge 标准 `ApiError`（错误契约）。
 ///
-/// 映射表（design.md D2）：
+/// 映射表：
 /// - `Timeout` → `ApiError::service_unavailable("evaluate", Some(30))`（HTTP 503 / MCP SERVICE_UNAVAILABLE）
 /// - 其余 9 种 `ErrorKind`（Parse/Eval/Overflow/DivisionByZero/Domain/Depth/NaNOrInf/
 ///   UndefinedSymbol/Usage）→ `ApiError::invalid_input("{Kind}: {message}", None, None)`
 ///   （HTTP 400 / MCP INVALID_INPUT）
 ///
-/// `kind` 名称作为 `message` 前缀保留可诊断性（spec.md R-sdforge-002 要求 message 含 kind 前缀，
-/// 如 `"DivisionByZero: ..."`）；原始 message 追加其后（规则12 失败显性化）。
+/// `kind` 名称作为 `message` 前缀保留可诊断性（要求 message 含 kind 前缀，
+/// 如 `"DivisionByZero: ..."`）；原始 message 追加其后（失败显性化）。
 pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
     calc_error_to_api_error_i18n(e, &I18n::default())
 }
@@ -123,7 +123,7 @@ pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
 pub fn calc_error_to_api_error_i18n(e: CalcError, i18n: &I18n) -> ApiError {
     match e.kind {
         ErrorKind::Timeout => ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS)),
-        // v015 T030（R-srv-001）：上游依赖故障 → 503（不再误标为客户端 400）
+        // 上游依赖故障 → 503（不再误标为客户端 400）
         ErrorKind::DependencyUnavailable => {
             ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS))
         }
@@ -186,7 +186,7 @@ fn error_kind_prefix(kind: ErrorKind) -> &'static str {
 mod tests {
     use super::*;
 
-    /// v015 T065（R-srv-001 验收）：DependencyUnavailable 映射 503 ServiceUnavailable
+    /// DependencyUnavailable 映射 503 ServiceUnavailable
     #[test]
     fn calc_error_to_api_error_dependency_unavailable_maps_to_503() {
         let e = CalcError::dependency_unavailable("FX upstream unreachable");
@@ -262,7 +262,7 @@ mod tests {
         }
     }
 
-    /// 原始 message 必须完整保留在 ApiError.message（规则12 失败显性化回归）。
+    /// 原始 message 必须完整保留在 ApiError.message（失败显性化回归）。
     #[test]
     fn calc_error_to_api_error_preserves_original_message() {
         let api = calc_error_to_api_error(CalcError::parse("the @ token is bad"));
@@ -355,7 +355,7 @@ mod tests {
         ));
     }
 
-    /// REQUEST_TIMEOUT_SECS 常量必须为 30（spec.md R-sdforge-002 契约）。
+    /// REQUEST_TIMEOUT_SECS 常量必须为 30（契约）。
     #[test]
     fn test_request_timeout_secs_is_30() {
         assert_eq!(REQUEST_TIMEOUT_SECS, 30);

@@ -2,7 +2,7 @@
 
 //! Server 接口层 DTO：请求/响应类型 + EvalResult→JSON 转换。
 //!
-//! spec.md R-sdforge-002/R-sdforge-003 定义了 HTTP/MCP 的请求/响应契约：
+//! 定义了 HTTP/MCP 的请求/响应契约：
 //! - Request: `{"expr":"2+3","vars":{"x":1.0},"precision":null}`
 //! - Response: `{"result":5,"domain":"arithmetic","cache":"miss"}`
 //! - Error: `ApiError`（InvalidInput→400 / ValidationError→422），映射见 `evaluate::calc_error_to_api_error`
@@ -74,7 +74,7 @@ impl EvaluateRequest {
     /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
     ///
     /// 违反约束时返回 `Err(ApiError::validation(...))`（HTTP 422 / MCP VALIDATION_ERROR，
-    /// spec.md R-sdforge-002/003 契约）。`field` 标识违规字段（"expr"/"vars"/"precision"），
+    /// 契约）。`field` 标识违规字段（"expr"/"vars"/"precision"），
     /// `constraint` 描述约束。
     // ApiError（sdforge）含丰富错误上下文（type/message/details），168 bytes 为框架设计；
     // 校验错误路径罕见，Box 化会令所有 `validate()?` 调用点被迫 `map_err` 解包，得不偿失。
@@ -140,7 +140,7 @@ impl EvaluateRequest {
     }
 }
 
-/// `vars` 最大键数（T016 安全前置任务：防止内存耗尽攻击）。
+/// `vars` 最大键数（安全前置任务：防止内存耗尽攻击）。
 const MAX_VARS: usize = 1024;
 
 /// `vars` 单个键名最大长度（防止键名注入 / 内存攻击）。
@@ -154,7 +154,7 @@ impl EvaluateResponse {
     ///
     /// `fmt_prec` 为 evaluate 返回的格式化精度（precision 模式下是输入 precision；
     /// 常规模式下是 `precision(N, expr)` 调用中的 N）。当结果为 `BigRational` 且
-    /// `fmt_prec.is_some()` 时，按 spec.md R-sdforge-002 格式化为十进制字符串
+    /// `fmt_prec.is_some()` 时，按 格式化为十进制字符串
     /// （如 `1/3` 精度 5 → `"0.33333"`）；否则按 `eval_result_to_json` 默认映射。
     pub fn from_eval(
         result: EvalResult,
@@ -194,14 +194,14 @@ impl EvaluateResponse {
 /// - `Symbolic(s)` → String
 /// - `LaTeX(s)` → String
 /// - `Steps(v)` → `["...",...]`
-/// - `Json(v)` → v（直接透传 serde_json::Value，p4 numerical-linalg 复合返回）
+/// - `Json(v)` → v（直接透传 serde_json::Value）
 fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
     use serde_json::{Value, json};
     match result {
         EvalResult::Scalar(v) => {
             if v.is_finite() {
                 // 整数值 f64 转 i64，使 `5.0` 序列化为 `5` 而非 `5.0`，
-                // 匹配 spec.md 示例与 JSON 整数字面量断言（`body["result"] == 5`）。
+                // 匹配 示例与 JSON 整数字面量断言（`body["result"] == 5`）。
                 if v.fract() == 0.0 && v.abs() < i64::MAX as f64 {
                     Value::from(*v as i64)
                 } else {
@@ -241,7 +241,7 @@ fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
         EvalResult::LaTeX(s) => Value::from(s.as_str()),
         EvalResult::Steps(v) => Value::Array(v.iter().map(|s| Value::from(s.as_str())).collect()),
         EvalResult::Json(v) => v.clone(),
-        // DateTime（time-unit-fx-domains D2）：序列化为 {"type":"datetime","value":"<RFC3339>"}
+        // DateTime：序列化为 {"type":"datetime","value":"<RFC3339>"}
         // 类型标签使客户端可区分 DateTime 与 Symbolic/LaTeX 等纯字符串结果。
         EvalResult::DateTime(s) => json!({"type": "datetime", "value": s}),
     }
@@ -458,7 +458,7 @@ mod tests {
     }
 
     // === validate() 安全约束 ===
-    // Phase 4 审查修复 MEDIUM-1：validate() 是核心安全方法，必须有单元测试覆盖。
+    // validate() 是核心安全方法，必须有单元测试覆盖。
 
     #[test]
     fn test_validate_accepts_valid_request() {
@@ -491,7 +491,7 @@ mod tests {
             lang: None,
         };
         let err = req.validate().unwrap_err();
-        // 422 VALIDATION_ERROR，field="precision"（spec.md R-sdforge-002 契约）
+        // 422 VALIDATION_ERROR，field="precision"（契约）
         assert!(matches!(err, ApiError::ValidationError { .. }));
     }
 
@@ -508,7 +508,7 @@ mod tests {
             lang: None,
         };
         let err = req.validate().unwrap_err();
-        // 422 VALIDATION_ERROR，field="vars"（spec.md R-sdforge-002 契约）
+        // 422 VALIDATION_ERROR，field="vars"（契约）
         assert!(matches!(err, ApiError::ValidationError { .. }));
     }
 

@@ -2,15 +2,15 @@
 
 //! HTTP server 启动：API 路由（显式注册）+ sdforge 健康探针 + /metrics + 优雅关闭。
 //!
-//! spec.md R-sdforge-002 定义接口契约。
+//! 定义接口契约。
 //!
-//! 路由注册策略（v015 缓存重构期间发现的关键修复）：`#[forge]` 宏生成的 HTTP
+//! 路由注册策略（缓存重构期间发现的关键修复）：`#[forge]` 宏生成的 HTTP
 //! inventory 注册在 rlib/测试二进制场景下会被链接器 GC 静默丢弃（`#[forge]`
 //! 注解对象文件若无其他符号引用即整体剔除，404 且无任何告警）。因此 HTTP 路由
 //! 在本模块**显式挂载**（单一事实源），复用与 `#[forge]` 注解函数相同的内部实现
 //! 与 `ApiError` 契约，行为等价；`#[forge]` 保留 MCP tool 注册与 schema 推导职责。
 //!
-//! sdforge 能力吸收（v0.1.5 基座迁移，替代手写实现）：
+//! sdforge 能力吸收（基座迁移，替代手写实现）：
 //! - 优雅关闭：`sdforge::http::serve_with_graceful_shutdown` +
 //!   `default_shutdown_signal`（`graceful` feature），替代手写信号 select 与
 //!   drain 超时包装；SIGTERM 在 select 前注册（早期信号缓冲，消除竞态）。
@@ -43,10 +43,10 @@ use sdforge::security::HttpRequestRateLimiter;
 #[cfg(feature = "ratelimit")]
 use std::sync::Arc;
 
-/// 请求体大小上限（64KB，T016 安全前置任务：防止超大请求体耗尽内存）。
+/// 请求体大小上限（64KB，安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
 
-/// 优雅关闭排空超时：30 秒（v015 T034，R-srv-005）。
+/// 优雅关闭排空超时：30 秒。
 const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// 构建 CalNexus HTTP Router：显式 API 路由 + sdforge 探针 + body limit +
@@ -114,7 +114,7 @@ fn finish_router(api: Router) -> Router {
         .route("/live", get(sdforge::health::healthz_handler))
         .route("/metrics", get(metrics_handler))
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
-        // 请求计数（v015 T032，R-srv-003）→ /metrics
+        // 请求计数 → /metrics
         .layer(axum::middleware::from_fn(request_count_middleware))
         // 请求标识传播（sdforge context）：X-Request-ID 透传/生成 +
         // W3C traceparent 提取 trace_id + 响应回写 X-Request-ID/X-Trace-ID
@@ -192,7 +192,7 @@ async fn fx_pricing_http_handler(
 /// 全局 HTTP 请求计数（/metrics 的 calnexus_http_requests_total）。
 static HTTP_REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 
-/// 请求计数中间件（v015 T032，R-srv-003）：标识传播已委托 sdforge context
+/// 请求计数中间件：标识传播已委托 sdforge context
 /// 中间件，本层仅维护 /metrics 的全局计数。
 async fn request_count_middleware(
     req: axum::extract::Request,
@@ -270,7 +270,7 @@ async fn metrics_handler(query: axum::extract::Query<MetricsQuery>) -> axum::res
 /// HTTP server 配置。
 #[derive(Debug, Clone)]
 pub struct HttpServer {
-    /// 监听地址（默认 `127.0.0.1:3000`，spec.md R-sdforge-002）。
+    /// 监听地址（默认 `127.0.0.1:3000`）。
     addr: String,
 }
 
@@ -490,7 +490,7 @@ mod tests {
             "应从 W3C traceparent 提取 trace_id 回写 X-Trace-ID"
         );
 
-        // /metrics 的 http_requests_total 应随请求增长
+        // metrics 的 http_requests_total 应随请求增长
         let before = http_requests_total();
         let _ = router
             .clone()

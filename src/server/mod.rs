@@ -3,7 +3,6 @@
 //! CalNexus Server 接口层：HTTP/MCP 多协议服务封装。
 //!
 //! 基于 sdforge 0.5 框架，将 evaluate 函数暴露为 HTTP API 和 MCP tool。
-//! spec.md R-sdforge-002/R-sdforge-003 定义接口契约。
 //!
 //! # Feature Gate
 //!
@@ -28,7 +27,7 @@ mod ratelimit;
 
 pub(crate) use cache::shared_cache;
 
-/// 初始化可观测日志（v015 T033，R-srv-004）：observability feature 下安装
+/// 初始化可观测日志：observability feature 下安装
 /// tracing-subscriber EnvFilter 消费 `RUST_LOG`（缺省 warn）。幂等（Once）。
 #[cfg(feature = "observability")]
 pub(crate) fn init_observability() {
@@ -58,7 +57,7 @@ pub use mcp::{McpServer, build_mcp_server};
 
 #[cfg(test)]
 mod observability_tests {
-    /// v015 T065（R-srv-004 验收）：init_observability 幂等，重复调用无 panic。
+    /// init_observability 幂等，重复调用无 panic。
     #[test]
     fn test_init_observability_idempotent() {
         crate::server::init_observability();

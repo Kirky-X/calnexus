@@ -55,7 +55,7 @@ pub struct FxBudgetResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_cost_home: Option<f64>,
     pub exchange_risk: ExchangeRiskResponse,
-    /// 汇率快照日期（v015 T029，R-fx-004：跨实例结果可审计）。
+    /// 汇率快照日期（跨实例结果可审计）。
     pub rate_date: Option<String>,
 }
 
@@ -103,7 +103,7 @@ pub struct FxPricingResponse {
     pub platform_rate: f64,
     pub safety_buffer: f64,
     pub pricing: Vec<PricingItemResponse>,
-    /// 汇率快照日期（v015 T029，R-fx-004：跨实例结果可审计）。
+    /// 汇率快照日期（跨实例结果可审计）。
     pub rate_date: Option<String>,
 }
 
@@ -262,7 +262,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
         let table = provider.rates().map_err(|e| {
-            // 保留底层错误源（v015 T030：503 语义 + 可诊断性）
+            // 保留底层错误源（503 语义 + 可诊断性）
             ApiError::service_unavailable_with_source(
                 "fx_budget",
                 Some(5),
@@ -353,7 +353,7 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
         let table = provider.rates().map_err(|e| {
-            // 保留底层错误源（v015 T030：503 语义 + 可诊断性）
+            // 保留底层错误源（503 语义 + 可诊断性）
             ApiError::service_unavailable_with_source(
                 "fx_pricing",
                 Some(5),

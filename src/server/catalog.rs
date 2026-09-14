@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! 函数目录接口（v015 T038，R-mcp-002）：运行时自描述能力。
+//! 函数目录接口：运行时自描述能力。
 //!
 //! sdforge 0.5.0-rc.2 的 MCP capabilities 声明 `resources: false`（不支持
 //! resource 暴露），故按 design 降级方案以 **tool** 形态提供函数目录；
