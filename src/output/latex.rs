@@ -413,13 +413,13 @@ pub fn format_latex(
         EvalResult::ComplexList(c) => format_latex_complex_list(c),
         EvalResult::Symbolic(s) => {
             // 符号运算：根据 AST 顶层 FunctionCall 名选择包装
-            if let AstNode::FunctionCall(name, _) = ast {
-                if matches!(
+            if let AstNode::FunctionCall(name, _) = ast
+                && matches!(
                     name.as_str(),
                     "diff" | "integrate" | "limit" | "series" | "taylor"
-                ) {
-                    return format_latex_symbolic(name, ast, s);
-                }
+                )
+            {
+                return format_latex_symbolic(name, ast, s);
             }
             symbolic_str_to_latex(s)
         }

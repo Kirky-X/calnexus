@@ -65,27 +65,27 @@ impl CalculationDomain for MatrixDomain {
         // numerical 分解函数短路（返回 EvalResult::Json/Vector，绕过 MatrixValue 类型限制）。
         // lu/qr/eig/svd/solve 在此直接委托 numerical.rs；非 numerical 函数返回 None 回退 eval_node。
         #[cfg(feature = "numerical")]
-        if let AstNode::FunctionCall(name, args) = ast {
-            if let Some(result) = self.try_numerical(name, args, &ctx)? {
-                return Ok(result);
-            }
+        if let AstNode::FunctionCall(name, args) = ast
+            && let Some(result) = self.try_numerical(name, args, &ctx)?
+        {
+            return Ok(result);
         }
 
         // precision() 包裹 matrix/numerical 子函数时被 Matrix 抢（priority 30 > Precision 25），
         // 但 Matrix 不处理 precision 外层。这些函数返回 f64 近似结果，precision 不适用——
         // 给诚实错误（规则12 失败显性化），而非通用 "unsupported function" 迷惑用户（T009）。
-        if let AstNode::FunctionCall(name, _) = ast {
-            if name == "precision" {
-                return Err(CalcError::domain(format!(
-                    "precision() does not apply to matrix/numerical functions ({}): \
-                     they return f64 results",
-                    MATRIX_NUMERICAL_FUNCTIONS.join("/")
-                ))
-                .with_i18n(
-                    "msg.matrix.precision_not_applied",
-                    vec![("name".to_string(), MATRIX_NUMERICAL_FUNCTIONS.join("/"))],
-                ));
-            }
+        if let AstNode::FunctionCall(name, _) = ast
+            && name == "precision"
+        {
+            return Err(CalcError::domain(format!(
+                "precision() does not apply to matrix/numerical functions ({}): \
+                 they return f64 results",
+                MATRIX_NUMERICAL_FUNCTIONS.join("/")
+            ))
+            .with_i18n(
+                "msg.matrix.precision_not_applied",
+                vec![("name".to_string(), MATRIX_NUMERICAL_FUNCTIONS.join("/"))],
+            ));
         }
 
         let value = self.eval_node(ast, &ctx)?;

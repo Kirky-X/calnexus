@@ -162,13 +162,13 @@ impl FxBudgetRequest {
                 "must be a 3-letter ISO 4217 currency code",
             ));
         }
-        if let Some(living) = self.living_cost_monthly {
-            if living < 0.0 {
-                return Err(ApiError::validation(
-                    "living_cost_monthly",
-                    "living_cost_monthly must be non-negative",
-                ));
-            }
+        if let Some(living) = self.living_cost_monthly
+            && living < 0.0
+        {
+            return Err(ApiError::validation(
+                "living_cost_monthly",
+                "living_cost_monthly must be non-negative",
+            ));
         }
         Ok(())
     }

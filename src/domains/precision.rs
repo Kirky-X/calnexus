@@ -56,23 +56,23 @@ impl CalculationDomain for PrecisionDomain {
         let ctx = ensure_math_constants(ctx);
 
         // 处理 precision(N, expr) 函数：求值 expr，N 仅供 CLI 格式化使用
-        if let AstNode::FunctionCall(name, args) = ast {
-            if name == "precision" {
-                if args.len() != 2 {
-                    return Err(CalcError::domain(format!(
-                        "precision() requires exactly 2 arguments (N, expr), got {}",
-                        args.len()
-                    ))
-                    .with_i18n(
-                        "msg.precision.precision_arg_count",
-                        vec![("actual".to_string(), args.len().to_string())],
-                    ));
-                }
-                // 验证 N 为正整数
-                let _n = extract_precision_value(&args[0])?;
-                let value = self.eval(&args[1], &ctx)?;
-                return Ok(math_prec::rational_to_result(value));
+        if let AstNode::FunctionCall(name, args) = ast
+            && name == "precision"
+        {
+            if args.len() != 2 {
+                return Err(CalcError::domain(format!(
+                    "precision() requires exactly 2 arguments (N, expr), got {}",
+                    args.len()
+                ))
+                .with_i18n(
+                    "msg.precision.precision_arg_count",
+                    vec![("actual".to_string(), args.len().to_string())],
+                ));
             }
+            // 验证 N 为正整数
+            let _n = extract_precision_value(&args[0])?;
+            let value = self.eval(&args[1], &ctx)?;
+            return Ok(math_prec::rational_to_result(value));
         }
 
         let value = self.eval(ast, &ctx)?;

@@ -130,10 +130,8 @@ impl AstCanonicalizer {
         let l = Self::transform_inner(l, fold_constants, fold_unary)?;
         let r = Self::transform_inner(r, fold_constants, fold_unary)?;
         // 常量折叠：两操作数均为 Number（仅当 fold_constants = true）
-        if fold_constants {
-            if let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
-                return Self::eval_binary(op, *a, *b).map(AstNode::Number);
-            }
+        if fold_constants && let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
+            return Self::eval_binary(op, *a, *b).map(AstNode::Number);
         }
         // 交换律排序：仅 Add 和 Mul
         let (l, r) = match op {
@@ -158,16 +156,17 @@ impl AstCanonicalizer {
     ) -> Result<AstNode, CalcError> {
         let e = Self::transform_inner(e, fold_constants, fold_unary)?;
         // 双重负号消除：--x → x（结构性归一化，始终执行）
-        if op == UnaryOp::Neg {
-            if let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e {
-                return Ok((**inner).clone());
-            }
+        if op == UnaryOp::Neg
+            && let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e
+        {
+            return Ok((**inner).clone());
         }
         // 一元常量折叠：Neg(Number(n)) → Number(-n)（仅当 fold_unary = true）
-        if fold_unary && op == UnaryOp::Neg {
-            if let AstNode::Number(n) = &e {
-                return Ok(AstNode::Number(-*n));
-            }
+        if fold_unary
+            && op == UnaryOp::Neg
+            && let AstNode::Number(n) = &e
+        {
+            return Ok(AstNode::Number(-*n));
         }
         Ok(AstNode::UnaryOp(op, Box::new(e)))
     }

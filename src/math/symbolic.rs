@@ -511,21 +511,21 @@ fn integrate_mul(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
 
 /// ∫x^n dx = x^(n+1)/(n+1)（n ≠ -1）；∫1/x dx = ln|x|。
 fn integrate_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
-    if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f, g) {
-        if name == var {
-            if *n == -1.0 {
-                return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
-                    var.to_string(),
-                ))));
-            }
-            return Ok(SymbolicExpr::Div(
-                Box::new(SymbolicExpr::Pow(
-                    Box::new(SymbolicExpr::Var(var.to_string())),
-                    Box::new(SymbolicExpr::Const(n + 1.0)),
-                )),
-                Box::new(SymbolicExpr::Const(n + 1.0)),
-            ));
+    if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f, g)
+        && name == var
+    {
+        if *n == -1.0 {
+            return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+                var.to_string(),
+            ))));
         }
+        return Ok(SymbolicExpr::Div(
+            Box::new(SymbolicExpr::Pow(
+                Box::new(SymbolicExpr::Var(var.to_string())),
+                Box::new(SymbolicExpr::Const(n + 1.0)),
+            )),
+            Box::new(SymbolicExpr::Const(n + 1.0)),
+        ));
     }
     Err(CalcError::domain(
         "integrate() only supports power of the integration variable".to_string(),
@@ -535,12 +535,13 @@ fn integrate_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
 
 /// ∫1/x dx = ln|x|（仅支持 Div(Const(1), Var) 形式）。
 fn integrate_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
-    if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f, g) {
-        if *c == 1.0 && name == var {
-            return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
-                var.to_string(),
-            ))));
-        }
+    if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f, g)
+        && *c == 1.0
+        && name == var
+    {
+        return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+            var.to_string(),
+        ))));
     }
     Err(
         CalcError::domain("integrate() only supports 1/var form for division".to_string())
@@ -777,23 +778,23 @@ fn limit_recursive(
     }
 
     // 0/0 或 ∞/∞ → 洛必达
-    if depth < MAX_LOPITAL_DEPTH {
-        if let SymbolicExpr::Div(num, den) = expr {
-            let d_num = diff(num, var);
-            let d_den = diff(den, var);
-            if d_den.is_zero() {
-                return Err(CalcError::domain(
-                    "limit(): denominator derivative is zero, cannot apply L'Hôpital".to_string(),
-                )
-                .with_i18n("msg.symbolic.limit_denom_zero", vec![]));
-            }
-            return limit_recursive(
-                &SymbolicExpr::Div(Box::new(d_num), Box::new(d_den)),
-                var,
-                point,
-                depth + 1,
-            );
+    if depth < MAX_LOPITAL_DEPTH
+        && let SymbolicExpr::Div(num, den) = expr
+    {
+        let d_num = diff(num, var);
+        let d_den = diff(den, var);
+        if d_den.is_zero() {
+            return Err(CalcError::domain(
+                "limit(): denominator derivative is zero, cannot apply L'Hôpital".to_string(),
+            )
+            .with_i18n("msg.symbolic.limit_denom_zero", vec![]));
         }
+        return limit_recursive(
+            &SymbolicExpr::Div(Box::new(d_num), Box::new(d_den)),
+            var,
+            point,
+            depth + 1,
+        );
     }
 
     Err(CalcError::domain(format!(

@@ -180,10 +180,10 @@ fn peek_lang_i18n() -> crate::i18n::I18n {
         if let Some(value) = arg.strip_prefix("--lang=") {
             return crate::i18n::I18n::from_str(value);
         }
-        if arg == "--lang" {
-            if let Some(value) = args.next() {
-                return crate::i18n::I18n::from_str(&value.to_string_lossy());
-            }
+        if arg == "--lang"
+            && let Some(value) = args.next()
+        {
+            return crate::i18n::I18n::from_str(&value.to_string_lossy());
         }
     }
     crate::i18n::I18n::default()

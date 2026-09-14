@@ -947,10 +947,11 @@ fn convert_with_depth(expr: &mathexpr::Expr, depth: usize) -> Result<AstNode, Ca
             }
             // 复数字面量：`complex(re, im)` → `Complex(re, im)`（design.md D3）
             // mathexpr 可能将 `-4` 解析为 `UnaryOp(Neg, Number(4))`，需规范化
-            if name == "complex" && converted_args.len() == 2 {
-                if let Some(complex) = try_complex_literal(&converted_args) {
-                    return Ok(complex);
-                }
+            if name == "complex"
+                && converted_args.len() == 2
+                && let Some(complex) = try_complex_literal(&converted_args)
+            {
+                return Ok(complex);
             }
             Ok(AstNode::FunctionCall(name.clone(), converted_args))
         }

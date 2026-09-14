@@ -94,20 +94,19 @@ fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), Ca
     if ctx.timeout.is_zero() {
         return Err(CalcError::timeout());
     }
-    if let Some(p) = precision {
-        if p > MAX_PRECISION {
-            return Err(CalcError::domain(format!(
-                "precision {} exceeds limit {}",
-                p, MAX_PRECISION
-            ))
-            .with_i18n(
-                "msg.core.precision_exceeds_limit",
-                vec![
-                    ("precision".to_string(), p.to_string()),
-                    ("max".to_string(), MAX_PRECISION.to_string()),
-                ],
-            ));
-        }
+    if let Some(p) = precision
+        && p > MAX_PRECISION
+    {
+        return Err(
+            CalcError::domain(format!("precision {} exceeds limit {}", p, MAX_PRECISION))
+                .with_i18n(
+                    "msg.core.precision_exceeds_limit",
+                    vec![
+                        ("precision".to_string(), p.to_string()),
+                        ("max".to_string(), MAX_PRECISION.to_string()),
+                    ],
+                ),
+        );
     }
     Ok(())
 }
@@ -253,17 +252,17 @@ fn check_elapsed(start: Instant, timeout: Duration) -> Result<(), CalcError> {
 /// 安全约束：N > MAX_PRECISION 时返回 `None`（降级为分数格式化），
 /// 防止 `format_bigrational` 循环 N 次导致 DoS（tiangang SAST CRITICAL）。
 fn extract_format_precision(ast: &AstNode) -> Option<usize> {
-    if let AstNode::FunctionCall(name, args) = ast {
-        if name == "precision" && args.len() == 2 {
-            if let AstNode::Number(n) = &args[0] {
-                if n.fract() == 0.0 && *n > 0.0 {
-                    let n_usize = *n as usize;
-                    // 纵深防御：拒绝超大精度值，防止 format_decimal 循环 DoS
-                    if n_usize <= MAX_PRECISION {
-                        return Some(n_usize);
-                    }
-                }
-            }
+    if let AstNode::FunctionCall(name, args) = ast
+        && name == "precision"
+        && args.len() == 2
+        && let AstNode::Number(n) = &args[0]
+        && n.fract() == 0.0
+        && *n > 0.0
+    {
+        let n_usize = *n as usize;
+        // 纵深防御：拒绝超大精度值，防止 format_decimal 循环 DoS
+        if n_usize <= MAX_PRECISION {
+            return Some(n_usize);
         }
     }
     None

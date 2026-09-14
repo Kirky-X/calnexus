@@ -128,13 +128,13 @@ impl EvaluateRequest {
                 "values must be finite (NaN/Infinity not allowed)",
             ));
         }
-        if let Some(p) = self.precision {
-            if p > MAX_PRECISION {
-                return Err(ApiError::validation(
-                    "precision",
-                    format!("{} exceeds limit {}", p, MAX_PRECISION),
-                ));
-            }
+        if let Some(p) = self.precision
+            && p > MAX_PRECISION
+        {
+            return Err(ApiError::validation(
+                "precision",
+                format!("{} exceeds limit {}", p, MAX_PRECISION),
+            ));
         }
         Ok(())
     }
