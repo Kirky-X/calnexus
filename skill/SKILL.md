@@ -178,16 +178,14 @@ cargo bench --features cli                             # criterion 基准
 
 | 文档 | 内容 |
 | --- | --- |
-| [README.md](./README.md) | 完整使用文档（中文） |
-| [README_EN.md](./README_EN.md) | English documentation |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 架构设计与模块说明 |
-| [docs/CHANGELOG.md](./docs/CHANGELOG.md) | 版本变更记录 |
-| [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md) | 贡献流程 |
-| [docs/SECURITY.md](./docs/SECURITY.md) | 安全策略 |
-| [docs/PRD.md](./docs/PRD.md) | 产品需求文档 |
-| [docs/TEST.md](./docs/TEST.md) | 测试策略与覆盖 |
-| [docs/ADD.md](./docs/ADD.md) | 架构决策记录 |
-| [LICENSE](./LICENSE) | MIT 许可证 |
+| [README.md](../README.md) | 完整使用文档（中文） |
+| [README_EN.md](../README_EN.md) | English documentation |
+| [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) | 架构设计、模块说明与架构决策记录（ADR） |
+| [docs/CHANGELOG.md](../docs/CHANGELOG.md) | 版本变更记录 |
+| [docs/CONTRIBUTING.md](../docs/CONTRIBUTING.md) | 贡献流程 |
+| [docs/SECURITY.md](../docs/SECURITY.md) | 安全策略 |
+| [docs/archive/](../docs/archive/) | 历史过程文档归档（PRD、研究分析） |
+| [LICENSE](../LICENSE) | MIT 许可证 |
 
 ## 许可证
 

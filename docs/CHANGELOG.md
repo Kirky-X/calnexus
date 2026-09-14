@@ -1,4 +1,4 @@
-# Changelog
+# 更新日志
 
 All notable changes to CalNexus are documented in this file.
 

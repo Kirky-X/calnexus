@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Parser & canonicalizer benchmarks (TEST.md §6).
+//! Parser & canonicalizer benchmarks (TEST.md §7).
 //!
 //! 运行：`cargo bench --bench parser_bench`
 //! 基线：`target/criterion/` 目录。

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! REPL integration tests using `expectrl` (TEST.md §9).
+//! REPL integration tests using `expectrl` (TEST.md §8.3).
 //!
 //! 通过 pty 驱动 `calnexus --repl`，验证交互式行编辑、变量绑定、历史等。
 //! 每个 30s 超时（CI 防挂起）。易 flaky 的测试标记 `#[ignore]`。

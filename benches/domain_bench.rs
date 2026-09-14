@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Domain evaluation benchmarks (TEST.md §6).
+//! Domain evaluation benchmarks (TEST.md §7).
 //!
 //! 运行：`cargo bench --bench domain_bench`
 //! 基线：`target/criterion/` 目录。

@@ -5,7 +5,8 @@
 //! 设计依据：
 //! - proposal.md §Capabilities：AstNode 只含 Number/Variable/BinaryOp/UnaryOp/FunctionCall
 //! - 三 crate 拆分，共享类型放 calnexus-core
-//! - ADD.md §3.4 代码图：完整 AstNode 含 BigInt/Matrix/Vector，暂不实现
+//! - 原 ADD.md §3.4 代码图（文档已归档，ADR 并入 docs/ARCHITECTURE.md）：
+//!   完整 AstNode 含 BigInt/Matrix/Vector，暂不实现
 
 use crate::core::parser::MAX_AST_DEPTH;
 use std::collections::HashMap;

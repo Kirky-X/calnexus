@@ -63,10 +63,11 @@ Desktop.ini
 /logs
 # reference templates
 temp/
-# spec source docs
+# spec source docs（ADD/PRD 已并入 docs/ARCHITECTURE.md 与 docs/archive/，见 git-workflow spec）
 docs/ADD.md
 docs/PRD.md
 docs/TEST.md
+docs/archive/
 
 # 运行时剖析产物（v015 T055）
 dhat.out.*
