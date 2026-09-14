@@ -56,7 +56,7 @@ pub fn evaluate(
 /// let router = DomainRouter::new(); // 空路由器（无内置域）
 /// let cache = CacheManager::new();
 /// let ctx = EvalContext::new();
-/// 空路由器下任何表达式都返回路由错误，证明路由器确实被注入消费
+/// // 空路由器下任何表达式都返回路由错误，证明路由器确实被注入消费
 /// let err = evaluate_with_router("1+1", &ctx, None, &cache, &router).unwrap_err();
 /// assert!(err.message.contains("no registered domain") || err.message.contains("route"));
 /// ```
