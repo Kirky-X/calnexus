@@ -4,17 +4,17 @@
 //!
 //! 设计依据：
 //! - combinatorics-domain spec：5 个 requirements / 13+ scenarios
-//! - design.md D5（u128→BigInt 自动升级）、D6（priority=25）
+//! - u128→BigInt 自动升级、priority=25
 //!
 //! 路由策略：AST 含组合函数调用（P/C/catalan/stirling）时路由至本域。
 //! 内部用 u128 累积，溢出时自动升级为 BigInt，返回 Scalar（fit i64）或 BigInt。
 
+use super::common::{unsupported_function_error, unsupported_node_error};
 use crate::core::CalculationDomain;
 use crate::core::{
-    check_pow_output_size, AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
-    MAX_POW_EXPONENT,
+    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, MAX_POW_EXPONENT, UnaryOp,
+    check_pow_output_size,
 };
-use super::common::{unsupported_node_error, unsupported_function_error};
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
@@ -60,20 +60,29 @@ impl CombinatoricsDomain {
                     return Err(CalcError::domain(format!(
                         "combinatorics domain requires integer, got {}",
                         n
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.combinatorics.requires_integer",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 Ok(EvalResult::Scalar(*n))
             }
             AstNode::BigNumber(s) => {
-                let b: BigInt = s
-                    .parse()
-                    .map_err(|_| CalcError::domain(format!("invalid big number: {}", s)))?;
+                let b: BigInt = s.parse().map_err(|_| {
+                    CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                        "msg.invalid_bignumber",
+                        vec![("value".to_string(), s.to_string())],
+                    )
+                })?;
                 Ok(EvalResult::BigInt(b))
             }
-            AstNode::Variable(name) => ctx
-                .get_var(name)
-                .map(EvalResult::Scalar)
-                .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name))),
+            AstNode::Variable(name) => ctx.get_var(name).map(EvalResult::Scalar).ok_or_else(|| {
+                CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                    "msg.unbound_variable",
+                    vec![("name".to_string(), name.to_string())],
+                )
+            }),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_int(l, ctx)?;
                 let b = self.eval_int(r, ctx)?;
@@ -87,6 +96,10 @@ impl CombinatoricsDomain {
                     UnaryOp::Abs => Ok(bigint_to_result(v.abs())),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in combinatorics domain".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.domain.factorial_not_supported",
+                        vec![("domain".to_string(), "combinatorics".to_string())],
                     )),
                 }
             }
@@ -101,28 +114,44 @@ impl CombinatoricsDomain {
         match ast {
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
-                    return Err(CalcError::domain(format!(
-                        "expected integer argument, got {}",
-                        n
-                    )));
+                    return Err(
+                        CalcError::domain(format!("expected integer argument, got {}", n))
+                            .with_i18n(
+                                "msg.core.expected_integer",
+                                vec![("value".to_string(), n.to_string())],
+                            ),
+                    );
                 }
                 if *n > i64::MAX as f64 || *n < i64::MIN as f64 {
                     return Err(CalcError::overflow());
                 }
                 Ok(BigInt::from(*n as i64))
             }
-            AstNode::BigNumber(s) => s
-                .parse::<BigInt>()
-                .map_err(|_| CalcError::domain(format!("invalid big number: {}", s))),
+            AstNode::BigNumber(s) => s.parse::<BigInt>().map_err(|_| {
+                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                    "msg.invalid_bignumber",
+                    vec![("value".to_string(), s.to_string())],
+                )
+            }),
             AstNode::Variable(name) => {
-                let v = ctx
-                    .get_var(name)
-                    .ok_or_else(|| CalcError::eval(format!("unbound variable: {}", name)))?;
+                let v = ctx.get_var(name).ok_or_else(|| {
+                    CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                        "msg.unbound_variable",
+                        vec![("name".to_string(), name.to_string())],
+                    )
+                })?;
                 if v.fract() != 0.0 {
                     return Err(CalcError::domain(format!(
                         "variable {} is not an integer: {}",
                         name, v
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.core.variable_not_integer",
+                        vec![
+                            ("name".to_string(), name.to_string()),
+                            ("value".to_string(), v.to_string()),
+                        ],
+                    ));
                 }
                 if v > i64::MAX as f64 || v < i64::MIN as f64 {
                     return Err(CalcError::overflow());
@@ -141,6 +170,10 @@ impl CombinatoricsDomain {
                     UnaryOp::Abs => Ok(v.abs()),
                     UnaryOp::Factorial => Err(CalcError::domain(
                         "factorial not supported in combinatorics domain".to_string(),
+                    )
+                    .with_i18n(
+                        "msg.domain.factorial_not_supported",
+                        vec![("domain".to_string(), "combinatorics".to_string())],
                     )),
                 }
             }
@@ -151,7 +184,11 @@ impl CombinatoricsDomain {
             | AstNode::Str(_) => Err(CalcError::domain(format!(
                 "expected integer expression, got: {:?}",
                 ast
-            ))),
+            ))
+            .with_i18n(
+                "msg.core.expected_integer_expression",
+                vec![("got".to_string(), format!("{:?}", ast))],
+            )),
         }
     }
 
@@ -171,10 +208,10 @@ impl CombinatoricsDomain {
                 if b.is_negative() {
                     return Err(CalcError::domain(
                         "negative exponent not supported for integers".to_string(),
-                    ));
+                    )
+                    .with_i18n("msg.core.negative_exponent", vec![]));
                 }
                 // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
-                // 安全审查 CRITICAL 修复：number_theory/combinatorics 域原无防护，
                 // 攻击者可通过 `C(1,1) + 2^4000000000` 绕过 precision.rs 的防护
                 // （24 字节请求触发 ~1.2GB 输出导致 OOM）。
                 let exp_u64 = b.to_u64().ok_or(CalcError::overflow())?;
@@ -182,7 +219,14 @@ impl CombinatoricsDomain {
                     return Err(CalcError::domain(format!(
                         "power exponent must not exceed {} (got {})",
                         MAX_POW_EXPONENT, exp_u64
-                    )));
+                    ))
+                    .with_i18n(
+                        "msg.core.power_exponent_exceeds",
+                        vec![
+                            ("max".to_string(), MAX_POW_EXPONENT.to_string()),
+                            ("actual".to_string(), exp_u64.to_string()),
+                        ],
+                    ));
                 }
                 // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
                 // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
@@ -202,8 +246,7 @@ impl CombinatoricsDomain {
 
     /// 求值组合函数调用（dispatch table）。
     ///
-    /// 重构说明：原实现 cyc=38（每个 case 内联参数验证 + 计算），
-    /// 重构后主函数仅做白名单检查 + match 分发（cyc=6），具体逻辑下沉到
+    /// 主函数仅做白名单检查 + match 分发，具体逻辑下沉到
     /// `eval_permutation`/`eval_combination`/`eval_catalan`/`eval_stirling` 4 个方法，
     /// 共用参数验证提取为 `eval_two_non_negative_args`/`eval_one_non_negative_arg`。
     fn eval_function(
@@ -220,10 +263,12 @@ impl CombinatoricsDomain {
             "C" => self.eval_combination(args, ctx),
             "catalan" => self.eval_catalan(args, ctx),
             "stirling" => self.eval_stirling(args, ctx),
-            _ => Err(CalcError::eval(format!("unknown combinatorics function: {}", name)).with_i18n(
-                "msg.unknown_function",
-                vec![("name".to_string(), name.to_string())],
-            )),
+            _ => Err(
+                CalcError::eval(format!("unknown combinatorics function: {}", name)).with_i18n(
+                    "msg.unknown_function",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            ),
         }
     }
 
@@ -242,15 +287,24 @@ impl CombinatoricsDomain {
                 "{}() requires exactly 2 arguments, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.combinatorics.arg_count_2",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let n = self.eval_int(&args[0], ctx)?;
         let k = self.eval_int(&args[1], ctx)?;
         if n.is_negative() || k.is_negative() {
-            return Err(CalcError::domain(format!(
-                "{}() requires non-negative arguments",
-                name
-            )));
+            return Err(
+                CalcError::domain(format!("{}() requires non-negative arguments", name)).with_i18n(
+                    "msg.combinatorics.requires_non_negative",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            );
         }
         Ok((n, k))
     }
@@ -269,14 +323,23 @@ impl CombinatoricsDomain {
                 "{}() requires exactly 1 argument, got {}",
                 name,
                 args.len()
-            )));
+            ))
+            .with_i18n(
+                "msg.combinatorics.arg_count_1",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
         }
         let n = self.eval_int(&args[0], ctx)?;
         if n.is_negative() {
-            return Err(CalcError::domain(format!(
-                "{}() requires non-negative argument",
-                name
-            )));
+            return Err(
+                CalcError::domain(format!("{}() requires non-negative argument", name)).with_i18n(
+                    "msg.combinatorics.requires_non_negative_arg",
+                    vec![("name".to_string(), name.to_string())],
+                ),
+            );
         }
         Ok(n)
     }
@@ -357,8 +420,8 @@ fn contains_combinatorics_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     fn eval(input: &str) -> Result<EvalResult, CalcError> {
         let ast = parse(input).unwrap();
@@ -371,56 +434,56 @@ mod tests {
         eval(input).map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
-    // ===== UT-CMB-001: P(n,k) =====
+    // ===== P(n,k) =====
 
     #[test]
     fn test_permutation_basic() {
         assert_eq!(eval_scalar("P(5,2)").unwrap(), 20.0);
     }
 
-    // ===== UT-CMB-002: C(n,k) =====
+    // ===== C(n,k) =====
 
     #[test]
     fn test_combination_basic() {
         assert_eq!(eval_scalar("C(10,3)").unwrap(), 120.0);
     }
 
-    // ===== UT-CMB-003: Catalan =====
+    // ===== Catalan =====
 
     #[test]
     fn test_catalan_basic() {
         assert_eq!(eval_scalar("catalan(5)").unwrap(), 42.0);
     }
 
-    // ===== UT-CMB-004: Stirling =====
+    // ===== Stirling =====
 
     #[test]
     fn test_stirling_basic() {
         assert_eq!(eval_scalar("stirling(5,2)").unwrap(), 15.0);
     }
 
-    // ===== UT-CMB-005: C(n,0) =====
+    // ===== C(n,0) =====
 
     #[test]
     fn test_combination_zero_k() {
         assert_eq!(eval_scalar("C(5,0)").unwrap(), 1.0);
     }
 
-    // ===== UT-CMB-006: C(n,n) =====
+    // ===== C(n,n) =====
 
     #[test]
     fn test_combination_n_n() {
         assert_eq!(eval_scalar("C(5,5)").unwrap(), 1.0);
     }
 
-    // ===== UT-CMB-007: k>n =====
+    // ===== k>n =====
 
     #[test]
     fn test_combination_k_greater_than_n() {
         assert_eq!(eval_scalar("C(3,5)").unwrap(), 0.0);
     }
 
-    // ===== UT-CMB-008: n<0 =====
+    // ===== n<0 =====
 
     #[test]
     fn test_combination_negative_n() {
@@ -428,7 +491,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== UT-CMB-009: k<0 =====
+    // ===== k<0 =====
 
     #[test]
     fn test_combination_negative_k() {
@@ -436,7 +499,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== UT-CMB-010: 大数 C =====
+    // ===== 大数 C =====
 
     #[test]
     fn test_combination_large() {
@@ -452,7 +515,7 @@ mod tests {
         }
     }
 
-    // ===== UT-CMB-011: 大数 P =====
+    // ===== 大数 P =====
 
     #[test]
     fn test_permutation_large() {
@@ -462,14 +525,14 @@ mod tests {
         assert_eq!(result, 670442572800.0);
     }
 
-    // ===== UT-CMB-012: Catalan 边界 =====
+    // ===== Catalan 边界 =====
 
     #[test]
     fn test_catalan_zero() {
         assert_eq!(eval_scalar("catalan(0)").unwrap(), 1.0);
     }
 
-    // ===== UT-CMB-013: Catalan 大数 =====
+    // ===== Catalan 大数 =====
 
     #[test]
     fn test_catalan_large() {
@@ -488,14 +551,14 @@ mod tests {
         }
     }
 
-    // ===== UT-CMB-014: Stirling 边界 =====
+    // ===== Stirling 边界 =====
 
     #[test]
     fn test_stirling_zero_zero() {
         assert_eq!(eval_scalar("stirling(0,0)").unwrap(), 1.0);
     }
 
-    // ===== UT-CMB-015: 溢出处理 =====
+    // ===== 溢出处理 =====
 
     #[test]
     fn test_permutation_overflow_to_bigint() {
@@ -1004,10 +1067,10 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Overflow));
     }
 
-    // ===== T013: eval_function dispatch table 行为锁定测试（重构前 Red → 重构后 Green） =====
+    // ===== eval_function dispatch table 行为锁定测试 =====
     //
     // 目的：锁定 eval_function 在 P/C/catalan/stirling 各 case 的行为，
-    // 确保 T014 重构（提取 eval_permutation/eval_combination/eval_catalan/eval_stirling
+    // 确保 重构（提取 eval_permutation/eval_combination/eval_catalan/eval_stirling
     // + eval_two_non_negative_args/eval_one_non_negative_arg helper）后行为不变。
     //
     // 覆盖维度：

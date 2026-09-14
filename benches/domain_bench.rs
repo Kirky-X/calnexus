@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Domain evaluation benchmarks (TEST.md §6, BENCH-004 ~ BENCH-008, BENCH-010).
+//! Domain evaluation benchmarks (TEST.md §7).
 //!
 //! 运行：`cargo bench --bench domain_bench`
 //! 基线：`target/criterion/` 目录。
 
 use calnexus::{CacheManager, EvalContext};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-/// BENCH-004: arithmetic domain < 1ms
+/// arithmetic domain < 1ms
 fn bench_arithmetic(c: &mut Criterion) {
     let expressions = vec!["2+3", "123*456", "1.5+2.7-3.1", "2^10", "100/7"];
     let mut group = c.benchmark_group("arithmetic_domain");
@@ -29,7 +29,7 @@ fn bench_arithmetic(c: &mut Criterion) {
     group.finish();
 }
 
-/// BENCH-005: scientific domain < 1ms
+/// scientific domain < 1ms
 fn bench_scientific(c: &mut Criterion) {
     let expressions = vec![
         "sin(1.5)",
@@ -56,7 +56,7 @@ fn bench_scientific(c: &mut Criterion) {
     group.finish();
 }
 
-/// BENCH-006: 100×100 matrix operation < 10ms
+/// 100×100 matrix operation < 10ms
 fn bench_matrix_100x100(c: &mut Criterion) {
     // 生成 10×10 矩阵（用 100×100 在 CI 上过慢，10×10 已能反映矩阵域性能）
     let mut expr = String::from("[");
@@ -89,7 +89,7 @@ fn bench_matrix_100x100(c: &mut Criterion) {
     group.finish();
 }
 
-/// BENCH-007: symbolic diff < 100ms
+/// symbolic diff < 100ms
 fn bench_symbolic_diff(c: &mut Criterion) {
     let expressions = vec![
         "diff(x^2,x)",
@@ -114,7 +114,7 @@ fn bench_symbolic_diff(c: &mut Criterion) {
     group.finish();
 }
 
-/// BENCH-008: 1000-expression batch < 1s
+/// 1000-expression batch < 1s
 fn bench_batch_1000(c: &mut Criterion) {
     // 生成 1000 个表达式字符串（单次求值，整体 < 1s）
     let expressions: Vec<String> = (0..1000).map(|i| format!("{}+{}", i, i + 1)).collect();
@@ -132,7 +132,7 @@ fn bench_batch_1000(c: &mut Criterion) {
     group.finish();
 }
 
-/// BENCH-010: `is_prime(10^9+7)` < 10ms（number theory domain）
+/// `is_prime(10^9+7)` < 10ms（number theory domain）
 fn bench_is_prime(c: &mut Criterion) {
     let expressions = vec![
         "is_prime(1000000007)",

@@ -127,7 +127,8 @@ pub fn roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
         if c[0] == 0.0 {
             return Err(CalcError::domain(
                 "roots(): zero polynomial has infinite roots".to_string(),
-            ));
+            )
+            .with_i18n("msg.polynomial.roots_infinite", vec![]));
         }
         return Ok(EvalResult::Vector(vec![])); // 非零常数无根
     }
@@ -165,7 +166,11 @@ pub fn roots(coeffs: &[f64]) -> Result<EvalResult, CalcError> {
         _ => Err(CalcError::domain(format!(
             "roots(): polynomial degree {} not supported (max degree 4)",
             c.len() - 1
-        ))),
+        ))
+        .with_i18n(
+            "msg.polynomial.roots_degree_not_supported",
+            vec![("degree".to_string(), (c.len() - 1).to_string())],
+        )),
     }
 }
 
@@ -190,7 +195,8 @@ pub fn factor(coeffs: &[f64]) -> Result<String, CalcError> {
             if discriminant < 0.0 {
                 return Err(CalcError::domain(
                     "factor(): complex roots cannot be factored over reals".to_string(),
-                ));
+                )
+                .with_i18n("msg.polynomial.factor_complex_roots", vec![]));
             }
             let sqrt_d = discriminant.sqrt();
             let r1 = (-b + sqrt_d) / (2.0 * a);
@@ -200,7 +206,11 @@ pub fn factor(coeffs: &[f64]) -> Result<String, CalcError> {
         _ => Err(CalcError::domain(format!(
             "factor(): polynomial degree {} not supported (max degree 2 in v0.8)",
             c.len() - 1
-        ))),
+        ))
+        .with_i18n(
+            "msg.polynomial.factor_degree_not_supported",
+            vec![("degree".to_string(), (c.len() - 1).to_string())],
+        )),
     }
 }
 
@@ -491,7 +501,9 @@ mod tests {
 
     #[test]
     fn test_eval_overflow() {
-        assert!(matches!(eval(&[1.0, 1.0, 1.0, 1.0, 1.0], 1e308), Err(ref e) if e.kind == crate::core::ErrorKind::NaNOrInf));
+        assert!(
+            matches!(eval(&[1.0, 1.0, 1.0, 1.0, 1.0], 1e308), Err(ref e) if e.kind == crate::core::ErrorKind::NaNOrInf)
+        );
     }
 
     // ===== 微分 =====
@@ -597,7 +609,9 @@ mod tests {
 
     #[test]
     fn test_roots_degree_too_high() {
-        assert!(matches!(roots(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain));
+        assert!(
+            matches!(roots(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain)
+        );
     }
 
     // ===== 因式分解 =====
@@ -618,7 +632,9 @@ mod tests {
 
     #[test]
     fn test_factor_complex_roots_error() {
-        assert!(matches!(factor(&[1.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain));
+        assert!(
+            matches!(factor(&[1.0, 0.0, 1.0]), Err(ref e) if e.kind == crate::core::ErrorKind::Domain)
+        );
     }
 
     // ===== diff + integrate 互逆 =====

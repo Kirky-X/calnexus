@@ -7,16 +7,49 @@
 //! - AST 转换层（mathexpr `Expr` → CalNexus `AstNode`）
 //! - 深度/长度限制（DoS 防护）
 //!
-//! 设计依据：design.md D2（mathexpr 集成）、D7（TDD）、expression-parsing spec
+//! 设计依据：mathexpr 集成、TDD、expression-parsing spec
 
 use crate::core::types::{AstNode, BinaryOp, CalcError, Span, UnaryOp};
 use regex::Regex;
+use std::cell::Cell;
 
 /// 最大 AST 深度（spec: AST 深度限制 ≤ 256）。
-const MAX_AST_DEPTH: usize = 256;
+pub(crate) const MAX_AST_DEPTH: usize = 256;
 
 /// 最大表达式长度（spec: 表达式长度限制 ≤ 4096 字符）。
 pub(crate) const MAX_EXPR_LEN: usize = 4096;
+
+thread_local! {
+    /// 括号字面量递归深度计数。
+    ///
+    /// 列表/矩阵字面量的元素解析经 `parse()` 全管线重入
+    /// （parse → preprocess_brackets → parse_bracket_literal → parse_list_literal → parse），
+    /// 深度无法通过参数穿透；thread_local 计数器 + RAII guard 跨重入正确计数
+    /// （修复审计发现的 `MAX_AST_DEPTH` 绕过缺口）。
+    static LITERAL_PARSE_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+/// 括号字面量解析深度 RAII 守卫：进入时深度 +1（超限报错），Drop 时 -1。
+struct LiteralDepthGuard;
+
+impl LiteralDepthGuard {
+    fn enter() -> Result<Self, CalcError> {
+        LITERAL_PARSE_DEPTH.with(|d| {
+            let n = d.get() + 1;
+            if n > MAX_AST_DEPTH {
+                return Err(CalcError::depth_exceeded());
+            }
+            d.set(n);
+            Ok(Self)
+        })
+    }
+}
+
+impl Drop for LiteralDepthGuard {
+    fn drop(&mut self) {
+        LITERAL_PARSE_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
 
 /// 解析数学表达式字符串为 [`AstNode`]。
 ///
@@ -32,7 +65,7 @@ pub(crate) const MAX_EXPR_LEN: usize = 4096;
 pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 长度检查（spec: 超长输入不进入词法分析）
     // 注意：input.len() 是字节长度（O(1)），用于快速失败；
-    // Span 用字符偏移（design.md D1），故 chars().count()（O(n)）仅在错误分支计算
+    // Span 用字符偏移，故 chars().count()（O(n)）仅在错误分支计算
     if input.len() > MAX_EXPR_LEN {
         let char_count = input.chars().count();
         return Err(CalcError::parse(format!(
@@ -58,13 +91,28 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
             .with_i18n("msg.core.parse_empty", vec![]));
     }
 
+    // 预处理段快路径短路：各段 O(n) 特征扫描，
+    // 无触发字符时跳过整段（complex 段跳过即免 2 次 regex replace_all）。
+    let has_quote = trimmed.contains('"');
+    let has_bracket = trimmed.contains('[');
+    let has_factorial = trimmed.contains('!');
+    let has_imag = trimmed.contains('i') || trimmed.contains('I');
+
     // 预处理字符串字面量：将所有 `"..."` 替换为占位符 `__str_N`
-    // 必须在 brackets/bigint 之前执行，防止字符串内的 `[`、长数字被误提取（R-esl-003）
-    let (without_strings, placeholders) = preprocess_strings(trimmed)?;
+    // 必须在 brackets/bigint 之前执行，防止字符串内的 `[`、长数字被误提取
+    let (without_strings, placeholders) = if has_quote {
+        preprocess_strings(trimmed)?
+    } else {
+        (trimmed.to_string(), Default::default())
+    };
 
     // 预处理括号字面量：将所有 `[...]` 替换为占位符 `__cb_N`
     // 使矩阵/列表字面量可出现在表达式任意位置（如 `det([[1,2]])`、`2*[[1,2]]`）
-    let (without_brackets, mut placeholders) = preprocess_brackets(&without_strings, placeholders)?;
+    let (without_brackets, mut placeholders) = if has_bracket {
+        preprocess_brackets(&without_strings, placeholders)?
+    } else {
+        (without_strings, placeholders)
+    };
 
     // 若整个表达式就是单个括号字面量，直接返回（避免 mathexpr 处理）
     if placeholders.len() == 1 {
@@ -75,7 +123,11 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     }
 
     // 预处理大整数字面量：将 16+ 位整数替换为占位符 `__bn_N`（避免 f64 精度丢失）
-    let without_bigint = preprocess_bigint(&without_brackets, &mut placeholders)?;
+    let without_bigint = if has_long_digit_run(&without_brackets) {
+        preprocess_bigint(&without_brackets, &mut placeholders)?
+    } else {
+        without_brackets
+    };
 
     // 非法连续运算符检查：拒绝 `++`、`**`、`//`、`^^`（保留 `--` 合法性）
     // mathexpr 对 `+3` 当作数字字面量，导致 `2++3` 被静默接受；
@@ -83,26 +135,59 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
     // 此处统一显式拒绝，提供清晰的 "illegal consecutive operators 'XX'" 错误消息。
     validate_no_consecutive_operators(&without_bigint)?;
 
-    // 复数预处理：`3+4i` → `complex(3, 4)`、`2i` → `complex(0, 2)`
-    let after_complex = preprocess_complex(&without_bigint)?;
+    // 复数预处理：`3+4i` → `complex(3, 4)`、`2i` → `complex(0, 2)`（无 `i` 跳过 → 免 2 次 regex）
+    let after_complex = if has_imag {
+        preprocess_complex(&without_bigint)?
+    } else {
+        without_bigint
+    };
 
-    // 阶乘预处理
-    let after_factorial = preprocess_factorial(&after_complex)?;
+    // 阶乘预处理（无 `!` 跳过）
+    let after_factorial = if has_factorial {
+        preprocess_factorial(&after_complex)?
+    } else {
+        after_complex
+    };
 
     // 隐式乘法预处理：`2x` → `2*x`、`3(x+1)` → `3*(x+1)`、`(x+1)(x-1)` → `(x+1)*(x-1)`
     let after_implicit = insert_implicit_multiplication(&after_factorial);
 
+    // 括号嵌套迭代预检：mathexpr 为递归下降解析器，
+    // 其内部递归发生在 CalNexus convert_with_depth 深度检查**之前**；
+    // ~2048 层 `((((...))))` 会先在 mathexpr 内栈溢出。迭代 O(n) 扫描先行拒绝。
+    // 字符串占位符已替换，`"` 内容中的括号不会误计。
+    {
+        let mut bracket_depth: usize = 0;
+        for ch in after_implicit.chars() {
+            match ch {
+                '(' | '[' | '{' => {
+                    bracket_depth += 1;
+                    if bracket_depth > MAX_AST_DEPTH {
+                        return Err(CalcError::depth_exceeded());
+                    }
+                }
+                ')' | ']' | '}' => {
+                    bracket_depth = bracket_depth.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+    }
+
     // mathexpr 解析
     let expr = mathexpr::parse(&after_implicit).map_err(|e| {
-        // T005: Span 指向原始 trimmed 输入而非预处理后的 after_implicit。
+        // Span 指向原始 trimmed 输入而非预处理后的 after_implicit。
         // 用户看到的是原始输入，错误位置应帮助定位原始输入中的问题；
         // after_implicit 经过隐式乘法等预处理，长度可能与原始输入不同（如 2x → 2*x）。
-        // Span 用字符偏移（design.md D1）。
-        CalcError::parse(format!("{}", e))
+        // Span 用字符偏移。
+        // Display 文案经清洗，不泄漏 winnow 内部 Debug 结构。
+        let friendly = friendly_mathexpr_error(&e.to_string());
+        CalcError::parse(friendly.clone())
             .with_span(Span::new(0, trimmed.chars().count()))
             .with_i18n(
                 "msg.core.parse_mathexpr_error",
-                vec![("error".to_string(), e.to_string())],
+                // i18n 模板参数同样传清洗后的文案（friendly() 走模板渲染路径）
+                vec![("error".to_string(), friendly)],
             )
     })?;
 
@@ -117,11 +202,11 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
 
 /// 复数预处理：将 `a+bi`、`a-bi`、`bi` 转换为 `complex(a, b)` 字符串。
 ///
-/// 匹配规则（design.md D3）：
+/// 匹配规则：
 /// - `3+4i` → `complex(3, 4)`
 /// - `3-4i` → `complex(3, -4)`
-/// - `2i`   → `complex(0, 2)`
-/// - `5`    → 不变（不触发复数）
+/// - `2i` → `complex(0, 2)`
+/// - `5` → 不变（不触发复数）
 ///
 /// 顺序：先匹配 `a±bi`，再匹配纯 `bi`，避免 `3+4i` 中的 `4i` 被先替换。
 fn preprocess_complex(input: &str) -> Result<String, CalcError> {
@@ -158,8 +243,55 @@ fn preprocess_complex(input: &str) -> Result<String, CalcError> {
     Ok(result)
 }
 
-/// 解析以 `[` 开头的字面量：矩阵 `[[...]]` 或列表 `[...]`（design.md D3）。
+/// O(n) 扫描是否存在 16+ 位连续数字（bigint 预处理的触发特征）。
+fn has_long_digit_run(s: &str) -> bool {
+    let mut run = 0usize;
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            run += 1;
+            if run >= 16 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
+/// 将 mathexpr 错误的 Display 文案清洗为用户友好形式。
+///
+/// mathexpr 0.1 对 winnow 错误使用 `format!("{:?}", e)` 构造消息，会泄漏内部
+/// Debug 结构（如 `Error(Error { input: "(2+3", code: Tag })`）。此处识别该
+/// 形态并提取剩余输入片段，产出 "unexpected input near '...'" 式文案。
+/// 上游修复（mathexpr 0.1.x 直接产出结构化错误）后此函数可退役。
+fn friendly_mathexpr_error(display: &str) -> String {
+    if let Some(idx) = display.find("input: \"") {
+        let rest = &display[idx + "input: \"".len()..];
+        let end = rest
+            .find("\", code")
+            .or_else(|| rest.rfind('"'))
+            .unwrap_or(rest.len());
+        let raw = &rest[..end];
+        if raw.is_empty() {
+            return "unexpected end of expression".to_string();
+        }
+        // 片段截断到 24 字符，避免超长输入刷屏
+        let mut frag: String = raw.chars().take(24).collect();
+        if raw.chars().count() > 24 {
+            frag.push('…');
+        }
+        return format!("unexpected input near '{}'", frag);
+    }
+    // mathexpr 自身 Display 友好的变体（如 "Unexpected trailing input: ..."）原样保留
+    display.to_string()
+}
+
+/// 解析以 `[` 开头的字面量：矩阵 `[[...]]` 或列表 `[...]`。
 fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
+    // 深度守卫：所有括号字面量递归的单一漏斗点。
+    // 嵌套列表/矩阵此前完全绕过 convert_with_depth 的 MAX_AST_DEPTH 检查。
+    let _depth = LiteralDepthGuard::enter()?;
     let trimmed = input.trim();
     if trimmed.starts_with("[[") {
         parse_matrix_literal(trimmed)
@@ -184,7 +316,6 @@ fn parse_bracket_literal(input: &str) -> Result<AstNode, CalcError> {
 /// `\"` 转义为字面双引号。未闭合引号返回 ParseError。
 ///
 /// 必须在 brackets/bigint 预处理**之前**执行，防止字符串内的 `[`、长数字被误提取
-/// （R-esl-003）。
 fn preprocess_strings(
     input: &str,
 ) -> Result<(String, std::collections::HashMap<String, AstNode>), CalcError> {
@@ -426,7 +557,7 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
         match row_node {
             AstNode::List(elements) => rows.push(elements),
             _ => {
-                // 限制 Debug 输出长度防止大型 AST 递归 Debug 导致性能问题（性能审查 MEDIUM-1）
+                // 限制 Debug 输出长度防止大型 AST 递归 Debug 导致性能问题
                 let node_debug: String = format!("{:?}", row_node).chars().take(100).collect();
                 return Err(CalcError::parse(format!(
                     "expected list row in matrix, got: {}",
@@ -540,27 +671,36 @@ fn validate_no_consecutive_operators(input: &str) -> Result<(), CalcError> {
     // 非法连续运算符列表（不含 `--`，因为双重负号合法）
     const ILLEGAL_CONSECUTIVE_OPS: &[&str] = &["++", "**", "//", "^^"];
 
+    // 消除内层 chars().collect() 分配——
+    // 原实现每字符 × 4 运算符各做一次 Vec 分配（4096 字符表达式 ≈ 16K 次小分配）。
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        // 检查以 chars[i] 开头的非法连续运算符
-        for &op in ILLEGAL_CONSECUTIVE_OPS {
-            let op_chars: Vec<char> = op.chars().collect();
-            // 跳过空格查找第二个字符
-            let mut j = i + 1;
-            while j < chars.len() && chars[j].is_whitespace() {
-                j += 1;
-            }
-            // 检查是否匹配：第一个字符 + (可选空格) + 第二个字符
-            if chars[i] == op_chars[0] && j < chars.len() && chars[j] == op_chars[1] {
-                return Err(
-                    CalcError::parse(format!("illegal consecutive operators '{}'", op))
-                        .with_span(Span::new(i, j + 1))
-                        .with_i18n(
-                            "msg.core.parse_illegal_consecutive_ops",
-                            vec![("op".to_string(), op.to_string())],
-                        ),
-                );
+        let c = chars[i];
+        // 仅当首字符可能是非法运算符首字符时才查第二字符（快路径跳过字母数字）
+        if c == '+' || c == '*' || c == '/' || c == '^' {
+            for &op in ILLEGAL_CONSECUTIVE_OPS {
+                let op_first = op.as_bytes()[0] as char;
+                if c != op_first {
+                    continue;
+                }
+                // 跳过空格查找第二个字符
+                let mut j = i + 1;
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                // 检查是否匹配：第一个字符 + (可选空格) + 第二个字符
+                if j < chars.len() && chars[j] == op.as_bytes()[1] as char {
+                    return Err(CalcError::parse(format!(
+                        "illegal consecutive operators '{}'",
+                        op
+                    ))
+                    .with_span(Span::new(i, j + 1))
+                    .with_i18n(
+                        "msg.core.parse_illegal_consecutive_ops",
+                        vec![("op".to_string(), op.to_string())],
+                    ));
+                }
             }
         }
         i += 1;
@@ -804,12 +944,13 @@ fn convert_with_depth(expr: &mathexpr::Expr, depth: usize) -> Result<AstNode, Ca
             for arg in args {
                 converted_args.push(convert_with_depth(arg, depth + 1)?);
             }
-            // 复数字面量：`complex(re, im)` → `Complex(re, im)`（design.md D3）
+            // 复数字面量：`complex(re, im)` → `Complex(re, im)`
             // mathexpr 可能将 `-4` 解析为 `UnaryOp(Neg, Number(4))`，需规范化
-            if name == "complex" && converted_args.len() == 2 {
-                if let Some(complex) = try_complex_literal(&converted_args) {
-                    return Ok(complex);
-                }
+            if name == "complex"
+                && converted_args.len() == 2
+                && let Some(complex) = try_complex_literal(&converted_args)
+            {
+                return Ok(complex);
             }
             Ok(AstNode::FunctionCall(name.clone(), converted_args))
         }
@@ -818,7 +959,7 @@ fn convert_with_depth(expr: &mathexpr::Expr, depth: usize) -> Result<AstNode, Ca
 
 /// 尝试将 `complex(re, im)` 的两个参数规范化为 `AstNode::Complex(re, im)`。
 ///
-/// 规则（design.md D3）：
+/// 规则：
 /// - re 必须为 `Number(n)`
 /// - im 必须为 `Number(n)` 或 `UnaryOp(Neg, Number(n))`（mathexpr 解析 `-4` 为后者）
 ///
@@ -1329,7 +1470,7 @@ mod tests {
         );
     }
 
-    // ===== v0.5 复数字面量解析测试（任务 11.3） =====
+    // ===== 复数字面量解析测试 =====
 
     #[test]
     fn test_complex_standard_literal() {
@@ -1359,7 +1500,7 @@ mod tests {
         assert_eq!(ast, num(5.0));
     }
 
-    // ===== v0.5 矩阵字面量解析测试（任务 11.5） =====
+    // ===== 矩阵字面量解析测试 =====
 
     #[test]
     fn test_matrix_2x2_literal() {
@@ -1394,7 +1535,7 @@ mod tests {
         );
     }
 
-    // ===== v0.5 列表字面量解析测试（任务 11.7） =====
+    // ===== 列表字面量解析测试 =====
 
     #[test]
     fn test_list_standard_literal() {
@@ -1606,7 +1747,7 @@ mod tests {
         );
     }
 
-    // ===== 隐式乘法预处理测试（任务 1.4） =====
+    // ===== 隐式乘法预处理测试 =====
 
     #[test]
     fn test_implicit_mult_number_before_variable() {
@@ -1699,7 +1840,7 @@ mod tests {
         assert_eq!(ast, binop(BinaryOp::Mul, num(3.14), var("x")));
     }
 
-    // ===== TG6.4: Symbolic 函数解析测试 =====
+    // ===== Symbolic 函数解析测试 =====
 
     #[test]
     fn test_parse_diff_function() {
@@ -1826,7 +1967,7 @@ mod tests {
         assert!(!is_scientific_notation(&chars, 1));
     }
 
-    // ===== proptest 属性测试（任务 2.5） =====
+    // ===== proptest 属性测试 =====
 
     use proptest::prelude::*;
 
@@ -1893,7 +2034,7 @@ mod tests {
 
     #[test]
     fn test_span_whitespace_only_expression() {
-        // parse("   ") → trim 后为空，span = (0, 0)
+        // parse(" ") → trim 后为空，span = (0, 0)
         let err = parse("   ").unwrap_err();
         assert_eq!(err.kind, ErrorKind::Parse);
         assert_span(&err, Span::new(0, 0));
@@ -1901,7 +2042,7 @@ mod tests {
 
     #[test]
     fn test_span_length_exceeded() {
-        // 超长表达式，span 覆盖整个输入（字符偏移，design.md D1）
+        // 超长表达式，span 覆盖整个输入（字符偏移）
         let expr = "a".repeat(MAX_EXPR_LEN + 1);
         let err = parse(&expr).unwrap_err();
         assert_eq!(err.kind, ErrorKind::Parse);
@@ -1917,7 +2058,7 @@ mod tests {
         assert_span(&err, Span::new(0, 1));
     }
 
-    /// T005 Red: 隐式乘法预处理后错误位置仍指向原始输入
+    /// 隐式乘法预处理后错误位置仍指向原始输入
     ///
     /// `"2x@"` 经过隐式乘法预处理变成 `"2*x@"`（4 字符），mathexpr 解析失败。
     /// Span 应为 (0, 3)（原始 trimmed 输入长度）而非 (0, 4)（after_implicit 长度）。
@@ -1935,7 +2076,7 @@ mod tests {
     #[test]
     fn test_span_unmatched_open_bracket() {
         // `[[1,2]` — 未匹配 `[`，span 从 `[` 开始到扫描结束
-        // 输入: [[1,2]  (6 字符)
+        // 输入: [[1,2] (6 字符)
         // chars = ['[','[','1',',','2',']']
         // i=0 遇 `[`，start=0，扫描到 i=6 时 depth=1≠0
         let err = parse("[[1,2]").unwrap_err();
@@ -2000,13 +2141,12 @@ mod tests {
         assert_span(&err, Span::point(4));
     }
 
-    // ===== T001 Red：字符串字面量解析（expression-string-literals spec）=====
+    // ===== 字符串字面量解析 =====
     //
-    // 验证 R-esl-001/002/003：双引号字符串解析为 Str 节点，转义与未闭合错误，
+    // 验证：双引号字符串解析为 Str 节点，转义与未闭合错误，
     // 预处理管线顺序（strings 必须在 brackets/bigint 之前）。
-    // 当前 preprocess_strings 未实现，所有测试应失败（Red）。
 
-    /// R-esl-001：`date("2026-07-25")` → FunctionCall("date", [Str("2026-07-25")])
+    /// `date("2026-07-25")` → FunctionCall("date", [Str("2026-07-25")])
     #[test]
     fn test_parse_string_literal_in_function_arg() {
         let ast = parse(r#"date("2026-07-25")"#).unwrap();
@@ -2016,7 +2156,7 @@ mod tests {
         );
     }
 
-    /// R-esl-001：多参数函数中字符串可出现在任意位置（首参/中参/尾参）
+    /// 多参数函数中字符串可出现在任意位置（首参/中参/尾参）
     #[test]
     fn test_parse_string_literal_at_any_position() {
         // 字符串在尾参：convert(100,"cm","m")
@@ -2058,14 +2198,14 @@ mod tests {
         );
     }
 
-    /// R-esl-002：`\"` 转义为字面双引号
+    /// `\"` 转义为字面双引号
     #[test]
     fn test_parse_string_literal_with_escaped_quote() {
         let ast = parse(r#"f("a\"b")"#).unwrap();
         assert_eq!(ast, call("f", vec![AstNode::Str("a\"b".to_string())]));
     }
 
-    /// R-esl-002：未闭合引号返回 ParseError，消息含 "unclosed string"
+    /// 未闭合引号返回 ParseError，消息含 "unclosed string"
     #[test]
     fn test_parse_string_literal_unclosed_rejected() {
         let err = parse(r#"f("unclosed)"#).unwrap_err();
@@ -2077,14 +2217,14 @@ mod tests {
         );
     }
 
-    /// R-esl-002：空字符串 `f("")` 合法，产出 Str("")
+    /// 空字符串 `f("")` 合法，产出 Str("")
     #[test]
     fn test_parse_string_literal_empty() {
         let ast = parse(r#"f("")"#).unwrap();
         assert_eq!(ast, call("f", vec![AstNode::Str("".to_string())]));
     }
 
-    /// R-esl-003：字符串内的 `[` 不被 brackets 预处理提取
+    /// 字符串内的 `[` 不被 brackets 预处理提取
     /// `f("[1,2]")` → Str("[1,2]") 而非 Matrix/List
     #[test]
     fn test_parse_string_literal_preserves_brackets() {
@@ -2092,7 +2232,7 @@ mod tests {
         assert_eq!(ast, call("f", vec![AstNode::Str("[1,2]".to_string())]));
     }
 
-    /// R-esl-003：字符串内的长数字不被 bigint 预处理提取
+    /// 字符串内的长数字不被 bigint 预处理提取
     /// `f("12345678901234567890")` → Str(...) 而非 BigNumber
     #[test]
     fn test_parse_string_literal_preserves_bigint() {
@@ -2103,7 +2243,7 @@ mod tests {
         );
     }
 
-    /// R-esl-001 边界：字符串含特殊字符（空格、`-`、`/`、`:`、UTF-8 中文）
+    /// 边界：字符串含特殊字符（空格、`-`、`/`、`:`、UTF-8 中文）
     #[test]
     fn test_parse_string_literal_with_special_chars() {
         let ast = parse(r#"f("2026-07-25 12:30:00")"#).unwrap();
@@ -2113,7 +2253,7 @@ mod tests {
         );
     }
 
-    /// R-esl-003 边界：字符串内的嵌套引号（已转义）不影响外层解析
+    /// 边界：字符串内的嵌套引号（已转义）不影响外层解析
     #[test]
     fn test_parse_string_literal_with_nested_escaped_quotes() {
         // 输入: f("a\"b\"c") → Str 内容为 a"b"c

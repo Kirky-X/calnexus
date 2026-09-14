@@ -1,0 +1,5 @@
+---
+source: tests/snapshot_tests.rs
+expression: stdout.trim()
+---
+{"error":{"exit_code":1,"hint":"check divisor before division","kind":"DivisionByZero","message":"division by zero"},"v":1}

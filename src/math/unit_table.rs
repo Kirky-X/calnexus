@@ -2,7 +2,7 @@
 
 //! 单位换算表：静态系数量 + 温度仿射函数。
 //!
-//! 设计依据：design.md D5（8 量纲 SI 基准系数表 + 温度仿射特例）
+//! 设计依据：8 量纲 SI 基准系数表 + 温度仿射特例
 //! Feature 门控：`unit = []`
 //!
 //! 量纲与 SI 基准：
@@ -255,7 +255,7 @@ pub fn all_unit_names() -> Vec<&'static str> {
 mod tests {
     use super::*;
 
-    // ===== T018 验收：长度换算 =====
+    // ===== 长度换算 =====
 
     #[test]
     fn test_length_m_to_km() {
@@ -293,7 +293,7 @@ mod tests {
         assert!(lookup("MB").is_some());
     }
 
-    // ===== T018 验收：质量换算 =====
+    // ===== 质量换算 =====
 
     #[test]
     fn test_mass_kg_to_lb() {
@@ -313,7 +313,7 @@ mod tests {
         assert!((result - 1000.0).abs() < 1e-9);
     }
 
-    // ===== T018 验收：温度仿射换算 =====
+    // ===== 温度仿射换算 =====
 
     #[test]
     fn test_temperature_c_to_f_100() {
@@ -381,7 +381,7 @@ mod tests {
         assert!(lookup("R").is_none());
     }
 
-    // ===== T018 验收：体积换算 =====
+    // ===== 体积换算 =====
 
     #[test]
     fn test_volume_l_to_m3() {
@@ -401,7 +401,7 @@ mod tests {
         assert!((result - 3.785412).abs() < 1e-5);
     }
 
-    // ===== T018 验收：面积换算 =====
+    // ===== 面积换算 =====
 
     #[test]
     fn test_area_ha_to_m2() {
@@ -420,7 +420,7 @@ mod tests {
         assert!((result - 1e6).abs() < 1e-3);
     }
 
-    // ===== T018 验收：速度换算 =====
+    // ===== 速度换算 =====
 
     #[test]
     fn test_speed_mps_to_kmh() {
@@ -440,7 +440,7 @@ mod tests {
         assert!((result - 1.0).abs() < 1e-9);
     }
 
-    // ===== T018 验收：数据量换算 =====
+    // ===== 数据量换算 =====
 
     #[test]
     fn test_data_gib_to_b() {
@@ -470,7 +470,7 @@ mod tests {
         assert_ne!(kib, kb);
     }
 
-    // ===== T018 验收：时间换算 =====
+    // ===== 时间换算 =====
 
     #[test]
     fn test_time_h_to_s() {

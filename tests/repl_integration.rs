@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! REPL integration tests using `expectrl` (TEST.md §9, IT-CLI-017 ~ IT-CLI-023).
+//! REPL integration tests using `expectrl` (TEST.md §8.3).
 //!
 //! 通过 pty 驱动 `calnexus --repl`，验证交互式行编辑、变量绑定、历史等。
 //! 每个 30s 超时（CI 防挂起）。易 flaky 的测试标记 `#[ignore]`。
 
 use expectrl::process::Healthcheck;
 use expectrl::session::OsSession;
-use expectrl::{spawn, Expect};
+use expectrl::{Expect, spawn};
 use std::time::{Duration, Instant};
 
 /// REPL 提示符（src/repl.rs: `calnexus> `）
@@ -51,7 +51,7 @@ fn send_line(session: &mut OsSession, line: &str) {
     session.send_line(line).expect("failed to send line");
 }
 
-/// IT-CLI-017: 基本求值 `2+3` → `5`
+/// 基本求值 `2+3` → `5`
 #[test]
 fn it_cli_017_basic_eval() {
     let mut session = spawn_repl();
@@ -61,7 +61,7 @@ fn it_cli_017_basic_eval() {
     let _ = session.send_line(":quit");
 }
 
-/// IT-CLI-018: `:let x = 3.14` 后 `sin(x)` ≈ 0.00159...
+/// `:let x = 3.14` 后 `sin(x)` ≈ 0.00159...
 #[test]
 fn it_cli_018_variable_binding() {
     let mut session = spawn_repl();
@@ -74,7 +74,7 @@ fn it_cli_018_variable_binding() {
     let _ = session.send_line(":quit");
 }
 
-/// IT-CLI-019: `:vars` 列出已绑定变量 `x = 3.14`
+/// `:vars` 列出已绑定变量 `x = 3.14`
 #[test]
 fn it_cli_019_view_vars() {
     let mut session = spawn_repl();
@@ -87,7 +87,7 @@ fn it_cli_019_view_vars() {
     let _ = session.send_line(":quit");
 }
 
-/// IT-CLI-020: 上箭头召回历史输入。
+/// 上箭头召回历史输入。
 /// 标记 `#[ignore]` 因 pty 上箭头键码易在 CI flaky。
 #[test]
 #[ignore = "history recall via pty is flaky on CI; run with --ignored"]
@@ -104,7 +104,7 @@ fn it_cli_020_history_recall() {
     let _ = session.send_line(":quit");
 }
 
-/// IT-CLI-021: `:quit` 退出码 0
+/// `:quit` 退出码 0
 #[test]
 fn it_cli_021_quit_exit_zero() {
     let mut session = spawn_repl();
@@ -125,7 +125,7 @@ fn it_cli_021_quit_exit_zero() {
     }
 }
 
-/// IT-CLI-022: Tab 补全 `si` → `sin(`。
+/// Tab 补全 `si` → `sin(`。
 /// 标记 `#[ignore]` 因 rustyline Tab 补全在 pty 下易 flaky。
 #[test]
 #[ignore = "tab completion via pty is flaky on CI; run with --ignored"]
@@ -139,7 +139,7 @@ fn it_cli_022_tab_completion() {
     let _ = session.send_line(":quit");
 }
 
-/// IT-CLI-023: 无效 `2+` 显示错误但无崩溃，后续 `2+3` 正常求值
+/// 无效 `2+` 显示错误但无崩溃，后续 `2+3` 正常求值
 #[test]
 fn it_cli_023_error_recovery() {
     let mut session = spawn_repl();

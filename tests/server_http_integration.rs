@@ -2,8 +2,8 @@
 
 //! HTTP server 集成测试：`POST /api/v1/evaluate` 端点（`#[forge]` 宏生成）。
 //!
-//! P3（sdforge-forge-migration）：路由由 `#[forge]` 声明式生成，错误响应遵循
-//! sdforge `ApiError` 标准契约（spec.md R-sdforge-002）：
+//! 路由由 `#[forge]` 声明式生成，错误响应遵循
+//! sdforge `ApiError` 标准契约：
 //! - 计算错误（Parse/DivisionByZero/...）→ 400 `{"type":"InvalidInput","message":"{Kind}: ...",...}`
 //! - validate vars/precision 超限 → 422 `{"type":"ValidationError","field":"...","constraint":"..."}`
 //!
@@ -15,10 +15,10 @@
 
 use calnexus::build_router;
 use http_body_util::BodyExt;
-use sdforge::axum::http::status::StatusCode;
-use sdforge::axum::http::Request;
 use sdforge::axum::Body;
-use serde_json::{json, Value};
+use sdforge::axum::http::Request;
+use sdforge::axum::http::status::StatusCode;
+use serde_json::{Value, json};
 use tower::ServiceExt;
 
 /// 构建 POST /api/v1/evaluate 请求。
@@ -83,7 +83,7 @@ async fn test_http_evaluate_precision() {
 
 /// 缓存行为：首次请求 miss，第二次请求 hit。
 ///
-/// spec.md R-sdforge-002 缓存语义：相同表达式第二次请求命中缓存。
+/// 缓存语义：相同表达式第二次请求命中缓存。
 #[tokio::test]
 async fn test_http_evaluate_cache_miss() {
     // 首次请求：缓存未命中
@@ -101,7 +101,7 @@ async fn test_http_evaluate_cache_miss() {
     assert_eq!(body["result"], 15);
 }
 
-/// 计算错误（1/0）→ ApiError::InvalidInput 契约（spec.md R-sdforge-002）。
+/// 计算错误（1/0）→ ApiError::InvalidInput 契约。
 ///
 /// 400 + `{"type":"InvalidInput","message":"DivisionByZero: ...","field":null,"value":null}`
 #[tokio::test]
@@ -120,7 +120,7 @@ async fn test_http_evaluate_calc_error_invalid_input() {
     );
 }
 
-/// validate precision 超限 → ApiError::ValidationError 契约（spec.md R-sdforge-002）。
+/// validate precision 超限 → ApiError::ValidationError 契约。
 ///
 /// 422 + `{"type":"ValidationError","field":"precision","constraint":"10001 exceeds limit 10000"}`
 #[tokio::test]
@@ -139,7 +139,7 @@ async fn test_http_evaluate_validation_error_oversized_precision() {
     );
 }
 
-/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约（spec.md R-sdforge-002）。
+/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约。
 ///
 /// 422 + `{"type":"ValidationError","field":"vars","constraint":"size 1025 exceeds limit 1024"}`
 #[tokio::test]
@@ -166,7 +166,10 @@ async fn send_get_request(uri: &str) -> (StatusCode, Value) {
         .uri(uri)
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.expect("router oneshot failed");
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
     let status = response.status();
     let bytes = response
         .into_body()
@@ -178,35 +181,51 @@ async fn send_get_request(uri: &str) -> (StatusCode, Value) {
     (status, json)
 }
 
-/// GET /health → 200 + {"status": "healthy", "checks": {"cache": {...}}}
+/// GET /health → 200 + {"status": "ready", "checks": [{"name": "cache", ...}]}
+/// （sdforge health 迁移后契约：checks 为数组，cache 检查含 entry_count 明细）
 #[tokio::test]
 async fn test_health_endpoint_healthy() {
     let (status, body) = send_get_request("/health").await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "healthy");
-    assert!(body["checks"]["cache"].is_object(), "应包含 cache 检查器");
-    assert_eq!(body["checks"]["cache"]["status"], "healthy");
+    assert_eq!(body["status"], "ready");
+    let checks = body["checks"].as_array().expect("checks 应为数组");
+    let cache = checks
+        .iter()
+        .find(|c| c["name"] == "cache")
+        .expect("应包含 cache 检查器");
+    assert_eq!(cache["healthy"], true);
+    assert!(
+        cache["details"]["entry_count"].is_u64(),
+        "cache 检查应携带 entry_count 明细"
+    );
 }
 
-/// GET /live → 200 + {"status": "healthy", "checks": {}}
+/// GET /live → 200 + {"status": "healthy", "version": ...}（sdforge 存活探针，
+/// 无 checks 字段）
 #[tokio::test]
 async fn test_liveness_endpoint_healthy() {
     let (status, body) = send_get_request("/live").await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["status"], "healthy");
-    assert!(body["checks"].as_object().unwrap().is_empty(), "/live 不应包含检查器");
+    assert!(body.get("checks").is_none(), "/live 不应包含检查器");
 }
 
-/// GET /ready → 200 + 同 /health
+/// GET /ready → 200 + 同 /health（sdforge readyz：status=ready + checks 数组）
 #[tokio::test]
 async fn test_readiness_endpoint_healthy() {
     let (status, body) = send_get_request("/ready").await;
 
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "healthy");
-    assert!(body["checks"]["cache"].is_object(), "应包含 cache 检查器");
+    assert_eq!(body["status"], "ready");
+    let checks = body["checks"].as_array().expect("checks 应为数组");
+    assert!(
+        checks
+            .iter()
+            .any(|c| c["name"] == "cache" && c["healthy"] == true),
+        "应包含健康的 cache 检查器"
+    );
 }
 
 // ===== Metrics 端点测试（lib-feature-absorption） =====
@@ -220,7 +239,10 @@ async fn test_metrics_prometheus_format() {
         .uri("/metrics")
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.expect("router oneshot failed");
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
 
     assert_eq!(response.status(), StatusCode::OK);
     let content_type = response
@@ -234,15 +256,13 @@ async fn test_metrics_prometheus_format() {
         content_type
     );
 
-    let bytes = response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = String::from_utf8_lossy(&bytes);
     assert!(
-        body.contains("cache") || body.contains("operations") || body.is_empty() || body.contains("#"),
+        body.contains("cache")
+            || body.contains("operations")
+            || body.is_empty()
+            || body.contains("#"),
         "Prometheus 格式应包含缓存指标或为空注释: {}",
         &body[..body.len().min(200)]
     );
@@ -257,7 +277,10 @@ async fn test_metrics_json_format() {
         .uri("/metrics?format=json")
         .body(Body::empty())
         .unwrap();
-    let response = router.oneshot(request).await.expect("router oneshot failed");
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
 
     assert_eq!(response.status(), StatusCode::OK);
     let content_type = response
@@ -271,13 +294,146 @@ async fn test_metrics_json_format() {
         content_type
     );
 
-    let bytes = response
-        .into_body()
-        .collect()
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    // JSON metrics 应包含缓存统计字段
+    assert!(json.is_object(), "JSON metrics 应返回对象");
+}
+
+// ===== 服务化最小包 =====
+
+/// REQ-ID-01: 无标识请求 → 响应回写生成的 X-Request-ID（req-* 前缀）。
+#[tokio::test]
+async fn test_request_id_generated() {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.expect("oneshot failed");
+    let rid = response
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(rid.starts_with("req-"), "应生成 req-* 标识，实际: {}", rid);
+}
+
+/// REQ-ID-02: 入站 X-Request-ID → 响应透传同值。
+#[tokio::test]
+async fn test_request_id_passthrough() {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .header("x-request-id", "my-trace-42")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.expect("oneshot failed");
+    assert_eq!(
+        response
+            .headers()
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok()),
+        Some("my-trace-42"),
+        "入站 X-Request-ID 应透传"
+    );
+}
+
+/// METRICS-HTTP: /metrics 含 calnexus_http_requests_total。
+#[tokio::test]
+async fn test_metrics_http_requests_total() {
+    let router = build_router();
+    let _ = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot failed");
+    let bytes = http_body_util::BodyExt::collect(response.into_body())
         .await
         .unwrap()
         .to_bytes();
-    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    // oxcache JSON metrics 应包含缓存统计字段
-    assert!(json.is_object(), "JSON metrics 应返回对象");
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(
+        text.contains("calnexus_http_requests_total"),
+        "/metrics 应含 HTTP 请求计数"
+    );
+}
+
+// === 语言协商（lang 请求字段）===
+
+/// 默认（无 lang）错误消息保持英文机器契约：`"Eval: unbound variable: foo"`。
+#[tokio::test]
+async fn test_http_evaluate_default_lang_english_error() {
+    let (status, body) = send_request(json!({"expr": "foo + 1"})).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["type"], "InvalidInput");
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("Eval:") && m.contains("unbound variable: foo")),
+        "默认语言应保持英文契约: {}",
+        body["message"]
+    );
+}
+
+/// lang=zh 错误消息切换中文：kind 标签 + 参数化 detail 均本地化。
+#[tokio::test]
+async fn test_http_evaluate_zh_lang_localized_error() {
+    let (status, body) = send_request(json!({"expr": "foo + 1", "lang": "zh"})).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["type"], "InvalidInput");
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("求值错误")
+                && m.contains("未绑定变量")
+                && m.contains("foo")),
+        "zh 协商应返回中文消息: {}",
+        body["message"]
+    );
+    // 机器可读 kind 字段保持英文协议值
+    assert_eq!(body["type"], "InvalidInput");
+}
+
+/// lang=en 显式请求：与缺省行为逐字节一致（契约回归）。
+#[tokio::test]
+async fn test_http_evaluate_explicit_en_matches_default() {
+    let (_, default_body) = send_request(json!({"expr": "foo + 1"})).await;
+    let (_, en_body) = send_request(json!({"expr": "foo + 1", "lang": "en"})).await;
+
+    assert_eq!(default_body["message"], en_body["message"]);
+}
+
+/// 未知 lang 值宽松回退英文（与 CLI --lang 行为一致）。
+#[tokio::test]
+async fn test_http_evaluate_unknown_lang_falls_back_to_english() {
+    let (status, body) = send_request(json!({"expr": "foo + 1", "lang": "xx-Klingon"})).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("Eval:") && m.contains("unbound variable")),
+        "未知 lang 应回退英文: {}",
+        body["message"]
+    );
 }

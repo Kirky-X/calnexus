@@ -1,4 +1,4 @@
-# Changelog
+# 更新日志
 
 All notable changes to CalNexus are documented in this file.
 
@@ -6,6 +6,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### v015-comprehensive-optimization（2026-09-14，规格驱动：specmark）
+
+六维度架构审计（安全/易用性/性能/分布式/可维护性/架构先进性）后的一次性全量优化，RICE 优先级量化排序，14 阶段实施。
+
+#### Added
+
+- `--timeout` / `--cache-size` / `--bind` CLI 旗标 + `CALNEXUS_TIMEOUT` / `CALNEXUS_CACHE_SIZE` / `CALNEXUS_BIND_ADDR` 环境变量回退（优先级 flag > env > default）
+- `ErrorKind::DependencyUnavailable`（exit_code=3）：上游依赖故障与客户端错误严格区分，HTTP 映射 503 + Retry-After
+- `POST /api/v1/list_functions` + MCP `list_functions` tool + CLI `--list-functions`：运行时函数目录（统一目录 `function_catalog`，sdforge resources=false 降级为 tool）
+- `evaluate_with_router` 公共 API：路由器可注入，解锁下游自定义计算域
+- `/ready`（依赖就绪）与 `/live`（进程存活）探针分离，`/health` 返回真实 `entry_count`
+- request-id/traceparent 中间件（`X-Request-ID` 透传/生成）、`calnexus_http_requests_total` 指标
+- `observability` feature 接入 tracing-subscriber（EnvFilter 消费 `RUST_LOG`，缺省 warn）
+- 多平台预编译二进制发布（linux x86_64/aarch64 musl、macOS 双架构、windows x86_64 + SHA256SUMS）
+- Dockerfile（多阶段 distroless 非 root）与 `docs/DEPLOY.md`、`docs/MCP.md`
+- `docs/schema/result-v1.json`：`--json` 契约 JSON Schema（Draft 2020-12）
+- `.github/workflows/audit.yml`（周度 cargo audit + cargo deny）+ `deny.toml` + dependabot
+- CI 矩阵补齐：server / cli,numerical / all-features 测试与 clippy 腿、MSRV 1.85 job
+- 解析错误 caret 位置指示（文本模式）；`undefined_symbol` hint 上下文化（CLI `--var` / REPL `:let`）
+- 递归深度防护：括号字面量 RAII 守卫、mathexpr 前迭代预检、canonicalizer 深度守卫；`list_depth_fuzz` 目标
+- `--json` 契约版本字段 `"v":1`；insta 快照覆盖全部 CLI 可达变体（SNAP-J01~J12）
+
+#### Changed
+
+- **缓存引擎重构**：`CacheManager` 直连 `moka::sync`（替代 oxcache 封装）——`try_get_with` 生产级 single-flight、`Arc<EvalResult>` 命中零拷贝、单次 BLAKE3 键、字节权重预算（默认 64MB）+ 256KB 大结果准入阈值；命中路径消除 JSON 序列化与临时 tokio runtime（`cache_hit/2+3` 基准 ≈ 1.29µs）
+- evaluator 求值路径统一 `get_or_compute`（single-flight 接线）；`/metrics` 输出规范 Prometheus 文本（`# HELP`/`# TYPE`）
+- HTTP 路由显式挂载（单一事实源）：修复 `#[forge]` inventory 注册被链接器 GC 静默丢弃导致 `--serve-http` 全路由 404 的存量生产 bug
+- fx 故障三分类 i18n（network_unreachable/invalid_response/cache_unreadable）+ `CalcError.source_detail` 错误链；`to_json` 与 batch JSON 统一 serde_json（手写 `escape_json_string` 退役）
+- mathexpr 错误文案清洗（不再泄漏 winnow 内部 Debug 结构）；`.env.example` 与实现双向对齐
+- fx 磁盘缓存原子写（temp+rename+0600）、拉取 single-flight、ureq `https_only` + 响应体 1MB 上限、`rate_date` 透出
+- 优雅关闭 drain 30s 超时；api 层 RwLock poisoning 全部安全化
+- 工具 description 自包含（req 包装/上限/错误语义）；REPL Tab 补全改用统一函数目录（修复 feature 门控函数缺失）
+- edition 2021 → 2024；release.yml actions 全部 commit SHA 钉扎；llvm-cov 90% 行覆盖为唯一覆盖率门禁（tarpaulin 死配置删除）
+- openspec/ 收敛并入 specmark/specs（27 能力域），specmark 为唯一 SDD 流程
+- 文档名实对齐：测试数实测（2820）、覆盖率徽章（90.4% llvm-cov 实测）、Moka→moka 直连、`Domain`→`CalculationDomain`、sdforge 版本号、wasm 章节标注 experimental
+
+#### Fixed
+
+- **（存量生产 bug）** `--serve-http` 全部 API 路由 404：sdforge crates.io 迁移后 `#[forge]` HTTP inventory 注册被链接器 GC 丢弃，server 集成测试 12 项自迁移起全红且无 CI 门禁
+- **（DoS 缺口）** 嵌套列表/矩阵字面量绕过 `MAX_AST_DEPTH=256`（约 1300 层可致 `spawn_blocking` 线程栈溢出）；mathexpr 递归先于深度检查执行
+- single-flight 从未在生产路径启用的 README 名实不符；follower 将真实错误暴露为 "cache backend error"
+- fx 错误三类故障全映射"网络不可达"；`--timeout` hint 指向不存在的旗标（已随配置面补齐解决）
+- 解析错误泄漏 winnow Debug 结构（快照实证）；`--json` 手写转义对控制字符可产生非法 JSON
+
+#### Removed
+
+- oxcache 依赖（连带 protoc 之外的 tonic/prost 构建链负担——注：tonic-build 仍经 sdforge 自身 build-dependency 引入，protoc 保留）
+- `escape_json_string`、`CacheKeyGen::make_key`/`to_key_string`、tarpaulin 死配置、openspec/ 目录
+
+### Notes
+
+- 破坏性变更（0.x）：`ErrorKind` 新增 `DependencyUnavailable` 变体（exhaustive match 需适配）；`--json` 成功输出 `result` 键序由 serde_json 字典序决定、Scalar 以 `5.0` 形式序列化、Complex 输出 `{re,im}` 判别对象；`lib.rs` server 通配导出改具名。均已在 `docs/schema/result-v1.json` 与 CHANGELOG 记录。
+- 性能基线：`target/criterion/main`（cache_hit ≈ 1.29µs、parser_large_expression/4096-char ≈ 73µs）。
 
 ## [0.1.4] - 2026-07-26
 

@@ -4,18 +4,16 @@
 //!
 //! 设计依据：
 //! - arithmetic-domain spec：10 个 requirements / 24 个 scenarios
-//! - design.md D4：实现 `CalculationDomain` trait
+//! - 实现 `CalculationDomain` trait
 //!
-//! **Spec 冲突说明**：Req 7 Scen 1（`5/0`→`DivisionByZero`）与 Req 8 Scen 2
+//! **Spec 冲突说明**：（`5/0`→`DivisionByZero`）与
 //! （`1/0`→`NaNOrInf`）对 x/0 (x≠0) 的错误类型存在矛盾。
 //! 本实现采用预检查策略：`0/0`→`NaNOrInf`（结果为 NaN），
 //! `x/0` (x≠0)→`DivisionByZero`（预检查除零，更安全且信息更明确）。
 
-use crate::core::CalculationDomain;
-use crate::core::{
-    AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp,
-};
 use super::common::{resolve_variable, unsupported_node_error};
+use crate::core::CalculationDomain;
+use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
 /// 算术函数白名单（parser 预处理后的函数名）。
 const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
@@ -177,8 +175,8 @@ fn is_arithmetic_only(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     /// 辅助函数：解析 + 求值，返回 f64
     fn eval(input: &str) -> Result<f64, CalcError> {
@@ -203,25 +201,25 @@ mod tests {
 
     #[test]
     fn test_addition() {
-        // 2+3 → 5.0 (Req 1 Scen 1)
+        // 2+3 → 5.0
         assert_eq!(eval("2+3").unwrap(), 5.0);
     }
 
     #[test]
     fn test_subtraction() {
-        // 10-4 → 6.0 (Req 1 Scen 2)
+        // 10-4 → 6.0
         assert_eq!(eval("10-4").unwrap(), 6.0);
     }
 
     #[test]
     fn test_multiplication() {
-        // 6*7 → 42.0 (Req 1 Scen 3)
+        // 6*7 → 42.0
         assert_eq!(eval("6*7").unwrap(), 42.0);
     }
 
     #[test]
     fn test_division() {
-        // 20/4 → 5.0 (Req 1 Scen 4)
+        // 20/4 → 5.0
         assert_eq!(eval("20/4").unwrap(), 5.0);
     }
 
@@ -229,20 +227,20 @@ mod tests {
 
     #[test]
     fn test_integer_power() {
-        // 2^10 → 1024.0 (Req 2 Scen 1)
+        // 2^10 → 1024.0
         assert_eq!(eval("2^10").unwrap(), 1024.0);
     }
 
     #[test]
     fn test_fractional_power() {
-        // 2^0.5 → √2 ≈ 1.4142135623730951 (Req 2 Scen 2)
+        // 2^0.5 → √2 ≈ 1.4142135623730951
         let result = eval("2^0.5").unwrap();
         assert!((result - 1.4142135623730951).abs() < 1e-10);
     }
 
     #[test]
     fn test_zero_power_zero() {
-        // 0^0 → 1.0 (Req 2 Scen 3, 组合数学约定)
+        // 0^0 → 1.0（组合数学约定）
         assert_eq!(eval("0^0").unwrap(), 1.0);
     }
 
@@ -250,19 +248,19 @@ mod tests {
 
     #[test]
     fn test_factorial_positive() {
-        // 5! → 120.0 (Req 3 Scen 1)
+        // 5! → 120.0
         assert_eq!(eval("factorial(5)").unwrap(), 120.0);
     }
 
     #[test]
     fn test_factorial_zero() {
-        // 0! → 1.0 (Req 3 Scen 2)
+        // 0! → 1.0
         assert_eq!(eval("factorial(0)").unwrap(), 1.0);
     }
 
     #[test]
     fn test_factorial_ten() {
-        // 10! → 3628800.0 (Req 3 Scen 3)
+        // 10! → 3628800.0
         assert_eq!(eval("factorial(10)").unwrap(), 3628800.0);
     }
 
@@ -270,13 +268,13 @@ mod tests {
 
     #[test]
     fn test_modulo_positive() {
-        // 10%3 → 1.0 (Req 4 Scen 1)
+        // 10%3 → 1.0
         assert_eq!(eval("mod(10,3)").unwrap(), 1.0);
     }
 
     #[test]
     fn test_modulo_negative_dividend() {
-        // -7%3 → -1.0 (Req 4 Scen 2, Rust % 语义：结果取被除数符号)
+        // -7%3 → -1.0（Rust % 语义：结果取被除数符号）
         assert_eq!(eval("mod(-7,3)").unwrap(), -1.0);
     }
 
@@ -284,13 +282,13 @@ mod tests {
 
     #[test]
     fn test_abs_negative() {
-        // abs(-5) → 5.0 (Req 5 Scen 1)
+        // abs(-5) → 5.0
         assert_eq!(eval("abs(-5)").unwrap(), 5.0);
     }
 
     #[test]
     fn test_abs_positive() {
-        // abs(3.14) → 3.14 (Req 5 Scen 2)
+        // abs(3.14) → 3.14
         let result = eval("abs(3.14)").unwrap();
         assert!((result - 3.14).abs() < 1e-10);
     }
@@ -299,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_factorial_exceeds_bound() {
-        // 10001! → Overflow (Req 6 Scen 1)
+        // 10001! → Overflow
         let result = eval("factorial(10001)");
         assert!(result.is_err());
         assert!(
@@ -311,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_factorial_overflow_large_input() {
-        // 171! 超过 f64::MAX → Overflow (Req 6 Scen 2)
+        // 171! 超过 f64::MAX → Overflow
         let result = eval("factorial(171)");
         assert!(result.is_err());
         assert!(
@@ -325,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_division_by_zero() {
-        // 5/0 → DivisionByZero (Req 7 Scen 1)
+        // 5/0 → DivisionByZero
         let result = eval("5/0");
         assert!(result.is_err());
         assert!(
@@ -337,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_modulo_by_zero() {
-        // 10%0 → DivisionByZero (Req 7 Scen 2)
+        // 10%0 → DivisionByZero
         let result = eval("mod(10,0)");
         assert!(result.is_err());
         assert!(
@@ -351,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_zero_divided_by_zero() {
-        // 0/0 → NaNOrInf (Req 8 Scen 1, 0.0/0.0 = NaN)
+        // 0/0 → NaNOrInf（0.0/0.0 = NaN）
         let result = eval("0/0");
         assert!(result.is_err());
         assert!(
@@ -363,10 +361,10 @@ mod tests {
 
     #[test]
     fn test_one_divided_by_zero() {
-        // 1/0 → NaNOrInf (Req 8 Scen 2)
-        // Spec 冲突：Req 7 Scen 1 说 5/0 → DivisionByZero，Req 8 Scen 2 说 1/0 → NaNOrInf。
+        // 1/0 → NaNOrInf
+        // Spec 冲突：一处规定 5/0 → DivisionByZero，另一处规定 1/0 → NaNOrInf。
         // 本实现统一预检查除零：x/0 (x≠0) → DivisionByZero。
-        // 这是对 Req 8 Scen 2 的偏离：返回 DivisionByZero 而非 NaNOrInf。
+        // 这是对后者的偏离：返回 DivisionByZero 而非 NaNOrInf。
         let result = eval("1/0");
         assert!(result.is_err());
         // 接受 DivisionByZero 或 NaNOrInf（取决于实现策略）
@@ -384,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_negative_base_integer_power() {
-        // (-2)^3 → -8.0 (Req 9 Scen 1)
+        // (-2)^3 → -8.0
         assert_eq!(eval("(-2)^3").unwrap(), -8.0);
     }
 
@@ -404,14 +402,14 @@ mod tests {
 
     #[test]
     fn test_bound_variable() {
-        // x=3, x*2 → 6.0 (Req 10 Scen 1)
+        // x=3, x*2 → 6.0
         let ctx = EvalContext::new().with_var("x", 3.0);
         assert_eq!(eval_with_ctx("x*2", &ctx).unwrap(), 6.0);
     }
 
     #[test]
     fn test_unbound_variable() {
-        // y*2 without binding → EvalError (Req 10 Scen 2)
+        // y*2 without binding → EvalError
         let result = eval("y*2");
         assert!(result.is_err());
         assert!(
@@ -446,7 +444,7 @@ mod tests {
         assert!(!domain.supports(&parse("foo(1)").unwrap()));
     }
 
-    // ===== 额外覆盖：UnaryOp 路径（parser 不产生这些形式，需手动构造）=====
+    // ===== 额外覆盖：UnaryOp 路径（parser 不产生这些形式，需手动构造） =====
 
     #[test]
     fn test_unary_op_factorial() {

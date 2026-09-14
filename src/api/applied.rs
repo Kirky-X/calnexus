@@ -38,21 +38,21 @@ impl<'a> AppliedMathImpl<'a> {
         let zoned = d
             .to_zoned(jiff::tz::TimeZone::UTC)
             .map_err(|_| crate::math::time::invalid_date_error(date_str))?;
-        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(&zoned)))
+        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(
+            &zoned,
+        )))
     }
 
     #[cfg(feature = "time")]
-    pub fn datetime(
-        &self,
-        datetime_str: &str,
-        tz: Option<&str>,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn datetime(&self, datetime_str: &str, tz: Option<&str>) -> Result<EvalResult, CalcError> {
         let tz = resolve_tz(tz)?;
         let dt = crate::math::time::parse_datetime_multi_format(datetime_str)?;
         let zoned = dt
             .to_zoned(tz)
             .map_err(|_| crate::math::time::invalid_date_error(datetime_str))?;
-        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(&zoned)))
+        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(
+            &zoned,
+        )))
     }
 
     #[cfg(feature = "time")]
@@ -62,11 +62,7 @@ impl<'a> AppliedMathImpl<'a> {
     }
 
     #[cfg(feature = "time")]
-    pub fn from_timestamp(
-        &self,
-        secs: i64,
-        tz: Option<&str>,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn from_timestamp(&self, secs: i64, tz: Option<&str>) -> Result<EvalResult, CalcError> {
         let tz = resolve_tz(tz)?;
         let ts = jiff::Timestamp::from_second(secs).map_err(|_| {
             CalcError::domain(format!("timestamp out of range: {}", secs)).with_i18n(
@@ -75,7 +71,9 @@ impl<'a> AppliedMathImpl<'a> {
             )
         })?;
         let zoned = ts.to_zoned(tz);
-        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(&zoned)))
+        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(
+            &zoned,
+        )))
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -86,7 +84,9 @@ impl<'a> AppliedMathImpl<'a> {
     pub fn now(&self, tz: Option<&str>) -> Result<EvalResult, CalcError> {
         let tz = resolve_tz(tz)?;
         let zoned = jiff::Zoned::now().with_time_zone(tz);
-        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(&zoned)))
+        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(
+            &zoned,
+        )))
     }
 
     #[cfg(feature = "time")]
@@ -95,31 +95,25 @@ impl<'a> AppliedMathImpl<'a> {
         let now = jiff::Zoned::now().with_time_zone(tz.clone());
         let today = now.date().to_zoned(tz).map_err(|_| {
             CalcError::domain("failed to construct today midnight".to_string())
-                .with_i18n("msg.time.invalid_date", vec![])
+                .with_i18n("msg.time.midnight_construct_failed", vec![])
         })?;
-        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(&today)))
+        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(
+            &today,
+        )))
     }
 
     #[cfg(feature = "time")]
-    pub fn date_add(
-        &self,
-        date: &str,
-        n: i64,
-        unit: &str,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn date_add(&self, date: &str, n: i64, unit: &str) -> Result<EvalResult, CalcError> {
         let zoned = crate::math::time::parse_str_to_zoned(date)?;
         let unit = crate::math::time::parse_time_unit(unit)?;
         let result = crate::math::time::compute_date_add(&zoned, n, unit)?;
-        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(&result)))
+        Ok(EvalResult::DateTime(crate::math::time::zoned_to_rfc3339(
+            &result,
+        )))
     }
 
     #[cfg(feature = "time")]
-    pub fn date_diff(
-        &self,
-        a: &str,
-        b: &str,
-        unit: Option<&str>,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn date_diff(&self, a: &str, b: &str, unit: Option<&str>) -> Result<EvalResult, CalcError> {
         let za = crate::math::time::parse_str_to_zoned(a)?;
         let zb = crate::math::time::parse_str_to_zoned(b)?;
         let unit_str = unit.unwrap_or("day");
@@ -189,11 +183,13 @@ impl<'a> AppliedMathImpl<'a> {
 
     #[cfg(feature = "time")]
     pub fn is_leap_year(&self, year: i64) -> Result<EvalResult, CalcError> {
-        Ok(EvalResult::Scalar(if crate::math::time::is_leap_year(year) {
-            1.0
-        } else {
-            0.0
-        }))
+        Ok(EvalResult::Scalar(
+            if crate::math::time::is_leap_year(year) {
+                1.0
+            } else {
+                0.0
+            },
+        ))
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -201,12 +197,7 @@ impl<'a> AppliedMathImpl<'a> {
     // ═══════════════════════════════════════════════════════════════
 
     #[cfg(feature = "unit")]
-    pub fn convert(
-        &self,
-        value: f64,
-        from: &str,
-        to: &str,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn convert(&self, value: f64, from: &str, to: &str) -> Result<EvalResult, CalcError> {
         crate::math::unit::convert_value(value, from, to).map(EvalResult::Scalar)
     }
 
@@ -215,12 +206,7 @@ impl<'a> AppliedMathImpl<'a> {
     // ═══════════════════════════════════════════════════════════════
 
     #[cfg(feature = "fx")]
-    pub fn fx(
-        &self,
-        amount: f64,
-        from: &str,
-        to: &str,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn fx(&self, amount: f64, from: &str, to: &str) -> Result<EvalResult, CalcError> {
         use crate::domains::fx_provider::{FrankfurterProvider, RateProvider};
         let provider = FrankfurterProvider::default();
         let table = provider.rates()?;
@@ -228,11 +214,7 @@ impl<'a> AppliedMathImpl<'a> {
     }
 
     #[cfg(feature = "fx")]
-    pub fn fx_rate(
-        &self,
-        from: &str,
-        to: &str,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn fx_rate(&self, from: &str, to: &str) -> Result<EvalResult, CalcError> {
         use crate::domains::fx_provider::{FrankfurterProvider, RateProvider};
         let provider = FrankfurterProvider::default();
         let table = provider.rates()?;

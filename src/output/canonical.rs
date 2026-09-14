@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! 规范形式输出格式化器（v1.1 新增）。
+//! 规范形式输出格式化器。
 //!
 //! 暴露 `CanonicalForm` 的字符串形式，作为 `--canonical` 标志的输出。
 //!
-//! SNAP-003 示例：`calnexus --canonical "3+2"` → `(+ 2 3)`
+//! 示例：`calnexus --canonical "3+2"` → `(+ 2 3)`
 //!
-//! 设计依据：design.md D4 — 薄包装，复用 `AstCanonicalizer::canonicalize`。
+//! 设计依据：薄包装，复用 `AstCanonicalizer::canonicalize`。
 
 use crate::core::CanonicalForm;
 

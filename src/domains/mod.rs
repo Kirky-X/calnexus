@@ -2,7 +2,7 @@
 
 //! CalNexus 计算域集合。
 //!
-//! 规则 25 合规：本 mod.rs 仅包含模块声明与 re-export，零实现函数。
+//! 模块分层约定：本 mod.rs 仅包含模块声明与 re-export，零实现函数。
 //! 工厂函数（build_default_router / build_precision_domain）位于 `factory.rs`。
 
 mod arithmetic;
@@ -42,9 +42,9 @@ pub use fx_provider::RateProvider;
 pub use matrix::MatrixDomain;
 pub use number_theory::NumberTheoryDomain;
 pub use polynomial::PolynomialDomain;
+pub use precision::PrecisionDomain;
 #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
 pub use precision::format_bigrational;
-pub use precision::PrecisionDomain;
 pub use scientific::ScientificDomain;
 pub use statistics::StatisticsDomain;
 pub use symbolic::SymbolicDomain;

@@ -2,7 +2,7 @@
 
 //! 汇率换算域：fx/fx_rate 函数 + frankfurter.dev 在线 API。
 //!
-//! 设计依据：design.md D6（Provider trait 注入 + 三级缓存 + stale 策略）+ D8（混合表达式求值语义）
+//! 设计依据：Provider trait 注入 + 三级缓存 + stale 策略 + 混合表达式求值语义
 //! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
 //!
 //! 函数表：
@@ -16,14 +16,16 @@
 //! - 跨域函数混入：`sin(1)+fx(...)` 显式报错（消息含函数名）
 //! - Str 仅作为 FunctionCall 实参合法；出现在 BinaryOp/UnaryOp 中报错
 //!
-//! 非确定性：fx/fx_rate 申报为非确定性函数（D3），永不进 L1 缓存。
+//! 非确定性：fx/fx_rate 申报为非确定性函数，永不进 L1 缓存。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 
-use crate::math::fx as math_fx;
 use super::fx_provider::{FrankfurterProvider, RateProvider};
+use crate::math::fx as math_fx;
 
 /// fx 域函数白名单（用于路由 supports() 和非确定性申报）。
 ///
@@ -40,7 +42,7 @@ const FX_EVAL_FUNCTIONS: &[&str] = &["fx", "fx_rate", "mod", "abs"];
 
 /// 汇率换算域：支持 `fx(value, "FROM", "TO")` 和 `fx_rate("FROM", "TO")`。
 ///
-/// 构造函数 `new(provider)` 接受 `Box<dyn RateProvider>` 注入（R-fx-004）：
+/// 构造函数 `new(provider)` 接受 `Box<dyn RateProvider>` 注入：
 /// 测试套件用 mock provider，CI 断网环境全绿；生产用 `default()` 注入
 /// FrankfurterProvider。
 pub struct FxDomain {
@@ -190,10 +192,12 @@ fn eval_function(
         "fx_rate" => eval_fx_rate(args, ctx, provider),
         "mod" => eval_mod(args, ctx, provider),
         "abs" => eval_abs(args, ctx, provider),
-        _ => Err(CalcError::eval(format!("unknown fx function: {}", name)).with_i18n(
-            "msg.unknown_function",
-            vec![("name".to_string(), name.to_string())],
-        )),
+        _ => Err(
+            CalcError::eval(format!("unknown fx function: {}", name)).with_i18n(
+                "msg.unknown_function",
+                vec![("name".to_string(), name.to_string())],
+            ),
+        ),
     }
 }
 
@@ -330,7 +334,6 @@ fn expect_str_arg<'a>(arg: &'a AstNode, param_name: &str) -> Result<&'a str, Cal
     }
 }
 
-
 /// 递归检查 AST 是否含 fx/fx_rate 函数调用。
 fn contains_fx_function(ast: &AstNode) -> bool {
     match ast {
@@ -352,8 +355,8 @@ fn contains_fx_function(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
     use crate::math::fx::RateTable;
     use std::collections::HashMap;
 
@@ -475,7 +478,7 @@ mod tests {
         assert!(FxDomain::default().supports(&ast));
     }
 
-    // ===== R-fx-001: fx() 换算 =====
+    // ===== fx() 换算 =====
 
     #[test]
     fn test_fx_usd_to_cny() {
@@ -566,7 +569,7 @@ mod tests {
         assert!(err.message.contains("to"));
     }
 
-    // ===== R-fx-001: fx_rate() 查询 =====
+    // ===== fx_rate() 查询 =====
 
     #[test]
     fn test_fx_rate_usd_to_cny() {
@@ -607,7 +610,7 @@ mod tests {
         assert_eq!(err.i18n_key, Some("msg.function_arg_count"));
     }
 
-    // ===== R-fx-004: 算术包围与跨域函数混入（design D8）=====
+    // ===== 算术包围与跨域函数混入 =====
 
     #[test]
     fn test_arithmetic_wrapping_add() {
@@ -708,7 +711,7 @@ mod tests {
         assert!(err.message.contains("foo_bar"));
     }
 
-    // ===== Str 操作数测试（Str 仅作为 FunctionCall 实参合法）=====
+    // ===== Str 操作数测试（Str 仅作为 FunctionCall 实参合法） =====
 
     #[test]
     fn test_str_in_binary_op_rejected() {

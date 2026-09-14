@@ -63,6 +63,7 @@ pub fn asin(x: f64) -> Result<f64, CalcError> {
         return Err(
             CalcError::domain(format!("asin requires argument in [-1, 1], got {}", x))
                 .with_hint("asin domain is [-1, 1]")
+                .with_hint_i18n("hint.asin_domain", vec![])
                 .with_i18n(
                     "msg.scientific.asin_domain",
                     vec![("value".to_string(), x.to_string())],
@@ -78,6 +79,7 @@ pub fn acos(x: f64) -> Result<f64, CalcError> {
         return Err(
             CalcError::domain(format!("acos requires argument in [-1, 1], got {}", x))
                 .with_hint("acos domain is [-1, 1]")
+                .with_hint_i18n("hint.acos_domain", vec![])
                 .with_i18n(
                     "msg.scientific.acos_domain",
                     vec![("value".to_string(), x.to_string())],
@@ -111,11 +113,10 @@ pub fn ln(x: f64) -> Result<f64, CalcError> {
 pub fn log10(x: f64) -> Result<f64, CalcError> {
     if x <= 0.0 {
         return Err(
-            CalcError::domain(format!("log10 requires positive argument, got {}", x))
-                .with_i18n(
-                    "msg.scientific.log10_positive",
-                    vec![("value".to_string(), x.to_string())],
-                ),
+            CalcError::domain(format!("log10 requires positive argument, got {}", x)).with_i18n(
+                "msg.scientific.log10_positive",
+                vec![("value".to_string(), x.to_string())],
+            ),
         );
     }
     check_finite(x.log10())
@@ -148,14 +149,12 @@ pub fn log(value: f64, base: f64) -> Result<f64, CalcError> {
         );
     }
     if base <= 0.0 || (base - 1.0).abs() < f64::EPSILON {
-        return Err(CalcError::domain(format!(
-            "log requires positive base != 1, got {}",
-            base
-        ))
-        .with_i18n(
-            "msg.scientific.log_positive_base",
-            vec![("value".to_string(), base.to_string())],
-        ));
+        return Err(
+            CalcError::domain(format!("log requires positive base != 1, got {}", base)).with_i18n(
+                "msg.scientific.log_positive_base",
+                vec![("value".to_string(), base.to_string())],
+            ),
+        );
     }
     check_finite(value.log(base))
 }
@@ -193,14 +192,16 @@ pub fn tanh(x: f64) -> Result<f64, CalcError> {
 pub fn gamma(x: f64) -> Result<f64, CalcError> {
     // 非正整数（0, -1, -2, …）是 gamma 函数的极点
     if x <= 0.0 && x == x.floor() && x.is_finite() {
-        return Err(
-            CalcError::domain(format!("gamma({}) is undefined: pole at non-positive integer", x))
-                .with_hint("gamma is defined for positive reals and non-integer negatives")
-                .with_i18n(
-                    "msg.scientific.gamma_pole",
-                    vec![("value".to_string(), x.to_string())],
-                ),
-        );
+        return Err(CalcError::domain(format!(
+            "gamma({}) is undefined: pole at non-positive integer",
+            x
+        ))
+        .with_hint("gamma is defined for positive reals and non-integer negatives")
+        .with_hint_i18n("hint.gamma_domain", vec![])
+        .with_i18n(
+            "msg.scientific.gamma_pole",
+            vec![("value".to_string(), x.to_string())],
+        ));
     }
     check_finite(lanczos_gamma(x))
 }
@@ -394,7 +395,10 @@ mod tests {
     #[test]
     fn test_gamma_reflection() {
         // gamma(-0.5) = -2*sqrt(pi)
-        assert!(approx(gamma(-0.5).unwrap(), -2.0 * std::f64::consts::PI.sqrt()));
+        assert!(approx(
+            gamma(-0.5).unwrap(),
+            -2.0 * std::f64::consts::PI.sqrt()
+        ));
     }
 
     #[test]

@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # GitHub Actions 周更（v015 T049：actions SHA 钉扎的配套更新机制）
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  # Rust 依赖周更
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"

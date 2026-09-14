@@ -63,7 +63,7 @@ impl SymbolicExpr {
     }
 }
 
-// ============================ 格式化 (TG3.1) ============================
+// ============================ 格式化 ============================
 
 /// 将 [`SymbolicExpr`] 格式化为可读字符串。
 pub fn symbolic_to_string(expr: &SymbolicExpr) -> String {
@@ -161,7 +161,10 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
         AstNode::Number(n) => Ok(SymbolicExpr::Const(*n)),
         AstNode::BigNumber(s) => {
             let n: f64 = s.parse().map_err(|_| {
-                CalcError::domain(format!("invalid big number: {}", s))
+                CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
+                    "msg.invalid_bignumber",
+                    vec![("value".to_string(), s.clone())],
+                )
             })?;
             Ok(SymbolicExpr::Const(n))
         }
@@ -182,18 +185,21 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 BinaryOp::Mod => {
                     return Err(CalcError::domain(
                         "modulo not supported in symbolic expressions".to_string(),
-                    ));
+                    )
+                    .with_i18n("msg.symbolic.modulo_not_supported", vec![]));
                 }
             })
         }
-        AstNode::UnaryOp(UnaryOp::Neg, e) => {
-            Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?)))
-        }
+        AstNode::UnaryOp(UnaryOp::Neg, e) => Ok(SymbolicExpr::Neg(Box::new(ast_to_symbolic(e)?))),
         AstNode::UnaryOp(UnaryOp::Abs, _) | AstNode::UnaryOp(UnaryOp::Factorial, _) => {
             Err(CalcError::domain(format!(
                 "unary op not supported in symbolic expressions: {:?}",
                 ast
-            )))
+            ))
+            .with_i18n(
+                "msg.symbolic.unary_not_supported",
+                vec![("op".to_string(), format!("{:?}", ast))],
+            ))
         }
         AstNode::FunctionCall(name, args) => {
             let unary = unary_symbolic_arg(name, args)?;
@@ -206,14 +212,22 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 _ => Err(CalcError::domain(format!(
                     "function not supported in symbolic expressions: {}",
                     name
-                ))),
+                ))
+                .with_i18n(
+                    "msg.symbolic.function_not_supported",
+                    vec![("name".to_string(), name.clone())],
+                )),
             }
         }
         AstNode::Complex(_, _) | AstNode::Matrix(_) | AstNode::List(_) | AstNode::Str(_) => {
             Err(CalcError::domain(format!(
                 "node type not supported in symbolic expressions: {:?}",
                 ast
-            )))
+            ))
+            .with_i18n(
+                "msg.symbolic.node_not_supported",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            ))
         }
     }
 }
@@ -225,12 +239,19 @@ fn unary_symbolic_arg(name: &str, args: &[AstNode]) -> Result<Box<SymbolicExpr>,
             "{}() requires exactly 1 argument, got {}",
             name,
             args.len()
-        )));
+        ))
+        .with_i18n(
+            "msg.symbolic.arg_count_1",
+            vec![
+                ("name".to_string(), name.to_string()),
+                ("actual".to_string(), args.len().to_string()),
+            ],
+        ));
     }
     Ok(Box::new(ast_to_symbolic(&args[0])?))
 }
 
-// ============================ 符号求导 diff (TG3.2) ============================
+// ============================ 符号求导 diff ============================
 
 /// 符号求导 `diff(expr, var)`。
 ///
@@ -400,11 +421,11 @@ fn diff_ln(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
     )
 }
 
-// ============================ 符号积分 integrate (TG3.3) ============================
+// ============================ 符号积分 integrate ============================
 
 /// 符号积分 `integrate(expr, var)`。
 ///
-/// v1.0 仅支持：
+/// 支持范围：
 /// - 多项式积分：`x^n → x^(n+1)/(n+1)`（n ≠ -1）
 /// - 基本初等函数：sin→-cos、cos→sin、exp→exp、1/x→ln|x|
 /// - 线性性：∫(f±g) = ∫f ± ∫g
@@ -425,7 +446,8 @@ pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcErr
         SymbolicExpr::Exp(f) => integrate_exp(f.as_ref(), var),
         SymbolicExpr::Ln(_) | SymbolicExpr::Tan(_) => Err(CalcError::domain(
             "integrate() does not support ln/tan forms".to_string(),
-        )),
+        )
+        .with_i18n("msg.symbolic.integrate_no_ln_tan", vec![])),
     }
 }
 
@@ -483,44 +505,48 @@ fn integrate_mul(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<Symbol
     }
     Err(CalcError::domain(
         "integrate() does not support product of two non-constant expressions".to_string(),
-    ))
+    )
+    .with_i18n("msg.symbolic.integrate_no_product", vec![]))
 }
 
 /// ∫x^n dx = x^(n+1)/(n+1)（n ≠ -1）；∫1/x dx = ln|x|。
 fn integrate_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
-    if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f, g) {
-        if name == var {
-            if *n == -1.0 {
-                return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
-                    var.to_string(),
-                ))));
-            }
-            return Ok(SymbolicExpr::Div(
-                Box::new(SymbolicExpr::Pow(
-                    Box::new(SymbolicExpr::Var(var.to_string())),
-                    Box::new(SymbolicExpr::Const(n + 1.0)),
-                )),
-                Box::new(SymbolicExpr::Const(n + 1.0)),
-            ));
-        }
-    }
-    Err(CalcError::domain(
-        "integrate() only supports power of the integration variable".to_string(),
-    ))
-}
-
-/// ∫1/x dx = ln|x|（仅支持 Div(Const(1), Var) 形式）。
-fn integrate_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
-    if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f, g) {
-        if *c == 1.0 && name == var {
+    if let (SymbolicExpr::Var(name), SymbolicExpr::Const(n)) = (f, g)
+        && name == var
+    {
+        if *n == -1.0 {
             return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
                 var.to_string(),
             ))));
         }
+        return Ok(SymbolicExpr::Div(
+            Box::new(SymbolicExpr::Pow(
+                Box::new(SymbolicExpr::Var(var.to_string())),
+                Box::new(SymbolicExpr::Const(n + 1.0)),
+            )),
+            Box::new(SymbolicExpr::Const(n + 1.0)),
+        ));
     }
     Err(CalcError::domain(
-        "integrate() only supports 1/var form for division".to_string(),
-    ))
+        "integrate() only supports power of the integration variable".to_string(),
+    )
+    .with_i18n("msg.symbolic.integrate_only_power", vec![]))
+}
+
+/// ∫1/x dx = ln|x|（仅支持 Div(Const(1), Var) 形式）。
+fn integrate_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
+    if let (SymbolicExpr::Const(c), SymbolicExpr::Var(name)) = (f, g)
+        && *c == 1.0
+        && name == var
+    {
+        return Ok(SymbolicExpr::Ln(Box::new(SymbolicExpr::Var(
+            var.to_string(),
+        ))));
+    }
+    Err(
+        CalcError::domain("integrate() only supports 1/var form for division".to_string())
+            .with_i18n("msg.symbolic.integrate_only_div", vec![]),
+    )
 }
 
 fn integrate_neg(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
@@ -533,9 +559,10 @@ fn integrate_sin(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             SymbolicExpr::Var(var.to_string()),
         )))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports sin(var) form".to_string(),
-        ))
+        Err(
+            CalcError::domain("integrate() only supports sin(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_sin", vec![]),
+        )
     }
 }
 
@@ -545,9 +572,10 @@ fn integrate_cos(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             var.to_string(),
         ))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports cos(var) form".to_string(),
-        ))
+        Err(
+            CalcError::domain("integrate() only supports cos(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_cos", vec![]),
+        )
     }
 }
 
@@ -557,9 +585,10 @@ fn integrate_exp(f: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError>
             var.to_string(),
         ))))
     } else {
-        Err(CalcError::domain(
-            "integrate() only supports exp(var) form".to_string(),
-        ))
+        Err(
+            CalcError::domain("integrate() only supports exp(var) form".to_string())
+                .with_i18n("msg.symbolic.integrate_only_exp", vec![]),
+        )
     }
 }
 
@@ -568,7 +597,7 @@ fn is_var(expr: &SymbolicExpr, var: &str) -> bool {
     matches!(expr, SymbolicExpr::Var(name) if name == var)
 }
 
-// ============================ 表达式化简 simplify (TG3.4) ============================
+// ============================ 表达式化简 simplify ============================
 
 /// 表达式化简 `simplify(expr)`。
 ///
@@ -720,7 +749,7 @@ fn simplify_neg(e: &SymbolicExpr) -> SymbolicExpr {
     SymbolicExpr::Neg(Box::new(e.clone()))
 }
 
-// ============================ 极限 limit (TG3.5) ============================
+// ============================ 极限 limit ============================
 
 /// 符号极限 `limit(expr, var, point)`。
 ///
@@ -749,28 +778,33 @@ fn limit_recursive(
     }
 
     // 0/0 或 ∞/∞ → 洛必达
-    if depth < MAX_LOPITAL_DEPTH {
-        if let SymbolicExpr::Div(num, den) = expr {
-            let d_num = diff(num, var);
-            let d_den = diff(den, var);
-            if d_den.is_zero() {
-                return Err(CalcError::domain(
-                    "limit(): denominator derivative is zero, cannot apply L'Hôpital".to_string(),
-                ));
-            }
-            return limit_recursive(
-                &SymbolicExpr::Div(Box::new(d_num), Box::new(d_den)),
-                var,
-                point,
-                depth + 1,
-            );
+    if depth < MAX_LOPITAL_DEPTH
+        && let SymbolicExpr::Div(num, den) = expr
+    {
+        let d_num = diff(num, var);
+        let d_den = diff(den, var);
+        if d_den.is_zero() {
+            return Err(CalcError::domain(
+                "limit(): denominator derivative is zero, cannot apply L'Hôpital".to_string(),
+            )
+            .with_i18n("msg.symbolic.limit_denom_zero", vec![]));
         }
+        return limit_recursive(
+            &SymbolicExpr::Div(Box::new(d_num), Box::new(d_den)),
+            var,
+            point,
+            depth + 1,
+        );
     }
 
     Err(CalcError::domain(format!(
         "limit() could not resolve indeterminate form (depth {})",
         depth
-    )))
+    ))
+    .with_i18n(
+        "msg.symbolic.limit_indeterminate",
+        vec![("depth".to_string(), depth.to_string())],
+    ))
 }
 
 /// 数值求值 [`SymbolicExpr`]。
@@ -778,7 +812,10 @@ pub fn eval_symbolic(expr: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<
     match expr {
         SymbolicExpr::Const(n) => Ok(*n),
         SymbolicExpr::Var(name) => env.get(name).copied().ok_or_else(|| {
-            CalcError::eval(format!("unbound variable: {}", name))
+            CalcError::eval(format!("unbound variable: {}", name)).with_i18n(
+                "msg.unbound_variable",
+                vec![("name".to_string(), name.clone())],
+            )
         }),
         SymbolicExpr::Add(l, r) => {
             let r = eval_symbolic(l, env)? + eval_symbolic(r, env)?;
@@ -845,25 +882,29 @@ fn eval_div(
 fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcError> {
     let v = eval_symbolic(e, env)?;
     if v <= 0.0 {
-        return Err(CalcError::domain(format!(
-            "ln requires positive argument, got {}",
-            v
-        )));
+        return Err(
+            CalcError::domain(format!("ln requires positive argument, got {}", v)).with_i18n(
+                "msg.scientific.ln_positive",
+                vec![("value".to_string(), v.to_string())],
+            ),
+        );
     }
     Ok(v.ln())
 }
 
-// ============================ 泰勒级数 taylor (TG3.6) ============================
+// ============================ 泰勒级数 taylor ============================
 
 /// 泰勒级数 `taylor(expr, var, order)`。
 ///
 /// 在 point=0 处展开（Maclaurin 级数）。
 pub fn taylor(expr: &SymbolicExpr, var: &str, order: u32) -> Result<EvalResult, CalcError> {
     if order > 20 {
-        return Err(CalcError::domain(format!(
-            "taylor() order {} exceeds maximum of 20",
-            order
-        )));
+        return Err(
+            CalcError::domain(format!("taylor() order {} exceeds maximum of 20", order)).with_i18n(
+                "msg.symbolic.taylor_order_exceeds",
+                vec![("order".to_string(), order.to_string())],
+            ),
+        );
     }
 
     let mut terms: Vec<String> = Vec::new();

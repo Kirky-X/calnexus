@@ -3,13 +3,13 @@
 //! Numerical 线性代数分解（feature-gated，`numerical` feature 启用）。
 //!
 //! 委托层：调用 `math::numerical::*` 获取纯数学结果，包装为 `EvalResult`。
-//! 由 MatrixDomain 委托调用（design D2）；路由入口仍是 MatrixDomain（priority=30）。
+//! 由 MatrixDomain 委托调用；路由入口仍是 MatrixDomain（priority=30）。
 
 #![cfg(feature = "numerical")]
 
 use crate::core::{CalcError, EvalResult};
 use nalgebra::{DMatrix, DVector};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// LU 分解 → `{"L":[[..]], "U":[[..]], "P":[[..]]}`，满足 P·A = L·U。
 pub fn lu(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
@@ -67,7 +67,7 @@ fn dmatrix_to_json(m: &DMatrix<f64>) -> Value {
 mod tests {
     use super::*;
     use crate::core::ErrorKind;
-    use nalgebra::{SymmetricEigen, LU, QR, SVD};
+    use nalgebra::{LU, QR, SVD, SymmetricEigen};
 
     /// 测试辅助：JSON 二维数组 → DMatrix。
     fn matrix_from_json(v: &Value) -> DMatrix<f64> {
@@ -102,7 +102,7 @@ mod tests {
         }
     }
 
-    /// T002: nalgebra 0.35 + `features=["std"]` 下 LU/QR/SVD/SymmetricEigen 可用。
+    /// nalgebra 0.35 + `features=["std"]` 下 LU/QR/SVD/SymmetricEigen 可用。
     /// 闭环 design R1：无需补 nalgebra feature。
     #[test]
     fn nalgebra_decompose_symbols_available() {
@@ -116,7 +116,7 @@ mod tests {
         let _eig = SymmetricEigen::new(sym);
     }
 
-    /// T003: lu(2x2) 返回 {L,U,P}，P·A = L·U（双重验证：permute_rows + 返回的 P 矩阵）。
+    /// lu(2x2) 返回 {L,U,P}，P·A = L·U（双重验证：permute_rows + 返回的 P 矩阵）。
     #[test]
     fn lu_2x2_reconstructs_pa_equals_lu() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);
@@ -138,7 +138,7 @@ mod tests {
         assert_matrices_approx(&(&p * &m), &(&l * &u), 1e-9);
     }
 
-    /// T003: lu(3x3) 同理（含行置换的非平凡情形）。
+    /// lu(3x3) 同理（含行置换的非平凡情形）。
     #[test]
     fn lu_3x3_reconstructs() {
         let m = DMatrix::from_row_slice(3, 3, &[2.0, 1.0, 1.0, 1.0, 3.0, 2.0, 1.0, 0.0, 0.0]);
@@ -162,7 +162,7 @@ mod tests {
         assert_matrices_approx(&(&p * &m), &(&l * &u), 1e-9);
     }
 
-    /// T003: lu 返回 JSON 含 L/U/P 三 key。
+    /// lu 返回 JSON 含 L/U/P 三 key。
     #[test]
     fn lu_returns_json_with_l_u_p_keys() {
         let m = DMatrix::from_row_slice(2, 2, &[4.0, 3.0, 6.0, 3.0]);
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(obj.len(), 3);
     }
 
-    /// T003: lu(非方阵) → DomainError。
+    /// lu(非方阵) → DomainError。
     #[test]
     fn lu_non_square_errors() {
         let m = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
@@ -185,7 +185,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// T004: qr(2x2) 返回 {Q,R}，Q·R = A + Q^T·Q = I（正交）+ R 上三角。
+    /// qr(2x2) 返回 {Q,R}，Q·R = A + Q^T·Q = I（正交）+ R 上三角。
     #[test]
     fn qr_2x2_reconstructs_and_q_orthogonal() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);
@@ -205,7 +205,7 @@ mod tests {
         assert!(r[(1, 0)].abs() < 1e-9);
     }
 
-    /// T004: qr(3x3) 经典维基例子（Householder）。
+    /// qr(3x3) 经典维基例子（Householder）。
     #[test]
     fn qr_3x3_reconstructs() {
         // Wikipedia QR 经典例子
@@ -228,7 +228,7 @@ mod tests {
         assert!(r[(2, 1)].abs() < 1e-7);
     }
 
-    /// T004: qr(非方阵 2x3) 瘦分解也成立（nalgebra 无 m≥n 要求）。
+    /// qr(非方阵 2x3) 瘦分解也成立（nalgebra 无 m≥n 要求）。
     #[test]
     fn qr_non_square_2x3_reconstructs() {
         let m = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
@@ -245,7 +245,7 @@ mod tests {
         assert_matrices_approx(&(&q * &r), &m, 1e-9);
     }
 
-    /// T004: qr 返回 JSON 含 Q/R 两 key。
+    /// qr 返回 JSON 含 Q/R 两 key。
     #[test]
     fn qr_returns_json_with_q_r_keys() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, 0.0, 0.0, 1.0]);
@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(obj.len(), 2);
     }
 
-    /// T005: eig([[2,1],[1,2]]) → 特征值 {1,3} 升序 + M·v=λ·v 还原。
+    /// eig([[2,1],[1,2]]) → 特征值 {1,3} 升序 + M·v=λ·v 还原。
     #[test]
     fn eig_symmetric_2x2_eigenrelation_and_sorted() {
         let m = DMatrix::from_row_slice(2, 2, &[2.0, 1.0, 1.0, 2.0]);
@@ -290,7 +290,7 @@ mod tests {
         }
     }
 
-    /// T005: eig(3x3 对称) 特征值升序 + M·v=λ·v。
+    /// eig(3x3 对称) 特征值升序 + M·v=λ·v。
     #[test]
     fn eig_symmetric_3x3_eigenrelation() {
         let m = DMatrix::from_row_slice(3, 3, &[4.0, 1.0, 2.0, 1.0, 5.0, 3.0, 2.0, 3.0, 6.0]);
@@ -321,7 +321,7 @@ mod tests {
         }
     }
 
-    /// T005: eig(非对称) → DomainError（显式校验，避免 SymmetricEigen panic）。
+    /// eig(非对称) → DomainError（显式校验，避免 SymmetricEigen panic）。
     #[test]
     fn eig_non_symmetric_errors() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);
@@ -329,7 +329,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// T005: eig(非方阵) → DomainError。
+    /// eig(非方阵) → DomainError。
     #[test]
     fn eig_non_square_errors() {
         let m = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
@@ -337,7 +337,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// T006: svd(2x2) 还原 A = U·diag(S)·Vt + S 降序 + U/Vt 正交。
+    /// svd(2x2) 还原 A = U·diag(S)·Vt + S 降序 + U/Vt 正交。
     #[test]
     fn svd_2x2_reconstructs_and_sorted() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);
@@ -371,7 +371,7 @@ mod tests {
         assert_matrices_approx(&vtvt, &DMatrix::<f64>::identity(k, k), 1e-9);
     }
 
-    /// T006: svd(3x2) 瘦分解（m>n）形状 + 还原。
+    /// svd(3x2) 瘦分解（m>n）形状 + 还原。
     #[test]
     fn svd_3x2_thin_decomposition() {
         // m=3, n=2 → k=2; U 3×2, S len 2, Vt 2×2
@@ -401,7 +401,7 @@ mod tests {
         assert_matrices_approx(&recon, &m, 1e-9);
     }
 
-    /// T006: svd 返回 JSON 含 U/S/Vt 三 key。
+    /// svd 返回 JSON 含 U/S/Vt 三 key。
     #[test]
     fn svd_returns_json_with_u_s_vt_keys() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, 0.0, 0.0, 1.0]);
@@ -416,7 +416,7 @@ mod tests {
         assert_eq!(obj.len(), 3);
     }
 
-    /// T007: solve(2x2, b) 还原 A·x = b。
+    /// solve(2x2, b) 还原 A·x = b。
     #[test]
     fn solve_2x2_reconstructs() {
         let a = DMatrix::from_row_slice(2, 2, &[2.0, 1.0, 1.0, 3.0]);
@@ -432,7 +432,7 @@ mod tests {
         assert!(diff.norm() < 1e-9, "A·x != b: {:?}", x);
     }
 
-    /// T007: solve(3x3, b) 还原 A·x = b。
+    /// solve(3x3, b) 还原 A·x = b。
     #[test]
     fn solve_3x3_reconstructs() {
         let a = DMatrix::from_row_slice(3, 3, &[3.0, 2.0, -1.0, 2.0, -2.0, 0.5, -1.0, 0.5, -1.0]);
@@ -447,7 +447,7 @@ mod tests {
         assert!(diff.norm() < 1e-9, "A·x != b: {:?}", x);
     }
 
-    /// T007: solve(奇异矩阵) → DomainError。
+    /// solve(奇异矩阵) → DomainError。
     #[test]
     fn solve_singular_errors() {
         // [[1,2],[2,4]] 行成比例 → 秩 1 < 2，奇异
@@ -457,7 +457,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// T007: solve(维度不匹配) → DomainError。
+    /// solve(维度不匹配) → DomainError。
     #[test]
     fn solve_dim_mismatch_errors() {
         let a = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);
@@ -466,7 +466,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// T007: solve(非方阵 A) → DomainError。
+    /// solve(非方阵 A) → DomainError。
     #[test]
     fn solve_non_square_a_errors() {
         let a = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
@@ -475,21 +475,21 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// HIGH-1 修复：lu 拒绝 NaN 矩阵（NaN 会绕过对称/奇异校验触发 panic）。
+    /// lu 拒绝 NaN 矩阵（NaN 会绕过对称/奇异校验触发 panic）。
     #[test]
     fn lu_rejects_nan_matrix() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, f64::NAN, 2.0, 4.0]);
         assert!(matches!(lu(m), Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
-    /// HIGH-1 修复：eig 拒绝 Inf 矩阵（Inf 污染 SymmetricEigen 迭代）。
+    /// eig 拒绝 Inf 矩阵（Inf 污染 SymmetricEigen 迭代）。
     #[test]
     fn eig_rejects_inf_matrix() {
         let m = DMatrix::from_row_slice(2, 2, &[1.0, f64::INFINITY, f64::INFINITY, 4.0]);
         assert!(matches!(eig(m), Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
-    /// HIGH-1 修复：solve 拒绝 NaN 右端向量 b。
+    /// solve 拒绝 NaN 右端向量 b。
     #[test]
     fn solve_rejects_nan_b() {
         let a = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);

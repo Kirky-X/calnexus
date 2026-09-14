@@ -1,0 +1,5 @@
+# cargo-audit 配置
+# chacha20 0.10.1 被 yanked 但无已知漏洞（经 sdforge→limiteron→oxcache→redis→rand
+# 间接引入，上游 rand 版本问题）；关闭 yanked 检查，漏洞（vulnerabilities）保持 deny。
+[yanked]
+enabled = false

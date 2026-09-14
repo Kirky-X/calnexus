@@ -4,14 +4,14 @@
 //!
 //! 设计依据：
 //! - scientific-domain spec：10 个 requirements / 31 个 scenarios
-//! - design.md D4：实现 `CalculationDomain` trait
+//! - 实现 `CalculationDomain` trait
 //!
 //! priority = 20（高于 Arithmetic 的 10），含科学函数或 pi/e 常量的表达式
 //! 路由至本域。本域内含完整算术求值能力，以处理混合表达式如 `sin(x)+2*3`。
 
+use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error};
 
 /// 科学函数白名单。
 const SCIENTIFIC_FUNCTIONS: &[&str] = &[
@@ -226,8 +226,8 @@ fn contains_scientific(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     /// 辅助函数：解析 + 求值，返回 f64
     fn eval(input: &str) -> Result<f64, CalcError> {
@@ -248,25 +248,25 @@ mod tests {
 
     #[test]
     fn test_sin_zero() {
-        // sin(0) → 0.0 (Req 1 Scen 1)
+        // sin(0) → 0.0
         assert!(approx(eval("sin(0)").unwrap(), 0.0));
     }
 
     #[test]
     fn test_cos_zero() {
-        // cos(0) → 1.0 (Req 1 Scen 2)
+        // cos(0) → 1.0
         assert!(approx(eval("cos(0)").unwrap(), 1.0));
     }
 
     #[test]
     fn test_sin_pi_over_two() {
-        // sin(pi/2) → 1.0 (Req 1 Scen 3)
+        // sin(pi/2) → 1.0
         assert!(approx(eval("sin(pi/2)").unwrap(), 1.0));
     }
 
     #[test]
     fn test_tan_pi_over_four() {
-        // tan(pi/4) → ≈1.0 (Req 1 Scen 4)
+        // tan(pi/4) → ≈1.0
         assert!(approx(eval("tan(pi/4)").unwrap(), 1.0));
     }
 
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_asin_one() {
-        // asin(1) → ≈pi/2 (Req 2 Scen 1)
+        // asin(1) → ≈pi/2
         assert!(approx(
             eval("asin(1)").unwrap(),
             std::f64::consts::FRAC_PI_2
@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_acos_zero() {
-        // acos(0) → ≈pi/2 (Req 2 Scen 2)
+        // acos(0) → ≈pi/2
         assert!(approx(
             eval("acos(0)").unwrap(),
             std::f64::consts::FRAC_PI_2
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_atan_one() {
-        // atan(1) → ≈pi/4 (Req 2 Scen 3)
+        // atan(1) → ≈pi/4
         assert!(approx(
             eval("atan(1)").unwrap(),
             std::f64::consts::FRAC_PI_4
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_asin_out_of_range() {
-        // asin(2) → DomainError (Req 3 Scen 1)
+        // asin(2) → DomainError
         let result = eval("asin(2)");
         assert!(result.is_err());
         let err = result.as_ref().unwrap_err();
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_acos_out_of_range_negative() {
-        // acos(-1.5) → DomainError (Req 3 Scen 2)
+        // acos(-1.5) → DomainError
         let result = eval("acos(-1.5)");
         assert!(result.is_err());
         let err = result.as_ref().unwrap_err();
@@ -325,31 +325,31 @@ mod tests {
 
     #[test]
     fn test_ln_e() {
-        // ln(e) → 1.0 (Req 4 Scen 1)
+        // ln(e) → 1.0
         assert!(approx(eval("ln(e)").unwrap(), 1.0));
     }
 
     #[test]
     fn test_ln_one() {
-        // ln(1) → 0.0 (Req 4 Scen 2)
+        // ln(1) → 0.0
         assert!(approx(eval("ln(1)").unwrap(), 0.0));
     }
 
     #[test]
     fn test_log10_100() {
-        // log10(100) → 2.0 (Req 4 Scen 3)
+        // log10(100) → 2.0
         assert!(approx(eval("log10(100)").unwrap(), 2.0));
     }
 
     #[test]
     fn test_log2_8() {
-        // log2(8) → 3.0 (Req 4 Scen 4)
+        // log2(8) → 3.0
         assert!(approx(eval("log2(8)").unwrap(), 3.0));
     }
 
     #[test]
     fn test_log_arbitrary_base() {
-        // log(100, 10) → 2.0 (Req 4 Scen 5)
+        // log(100, 10) → 2.0
         assert!(approx(eval("log(100, 10)").unwrap(), 2.0));
     }
 
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_ln_negative() {
-        // ln(-1) → DomainError (Req 5 Scen 1)
+        // ln(-1) → DomainError
         let result = eval("ln(-1)");
         assert!(result.is_err());
         assert!(
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_ln_zero() {
-        // ln(0) → DomainError (Req 5 Scen 2)
+        // ln(0) → DomainError
         let result = eval("ln(0)");
         assert!(result.is_err());
         assert!(
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_log10_negative() {
-        // log10(-5) → DomainError (Req 5 Scen 3)
+        // log10(-5) → DomainError
         let result = eval("log10(-5)");
         assert!(result.is_err());
         assert!(
@@ -395,19 +395,19 @@ mod tests {
 
     #[test]
     fn test_exp_zero() {
-        // exp(0) → 1.0 (Req 6 Scen 1)
+        // exp(0) → 1.0
         assert!(approx(eval("exp(0)").unwrap(), 1.0));
     }
 
     #[test]
     fn test_exp_one() {
-        // exp(1) → ≈e (Req 6 Scen 2)
+        // exp(1) → ≈e
         assert!(approx(eval("exp(1)").unwrap(), std::f64::consts::E));
     }
 
     #[test]
     fn test_exp_ten() {
-        // exp(10) → ≈22026.465794806718 (Req 6 Scen 3)
+        // exp(10) → ≈22026.465794806718
         assert!(approx(eval("exp(10)").unwrap(), 22026.465794806718));
     }
 
@@ -415,19 +415,19 @@ mod tests {
 
     #[test]
     fn test_sinh_zero() {
-        // sinh(0) → 0.0 (Req 7 Scen 1)
+        // sinh(0) → 0.0
         assert!(approx(eval("sinh(0)").unwrap(), 0.0));
     }
 
     #[test]
     fn test_cosh_zero() {
-        // cosh(0) → 1.0 (Req 7 Scen 2)
+        // cosh(0) → 1.0
         assert!(approx(eval("cosh(0)").unwrap(), 1.0));
     }
 
     #[test]
     fn test_tanh_zero() {
-        // tanh(0) → 0.0 (Req 7 Scen 3)
+        // tanh(0) → 0.0
         assert!(approx(eval("tanh(0)").unwrap(), 0.0));
     }
 
@@ -435,25 +435,25 @@ mod tests {
 
     #[test]
     fn test_gamma_five() {
-        // gamma(5) → 24.0 (Req 8 Scen 1, Γ(5) = 4! = 24)
+        // gamma(5) → 24.0（Γ(5) = 4! = 24）
         assert!(approx(eval("gamma(5)").unwrap(), 24.0));
     }
 
     #[test]
     fn test_gamma_one() {
-        // gamma(1) → 1.0 (Req 8 Scen 2)
+        // gamma(1) → 1.0
         assert!(approx(eval("gamma(1)").unwrap(), 1.0));
     }
 
     #[test]
     fn test_erf_zero() {
-        // erf(0) → 0.0 (Req 8 Scen 3)
+        // erf(0) → 0.0
         assert!(approx(eval("erf(0)").unwrap(), 0.0));
     }
 
     #[test]
     fn test_erf_large() {
-        // erf(100) → ≈1.0 (Req 8 Scen 4)
+        // erf(100) → ≈1.0
         assert!(approx(eval("erf(100)").unwrap(), 1.0));
     }
 
@@ -461,13 +461,13 @@ mod tests {
 
     #[test]
     fn test_constant_pi() {
-        // pi → ≈3.141592653589793 (Req 9 Scen 1)
+        // pi → ≈3.141592653589793
         assert!(approx(eval("pi").unwrap(), std::f64::consts::PI));
     }
 
     #[test]
     fn test_constant_e() {
-        // e → ≈2.718281828459045 (Req 9 Scen 2)
+        // e → ≈2.718281828459045
         assert!(approx(eval("e").unwrap(), std::f64::consts::E));
     }
 
@@ -475,13 +475,13 @@ mod tests {
 
     #[test]
     fn test_sin_pi_over_two_plus_cos_zero() {
-        // sin(pi/2) + cos(0) → 2.0 (Req 10 Scen 1)
+        // sin(pi/2) + cos(0) → 2.0
         assert!(approx(eval("sin(pi/2) + cos(0)").unwrap(), 2.0));
     }
 
     #[test]
     fn test_exp_one_plus_ln_e() {
-        // exp(1) + ln(e) → ≈e + 1 (Req 10 Scen 2)
+        // exp(1) + ln(e) → ≈e + 1
         assert!(approx(
             eval("exp(1) + ln(e)").unwrap(),
             std::f64::consts::E + 1.0

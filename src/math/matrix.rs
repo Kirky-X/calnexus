@@ -19,7 +19,14 @@ pub fn det(m: &DMatrix<f64>) -> Result<f64, CalcError> {
             "det() requires a square matrix, got {}x{}",
             m.nrows(),
             m.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.matrix.det_square",
+            vec![
+                ("rows".to_string(), m.nrows().to_string()),
+                ("cols".to_string(), m.ncols().to_string()),
+            ],
+        ));
     }
     Ok(m.determinant())
 }
@@ -36,10 +43,18 @@ pub fn inverse(m: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
             "inverse() requires a square matrix, got {}x{}",
             m.nrows(),
             m.ncols()
-        )));
+        ))
+        .with_i18n(
+            "msg.matrix.inverse_square",
+            vec![
+                ("rows".to_string(), m.nrows().to_string()),
+                ("cols".to_string(), m.ncols().to_string()),
+            ],
+        ));
     }
     m.clone().try_inverse().ok_or_else(|| {
         CalcError::domain("matrix is singular (not invertible)".to_string())
+            .with_i18n("msg.matrix.singular", vec![])
     })
 }
 
@@ -49,7 +64,14 @@ pub fn identity(n: usize) -> Result<DMatrix<f64>, CalcError> {
         return Err(CalcError::domain(format!(
             "identity() dimension {} exceeds maximum of {}",
             n, MAX_MATRIX_DIM
-        )));
+        ))
+        .with_i18n(
+            "msg.matrix.identity_dim_exceeds",
+            vec![
+                ("dim".to_string(), n.to_string()),
+                ("max".to_string(), MAX_MATRIX_DIM.to_string()),
+            ],
+        ));
     }
     Ok(DMatrix::identity(n, n))
 }
@@ -59,8 +81,20 @@ pub fn mat_add(a: &DMatrix<f64>, b: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcE
     if a.shape() != b.shape() {
         return Err(CalcError::domain(format!(
             "matrix dimension mismatch for add: {}x{} vs {}x{}",
-            a.nrows(), a.ncols(), b.nrows(), b.ncols()
-        )));
+            a.nrows(),
+            a.ncols(),
+            b.nrows(),
+            b.ncols()
+        ))
+        .with_i18n(
+            "msg.matrix.dim_mismatch_addsub",
+            vec![
+                ("r1".to_string(), a.nrows().to_string()),
+                ("c1".to_string(), a.ncols().to_string()),
+                ("r2".to_string(), b.nrows().to_string()),
+                ("c2".to_string(), b.ncols().to_string()),
+            ],
+        ));
     }
     Ok(a + b)
 }
@@ -70,8 +104,20 @@ pub fn mat_sub(a: &DMatrix<f64>, b: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcE
     if a.shape() != b.shape() {
         return Err(CalcError::domain(format!(
             "matrix dimension mismatch for sub: {}x{} vs {}x{}",
-            a.nrows(), a.ncols(), b.nrows(), b.ncols()
-        )));
+            a.nrows(),
+            a.ncols(),
+            b.nrows(),
+            b.ncols()
+        ))
+        .with_i18n(
+            "msg.matrix.dim_mismatch_addsub",
+            vec![
+                ("r1".to_string(), a.nrows().to_string()),
+                ("c1".to_string(), a.ncols().to_string()),
+                ("r2".to_string(), b.nrows().to_string()),
+                ("c2".to_string(), b.ncols().to_string()),
+            ],
+        ));
     }
     Ok(a - b)
 }
@@ -81,8 +127,20 @@ pub fn mat_mul(a: &DMatrix<f64>, b: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcE
     if a.ncols() != b.nrows() {
         return Err(CalcError::domain(format!(
             "matrix multiplication dimension mismatch: {}x{} * {}x{}",
-            a.nrows(), a.ncols(), b.nrows(), b.ncols()
-        )));
+            a.nrows(),
+            a.ncols(),
+            b.nrows(),
+            b.ncols()
+        ))
+        .with_i18n(
+            "msg.matrix.mul_dim_mismatch",
+            vec![
+                ("r1".to_string(), a.nrows().to_string()),
+                ("c1".to_string(), a.ncols().to_string()),
+                ("r2".to_string(), b.nrows().to_string()),
+                ("c2".to_string(), b.ncols().to_string()),
+            ],
+        ));
     }
     Ok(a * b)
 }

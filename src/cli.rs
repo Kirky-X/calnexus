@@ -4,7 +4,7 @@
 //!
 //! 全链路：Parser → Canonicalizer → CacheManager → DomainRouter → Domain::evaluate
 //!
-//! 退出码（design.md §5.6）：
+//! 退出码：
 //! - 0：成功
 //! - 1：计算错误 / 解析错误
 //! - 2：用法错误
@@ -13,8 +13,8 @@
 use crate::core::evaluate;
 use crate::domains::format_bigrational;
 use crate::output::{format_canonical, format_latex, generate_steps};
-use crate::{parse, AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult};
-use sdforge::clap::{self, Parser};
+use crate::{AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult, parse};
+use sdforge::clap::{self, CommandFactory, FromArgMatches, Parser};
 use std::io::{self, IsTerminal, Read};
 
 #[derive(Parser)]
@@ -68,6 +68,23 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["json", "latex", "steps", "precision", "repl", "batch"])]
     canonical: bool,
 
+    /// Evaluation timeout in seconds (0.1-3600, default 5; env: CALNEXUS_TIMEOUT)
+    #[arg(long)]
+    timeout: Option<f64>,
+
+    /// Cache entry budget, approximate (entries x 4KB byte cap; env: CALNEXUS_CACHE_SIZE)
+    #[arg(long)]
+    cache_size: Option<u64>,
+
+    /// HTTP server bind address (default 127.0.0.1:3000; env: CALNEXUS_BIND_ADDR)
+    #[cfg(feature = "server")]
+    #[arg(long)]
+    bind: Option<String>,
+
+    /// List all available functions grouped by domain, then exit
+    #[arg(long)]
+    list_functions: bool,
+
     /// Start HTTP server mode (POST /api/v1/evaluate). Requires `server` feature.
     #[cfg(feature = "server")]
     #[arg(long, conflicts_with_all = ["repl", "batch", "canonical", "latex", "steps", "json", "explain", "precision", "serve_mcp"])]
@@ -81,27 +98,56 @@ struct Cli {
 
 /// CLI 入口：解析参数、分发到对应模式处理函数，返回退出码。
 pub fn run() -> i32 {
-    let cli = Cli::parse();
+    // --help 文案本地化（cli.about）：clap derive 的 `about` 属性只接受静态字符串，
+    // 因此在 get_matches 前预读 `--lang` 并用 builder 覆盖 `about`。
+    // 运行时语言仍以 clap 解析出的 cli.lang 为准（合法输入下与预读结果一致）。
+    let about_i18n = peek_lang_i18n();
+    let matches = Cli::command()
+        .about(about_i18n.t("cli.about"))
+        .get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     let i18n = crate::i18n::I18n::from_str(&cli.lang);
+
+    // 配置面：timeout / cache-size 统一解析
+    // （优先级 flag > env > default；非法 env 值显性报错而非静默回退）
+    let timeout_secs = match resolve_timeout(&i18n, cli.timeout) {
+        Ok(t) => t,
+        Err(msg) => {
+            eprintln!("calnexus: {}", msg);
+            return 2;
+        }
+    };
+    let cache_budget = match cache_budget_bytes(&i18n, cli.cache_size) {
+        Ok(b) => b,
+        Err(msg) => {
+            eprintln!("calnexus: {}", msg);
+            return 2;
+        }
+    };
 
     // --serve-http / --serve-mcp 模式：启动 server（阻塞运行，内部创建 tokio runtime）
     #[cfg(feature = "server")]
     if cli.serve_http || cli.serve_mcp {
-        return run_server_mode(&cli);
+        return run_server_mode(&cli, &i18n);
+    }
+
+    // --list-functions：运行时函数目录
+    if cli.list_functions {
+        return run_list_functions();
     }
 
     // --repl 模式：启动交互式 REPL
     if cli.repl {
-        return run_repl_mode(&cli, &i18n);
+        return run_repl_mode(&cli, &i18n, timeout_secs, cache_budget);
     }
 
     // --batch 模式：批量求值
     if let Some(path) = &cli.batch {
-        return run_batch_mode(path, &cli, &i18n);
+        return run_batch_mode(path, &cli, &i18n, timeout_secs, cache_budget);
     }
 
     // 以下模式需要表达式（位置参数或 stdin）
-    let expr = match get_expression(&cli) {
+    let expr = match get_expression(&cli, &i18n) {
         Ok(e) => e,
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
@@ -111,21 +157,71 @@ pub fn run() -> i32 {
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
     ctx.precision = cli.precision;
+    ctx.timeout = std::time::Duration::from_secs_f64(timeout_secs);
 
     if cli.canonical {
         run_canonical_mode(&expr, &cli, &i18n)
     } else if cli.latex || cli.steps {
         run_latex_steps_mode(&expr, &ctx, &cli, &i18n)
     } else {
-        run_default_mode(&expr, &ctx, &cli, &i18n)
+        run_default_mode(&expr, &ctx, &cli, &i18n, cache_budget)
     }
+}
+
+/// 预读原始参数中的 `--lang`，构造用于 `--help` 文案的 I18n（无 `--lang` 时默认英文）。
+///
+/// clap derive 的 `about` 属性只接受静态字符串，无法在解析期本地化；因此正式解析前
+/// 扫描 `std::env::args_os()` 预读 `--lang <v>` / `--lang=<v>`。仅影响 `about` 覆盖
+/// 文案，运行时语言仍以 clap 解析出的 `cli.lang` 为准（合法输入下二者一致）。
+fn peek_lang_i18n() -> crate::i18n::I18n {
+    let mut args = std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        let arg = arg.to_string_lossy();
+        if let Some(value) = arg.strip_prefix("--lang=") {
+            return crate::i18n::I18n::from_str(value);
+        }
+        if arg == "--lang"
+            && let Some(value) = args.next()
+        {
+            return crate::i18n::I18n::from_str(&value.to_string_lossy());
+        }
+    }
+    crate::i18n::I18n::default()
+}
+
+/// --list-functions：按域分组打印函数目录，退出码 0。
+fn run_list_functions() -> i32 {
+    for (domain, functions) in crate::function_catalog::DOMAIN_FUNCTIONS {
+        println!("{}:", domain);
+        for f in *functions {
+            println!("  {}", f);
+        }
+    }
+    0
 }
 
 /// 启动 HTTP/MCP server 模式。
 #[cfg(feature = "server")]
-fn run_server_mode(cli: &Cli) -> i32 {
+fn run_server_mode(cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+    // server 模式同样消费配置面
+    let cache_budget = match cache_budget_bytes(i18n, cli.cache_size) {
+        Ok(b) => b,
+        Err(msg) => {
+            eprintln!("calnexus: {}", msg);
+            return 2;
+        }
+    };
+    crate::server::init_shared_cache(cache_budget);
+
     let server_result = if cli.serve_http {
-        crate::server::HttpServer::new().run()
+        let bind = match resolve_bind(i18n, cli.bind.clone()) {
+            Ok(addr) => addr,
+            Err(msg) => {
+                eprintln!("calnexus: {}", msg);
+                return 2;
+            }
+        };
+        crate::server::HttpServer::new().with_addr(bind).run()
     } else {
         crate::server::McpServer::new().run()
     };
@@ -139,22 +235,32 @@ fn run_server_mode(cli: &Cli) -> i32 {
 }
 
 /// --repl 模式：解析变量绑定并启动交互式 REPL。
-fn run_repl_mode(cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+fn run_repl_mode(cli: &Cli, i18n: &crate::i18n::I18n, timeout_secs: f64, cache_budget: u64) -> i32 {
     let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
     };
     ctx.precision = cli.precision;
-    crate::repl::ReplSession::new(ctx, i18n.clone()).run()
+    ctx.timeout = std::time::Duration::from_secs_f64(timeout_secs);
+    let cache = crate::CacheManager::with_capacity_bytes(cache_budget);
+    crate::repl::ReplSession::with_cache(ctx, i18n.clone(), cache).run()
 }
 
 /// --batch 模式：解析变量绑定并批量求值。
-fn run_batch_mode(path: &str, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
-    let ctx = match parse_vars(&cli.vars) {
+fn run_batch_mode(
+    path: &str,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+    timeout_secs: f64,
+    cache_budget: u64,
+) -> i32 {
+    let mut ctx = match parse_vars(&cli.vars) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
     };
-    crate::batch::BatchProcessor::run(path, &ctx, cli.json, i18n)
+    ctx.timeout = std::time::Duration::from_secs_f64(timeout_secs);
+    let cache = crate::CacheManager::with_capacity_bytes(cache_budget);
+    crate::batch::BatchProcessor::run_with_cache(path, &ctx, cli.json, i18n, cache)
 }
 
 /// --canonical 模式：parse → canonicalize_no_fold → 输出 S-expr，跳过求值。
@@ -197,7 +303,7 @@ fn run_latex_steps_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::
 
     // --latex：求值并输出 LaTeX 结果
     if cli.latex {
-        let cache = CacheManager::new();
+        let cache = CacheManager::with_capacity_bytes(crate::core::DEFAULT_MAX_WEIGHT_BYTES);
         match evaluate(expr, ctx, cli.precision, &cache) {
             Ok((result, _domain, _cache_hit, fmt_prec)) => {
                 let latex_str = format_latex(&result, &canonical_ast, expr, fmt_prec);
@@ -210,8 +316,14 @@ fn run_latex_steps_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::
 }
 
 /// 默认模式：求值 + 输出（JSON 或文本）。
-fn run_default_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
-    let cache = CacheManager::new();
+fn run_default_mode(
+    expr: &str,
+    ctx: &EvalContext,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+    cache_budget: u64,
+) -> i32 {
+    let cache = CacheManager::with_capacity_bytes(cache_budget);
     match evaluate(expr, ctx, cli.precision, &cache) {
         Ok((result, domain, cache_hit, fmt_prec)) => {
             if cli.json {
@@ -236,32 +348,23 @@ fn format_json_output(
     cache_hit: bool,
     fmt_prec: Option<usize>,
 ) -> String {
+    // serde_json 统一构造 + 契约版本字段 "v":1。
+    // result 类型判别：Scalar 为数值、Complex 为 {re,im}、Steps 为字符串数组，
+    // 其余变体为文本形态字符串。契约详见 docs/schema/result-v1.json。
     let cache_str = if cache_hit { "hit" } else { "miss" };
-    match result {
-        EvalResult::Scalar(v) => format!(
-            r#"{{"result":{},"domain":"{}","cache":"{}"}}"#,
-            v, domain, cache_str
-        ),
-        EvalResult::Steps(v) => {
-            let arr: Vec<String> = v
-                .iter()
-                .map(|s| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")))
-                .collect();
-            format!(
-                r#"{{"result":[{}],"domain":"{}","cache":"{}"}}"#,
-                arr.join(","),
-                domain,
-                cache_str
-            )
-        }
-        _ => {
-            let value = format_result(result, fmt_prec);
-            format!(
-                r#"{{"result":"{}","domain":"{}","cache":"{}"}}"#,
-                value, domain, cache_str
-            )
-        }
-    }
+    let result_value = match result {
+        EvalResult::Scalar(v) => serde_json::json!(*v),
+        EvalResult::Complex(re, im) => serde_json::json!({ "re": re, "im": im }),
+        EvalResult::Steps(v) => serde_json::json!(v),
+        _ => serde_json::json!(format_result(result, fmt_prec)),
+    };
+    serde_json::json!({
+        "v": 1,
+        "result": result_value,
+        "domain": domain,
+        "cache": cache_str,
+    })
+    .to_string()
 }
 
 /// 根据 CLI 配置输出 CalcError 并返回退出码。
@@ -272,28 +375,98 @@ fn format_json_output(
 ///
 /// 退出码由 `ErrorKind::exit_code()` 决定（0/1/2/3）。
 fn handle_error(e: &CalcError, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
+    // caret 渲染需要原始表达式：位置参数场景直接可得（stdin 场景为 None，无 caret）
+    handle_error_with_expr(e, cli.expression.as_deref(), cli, i18n)
+}
+
+/// 错误渲染：
+/// - `--json`：结构化输出（无 caret）
+/// - `--explain`：教育模式
+/// - 文本模式：friendly + （有 span 时）表达式行 + `^` 位置指示
+/// - `undefined_symbol` 的 hint 按上下文分发：CLI 给 `--var`，REPL 给 `:let`
+fn handle_error_with_expr(
+    e: &CalcError,
+    expr: Option<&str>,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+) -> i32 {
     if cli.json {
         // to_json() 已返回 {"error":{...}} 完整结构，无需再包装
         println!("{}", e.to_json());
-    } else if cli.explain {
+        return e.kind.exit_code();
+    }
+
+    // undefined_symbol hint 上下文化：CLI 语境给 --var（REPL 语境保留 :let）
+    let mut contextual = e.clone();
+    let is_undefined_symbol = contextual.kind == CalcError::undefined_symbol("").kind
+        || contextual.i18n_key == Some("msg.unbound_variable");
+    if is_undefined_symbol {
+        // 变量名优先取 i18n 参数，其次兼容两种 message 前缀
+        // （undefined_symbol() 前缀 / mathexpr "Unbound variable: x"）
+        let name = contextual
+            .i18n_args
+            .iter()
+            .find(|(k, _)| k == "name")
+            .map(|(_, v)| v.clone())
+            .or_else(|| {
+                contextual
+                    .message
+                    .strip_prefix("undefined symbol: ")
+                    .or_else(|| contextual.message.strip_prefix("Unbound variable: "))
+                    .map(str::to_string)
+            });
+        if let Some(name) = name {
+            // hint 双轨：raw hint 保持英文原文（机器契约，to_json() 输出），同时附上
+            // 键控 hint（hint.define_via_var）供 friendly()/to_explain() 本地化渲染。
+            // 注意需覆盖 undefined_symbol() 构造时预设的 hint.undefined_symbol 键。
+            contextual.hint = Some(format!("define it via --var {name}=<value>"));
+            contextual = contextual.with_hint_i18n(
+                "hint.define_via_var",
+                vec![("name".to_string(), name.clone())],
+            );
+        }
+    }
+    let e = &contextual;
+
+    if cli.explain {
         eprintln!("{}", e.to_explain(i18n));
     } else {
         eprintln!("{}: {}", i18n.t("cli.error_prefix"), e.friendly(i18n));
     }
+
+    // caret 位置指示（仅文本模式；span 指向原始输入）
+    if let (Some(expr_text), Some(span)) = (expr, &e.span) {
+        let chars: Vec<char> = expr_text.chars().collect();
+        let start = span.start.min(chars.len());
+        let end = span.end.min(chars.len()).max(start).max(start + 1);
+        eprintln!("  | {}", expr_text);
+        eprint!("  | ");
+        for _ in 0..start {
+            eprint!(" ");
+        }
+        for _ in start..end {
+            eprint!("^");
+        }
+        eprintln!();
+    }
+
     e.kind.exit_code()
 }
 
 /// 从位置参数或 stdin 获取表达式。
 ///
 /// i18n_key 通过 `with_i18n` 附加到 CalcError，渲染时由 `handle_error` 传入 i18n 实例。
-fn get_expression(cli: &Cli) -> Result<String, CalcError> {
+fn get_expression(cli: &Cli, i18n: &crate::i18n::I18n) -> Result<String, CalcError> {
     if let Some(expr) = &cli.expression {
         return Ok(expr.clone());
     }
     // 无位置参数：检查 stdin
     if io::stdin().is_terminal() {
-        // TTY stdin：显示 help 并退出
-        Cli::parse_from(["calnexus", "--help"]);
+        // TTY stdin：显示 help 并退出（about 与 run() 同源，经 cli.about 本地化）
+        Cli::command()
+            .about(i18n.t("cli.about"))
+            .try_get_matches_from(["calnexus", "--help"])
+            .unwrap_or_else(|e| e.exit());
         return Err(CalcError::usage(String::new())); // unreachable：clap 会先退出
     }
     // 管道 stdin：读取表达式
@@ -311,9 +484,80 @@ fn get_expression(cli: &Cli) -> Result<String, CalcError> {
     Ok(trimmed)
 }
 
-/// 解析 --var NAME=VALUE 列表为 EvalContext。
+/// 解析求值超时（秒），优先级 flag > env(`CALNEXUS_TIMEOUT`) > 默认 5.0。
 ///
-/// i18n_key 通过 `with_i18n` 附加到 CalcError，渲染时由 `handle_error` 传入 i18n 实例。
+/// 错误文案经 `i18n` 本地化（键 cli.invalid_timeout_env / cli.timeout_out_of_range），
+/// 英文渲染与历史硬编码文案逐字节一致。
+fn resolve_timeout(i18n: &crate::i18n::I18n, cli_value: Option<f64>) -> Result<f64, String> {
+    const DEFAULT_TIMEOUT_SECS: f64 = 5.0;
+    const MIN: f64 = 0.1;
+    const MAX: f64 = 3600.0;
+    let raw = match cli_value {
+        Some(v) => v,
+        None => match std::env::var("CALNEXUS_TIMEOUT") {
+            // 注意：'{s}' 报告原始（未 trim）环境变量值，与历史文案一致
+            Ok(s) => s
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| i18n.tf("cli.invalid_timeout_env", &[("value", s.as_str())]))?,
+            Err(_) => DEFAULT_TIMEOUT_SECS,
+        },
+    };
+    if !(MIN..=MAX).contains(&raw) {
+        return Err(i18n.tf(
+            "cli.timeout_out_of_range",
+            &[
+                ("value", raw.to_string().as_str()),
+                ("min", MIN.to_string().as_str()),
+                ("max", MAX.to_string().as_str()),
+            ],
+        ));
+    }
+    Ok(raw)
+}
+
+/// 解析缓存条目预算并换算为字节权重上限（条目 × 4KB，近似语义）。
+///
+/// 错误文案经 `i18n` 本地化（键 cli.invalid_cache_size_env / cli.cache_size_invalid），
+/// 英文渲染与历史硬编码文案逐字节一致。
+fn cache_budget_bytes(i18n: &crate::i18n::I18n, cli_value: Option<u64>) -> Result<u64, String> {
+    const DEFAULT_CACHE_SIZE: u64 = 10_000;
+    const BYTES_PER_ENTRY: u64 = 4096;
+    let entries = match cli_value {
+        Some(n) => n,
+        None => match std::env::var("CALNEXUS_CACHE_SIZE") {
+            // 注意：'{s}' 报告原始（未 trim）环境变量值，与历史文案一致
+            Ok(s) => s
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| i18n.tf("cli.invalid_cache_size_env", &[("value", s.as_str())]))?,
+            Err(_) => DEFAULT_CACHE_SIZE,
+        },
+    };
+    if entries == 0 {
+        return Err(i18n.t("cli.cache_size_invalid").to_string());
+    }
+    Ok(entries.saturating_mul(BYTES_PER_ENTRY).max(BYTES_PER_ENTRY))
+}
+
+/// 解析 HTTP 绑定地址，优先级 flag > env(`CALNEXUS_BIND_ADDR`) > 默认 127.0.0.1:3000
+/// （仅 server feature）。
+///
+/// 错误文案经 `i18n` 本地化（键 cli.invalid_bind_addr），
+/// 英文渲染与历史硬编码文案逐字节一致。
+#[cfg(feature = "server")]
+fn resolve_bind(i18n: &crate::i18n::I18n, cli_value: Option<String>) -> Result<String, String> {
+    const DEFAULT_BIND: &str = "127.0.0.1:3000";
+    match cli_value {
+        Some(addr) => Ok(addr),
+        None => match std::env::var("CALNEXUS_BIND_ADDR") {
+            Ok(s) if !s.trim().is_empty() => Ok(s.trim().to_string()),
+            Ok(_) => Err(i18n.tf("cli.invalid_bind_addr", &[("reason", "empty value")])),
+            Err(_) => Ok(DEFAULT_BIND.to_string()),
+        },
+    }
+}
+
 fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
     let mut ctx = EvalContext::new();
     for v in vars {
@@ -354,7 +598,7 @@ pub(crate) fn format_result(result: &EvalResult, fmt_prec: Option<usize>) -> Str
         EvalResult::LaTeX(s) => s.clone(),
         EvalResult::Steps(v) => v.join("\n"),
         EvalResult::Json(v) => v.to_string(),
-        // DateTime（time-unit-fx-domains D2）：RFC3339 字符串直接输出
+        // DateTime：RFC3339 字符串直接输出
         EvalResult::DateTime(s) => s.clone(),
     }
 }
@@ -461,8 +705,122 @@ fn format_complex_list(c: &[(f64, f64)]) -> String {
 mod tests {
     use super::*;
     use crate::{AstNode, BinaryOp};
+    /// locales 文案中引用的每个 `--flag` 必须真实存在于
+    /// clap 定义——防止错误提示再次指向不存在的旗标（`--timeout` 事故回归门）。
+    #[test]
+    fn locale_hint_flags_exist_in_clap_definition() {
+        use clap::CommandFactory;
+        let mut seen: Vec<String> = Vec::new();
+        let cmd = Cli::command();
+        let long_flags: Vec<String> = cmd
+            .get_arguments()
+            .filter_map(|a| a.get_long().map(|l| l.to_string()))
+            .collect();
 
-    // ===== v1.1 新增 CLI 标志测试 =====
+        for locale in ["en", "zh"] {
+            let path = format!("locales/{locale}.json");
+            let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let value: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {path}: {e}"));
+            collect_json_strings(&value, &mut seen);
+        }
+
+        let flag_re = regex::Regex::new(r"--[a-z][a-z0-9_-]*").unwrap();
+        // `--features` 属于 cargo 构建旗标（非 calnexus CLI 旗标），合法出现于特性提示
+        let external_flags = ["features"];
+        let mut violations: Vec<String> = Vec::new();
+        for text in &seen {
+            for m in flag_re.find_iter(text) {
+                let flag = m.as_str().trim_start_matches('-').to_string();
+                if !long_flags.contains(&flag) && !external_flags.contains(&flag.as_str()) {
+                    violations.push(format!("{text:?} 引用不存在的 --{flag}"));
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "locales 中存在指向不存在旗标的 hint:\n{}",
+            violations.join("\n")
+        );
+    }
+
+    /// CLI 不可达变体（Steps/LaTeX/Json/DateTime）
+    /// 经 format_json_output 输出合法 JSON 且含 v=1。
+    #[test]
+    fn test_json_contract_non_cli_reachable_variants() {
+        let variants: Vec<(EvalResult, &str)> = vec![
+            (
+                EvalResult::Steps(vec!["2+9=11".into(), "11*3=33".into()]),
+                "steps",
+            ),
+            (EvalResult::LaTeX(r"\frac{1}{2}".into()), "latex"),
+            (
+                EvalResult::Json(serde_json::json!({"U": [[1.0]], "S": [1.0]})),
+                "json",
+            ),
+            (
+                EvalResult::DateTime("2026-09-14T00:00:00Z".into()),
+                "datetime",
+            ),
+        ];
+        for (result, name) in variants {
+            let out = format_json_output(&result, "test", false, None);
+            let parsed: serde_json::Value =
+                serde_json::from_str(&out).unwrap_or_else(|e| panic!("{name}: 非法 JSON: {e}"));
+            assert_eq!(parsed["v"], 1, "{name}: 契约版本必须为 1");
+            assert!(
+                parsed["result"].is_string() || parsed["result"].is_array(),
+                "{name}: result 应为字符串或数组"
+            );
+        }
+    }
+
+    /// 递归收集 JSON 中所有字符串叶子。
+    fn collect_json_strings(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::Array(a) => a.iter().for_each(|x| collect_json_strings(x, out)),
+            serde_json::Value::Object(o) => o.values().for_each(|x| collect_json_strings(x, out)),
+            _ => {}
+        }
+    }
+
+    // ===== 配置面 i18n 键控文案测试（EN 渲染与历史硬编码逐字节一致） =====
+
+    #[test]
+    fn resolve_timeout_out_of_range_en_message_unchanged() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let err = resolve_timeout(&i18n, Some(99999.0)).unwrap_err();
+        assert_eq!(err, "--timeout 99999 out of range (0.1-3600 seconds)");
+    }
+
+    #[test]
+    fn resolve_timeout_accepts_flag_value() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        assert_eq!(resolve_timeout(&i18n, Some(0.1)).unwrap(), 0.1);
+        assert_eq!(resolve_timeout(&i18n, Some(3600.0)).unwrap(), 3600.0);
+    }
+
+    #[test]
+    fn cache_budget_bytes_invalid_en_message_unchanged() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let err = cache_budget_bytes(&i18n, Some(0)).unwrap_err();
+        assert_eq!(err, "--cache-size must be a positive integer");
+        assert_eq!(cache_budget_bytes(&i18n, Some(2)).unwrap(), 2 * 4096);
+    }
+
+    /// cli.about 已接入 clap `about`（--help 本地化）：EN 覆盖文案与目录值一致。
+    #[test]
+    fn cli_about_override_matches_catalog_en() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let cmd = Cli::command().about(i18n.t("cli.about"));
+        assert_eq!(
+            cmd.get_about().map(|s| s.to_string()).as_deref(),
+            Some("CalNexus: math expression evaluator")
+        );
+    }
+
+    // ===== 新增 CLI 标志测试 =====
 
     #[test]
     fn test_canonicalize_no_fold_basic_addition() {
@@ -527,8 +885,8 @@ mod tests {
 
     #[test]
     fn test_format_canonical_wrapper() {
-        use crate::output::format_canonical;
         use crate::CanonicalForm;
+        use crate::output::format_canonical;
         let cf = CanonicalForm::new("(+ 2 3)");
         assert_eq!(format_canonical(&cf), "(+ 2 3)");
     }

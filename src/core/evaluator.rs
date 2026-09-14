@@ -5,11 +5,12 @@
 //! 本模块为顶层模块（不受 feature gate），CLI、REPL、batch、HTTP/MCP server 共用。
 //! 从 `src/cli.rs` 移出，使 `http`/`mcp` feature 在不启用 `cli` 时也能调用 `evaluate`。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::core::{
-    parse, AstCanonicalizer, AstNode, CacheManager, CalcError, CanonicalForm, EvalContext,
-    EvalResult, MAX_PRECISION,
+    AstCanonicalizer, AstNode, CacheManager, CalcError, CanonicalForm, DomainRouter, EvalContext,
+    EvalResult, MAX_PRECISION, parse,
 };
 use crate::domains::{build_default_router, build_precision_domain};
 
@@ -22,14 +23,14 @@ use crate::domains::{build_default_router, build_precision_domain};
 ///
 /// `cache` 参数允许调用方注入预填充的缓存（测试用），生产代码传入空缓存。
 ///
-/// 超时策略（安全审查 CRITICAL 修复，原 design.md §6.3 P3 延后已撤销）：
+/// 超时策略：
 /// - `ctx.timeout == 0`：立即超时（显式触发）
 /// - `ctx.timeout > 0`：记录起始时间，在关键节点（parse/canonicalize/domain::evaluate 前后）
 ///   检查 `elapsed > timeout`，超时返回 `CalcError::timeout()`。
 ///   这是第二道防线，已知 DoS 向量（factorial/pow/precision）已有专门常量约束，
 ///   elapsed 追踪用于捕获未知的累积慢操作。
 ///
-/// T020 重构（cyc=25 → ≤15）：拆分为 4 个职责单一的函数：
+/// 重构：拆分为 4 个职责单一的函数：
 /// - `validate_inputs`：timeout=0 + precision 上界校验
 /// - `build_cache_key`：精度感知缓存键构建
 /// - `eval_precision_mode`：precision 模式（绕过路由器）
@@ -39,6 +40,32 @@ pub fn evaluate(
     ctx: &EvalContext,
     precision: Option<usize>,
     cache: &CacheManager,
+) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
+    evaluate_with_router(expr, ctx, precision, cache, build_default_router())
+}
+
+/// 路由器可注入求值：与 [`evaluate`] 语义一致，
+/// 但路由器由调用方提供——下游/测试可注入自定义 `CalculationDomain`
+/// （默认 [`evaluate`] 绑定进程级 OnceLock 单例路由器）。
+///
+/// # 示例
+///
+/// ```
+/// use calnexus::{evaluate_with_router, CacheManager, CalculationDomain, DomainRouter, EvalContext};
+///
+/// let router = DomainRouter::new(); // 空路由器（无内置域）
+/// let cache = CacheManager::new();
+/// let ctx = EvalContext::new();
+/// // 空路由器下任何表达式都返回路由错误，证明路由器确实被注入消费
+/// let err = evaluate_with_router("1+1", &ctx, None, &cache, &router).unwrap_err();
+/// assert!(err.message.contains("no registered domain") || err.message.contains("route"));
+/// ```
+pub fn evaluate_with_router(
+    expr: &str,
+    ctx: &EvalContext,
+    precision: Option<usize>,
+    cache: &CacheManager,
+    router: &DomainRouter,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
     let start = Instant::now();
     // 阶段 1: 输入校验（timeout=0 + precision 上界）
@@ -55,32 +82,31 @@ pub fn evaluate(
     if precision.is_some() {
         eval_precision_mode(&canonical_ast, ctx, cache, &cache_cf, precision, start)
     } else {
-        eval_regular_mode(&canonical_ast, ctx, cache, &cache_cf, start)
+        eval_regular_mode(&canonical_ast, ctx, cache, &cache_cf, start, router)
     }
 }
 
 /// 输入校验：timeout=0 立即超时 + precision 参数上界检查。
 ///
-/// 安全审查 HIGH-1：evaluate 是公共入口，CLI/REPL 直接调用时不经过 server validate()，
+/// evaluate 是公共入口，CLI/REPL 直接调用时不经过 server validate()，
 /// 必须在此处拦截超大 precision 防止 format_decimal 循环 DoS。
 fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), CalcError> {
     if ctx.timeout.is_zero() {
         return Err(CalcError::timeout());
     }
-    if let Some(p) = precision {
-        if p > MAX_PRECISION {
-            return Err(CalcError::domain(format!(
-                "precision {} exceeds limit {}",
-                p, MAX_PRECISION
-            ))
-            .with_i18n(
-                "msg.core.precision_exceeds_limit",
-                vec![
-                    ("precision".to_string(), p.to_string()),
-                    ("max".to_string(), MAX_PRECISION.to_string()),
-                ],
-            ));
-        }
+    if let Some(p) = precision
+        && p > MAX_PRECISION
+    {
+        return Err(
+            CalcError::domain(format!("precision {} exceeds limit {}", p, MAX_PRECISION))
+                .with_i18n(
+                    "msg.core.precision_exceeds_limit",
+                    vec![
+                        ("precision".to_string(), p.to_string()),
+                        ("max".to_string(), MAX_PRECISION.to_string()),
+                    ],
+                ),
+        );
     }
     Ok(())
 }
@@ -90,7 +116,6 @@ fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), Ca
 /// 缓存键组成部分：
 /// 1. **CanonicalForm**：表达式规范化形式（S-表达式）
 /// 2. **precision 模式前缀**：`precision:` 前缀避免 BigRational 与 Scalar 污染
-///    （tiangang SAST CRITICAL + kueiku bug 分析）
 /// 3. **EvalContext.vars 哈希**：按 key 字典序排序后 BLAKE3 哈希
 ///    （原实现仅基于 CanonicalForm + precision，
 ///    未包含 vars，导致 REPL 中 `:let x=1; x` → 1.0 后再 `:let x=2; x`
@@ -136,6 +161,9 @@ fn build_cache_key(
 }
 
 /// precision 模式：直接使用 PrecisionDomain，绕过路由器。
+///
+/// 缓存重构：get+insert 两段式改为 `get_or_compute`（moka try_get_with
+/// single-flight），并发相同键仅一次真实求值；compute 错误原样传播且不缓存。
 fn eval_precision_mode(
     canonical_ast: &AstNode,
     ctx: &EvalContext,
@@ -144,22 +172,26 @@ fn eval_precision_mode(
     precision: Option<usize>,
     start: Instant,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
-    // 缓存命中
-    if let Some(cached) = cache.get(cache_cf) {
-        return Ok((cached, "precision".to_string(), true, precision));
-    }
-    // 缓存未命中：求值 + 超时检查
-    let domain = build_precision_domain();
-    check_elapsed(start, ctx.timeout)?;
-    let result = domain.evaluate(canonical_ast, ctx)?;
-    check_elapsed(start, ctx.timeout)?;
-    cache.insert(cache_cf, &Ok(result.clone()));
-    Ok((result, "precision".to_string(), false, precision))
+    let computed = AtomicBool::new(false);
+    let result = cache.get_or_compute(cache_cf, || {
+        computed.store(true, Ordering::Relaxed);
+        let domain = build_precision_domain();
+        check_elapsed(start, ctx.timeout)?;
+        let r = domain.evaluate(canonical_ast, ctx)?;
+        check_elapsed(start, ctx.timeout)?;
+        Ok(r)
+    })?;
+    Ok((
+        result,
+        "precision".to_string(),
+        !computed.load(Ordering::Relaxed),
+        precision,
+    ))
 }
 
 /// 常规模式：路由器分发 + 缓存查询 + 格式化精度提取。
 ///
-/// time-unit-fx-domains R-ncb-003：对非确定性表达式（含 now()/today()/fx() 等）
+/// 对非确定性表达式（含 now()/today()/fx() 等）
 /// **同时跳过**缓存读取与缓存写入，避免时间/汇率结果被缓存污染。
 /// 检测通过 `DomainRouter::is_nondeterministic` 完成，O(AST 节点数) HashSet 查询。
 fn eval_regular_mode(
@@ -168,10 +200,9 @@ fn eval_regular_mode(
     cache: &CacheManager,
     cache_cf: &CanonicalForm,
     start: Instant,
+    router: &DomainRouter,
 ) -> Result<(EvalResult, String, bool, Option<usize>), CalcError> {
-    let router = build_default_router();
-
-    // 非确定性函数旁路缓存（R-ncb-003）：跳过 cache.get 与 cache.insert
+    // 非确定性函数旁路缓存：跳过 cache.get 与 cache.insert
     if router.is_nondeterministic(canonical_ast) {
         let domain = router.route(canonical_ast)?;
         check_elapsed(start, ctx.timeout)?;
@@ -182,21 +213,26 @@ fn eval_regular_mode(
         return Ok((result, domain.domain_name().to_string(), false, fmt_prec));
     }
 
-    // 缓存命中
-    if let Some(cached) = cache.get(cache_cf) {
+    // 缓存查询或计算（single-flight）：miss 时闭包内路由 + 求值 + 超时检查；
+    // hit 时（含 single-flight follower）跳过闭包，domain 名与格式化精度照常提取。
+    let computed = AtomicBool::new(false);
+    let result = cache.get_or_compute(cache_cf, || {
+        computed.store(true, Ordering::Relaxed);
         let domain = router.route(canonical_ast)?;
-        let fmt_prec = extract_format_precision(canonical_ast);
-        return Ok((cached, domain.domain_name().to_string(), true, fmt_prec));
-    }
-
-    // 缓存未命中：路由 + 求值 + 超时检查
+        check_elapsed(start, ctx.timeout)?;
+        let r = domain.evaluate(canonical_ast, ctx)?;
+        check_elapsed(start, ctx.timeout)?;
+        Ok(r)
+    })?;
     let domain = router.route(canonical_ast)?;
-    check_elapsed(start, ctx.timeout)?;
-    let result = domain.evaluate(canonical_ast, ctx)?;
-    check_elapsed(start, ctx.timeout)?;
-    cache.insert(cache_cf, &Ok(result.clone()));
     let fmt_prec = extract_format_precision(canonical_ast);
-    Ok((result, domain.domain_name().to_string(), false, fmt_prec))
+    let cache_hit = !computed.load(Ordering::Relaxed);
+    Ok((
+        result,
+        domain.domain_name().to_string(),
+        cache_hit,
+        fmt_prec,
+    ))
 }
 
 /// 检查是否已超时，超时则返回 `CalcError::timeout()`。
@@ -213,19 +249,19 @@ fn check_elapsed(start: Instant, timeout: Duration) -> Result<(), CalcError> {
 /// 从 AST 顶层提取 precision(N, expr) 调用中的 N，用于输出格式化。
 ///
 /// 安全约束：N > MAX_PRECISION 时返回 `None`（降级为分数格式化），
-/// 防止 `format_bigrational` 循环 N 次导致 DoS（tiangang SAST CRITICAL）。
+/// 防止 `format_bigrational` 循环 N 次导致 DoS。
 fn extract_format_precision(ast: &AstNode) -> Option<usize> {
-    if let AstNode::FunctionCall(name, args) = ast {
-        if name == "precision" && args.len() == 2 {
-            if let AstNode::Number(n) = &args[0] {
-                if n.fract() == 0.0 && *n > 0.0 {
-                    let n_usize = *n as usize;
-                    // 纵深防御：拒绝超大精度值，防止 format_decimal 循环 DoS
-                    if n_usize <= MAX_PRECISION {
-                        return Some(n_usize);
-                    }
-                }
-            }
+    if let AstNode::FunctionCall(name, args) = ast
+        && name == "precision"
+        && args.len() == 2
+        && let AstNode::Number(n) = &args[0]
+        && n.fract() == 0.0
+        && *n > 0.0
+    {
+        let n_usize = *n as usize;
+        // 纵深防御：拒绝超大精度值，防止 format_decimal 循环 DoS
+        if n_usize <= MAX_PRECISION {
+            return Some(n_usize);
         }
     }
     None
@@ -235,6 +271,17 @@ fn extract_format_precision(ast: &AstNode) -> Option<usize> {
 mod tests {
     use super::*;
     use crate::core::{BinaryOp, ErrorKind, EvalContext};
+
+    /// evaluate_with_router 注入自定义路由器。
+    /// 空路由器无内置域 → 任意表达式路由失败，证明 router 参数被真实消费。
+    #[test]
+    fn test_evaluate_with_router_injection() {
+        let router = DomainRouter::new();
+        let cache = CacheManager::new();
+        let ctx = EvalContext::new();
+        let r = evaluate_with_router("1+1", &ctx, None, &cache, &router);
+        assert!(r.is_err(), "空路由器应无法路由 1+1");
+    }
 
     // 覆盖 extract_format_precision：当 precision(N, expr) 中 N 为 Number 但非正整数（如浮点数）时，
     // 内层 if 条件为 false，返回 None。
@@ -301,7 +348,7 @@ mod tests {
 
     // precision 模式缓存命中路径：首次调用 miss→计算并缓存，第二次调用 hit→返回缓存值。
     // 验证修复后的行为：precision 模式使用 `precision:` 前缀键，与常规模式隔离，
-    // 避免 BigRational 结果与 Scalar 结果相互污染（kueiku CRITICAL）。
+    // 避免 BigRational 结果与 Scalar 结果相互污染。
     #[test]
     fn test_evaluate_precision_mode_cache_hit() {
         let cache = CacheManager::new();
@@ -326,7 +373,7 @@ mod tests {
 
     // 缓存键隔离验证：常规模式预填充 Scalar 后，precision 模式不应命中该缓存。
     // 防止 `evaluate("2+3", None)` 缓存 Scalar(5.0) 后，
-    // `evaluate("2+3", Some(5))` 错误返回 Scalar 而非 BigRational（kueiku CRITICAL 回归测试）。
+    // `evaluate("2+3", Some(5))` 错误返回 Scalar 而非 BigRational（回归测试）。
     #[test]
     fn test_evaluate_precision_mode_does_not_pollute_regular_cache() {
         let cache = CacheManager::new();
@@ -346,7 +393,7 @@ mod tests {
         assert_eq!(fmt_prec, Some(5));
     }
 
-    // precision(N, expr) 表达式语法 DoS 防护回归测试（tiangang CRITICAL）。
+    // precision(N, expr) 表达式语法 DoS 防护回归测试。
     // 当 N 超过 MAX_PRECISION 时，extract_format_precision 返回 None（降级），
     // extract_precision_value 返回 Err（拒绝求值），防止 format_decimal 循环 DoS。
     #[test]
@@ -363,7 +410,7 @@ mod tests {
         );
     }
 
-    // precision 参数本身 DoS 防护回归测试（安全审查 HIGH-1）。
+    // precision 参数本身 DoS 防护回归测试。
     // evaluate 是公共入口，CLI/REPL 直接调用时不经过 server validate()，
     // 必须在 evaluate 入口拦截 precision > MAX_PRECISION，防止 format_decimal 循环 DoS。
     #[test]
@@ -399,7 +446,7 @@ mod tests {
         assert_eq!(fmt_prec, None);
     }
 
-    // v0.8 域 CLI 单元测试
+    // 域 CLI 单元测试
     #[test]
     fn test_v08_cli_number_theory_gcd() {
         let cache = CacheManager::new();
@@ -472,7 +519,7 @@ mod tests {
         assert!(cache_hit);
     }
 
-    // ===== timeout elapsed 追踪测试（安全审查 CRITICAL 修复）=====
+    // ===== timeout elapsed 追踪测试 =====
 
     /// timeout=0 应立即超时（显式触发，已有逻辑，回归测试）。
     #[test]
@@ -490,7 +537,7 @@ mod tests {
 
     /// timeout elapsed 追踪：设置极小 timeout（非 zero），关键节点应检测到超时。
     ///
-    /// 安全审查 CRITICAL：原 `evaluator.rs:36-38` 仅入口检查 `is_zero()`，
+    /// 原 `evaluator.rs:36-38` 仅入口检查 `is_zero()`，
     /// 计算期间不强制超时。本测试验证 elapsed 追踪已实现。
     ///
     /// 策略：设置 timeout=1ns，sleep 1ms 确保时间过期，然后调用 evaluate。
@@ -564,9 +611,9 @@ mod tests {
         );
     }
 
-    // ===== T019: evaluate 三阶段分发回归测试（Phase 6 Red）=====
+    // ===== evaluate 三阶段分发回归测试 =====
     //
-    // 目的：重构 evaluate（cyc=25 → ≤15）前后行为不变。
+    // 目的：重构 evaluate 前后行为不变。
     // 覆盖三阶段：
     //   1. 输入校验（timeout=0 / precision > MAX / parse 错误）
     //   2. 执行分发（precision 模式 miss+hit / 常规模式 miss+hit / 多域路由）

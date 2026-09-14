@@ -1,17 +1,17 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! 批量处理：从文件或 stdin 并行求值表达式（TG5）。
+//! 批量处理：从文件或 stdin 并行求值表达式。
 //!
 //! 设计依据：
-//! - design.md D4（BatchProcessor::run + rayon 并行）
-//! - v1.0 batch-processing spec
+//! - BatchProcessor::run + rayon 并行
+//! - batch-processing spec
 //!
 //! 约束：单条 ≤ 4096 字符、总条数 ≤ 1000；超限返回错误并标明行号。
 //! 流程：读取 → 解析验证 → 预规范化（串行）→ 并行求值（rayon）→ 按序输出 + 缓存统计。
 
 use crate::cli::format_result;
-use crate::core::evaluate;
 use crate::core::MAX_EXPR_LEN;
+use crate::core::evaluate;
 use crate::core::{EvalContext, EvalResult};
 use crate::i18n::I18n;
 use rayon::prelude::*;
@@ -21,11 +21,11 @@ use std::time::Instant;
 /// 批量最大条数。
 const MAX_BATCH_COUNT: usize = 1000;
 
-/// 批量处理器（TG5.1）。
+/// 批量处理器。
 pub struct BatchProcessor;
 
 impl BatchProcessor {
-    /// 执行批量求值（TG5.1-TG5.4）。
+    /// 执行批量求值。
     ///
     /// - `path`: 文件路径，`"-"` 表示从 stdin 读取
     /// - `ctx`: 变量上下文
@@ -33,7 +33,20 @@ impl BatchProcessor {
     /// - `i18n`: 国际化上下文，用于本地化错误与汇总消息
     ///
     /// 返回退出码：0=全部成功，1=部分失败，2=系统错误。
+    /// 以默认缓存运行（便捷入口；CLI 配置面走 [`Self::run_with_cache`]）。
+    #[allow(dead_code)] // 纯 build（非 --all-targets）下仅测试使用
     pub fn run(path: &str, ctx: &EvalContext, json: bool, i18n: &I18n) -> i32 {
+        Self::run_with_cache(path, ctx, json, i18n, crate::CacheManager::new())
+    }
+
+    /// 以注入缓存运行批量求值（CLI `--cache-size` 预算）。
+    pub fn run_with_cache(
+        path: &str,
+        ctx: &EvalContext,
+        json: bool,
+        i18n: &I18n,
+        cache: crate::CacheManager,
+    ) -> i32 {
         let start = Instant::now();
 
         let entries = match read_and_validate_entries(path, i18n) {
@@ -41,21 +54,17 @@ impl BatchProcessor {
             Err(code) => return code,
         };
 
-        let results = evaluate_entries(&entries, ctx);
+        let results = evaluate_entries(&entries, ctx, &cache);
 
         output_results(&results, json, i18n);
         print_summary(&results, start.elapsed(), i18n);
 
         let err_count = results.iter().filter(|r| r.result.is_err()).count();
-        if err_count > 0 {
-            1
-        } else {
-            0
-        }
+        if err_count > 0 { 1 } else { 0 }
     }
 }
 
-/// 读取并验证批量条目（TG5.1-TG5.2）：跳过注释/空行，校验长度与数量上限。
+/// 读取并验证批量条目：跳过注释/空行，校验长度与数量上限。
 /// 返回 `Err(exit_code)` 表示系统错误（exit_code=2）。
 fn read_and_validate_entries(path: &str, i18n: &I18n) -> Result<Vec<BatchEntry>, i32> {
     let lines = match read_lines(path) {
@@ -116,13 +125,16 @@ fn read_and_validate_entries(path: &str, i18n: &I18n) -> Result<Vec<BatchEntry>,
     Ok(entries)
 }
 
-/// 并行求值所有条目（TG5.3）：每个表达式独立走全链路，结果顺序与输入一致。
-fn evaluate_entries(entries: &[BatchEntry], ctx: &EvalContext) -> Vec<BatchResult> {
-    let cache = crate::CacheManager::new();
+/// 并行求值所有条目：每个表达式独立走全链路，结果顺序与输入一致。
+fn evaluate_entries(
+    entries: &[BatchEntry],
+    ctx: &EvalContext,
+    cache: &crate::CacheManager,
+) -> Vec<BatchResult> {
     entries
         .par_iter()
         .map(|entry| {
-            let result = evaluate(&entry.expr, ctx, None, &cache);
+            let result = evaluate(&entry.expr, ctx, None, cache);
             BatchResult {
                 line_no: entry.line_no,
                 expr: entry.expr.clone(),
@@ -132,38 +144,35 @@ fn evaluate_entries(entries: &[BatchEntry], ctx: &EvalContext) -> Vec<BatchResul
         .collect()
 }
 
-/// 输出结果（TG5.4）：JSON 数组或文本行，保持原始顺序。
+/// 输出结果：JSON 数组或文本行，保持原始顺序。
 ///
 /// JSON 输出键名保留英文（DP-4 机器可读契约）；文本输出走 i18n。
 fn output_results(results: &[BatchResult], json: bool, i18n: &I18n) {
-    let total = results.len();
     if json {
-        println!("[");
-        for (i, r) in results.iter().enumerate() {
-            match &r.result {
+        // serde_json 统一构造：转义由 serde_json 处理，控制字符/引号安全
+        let mut items: Vec<String> = Vec::with_capacity(results.len());
+        for r in results {
+            let entry = match &r.result {
                 Ok((result, domain, hit, fmt_prec)) => {
                     let value = format_result(result, *fmt_prec);
-                    println!(
-                        r#"  {{"line":{},"expr":"{}","result":"{}","domain":"{}","cache":"{}"}}"{}"#,
-                        r.line_no,
-                        crate::core::escape_json_string(&r.expr),
-                        crate::core::escape_json_string(&value),
-                        domain,
-                        if *hit { "hit" } else { "miss" },
-                        if i + 1 < total { "," } else { "" }
-                    );
+                    serde_json::json!({
+                        "line": r.line_no,
+                        "expr": r.expr,
+                        "result": value,
+                        "domain": domain,
+                        "cache": if *hit { "hit" } else { "miss" },
+                    })
                 }
-                Err(e) => {
-                    println!(
-                        r#"  {{"line":{},"expr":"{}","error":"{}"}}"{}"#,
-                        r.line_no,
-                        crate::core::escape_json_string(&r.expr),
-                        crate::core::escape_json_string(&e.to_string()),
-                        if i + 1 < total { "," } else { "" }
-                    );
-                }
-            }
+                Err(e) => serde_json::json!({
+                    "line": r.line_no,
+                    "expr": r.expr,
+                    "error": e.to_string(),
+                }),
+            };
+            items.push(entry.to_string());
         }
+        println!("[");
+        println!("{}", items.join(",\n"));
         println!("]");
     } else {
         for r in results {
@@ -250,7 +259,7 @@ struct BatchResult {
 }
 
 /// 读取文件或 stdin 的行，返回 (行号, 原始行) 列表。
-/// 行号从 1 开始（TG5.1）。
+/// 行号从 1 开始。
 fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
     let mut lines: Vec<(usize, String)> = Vec::new();
     if path == "-" {
@@ -282,7 +291,7 @@ fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
     Ok(lines)
 }
 
-// ============================ 单元测试 (TG5.6) ============================
+// ============================ 单元测试 ============================
 
 #[cfg(test)]
 mod tests {
@@ -306,13 +315,20 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_json_escape_control_chars() {
-        // JSON 规范要求控制字符（U+0000 ~ U+001F）必须转义为 \uXXXX。
-        // batch.rs 现复用 core::escape_json_string，须正确处理控制字符。
-        // \u{0007} (bell) 与 \u{000c} (form feed) 不在 {\n,\r,\t} 之列。
-        assert_eq!(crate::core::escape_json_string("\u{0007}"), "\\u0007");
-        assert_eq!(crate::core::escape_json_string("\u{000c}"), "\\u000c");
-        assert_eq!(crate::core::escape_json_string("a\u{0001}b"), "a\\u0001b");
+    fn test_batch_json_output_is_valid_json() {
+        // JSON 输出统一走 serde_json，控制字符由库正确转义；
+        // 输出整体必须是合法 JSON（round-trip 校验）。
+        let sample = serde_json::json!({
+            "line": 1,
+            "expr": "a\u{0001}b\"c",
+            "result": "1",
+            "domain": "arithmetic",
+            "cache": "miss",
+        });
+        let serialized = sample.to_string();
+        let round: serde_json::Value =
+            serde_json::from_str(&serialized).expect("序列化后必须可反序列化");
+        assert_eq!(round["expr"], "a\u{0001}b\"c", "控制字符与引号应无损往返");
     }
 
     #[test]

@@ -66,8 +66,7 @@ pub fn parse_date_multi_format(input: &str) -> Result<Date, CalcError> {
     }
     // 2. 中文格式 fallback：2026年7月25日
     if input.contains('年') {
-        return parse_chinese_date(input)
-            .map_err(|_| invalid_date_error(input));
+        return parse_chinese_date(input).map_err(|_| invalid_date_error(input));
     }
     // 3. 按候选格式表逐一尝试 strptime
     for fmt in DATE_FORMATS {
@@ -90,8 +89,7 @@ pub fn parse_datetime_multi_format(input: &str) -> Result<DateTime, CalcError> {
     }
     // 2. 中文格式 fallback
     if input.contains('年') {
-        return parse_chinese_datetime(input)
-            .map_err(|_| invalid_date_error(input));
+        return parse_chinese_datetime(input).map_err(|_| invalid_date_error(input));
     }
     // 3. 按候选格式表逐一尝试
     for fmt in DATETIME_FORMATS {
@@ -171,10 +169,12 @@ pub fn parse_time_unit(s: &str) -> Result<Unit, CalcError> {
         "week" | "weeks" => Ok(Unit::Week),
         "month" | "months" => Ok(Unit::Month),
         "year" | "years" => Ok(Unit::Year),
-        _ => Err(CalcError::domain(format!("invalid time unit: {}", s)).with_i18n(
-            "msg.time.invalid_unit",
-            vec![("unit".to_string(), s.to_string())],
-        )),
+        _ => Err(
+            CalcError::domain(format!("invalid time unit: {}", s)).with_i18n(
+                "msg.time.invalid_unit",
+                vec![("unit".to_string(), s.to_string())],
+            ),
+        ),
     }
 }
 
@@ -190,16 +190,21 @@ pub fn build_span_for_unit(unit: Unit, n: i64) -> Result<Span, CalcError> {
         Unit::Month => span.try_months(n),
         Unit::Year => span.try_years(n),
         _ => {
-            return Err(CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
-                "msg.time.invalid_unit",
-                vec![("unit".to_string(), format!("{:?}", unit))],
-            ));
+            return Err(
+                CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
+                    "msg.time.invalid_unit",
+                    vec![("unit".to_string(), format!("{:?}", unit))],
+                ),
+            );
         }
     }
     .map_err(|_| {
         CalcError::domain(format!("span out of range: {} {:?}", n, unit)).with_i18n(
-            "msg.time.invalid_unit",
-            vec![("unit".to_string(), format!("{:?}", unit))],
+            "msg.time.span_out_of_range",
+            vec![
+                ("count".to_string(), n.to_string()),
+                ("unit".to_string(), format!("{:?}", unit)),
+            ],
         )
     })
 }
@@ -215,15 +220,17 @@ pub fn span_total_in_unit(span: &Span, unit: Unit, a: &Zoned) -> Result<f64, Cal
         Unit::Month => span.total((Unit::Month, a)),
         Unit::Year => span.total((Unit::Year, a)),
         _ => {
-            return Err(CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
-                "msg.time.invalid_unit",
-                vec![("unit".to_string(), format!("{:?}", unit))],
-            ));
+            return Err(
+                CalcError::domain(format!("unsupported time unit: {:?}", unit)).with_i18n(
+                    "msg.time.invalid_unit",
+                    vec![("unit".to_string(), format!("{:?}", unit))],
+                ),
+            );
         }
     };
     result.map_err(|_| {
         CalcError::domain(format!("span total failed for {:?}", unit)).with_i18n(
-            "msg.time.invalid_unit",
+            "msg.time.span_total_failed",
             vec![("unit".to_string(), format!("{:?}", unit))],
         )
     })
@@ -234,8 +241,13 @@ pub fn span_total_in_unit(span: &Span, unit: Unit, a: &Zoned) -> Result<f64, Cal
 /// 计算两个 Zoned 时间在指定单位下的间隔（b - a）。
 pub fn compute_date_diff(a: &Zoned, b: &Zoned, unit: Unit) -> Result<f64, CalcError> {
     let span = b.since(a).map_err(|_| {
-        CalcError::domain(format!("date_diff failed: {} vs {}", a, b))
-            .with_i18n("msg.time.invalid_date", vec![])
+        CalcError::domain(format!("date_diff failed: {} vs {}", a, b)).with_i18n(
+            "msg.time.date_diff_failed",
+            vec![
+                ("a".to_string(), a.to_string()),
+                ("b".to_string(), b.to_string()),
+            ],
+        )
     })?;
     span_total_in_unit(&span, unit, a)
 }
@@ -244,8 +256,13 @@ pub fn compute_date_diff(a: &Zoned, b: &Zoned, unit: Unit) -> Result<f64, CalcEr
 pub fn compute_date_add(zoned: &Zoned, n: i64, unit: Unit) -> Result<Zoned, CalcError> {
     let span = build_span_for_unit(unit, n)?;
     zoned.checked_add(span).map_err(|_| {
-        CalcError::domain(format!("date_add overflow: {} + {} units", zoned, n))
-            .with_i18n("msg.time.invalid_date", vec![])
+        CalcError::domain(format!("date_add overflow: {} + {} units", zoned, n)).with_i18n(
+            "msg.time.date_add_overflow",
+            vec![
+                ("value".to_string(), zoned.to_string()),
+                ("count".to_string(), n.to_string()),
+            ],
+        )
     })
 }
 
@@ -463,8 +480,10 @@ mod tests {
 
     #[test]
     fn test_parse_timestamp_rfc3339() {
-        assert!(parse_timestamp_strptime("2026-07-25T00:00:00Z").is_ok()
-            || parse_timestamp_strptime("2026-07-25T00:00:00+00:00").is_ok());
+        assert!(
+            parse_timestamp_strptime("2026-07-25T00:00:00Z").is_ok()
+                || parse_timestamp_strptime("2026-07-25T00:00:00+00:00").is_ok()
+        );
     }
 
     #[test]

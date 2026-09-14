@@ -1,176 +1,158 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! L1 缓存管理器：基于 oxcache 的进程内缓存，使用 BLAKE3 哈希规范形式生成缓存键。
+//! L1 缓存管理器：oxcache 同步字节权重缓存（`byte-weight` feature）的领域封装，
+//! BLAKE3 单次哈希生成 256-bit 键。
 //!
-//! 设计依据：
-//! - ADD ADR-001：oxcache L1-only（Moka 进程内封装），无 L2/Redis
-//! - design.md D5：BLAKE3 作为缓存键哈希，256-bit 碰撞概率可忽略
-//! - l1-cache spec：7 个 requirements / 22 个 scenarios
-//!
-//! 实现说明：
-//! - oxcache v0.4 提供 sync API（`sync_mode(true)` + `get_sync`/`set_sync`/`len_sync`），无需 block_on
-//! - 保持 CacheManager 公共 API 同步，对调用方透明
-//! - oxcache 使用 `core` feature（L1+L2 能力），但配置为 memory_only（仅 L1 实际使用）
+//! 分层（ADD ADR-001：L1-only 进程内，无 L2/Redis）：
+//! - 机制层 `oxcache::sync::ByteWeightCache`：字节权重预算驱逐、single-flight
+//!   （moka `try_get_with` per-key 并发去重，compute 错误传播给所有等待者且不缓存）、
+//!   命中计数（leader 计 miss / follower 计 hit）
+//! - 领域层（本模块）：`CanonicalForm` → BLAKE3 256-bit 键（无 hex 中间分配）、
+//!   `EvalResult` 体积估算（权重与准入共用）、仅缓存 `Ok(EvalResult)` 语义
 //!
 //! 核心类型：
-//! - [`CacheKeyGen`]：将 `CanonicalForm` 哈希为 `[u8; 32]` 键，再转为 hex String 供 oxcache 使用
-//! - [`CacheManager`]：线程安全的 L1 缓存，仅存储 `Ok(EvalResult)`，容量上限 10000
+//! - [`CacheKeyGen`]：将 `CanonicalForm` 单次 BLAKE3 哈希为 `[u8; 32]` 键
+//! - [`CacheManager`]：线程安全的 L1 缓存，仅存储 `Ok(EvalResult)`，字节权重预算驱逐
+
+use oxcache::sync::ByteWeightCache;
 
 use crate::core::types::{CalcError, CanonicalForm, EvalResult};
-use crate::core::types::ErrorKind;
 
-/// 缓存键生成器：使用 BLAKE3 对 `CanonicalForm` 的 S-表达式字符串进行哈希。
+/// 默认字节权重预算：64 MB。
+pub const DEFAULT_MAX_WEIGHT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// 单条结果准入阈值：估算超过此值（256 KB）的结果不入缓存。
 ///
-/// 生成 256-bit（32 字节）键，转为 hex 字符串后作为 oxcache 的 `K`。
+/// 历史背景：oxcache 时代缓存按条目数计（10000 条），单条 BigRational 结果可达
+/// ~800KB，理论上限 8GB 内存放大；字节权重预算 + 单条准入阈值双重防护。
+pub const MAX_CACHEABLE_BYTES: u64 = 256 * 1024;
+
+/// 缓存统计快照（/metrics 端点消费）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheStats {
+    /// 命中次数。
+    pub hits: u64,
+    /// 未命中次数。
+    pub misses: u64,
+    /// 当前条目数（moka 最终一致值）。
+    pub entry_count: u64,
+}
+
+/// 缓存键生成器：使用 BLAKE3 对 `CanonicalForm` 的 S-表达式字符串单次哈希。
+///
+/// 生成 256-bit（32 字节）键，直接作为 moka 缓存键（无 hex String 中间分配）。
 pub struct CacheKeyGen;
 
 impl CacheKeyGen {
     /// 对 `CanonicalForm` 生成 256-bit BLAKE3 哈希键。
     ///
-    /// 返回 `[u8; 32]`，BLAKE3 对空输入也有定义输出（Req 4 Scen 4）。
+    /// 返回 `[u8; 32]`，BLAKE3 对空输入也有定义输出。
     pub fn hash(cf: &CanonicalForm) -> [u8; 32] {
         *blake3::hash(cf.as_str().as_bytes()).as_bytes()
     }
+}
 
-    /// 将 `[u8; 32]` 键转为 hex 字符串（oxcache 键要求 `String`）。
-    fn to_key_string(bytes: &[u8; 32]) -> String {
-        use std::fmt::Write;
-        let mut s = String::with_capacity(64);
-        for b in bytes {
-            write!(s, "{:02x}", b).unwrap();
+/// 估算 `EvalResult` 的内存占用字节数（缓存权重与准入阈值共用）。
+///
+/// 估算为下界近似：只计主要载荷，不追指针内层碎片；对准入决策足够。
+pub fn estimate_result_bytes(r: &EvalResult) -> u64 {
+    const BASE: u64 = 64;
+    match r {
+        EvalResult::Scalar(_) => 16,
+        EvalResult::Complex(_, _) => 24,
+        EvalResult::Matrix(m) => BASE + m.iter().map(|row| row.len() as u64 * 8).sum::<u64>(),
+        EvalResult::Vector(v) | EvalResult::Polynomial(v) => BASE + v.len() as u64 * 8,
+        EvalResult::ComplexList(v) => BASE + v.len() as u64 * 16,
+        EvalResult::Steps(v) => BASE + v.iter().map(|s| s.len() as u64).sum::<u64>(),
+        EvalResult::Symbolic(s) | EvalResult::LaTeX(s) | EvalResult::DateTime(s) => {
+            BASE + s.len() as u64
         }
-        s
-    }
-
-    /// 生成 oxcache 缓存键（hex 字符串）。
-    fn make_key(cf: &CanonicalForm) -> String {
-        Self::to_key_string(&Self::hash(cf))
+        EvalResult::Json(v) => BASE + estimate_json_bytes(v),
+        EvalResult::BigInt(b) => BASE + b.bits() / 8 + 1,
+        EvalResult::BigRational(q) => BASE + (q.numer().bits() + q.denom().bits()) / 8 + 2,
     }
 }
 
-/// 默认容量上限（ADD.md §6.3：max_capacity = 10000）。
-const DEFAULT_MAX_CAPACITY: u64 = 10_000;
+/// 估算 `serde_json::Value` 的序列化字节数（递归，无分配）。
+fn estimate_json_bytes(v: &serde_json::Value) -> u64 {
+    match v {
+        serde_json::Value::Null => 4,
+        serde_json::Value::Bool(_) => 5,
+        serde_json::Value::Number(_) => 16,
+        serde_json::Value::String(s) => s.len() as u64 + 2,
+        serde_json::Value::Array(a) => a.iter().map(estimate_json_bytes).sum::<u64>() + 2,
+        serde_json::Value::Object(o) => {
+            o.iter()
+                .map(|(k, val)| k.len() as u64 + 4 + estimate_json_bytes(val))
+                .sum::<u64>()
+                + 2
+        }
+    }
+}
 
 /// L1 缓存管理器。
 ///
-/// 基于 oxcache（Moka 封装），线程安全（`Send + Sync`），进程内有效。
-/// 仅缓存 `Ok(EvalResult)`，错误结果不写入。
-/// 容量上限 10000 条目，无时间 TTL（仅容量驱逐，Req 5）。
+/// 封装 `oxcache::sync::ByteWeightCache`（Send + Sync），进程内有效，
+/// 仅缓存 `Ok(EvalResult)`。容量为字节权重预算（默认 64MB），无时间 TTL
+/// （仅权重驱逐）；命中/未命中计数由 oxcache 层维护。
 pub struct CacheManager {
-    inner: oxcache::Cache<String, EvalResult>,
+    inner: ByteWeightCache<[u8; 32], EvalResult, fn(&EvalResult) -> u64>,
 }
 
 impl CacheManager {
-    /// 创建默认配置的缓存管理器（容量 10000，L1-only）。
-    ///
-    /// 使用 oxcache `CacheBuilder` 配置 Moka 内存后端，
-    /// 通过 `sync_mode(true)` + `build_sync()` 全同步构建。
+    /// 创建默认配置的缓存管理器（字节预算 64MB）。
     pub fn new() -> Self {
-        let cache = oxcache::Cache::builder()
-            .capacity(DEFAULT_MAX_CAPACITY)
-            .sync_mode(true)
-            .build_sync()
-            .expect("failed to build oxcache L1 cache");
-        Self { inner: cache }
+        Self::with_capacity_bytes(DEFAULT_MAX_WEIGHT_BYTES)
     }
 
-    /// 查询缓存。
+    /// 创建指定字节权重预算的缓存管理器。
     ///
-    /// 命中时返回缓存值的克隆（`EvalResult` 实现 `Clone`）。
-    /// 未命中返回 `None`（Req 2）。
-    ///
-    /// **错误处理（Rule 12 + H-1 修复）**：oxcache 后端错误降级为 cache miss 而非 panic。
-    /// cache 层错误不应影响业务逻辑（用户表达式仍可正确求值），降级为 cache miss 是
-    /// 行业标准做法（Redis/Memcached 客户端都这么做）。错误通过 `eprintln!` 显性化记录，
-    /// 保留 API 兼容性（`Option<EvalResult>` 签名不变）。
-    /// Moka 后端的 get 实际不会返回 Err（永远 `Ok(...)`），但反序列化失败
-    /// 等理论错误路径必须显性化而非 panic 影响请求处理。
-    pub fn get(&self, cf: &CanonicalForm) -> Option<EvalResult> {
-        let key = CacheKeyGen::make_key(cf);
-        match self.inner.get_sync(&key) {
-            Ok(v) => v,
-            Err(e) => {
-                // 降级为 cache miss：避免 panic 影响请求处理（H-1 修复）
-                eprintln!(
-                    "WARN: cache get failed (key={}), degrading to cache miss: {}",
-                    key, e
-                );
-                None
-            }
+    /// CLI `--cache-size N` 按平均 4KB/条换算为 `N * 4096` 字节预算
+    /// （moka weigher 模型下容量单位为权重字节，help 文档注明近似语义）。
+    pub fn with_capacity_bytes(max_bytes: u64) -> Self {
+        Self {
+            inner: ByteWeightCache::new(max_bytes, estimate_result_bytes as fn(&EvalResult) -> u64)
+                .with_max_entry_bytes(MAX_CACHEABLE_BYTES),
         }
     }
 
-    /// 写入缓存（仅成功结果，Req 7）。
-    ///
-    /// 接受 `&Result`，仅在 `Ok` 时写入，`Err` 时无操作。
-    ///
-    /// **错误处理（Rule 12 + H-1 修复）**：oxcache 后端错误降级为忽略写入而非 panic。
-    /// cache 写入失败不应影响业务逻辑（用户表达式仍可正确求值并返回结果）。
-    /// 错误通过 `eprintln!` 显性化记录，避免静默吞没（规则 12）。
+    /// 查询缓存。命中返回 `EvalResult` 克隆，未命中返回 `None`。
+    pub fn get(&self, cf: &CanonicalForm) -> Option<EvalResult> {
+        self.inner.get(&CacheKeyGen::hash(cf))
+    }
+
+    /// 写入缓存（仅成功结果；估算超过 [`MAX_CACHEABLE_BYTES`] 的大结果跳过写入）。
     pub fn insert(&self, cf: &CanonicalForm, result: &Result<EvalResult, CalcError>) {
         if let Ok(value) = result {
-            let key = CacheKeyGen::make_key(cf);
-            if let Err(e) = self.inner.set_sync(&key, value) {
-                // 降级为忽略写入：避免 panic 影响请求处理（H-1 修复）
-                eprintln!("WARN: cache insert failed (key={}), ignoring: {}", key, e);
-            }
+            self.inner.insert(CacheKeyGen::hash(cf), value.clone());
         }
     }
 
-    /// 查询或计算：缓存命中则返回克隆，未命中则调用 `compute`，
-    /// 成功时写入缓存，返回结果（Req 1 + Req 2 + Req 7）。
+    /// 查询或计算（single-flight）。
     ///
-    /// 使用 oxcache `get_or_option_sync` 实现 64 分片 single-flight 去重：
-    /// 并发相同 key 仅执行一次 compute（R-cache-sync-004）。
-    /// 错误结果不写入缓存，直接返回 `Err`。
+    /// 基于 oxcache 层的 moka `try_get_with`：并发相同 key 仅 leader 执行
+    /// `compute`，等待者共享 leader 结果；`compute` 返回 `Err` 时错误原样
+    /// 传播给所有等待者（真实 CalcError 语义，无 "cache backend error" 包装）
+    /// 且不写缓存。
     pub fn get_or_compute<F>(&self, cf: &CanonicalForm, compute: F) -> Result<EvalResult, CalcError>
     where
         F: FnOnce() -> Result<EvalResult, CalcError>,
     {
-        let key = CacheKeyGen::make_key(cf);
-        // 捕获 compute 错误，避免 FnOnce 二次调用
-        let mut captured_error: Option<CalcError> = None;
-        match self.inner.get_or_option_sync(&key, || {
-            match compute() {
-                Ok(v) => Ok(Some(v)),
-                Err(e) => {
-                    captured_error = Some(e);
-                    Ok(None) // 错误不缓存
-                }
-            }
-        }) {
-            Ok(Some(v)) => Ok(v),
-            Ok(None) => Err(captured_error
-                .expect("get_or_option_sync returned None without error")),
-            Err(e) => {
-                // 缓存后端错误，降级为直接计算（compute 尚未调用时）
-                if let Some(err) = captured_error {
-                    Err(err)
-                } else {
-                    eprintln!("WARN: cache get_or_option failed: {}", e);
-                    // compute 未被调用（缓存后端先失败），无法降级
-                    // 返回缓存错误而非计算错误
-                    Err(CalcError::new(ErrorKind::Eval, format!("cache backend error: {}", e)))
-                }
-            }
-        }
+        self.inner.get_or_compute(CacheKeyGen::hash(cf), compute)
     }
 
-    /// 当前缓存条目数（用于测试验证）。
-    ///
-    /// 注意：oxcache L1 基于 Moka，entry_count 为最终一致值。
-    ///
-    /// **错误处理（Rule 12 + H-1 修复）**：oxcache 后端错误降级为返回 0 而非 panic。
-    /// 返回 0 不影响业务逻辑（仅用于测试验证），避免 panic 在 HTTP server 上下文中
-    /// 走 `spawn_blocking` panic 路径导致客户端仅见通用 500。
+    /// 当前缓存条目数（先同步执行 moka 待维护任务，保证读取时点准确）。
     pub fn entry_count(&self) -> u64 {
-        match self.inner.len_sync() {
-            Ok(n) => n,
-            Err(e) => {
-                // 降级为 0：避免 panic 影响请求处理（H-1 修复）
-                eprintln!("WARN: cache len failed, returning 0: {}", e);
-                0
-            }
+        self.inner.entry_count()
+    }
+
+    /// 缓存统计（/metrics 端点消费）。
+    pub fn stats(&self) -> CacheStats {
+        let stats = self.inner.stats();
+        CacheStats {
+            hits: stats.hits,
+            misses: stats.misses,
+            entry_count: stats.entry_count,
         }
     }
 }
@@ -181,7 +163,7 @@ impl Default for CacheManager {
     }
 }
 
-// 编译期 Send + Sync 约束检查（Req 6 Scen 1）
+// 编译期 Send + Sync 约束检查
 // coverage 运行时排除：const fn 在编译期执行，无法被行覆盖
 #[cfg(not(coverage))]
 const _: () = {
@@ -195,9 +177,10 @@ mod tests {
     use super::*;
     use crate::core::canonicalizer::AstCanonicalizer;
     use crate::core::parser::parse;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
+    use std::time::Duration;
 
     // 辅助函数：解析 + 规范化，返回 CanonicalForm
     fn canon(input: &str) -> CanonicalForm {
@@ -210,7 +193,6 @@ mod tests {
 
     #[test]
     fn test_cache_hit_returns_cached_value() {
-        // 相同表达式第二次求值命中（Req 1 Scen 1）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("(+ 2 3)");
         cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
@@ -221,13 +203,11 @@ mod tests {
 
     #[test]
     fn test_cache_hit_returns_clone_not_reference() {
-        // 命中返回克隆而非引用（Req 1 Scen 3）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("test");
         cache.insert(&cf, &Ok(EvalResult::Scalar(42.0)));
 
         let _hit1 = cache.get(&cf).unwrap();
-        // 再次读取应得到相同值（克隆语义，不受前一次读取影响）
         let hit2 = cache.get(&cf).unwrap();
         assert_eq!(hit2, EvalResult::Scalar(42.0));
     }
@@ -236,7 +216,6 @@ mod tests {
 
     #[test]
     fn test_cache_miss_returns_none() {
-        // 首次求值未命中（Req 2 Scen 1）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("(+ 1 2)");
         assert_eq!(cache.get(&cf), None);
@@ -244,7 +223,6 @@ mod tests {
 
     #[test]
     fn test_insert_then_immediate_hit() {
-        // 写入后立即可命中（Req 2 Scen 2）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("6*7");
         cache.insert(&cf, &Ok(EvalResult::Scalar(42.0)));
@@ -255,7 +233,6 @@ mod tests {
 
     #[test]
     fn test_get_or_compute_calls_compute_on_miss() {
-        // 未命中时调用 compute（Req 2 Scen 3）
         let cache = CacheManager::new();
         let cf = canon("6*7");
 
@@ -275,7 +252,6 @@ mod tests {
 
     #[test]
     fn test_commutative_equivalent_share_cache() {
-        // 交换律等价表达式共享缓存（Req 3 Scen 1）
         let cache = CacheManager::new();
         let cf_2plus3 = canon("2+3");
         let cf_3plus2 = canon("3+2");
@@ -287,7 +263,6 @@ mod tests {
 
     #[test]
     fn test_constant_folding_equivalent_share_cache() {
-        // 常量折叠等价表达式共享缓存（Req 3 Scen 2）
         let cache = CacheManager::new();
         let cf_1 = canon("2*3+1");
         let cf_2 = canon("1+6");
@@ -299,7 +274,6 @@ mod tests {
 
     #[test]
     fn test_non_equivalent_do_not_share_cache() {
-        // 非等价表达式不共享缓存（Req 3 Scen 3）
         let cache = CacheManager::new();
         let cf_2minus3 = canon("2-3");
         let cf_3minus2 = canon("3-2");
@@ -313,7 +287,6 @@ mod tests {
 
     #[test]
     fn test_same_canonical_form_same_key() {
-        // 相同规范形式生成相同键（Req 4 Scen 1）
         let cf1 = CanonicalForm::new("(+ 2 3)");
         let cf2 = CanonicalForm::new("(+ 2 3)");
         assert_eq!(CacheKeyGen::hash(&cf1), CacheKeyGen::hash(&cf2));
@@ -321,7 +294,6 @@ mod tests {
 
     #[test]
     fn test_different_canonical_form_different_key() {
-        // 不同规范形式生成不同键（Req 4 Scen 2）
         let cf1 = CanonicalForm::new("(+ 2 3)");
         let cf2 = CanonicalForm::new("(* 2 3)");
         assert_ne!(CacheKeyGen::hash(&cf1), CacheKeyGen::hash(&cf2));
@@ -329,7 +301,6 @@ mod tests {
 
     #[test]
     fn test_key_length_is_32_bytes() {
-        // 键长度为 256 位（Req 4 Scen 3）
         let cf = CanonicalForm::new("(+ 2 3)");
         let key = CacheKeyGen::hash(&cf);
         assert_eq!(key.len(), 32);
@@ -337,11 +308,9 @@ mod tests {
 
     #[test]
     fn test_empty_string_generates_key() {
-        // 空字符串也可生成键（Req 4 Scen 4）
         let cf = CanonicalForm::new("");
         let key = CacheKeyGen::hash(&cf);
         assert_eq!(key.len(), 32);
-        // BLAKE3 对空输入有定义输出，非全零
         assert!(key.iter().any(|&b| b != 0));
     }
 
@@ -349,7 +318,6 @@ mod tests {
 
     #[test]
     fn test_cache_persists_within_process() {
-        // 进程内缓存持续有效（Req 5 Scen 1）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("(+ 1 1)");
         cache.insert(&cf, &Ok(EvalResult::Scalar(2.0)));
@@ -361,14 +329,12 @@ mod tests {
 
     #[test]
     fn test_no_time_based_eviction() {
-        // 无 TTL 过期驱逐（Req 5 Scen 3）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("(+ 1 1)");
         cache.insert(&cf, &Ok(EvalResult::Scalar(2.0)));
 
-        thread::sleep(std::time::Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(50));
 
-        // 仍应命中（仅容量驱逐，无时间 TTL）
         assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(2.0)));
     }
 
@@ -376,7 +342,6 @@ mod tests {
 
     #[test]
     fn test_cache_manager_is_send_sync() {
-        // Engine/CacheManager 为 Send + sync（Req 6 Scen 1）
         fn assert_send_sync<T: Send + Sync>(_: &T) {}
         let cache = CacheManager::new();
         assert_send_sync(&cache);
@@ -384,7 +349,6 @@ mod tests {
 
     #[test]
     fn test_concurrent_read_hits() {
-        // 多线程并发读命中（Req 6 Scen 2）
         let cache = Arc::new(CacheManager::new());
         let cf = Arc::new(CanonicalForm::new("(+ 2 3)"));
         cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
@@ -406,7 +370,6 @@ mod tests {
 
     #[test]
     fn test_concurrent_writes_no_conflict() {
-        // 多线程并发写不冲突（Req 6 Scen 3）
         let cache = Arc::new(CacheManager::new());
 
         let mut handles = vec![];
@@ -423,7 +386,6 @@ mod tests {
             h.join().unwrap();
         }
 
-        // 验证所有线程的条目都可读回
         for i in 0..8u64 {
             let cf = CanonicalForm::new(format!("(+ {} {})", i, i).as_str());
             let expected = EvalResult::Scalar((i * 2) as f64);
@@ -440,7 +402,6 @@ mod tests {
 
     #[test]
     fn test_error_result_not_cached() {
-        // 除零错误不写入缓存（Req 7 Scen 1）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("1/0");
 
@@ -452,7 +413,6 @@ mod tests {
 
     #[test]
     fn test_nan_error_not_cached() {
-        // NaN 结果不写入缓存（Req 7 Scen 2）
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("sqrt(-1)");
 
@@ -464,7 +424,6 @@ mod tests {
 
     #[test]
     fn test_only_success_cached() {
-        // 仅成功结果写入缓存（Req 7 Scen 3）
         let cache = CacheManager::new();
         let cf_ok = CanonicalForm::new("(+ 1 2)");
         let cf_err = CanonicalForm::new("(1/0)");
@@ -480,7 +439,6 @@ mod tests {
 
     #[test]
     fn test_get_or_compute_hits_cache_on_second_call() {
-        // 验证第二次调用命中缓存且不调用 compute
         let cache = CacheManager::new();
         let cf = canon("2+3");
 
@@ -494,7 +452,6 @@ mod tests {
         assert_eq!(r1.unwrap(), EvalResult::Scalar(5.0));
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
 
-        // 第二次调用应命中缓存：返回 5.0 而非 999.0，call_count 不变
         let r2 = cache.get_or_compute(&cf, || Ok(EvalResult::Scalar(999.0)));
         assert_eq!(r2.unwrap(), EvalResult::Scalar(5.0), "应返回缓存值");
         assert_eq!(call_count.load(Ordering::SeqCst), 1, "compute 不应被调用");
@@ -504,26 +461,20 @@ mod tests {
 
     #[test]
     fn test_entry_count_zero_on_empty_cache() {
-        // 空缓存 entry_count 应为 0（覆盖 entry_count 方法体）
         let cache = CacheManager::new();
-        // 新建的空缓存无任何插入，entry_count 必须为 0
         assert_eq!(cache.entry_count(), 0, "fresh cache should have 0 entries");
     }
 
     #[test]
     fn test_entry_count_increases_after_insert() {
-        // 写入后 entry_count 方法应可调用（覆盖 entry_count 方法体）
-        // 注意：oxcache L1 基于 Moka，entry_count 为最终一致值，可能不立即反映插入
         let cache = CacheManager::new();
         let cf = CanonicalForm::new("(+ 1 2)");
         cache.insert(&cf, &Ok(EvalResult::Scalar(3.0)));
-        // 调用 entry_count 不应 panic
-        let _count = cache.entry_count();
+        assert_eq!(cache.entry_count(), 1);
     }
 
     #[test]
     fn test_default_creates_working_cache() {
-        // Default::default() 应创建可用缓存（覆盖 Default impl）
         let cache = CacheManager::default();
         let cf = CanonicalForm::new("(+ 5 7)");
         assert_eq!(cache.get(&cf), None);
@@ -531,46 +482,11 @@ mod tests {
         assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(12.0)));
     }
 
-    #[test]
-    fn test_get_or_compute_closure_runs_on_miss() {
-        // 覆盖 get_or_compute 闭包体实际执行路径（不同 CF 触发闭包）
-        let cache = CacheManager::new();
-        let cf1 = CanonicalForm::new("(+ 100 1)");
-        let cf2 = CanonicalForm::new("(+ 200 2)");
-
-        let r1 = cache.get_or_compute(&cf1, || Ok(EvalResult::Scalar(101.0)));
-        assert_eq!(r1.unwrap(), EvalResult::Scalar(101.0));
-
-        // 不同 CF：缓存未命中，闭包体实际执行
-        let r2 = cache.get_or_compute(&cf2, || Ok(EvalResult::Scalar(202.0)));
-        assert_eq!(r2.unwrap(), EvalResult::Scalar(202.0));
-    }
+    // ===== single-flight 语义 =====
 
     #[test]
-    fn test_cache_keygen_to_key_string_via_make_key() {
-        // 间接覆盖 make_key（pub get 路径调用 make_key）
-        let cache = CacheManager::new();
-        let cf = CanonicalForm::new("(unique-key-test 42)");
-        cache.insert(&cf, &Ok(EvalResult::Scalar(7.0)));
-        // 通过 get 命中验证 make_key 生成一致键
-        assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(7.0)));
-    }
-
-    // ===== H-1 修复：cache 层错误降级契约测试 =====
-    //
-    // 以下测试验证 cache 层错误降级行为契约：
-    // - get/insert/entry_count 永不 panic（避免 HTTP server 上下文中的 spawn_blocking panic）
-    // - 错误路径降级为 cache miss / 忽略 / 返回 0
-    // - 保留 API 兼容性（签名不变）
-    //
-    // 注：oxcache Moka 后端实际不会返回 Err（永远 Ok(...)），故无法直接触发错误路径。
-    // 这些测试作为行为契约，确保后续 cache 后端替换或扩展时降级行为不被破坏。
-
-    // ===== Single-flight 去重测试（R-cache-sync-004） =====
-
-    #[test]
-    fn test_get_or_compute_single_flight_dedup() {
-        // 并发相同 key 仅执行一次 compute（R-cache-sync-004）
+    fn test_get_or_compute_single_flight_dedup_exact_one() {
+        // 并发相同 key 恰执行一次 compute（moka try_get_with per-key 去重保证）
         let cache = Arc::new(CacheManager::new());
         let cf = canon("42+58");
 
@@ -584,71 +500,130 @@ mod tests {
             let count = Arc::clone(&compute_count);
             let barrier = Arc::clone(&barrier);
             handles.push(thread::spawn(move || {
-                barrier.wait(); // 确保所有线程同时启动
+                barrier.wait();
                 cache.get_or_compute(&cf, || {
                     count.fetch_add(1, Ordering::SeqCst);
-                    // 模拟计算耗时
-                    thread::sleep(std::time::Duration::from_millis(10));
+                    thread::sleep(Duration::from_millis(20));
                     Ok(EvalResult::Scalar(100.0))
                 })
             }));
         }
 
-        let results: Vec<_> = handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
-        // 所有线程应得到相同结果
         for r in &results {
             assert_eq!(r.as_ref().unwrap(), &EvalResult::Scalar(100.0));
         }
-
-        // single-flight 去重：compute 闭包应仅执行 1 次
-        let final_count = compute_count.load(Ordering::SeqCst);
-        assert!(
-            final_count <= 2, // 允许极端的调度差异，但应远小于 10
-            "compute 应执行 1-2 次（single-flight 去重），实际执行 {} 次",
-            final_count
+        assert_eq!(
+            compute_count.load(Ordering::SeqCst),
+            1,
+            "single-flight 去重：compute 应恰执行 1 次"
         );
     }
 
     #[test]
-    fn test_get_never_panics_on_normal_path() {
-        // H-1 契约：get 在正常路径下不 panic，返回 Option<EvalResult>
-        let cache = CacheManager::new();
-        let cf = CanonicalForm::new("(+ 1 2)");
-        // 空缓存 → None
+    fn test_follower_receives_real_error_not_backend_error() {
+        // compute 错误原样传播给所有等待者（含 follower），
+        // 不得出现 oxcache 时代的 "cache backend error" 包装。
+        let cache = Arc::new(CacheManager::new());
+        let cf = canon("err-path/0");
+
+        let barrier = Arc::new(std::sync::Barrier::new(4));
+        let mut handles = vec![];
+        for _ in 0..4 {
+            let cache = Arc::clone(&cache);
+            let cf = cf.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                cache.get_or_compute(&cf, || {
+                    thread::sleep(Duration::from_millis(20));
+                    Err(CalcError::division_by_zero())
+                })
+            }));
+        }
+
+        for h in handles {
+            let r = h.join().unwrap();
+            let err = r.unwrap_err();
+            assert_eq!(err.message, "division by zero");
+            assert!(!err.message.contains("cache backend error"));
+            assert_eq!(err.kind, crate::core::types::ErrorKind::DivisionByZero);
+        }
+        // 错误不写入缓存
         assert_eq!(cache.get(&cf), None);
-        // 写入后 → Some
-        cache.insert(&cf, &Ok(EvalResult::Scalar(3.0)));
-        assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(3.0)));
+    }
+
+    // ===== 字节权重与大结果准入 =====
+
+    #[test]
+    fn test_large_result_not_cached_but_returned() {
+        // 超过 MAX_CACHEABLE_BYTES（256KB）的结果跳过写入，但求值结果原样返回
+        let cache = CacheManager::new();
+        let cf = CanonicalForm::new("(big-matrix)");
+        // 512×512 f64 ≈ 2MB > 256KB
+        let big = EvalResult::Matrix(vec![vec![0.0f64; 512]; 512]);
+
+        cache.insert(&cf, &Ok(big.clone()));
+        assert_eq!(cache.entry_count(), 0, "大结果不应写入缓存（准入阈值策略）");
+
+        // get_or_compute 路径：由 weigher 字节预算兜底驱逐，但返回值不受影响
+        let big2 = big.clone();
+        let r = cache.get_or_compute(&cf, || Ok(big2)).unwrap();
+        assert!(matches!(r, EvalResult::Matrix(_)));
     }
 
     #[test]
-    fn test_insert_never_panics_on_normal_path() {
-        // H-1 契约：insert 在正常路径下不 panic
-        let cache = CacheManager::new();
-        let cf = CanonicalForm::new("(+ 100 1)");
-        // 写入 Ok
-        cache.insert(&cf, &Ok(EvalResult::Scalar(101.0)));
-        assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(101.0)));
-        // 写入 Err（应被忽略，不写入缓存）
-        cache.insert(&cf, &Err(CalcError::division_by_zero()));
-        assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(101.0)));
+    fn test_byte_weight_budget_bounds_entries() {
+        // 4KB 预算 + 每条 8KB 权重的条目 → 至多容纳 1 条
+        let cache = CacheManager::with_capacity_bytes(4096);
+        for i in 0..6 {
+            let cf = CanonicalForm::new(format!("(heavy {})", i).as_str());
+            let heavy = EvalResult::Matrix(vec![vec![0.0f64; 1024]; 1]); // ~8KB + BASE
+            cache.insert(&cf, &Ok(heavy));
+        }
+        assert!(
+            cache.entry_count() <= 2,
+            "字节预算应限制条目数（8KB 条目 / 4KB 预算），实际 {}",
+            cache.entry_count()
+        );
     }
 
     #[test]
-    fn test_entry_count_never_panics_on_normal_path() {
-        // H-1 契约：entry_count 在正常路径下不 panic，返回 u64
+    fn test_stats_reports_hits_and_misses() {
         let cache = CacheManager::new();
-        // 空缓存 → 0
-        let count = cache.entry_count();
-        assert_eq!(count, 0);
-        // 写入后仍可调用且不 panic
-        let cf = CanonicalForm::new("(+ 5 7)");
-        cache.insert(&cf, &Ok(EvalResult::Scalar(12.0)));
-        let _count_after = cache.entry_count();
+        let cf = CanonicalForm::new("(stats-test 1)");
+        let _ = cache.get(&cf); // miss
+        cache.insert(&cf, &Ok(EvalResult::Scalar(1.0)));
+        let _ = cache.get(&cf); // hit
+
+        let stats = cache.stats();
+        assert!(stats.misses >= 1, "应记录至少一次 miss");
+        assert!(stats.hits >= 1, "应记录至少一次 hit");
+        assert_eq!(stats.entry_count, cache.entry_count());
+    }
+
+    // ===== 估算函数 =====
+
+    #[test]
+    fn test_estimate_result_bytes_variants() {
+        assert_eq!(estimate_result_bytes(&EvalResult::Scalar(1.0)), 16);
+        assert!(
+            estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 100]; 100])) > 100 * 100 * 8,
+            "矩阵估算应随尺寸增长"
+        );
+        assert!(
+            estimate_result_bytes(&EvalResult::BigInt(num_bigint::BigInt::from(1u8))) > 0,
+            "BigInt 估算非负"
+        );
+        assert!(
+            estimate_result_bytes(&EvalResult::Json(serde_json::json!({"a": 1}))) > 0,
+            "Json 估算非负"
+        );
+        // 单调性：更大的矩阵估算更大
+        let small = estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 10]]));
+        let large = estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 100]]));
+        assert!(large > small);
     }
 
     // ===== proptest 属性测试 =====
@@ -658,7 +633,6 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
-        // 交换律：a+b 与 b+a 共享缓存（使用变量避免常量折叠）
         #[test]
         fn prop_commutative_expressions_share_cache(
             a in (0u8..26u8).prop_map(|i| ((b'a' + i) as char).to_string()),
@@ -673,7 +647,6 @@ mod tests {
             prop_assert_eq!(cache.get(&cf_ba), Some(EvalResult::Scalar(5.0)));
         }
 
-        // 缓存命中可重复：同一规范化 Key 二次求值返回缓存值
         #[test]
         fn prop_cache_hit_repeatable(
             x in (1u8..100u8).prop_map(|i| format!("{}+{}", i, i+1))
@@ -685,7 +658,6 @@ mod tests {
             prop_assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(42.0)));
         }
 
-        // 不同表达式不应共享缓存（排除碰撞概率）
         #[test]
         fn prop_distinct_expressions_distinct_cache(
             a in (1u8..50u8).prop_map(|i| format!("{}*2", i)),

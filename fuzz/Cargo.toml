@@ -31,6 +31,17 @@ path = "fuzz_targets/numeric_boundary_fuzz.rs"
 name = "matrix_dim_fuzz"
 path = "fuzz_targets/matrix_dim_fuzz.rs"
 
+[[bin]]
+name = "list_depth_fuzz"
+path = "fuzz_targets/list_depth_fuzz.rs"
+
 [dependencies]
 libfuzzer-sys = { version = "0.4", default-features = false }
 calnexus = { path = ".." }
+
+# 与根 Cargo.toml 同步的本地补丁：fuzz 为独立工作区，无法继承根的 patch 段，
+# 而 oxcache byte-weight 等 feature 仅存在于本地先行改动中，crates.io 发布版尚未携带
+[patch.crates-io]
+sdforge = { path = "/home/kirky/projects/base/sdforge" }
+limiteron = { path = "/home/kirky/projects/base/limiteron" }
+oxcache = { path = "/home/kirky/projects/base/oxcache" }

@@ -2,4 +2,4 @@
 source: tests/snapshot_tests.rs
 expression: stdout
 ---
-{"result":5,"domain":"arithmetic","cache":"miss"}
+{"cache":"miss","domain":"arithmetic","result":5.0,"v":1}

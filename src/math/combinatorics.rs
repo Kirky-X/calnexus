@@ -166,45 +166,69 @@ mod tests {
 
     #[test]
     fn test_perm_basic() {
-        assert_eq!(perm(&BigInt::from(5), &BigInt::from(2)).unwrap(), BigInt::from(20));
+        assert_eq!(
+            perm(&BigInt::from(5), &BigInt::from(2)).unwrap(),
+            BigInt::from(20)
+        );
     }
 
     #[test]
     fn test_perm_k_zero() {
-        assert_eq!(perm(&BigInt::from(5), &BigInt::from(0)).unwrap(), BigInt::from(1));
+        assert_eq!(
+            perm(&BigInt::from(5), &BigInt::from(0)).unwrap(),
+            BigInt::from(1)
+        );
     }
 
     #[test]
     fn test_perm_k_greater_than_n() {
-        assert_eq!(perm(&BigInt::from(3), &BigInt::from(5)).unwrap(), BigInt::from(0));
+        assert_eq!(
+            perm(&BigInt::from(3), &BigInt::from(5)).unwrap(),
+            BigInt::from(0)
+        );
     }
 
     #[test]
     fn test_perm_n_equals_k() {
         // P(5,5) = 5! = 120
-        assert_eq!(perm(&BigInt::from(5), &BigInt::from(5)).unwrap(), BigInt::from(120));
+        assert_eq!(
+            perm(&BigInt::from(5), &BigInt::from(5)).unwrap(),
+            BigInt::from(120)
+        );
     }
 
     // ===== comb =====
 
     #[test]
     fn test_comb_basic() {
-        assert_eq!(comb(&BigInt::from(10), &BigInt::from(3)).unwrap(), BigInt::from(120));
+        assert_eq!(
+            comb(&BigInt::from(10), &BigInt::from(3)).unwrap(),
+            BigInt::from(120)
+        );
     }
 
     #[test]
     fn test_comb_k_zero() {
-        assert_eq!(comb(&BigInt::from(5), &BigInt::from(0)).unwrap(), BigInt::from(1));
+        assert_eq!(
+            comb(&BigInt::from(5), &BigInt::from(0)).unwrap(),
+            BigInt::from(1)
+        );
     }
 
     #[test]
     fn test_comb_k_equals_n() {
-        assert_eq!(comb(&BigInt::from(5), &BigInt::from(5)).unwrap(), BigInt::from(1));
+        assert_eq!(
+            comb(&BigInt::from(5), &BigInt::from(5)).unwrap(),
+            BigInt::from(1)
+        );
     }
 
     #[test]
     fn test_comb_k_greater_than_n() {
-        assert_eq!(comb(&BigInt::from(3), &BigInt::from(5)).unwrap(), BigInt::from(0));
+        assert_eq!(
+            comb(&BigInt::from(3), &BigInt::from(5)).unwrap(),
+            BigInt::from(0)
+        );
     }
 
     #[test]
@@ -246,29 +270,53 @@ mod tests {
 
     #[test]
     fn test_stirling_zero_zero() {
-        assert_eq!(stirling_second(&BigInt::from(0), &BigInt::from(0)).unwrap(), BigInt::from(1));
+        assert_eq!(
+            stirling_second(&BigInt::from(0), &BigInt::from(0)).unwrap(),
+            BigInt::from(1)
+        );
     }
 
     #[test]
     fn test_stirling_n_zero_k_positive() {
-        assert_eq!(stirling_second(&BigInt::from(0), &BigInt::from(5)).unwrap(), BigInt::from(0));
+        assert_eq!(
+            stirling_second(&BigInt::from(0), &BigInt::from(5)).unwrap(),
+            BigInt::from(0)
+        );
     }
 
     #[test]
     fn test_stirling_k_zero_n_positive() {
-        assert_eq!(stirling_second(&BigInt::from(5), &BigInt::from(0)).unwrap(), BigInt::from(0));
+        assert_eq!(
+            stirling_second(&BigInt::from(5), &BigInt::from(0)).unwrap(),
+            BigInt::from(0)
+        );
     }
 
     #[test]
     fn test_stirling_k_greater_than_n() {
-        assert_eq!(stirling_second(&BigInt::from(2), &BigInt::from(5)).unwrap(), BigInt::from(0));
+        assert_eq!(
+            stirling_second(&BigInt::from(2), &BigInt::from(5)).unwrap(),
+            BigInt::from(0)
+        );
     }
 
     #[test]
     fn test_stirling_known_values() {
-        assert_eq!(stirling_second(&BigInt::from(3), &BigInt::from(2)).unwrap(), BigInt::from(3));
-        assert_eq!(stirling_second(&BigInt::from(4), &BigInt::from(2)).unwrap(), BigInt::from(7));
-        assert_eq!(stirling_second(&BigInt::from(5), &BigInt::from(2)).unwrap(), BigInt::from(15));
-        assert_eq!(stirling_second(&BigInt::from(4), &BigInt::from(3)).unwrap(), BigInt::from(6));
+        assert_eq!(
+            stirling_second(&BigInt::from(3), &BigInt::from(2)).unwrap(),
+            BigInt::from(3)
+        );
+        assert_eq!(
+            stirling_second(&BigInt::from(4), &BigInt::from(2)).unwrap(),
+            BigInt::from(7)
+        );
+        assert_eq!(
+            stirling_second(&BigInt::from(5), &BigInt::from(2)).unwrap(),
+            BigInt::from(15)
+        );
+        assert_eq!(
+            stirling_second(&BigInt::from(4), &BigInt::from(3)).unwrap(),
+            BigInt::from(6)
+        );
     }
 }

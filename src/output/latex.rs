@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! LaTeX 输出格式化器（v1.1 新增）。
+//! LaTeX 输出格式化器。
 //!
 //! 将 `EvalResult` 渲染为 LaTeX 字符串，覆盖所有变体：
 //! - 标量 → `42` 或 `3.14`
@@ -16,7 +16,7 @@
 //! 设计依据：
 //! - PRD §3.2.4 / §4.1.1：`--latex "diff(x^2,x)"` → `\frac{d}{dx}\left(x^{2}\right) = 2x`
 //! - ADD §3.4：`CalcResult::LaTeX(String)` 变体
-//! - design.md D3：LaTeX 由 SymbolicDomain 直接产出（domain 拥有 AST 上下文）
+//! - LaTeX 由 SymbolicDomain 直接产出（domain 拥有 AST 上下文）
 
 use crate::core::{AstNode, EvalResult};
 use num_traits::Signed;
@@ -413,13 +413,13 @@ pub fn format_latex(
         EvalResult::ComplexList(c) => format_latex_complex_list(c),
         EvalResult::Symbolic(s) => {
             // 符号运算：根据 AST 顶层 FunctionCall 名选择包装
-            if let AstNode::FunctionCall(name, _) = ast {
-                if matches!(
+            if let AstNode::FunctionCall(name, _) = ast
+                && matches!(
                     name.as_str(),
                     "diff" | "integrate" | "limit" | "series" | "taylor"
-                ) {
-                    return format_latex_symbolic(name, ast, s);
-                }
+                )
+            {
+                return format_latex_symbolic(name, ast, s);
             }
             symbolic_str_to_latex(s)
         }
@@ -428,7 +428,7 @@ pub fn format_latex(
         // Json 是结构化复合结果（lu/qr/eig/svd 分解），LaTeX 无标准矩阵分解表示形式；
         // 主要走 --json 输出，此处 fallback 输出 JSON 字符串。
         EvalResult::Json(v) => v.to_string(),
-        // DateTime（time-unit-fx-domains D2）：RFC3339 字符串用 \text{} 包装，
+        // DateTime：RFC3339 字符串用 \text{} 包装，
         // 避免 LaTeX 数学模式将日期/时间中的 `-`、`:` 解释为减法/除法。
         EvalResult::DateTime(s) => format!("\\text{{{}}}", s),
     }

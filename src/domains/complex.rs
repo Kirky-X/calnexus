@@ -4,14 +4,16 @@
 //!
 //! 设计依据：
 //! - complex-domain spec：10 个 requirements / 24 个 scenarios
-//! - design.md D4：基于 `num_complex::Complex64` 实现，priority=30
+//! - 基于 `num_complex::Complex64` 实现，priority=30
 //!
 //! 路由策略：AST 含 `Complex` 节点或 `complex()`/`conj()`/`arg()` 函数调用时路由至本域。
 //! `abs()`/`exp()`/`ln()` 仅当参数含 `Complex` 节点时路由至本域。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use num_complex::Complex64;
 
 use crate::math::complex as math_complex;
@@ -59,7 +61,7 @@ impl CalculationDomain for ComplexDomain {
 impl ComplexDomain {
     /// 递归求值 AST 节点，返回标量或复数。
     ///
-    /// 标量与复数的区分规则（spec Req 9：混合运算）：
+    /// 标量与复数的区分规则（spec 混合运算）：
     /// - `abs()`/`arg()` 返回标量
     /// - `conj()`/`exp()`/`ln()`/`complex()` 返回复数
     /// - `Complex` 节点返回复数，`Number` 节点返回标量
@@ -136,7 +138,7 @@ impl ComplexDomain {
                     return Err(CalcError::domain(
                         "mod not supported in complex domain".to_string(),
                     )
-                    .with_i18n("msg.complex.mod_not_supported_scalar", vec![]))
+                    .with_i18n("msg.complex.mod_not_supported_scalar", vec![]));
                 }
             };
             return Ok(ComplexValue::Scalar(result));
@@ -161,7 +163,7 @@ impl ComplexDomain {
                 return Err(
                     CalcError::domain("mod not supported for complex numbers".to_string())
                         .with_i18n("msg.complex.mod_not_supported_complex", vec![]),
-                )
+                );
             }
         };
         Ok(ComplexValue::Complex(result))
@@ -193,7 +195,10 @@ impl ComplexDomain {
                         return Err(CalcError::domain(
                             "complex() requires scalar arguments".to_string(),
                         )
-                        .with_i18n("msg.output.requires_scalar", vec![]))
+                        .with_i18n(
+                            "msg.output.requires_scalar",
+                            vec![("name".to_string(), "complex()".to_string())],
+                        ));
                     }
                 };
                 let im = match self.eval(&args[1], ctx)? {
@@ -202,7 +207,10 @@ impl ComplexDomain {
                         return Err(CalcError::domain(
                             "complex() requires scalar arguments".to_string(),
                         )
-                        .with_i18n("msg.output.requires_scalar", vec![]))
+                        .with_i18n(
+                            "msg.output.requires_scalar",
+                            vec![("name".to_string(), "complex()".to_string())],
+                        ));
                     }
                 };
                 Ok(ComplexValue::Complex(Complex64::new(re, im)))
@@ -258,7 +266,7 @@ impl ComplexDomain {
 
 /// 内部求值结果：标量或复数。
 ///
-/// 用于区分 `abs()`/`arg()` 返回标量与其他运算返回复数（spec Req 9）。
+/// 用于区分 `abs()`/`arg()` 返回标量与其他运算返回复数。
 enum ComplexValue {
     Scalar(f64),
     Complex(Complex64),
@@ -276,7 +284,7 @@ impl ComplexValue {
 
 /// 递归检查 AST 是否应路由至 ComplexDomain。
 ///
-/// 路由条件（spec Req 8）：
+/// 路由条件：
 /// - 含 `Complex` 节点
 /// - 含 `complex()`/`conj()`/`arg()` 函数调用（复数专用函数）
 /// - `abs()`/`exp()`/`ln()` 的参数含 `Complex` 节点（共享函数，仅复数参数时路由）
@@ -308,8 +316,8 @@ fn contains_complex(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     /// 测试浮点近似相等（默认容差 1e-10）。
     fn assert_approx(actual: f64, expected: f64) {
@@ -351,21 +359,21 @@ mod tests {
 
     #[test]
     fn test_complex_literal_standard() {
-        // 3+4i → Complex(3, 4)（Req 1 Scen 1）
+        // 3+4i → Complex(3, 4)
         let ast = parse("3+4i").unwrap();
         assert_eq!(ast, AstNode::Complex(3.0, 4.0));
     }
 
     #[test]
     fn test_complex_literal_pure_imaginary() {
-        // 2i → Complex(0, 2)（Req 1 Scen 2）
+        // 2i → Complex(0, 2)
         let ast = parse("2i").unwrap();
         assert_eq!(ast, AstNode::Complex(0.0, 2.0));
     }
 
     #[test]
     fn test_real_number_not_route_to_complex() {
-        // 5 → Number(5)，不路由到 ComplexDomain（Req 1 Scen 3）
+        // 5 → Number(5)，不路由到 ComplexDomain
         let ast = parse("5").unwrap();
         assert_eq!(ast, AstNode::Number(5.0));
         let domain = ComplexDomain;
@@ -376,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_complex_addition() {
-        // (1+2i) + (3+4i) → 4+6i（Req 2 Scen 1）
+        // (1+2i) + (3+4i) → 4+6i
         let ast = parse("(1+2i) + (3+4i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -385,7 +393,7 @@ mod tests {
 
     #[test]
     fn test_complex_subtraction() {
-        // (1+2i) - (3+4i) → -2-2i（Req 2 Scen 2）
+        // (1+2i) - (3+4i) → -2-2i
         let ast = parse("(1+2i) - (3+4i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -394,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_complex_multiplication() {
-        // (1+2i) * (3+4i) → -5+10i（Req 2 Scen 3）
+        // (1+2i) * (3+4i) → -5+10i
         let ast = parse("(1+2i) * (3+4i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -403,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_complex_division() {
-        // (1+2i) / (3+4i) → 0.44+0.08i（Req 2 Scen 4）
+        // (1+2i) / (3+4i) → 0.44+0.08i
         let ast = parse("(1+2i) / (3+4i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -414,7 +422,7 @@ mod tests {
 
     #[test]
     fn test_complex_abs_standard() {
-        // abs(3+4i) → 5.0（Req 3 Scen 1）
+        // abs(3+4i) → 5.0
         let ast = parse("abs(3+4i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -423,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_complex_abs_pure_imaginary() {
-        // abs(0+3i) → 3.0（Req 3 Scen 2）
+        // abs(0+3i) → 3.0
         let ast = parse("abs(0+3i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -434,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_complex_arg_first_quadrant() {
-        // arg(1+1i) → pi/4（Req 4 Scen 1）
+        // arg(1+1i) → pi/4
         let ast = parse("arg(1+1i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -443,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_complex_arg_positive_real() {
-        // arg(2+0i) → 0.0（Req 4 Scen 2）
+        // arg(2+0i) → 0.0
         let ast = parse("arg(2+0i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -454,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_complex_conjugate_standard() {
-        // conj(3+4i) → 3-4i（Req 5 Scen 1）
+        // conj(3+4i) → 3-4i
         let ast = parse("conj(3+4i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -463,7 +471,7 @@ mod tests {
 
     #[test]
     fn test_complex_conjugate_pure_real() {
-        // conj(5+0i) → 5+0i（Req 5 Scen 2）
+        // conj(5+0i) → 5+0i
         let ast = parse("conj(5+0i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -474,7 +482,7 @@ mod tests {
 
     #[test]
     fn test_complex_exp_euler_identity() {
-        // exp(complex(0,1)*pi) → -1+0i（Req 6 Scen 1，欧拉公式恒等式）
+        // exp(complex(0,1)*pi) → -1+0i（欧拉公式恒等式）
         // 等价于数学上的 exp(i*pi) = -1
         let ast = parse("exp(complex(0,1)*pi)").unwrap();
         let domain = ComplexDomain;
@@ -484,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_complex_exp_general() {
-        // exp(1+1i) → 约 2.718+2.718i（Req 6 Scen 2）
+        // exp(1+1i) → 约 2.718+2.718i
         let ast = parse("exp(1+1i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -497,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_complex_ln_one_plus_i() {
-        // ln(1+1i) → 约 0.347+0.785i（Req 7 Scen 1）
+        // ln(1+1i) → 约 0.347+0.785i
         let ast = parse("ln(1+1i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -508,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_complex_ln_positive_real() {
-        // ln(2+0i) → 约 0.693+0i（Req 7 Scen 2）
+        // ln(2+0i) → 约 0.693+0i
         let ast = parse("ln(2+0i)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -519,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_route_complex_node() {
-        // 3+4i + 1 → 含 Complex 节点，路由到 ComplexDomain（Req 8 Scen 1）
+        // 3+4i + 1 → 含 Complex 节点，路由到 ComplexDomain
         let ast = parse("3+4i + 1").unwrap();
         let domain = ComplexDomain;
         assert!(domain.supports(&ast));
@@ -527,7 +535,7 @@ mod tests {
 
     #[test]
     fn test_route_complex_function() {
-        // conj(2+3i) → 含 conj() 函数，路由到 ComplexDomain（Req 8 Scen 2）
+        // conj(2+3i) → 含 conj() 函数，路由到 ComplexDomain
         let ast = parse("conj(2+3i)").unwrap();
         let domain = ComplexDomain;
         assert!(domain.supports(&ast));
@@ -537,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_mixed_abs_complex_plus_real() {
-        // abs(3+4i) + 2 → 标量 7.0（Req 9 Scen 1）
+        // abs(3+4i) + 2 → 标量 7.0
         let ast = parse("abs(3+4i) + 2").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -546,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_mixed_complex_plus_real() {
-        // (1+2i) + 3 → 4+2i（Req 9 Scen 2）
+        // (1+2i) + 3 → 4+2i
         let ast = parse("(1+2i) + 3").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -557,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_unsupported_matrix_node() {
-        // 矩阵节点 → DomainError（Req 10 Scen 1）
+        // 矩阵节点 → DomainError
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -571,7 +579,7 @@ mod tests {
 
     #[test]
     fn test_invalid_complex_literal_parse_error() {
-        // 3+*4i → 语法错误（Req 10 Scen 2，非法复数字面量）
+        // 3+*4i → 语法错误（非法复数字面量）
         let result = parse("3+*4i");
         let e = result.unwrap_err();
         assert!(
@@ -653,7 +661,7 @@ mod tests {
         assert_complex_approx(&result, 0.0, 2.0);
     }
 
-    // ===== M-1 修复：复数 Pow 路径补 0^0 和 is_finite 检查 =====
+    // ===== 复数 Pow 路径补 0^0 和 is_finite 检查 =====
 
     #[test]
     fn test_complex_pow_zero_zero_returns_scalar_one() {
@@ -735,7 +743,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
     }
 
-    // ===== 额外覆盖：pi/e 自动绑定（ctx 无 pi/e 时触发）=====
+    // ===== 额外覆盖：pi/e 自动绑定（ctx 无 pi/e 时触发） =====
 
     #[test]
     fn test_pi_e_auto_binding() {
@@ -776,7 +784,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
-    // ===== 额外覆盖：标量取负（Neg on Scalar）=====
+    // ===== 额外覆盖：标量取负（Neg on Scalar） =====
 
     #[test]
     fn test_neg_on_scalar_in_complex() {
@@ -794,7 +802,7 @@ mod tests {
         assert_complex_approx(&result, -2.0, 2.0);
     }
 
-    // ===== 额外覆盖：标量二元运算（Sub, Mul, Div, Pow, Mod）=====
+    // ===== 额外覆盖：标量二元运算（Sub, Mul, Div, Pow, Mod） =====
 
     #[test]
     fn test_scalar_sub_in_complex() {
@@ -983,7 +991,7 @@ mod tests {
         assert!(domain.supports(&ast));
     }
 
-    // ===== 覆盖测试辅助函数的 panic 分支（lines 294, 302）=====
+    // ===== 覆盖测试辅助函数的 panic 分支（lines 294, 302） =====
 
     #[test]
     #[should_panic(expected = "expected Complex result")]
@@ -999,14 +1007,14 @@ mod tests {
         assert_scalar(&EvalResult::Complex(1.0, 2.0), 1.0);
     }
 
-    // ===== proptest 属性测试（task 12.7）=====
+    // ===== proptest 属性测试（task 12.7） =====
 
     use proptest::prelude::*;
 
     proptest! {
         #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
-        /// 属性：共轭的共轭 = 原复数（spec Req 5 数学性质）
+        /// 属性：共轭的共轭 = 原复数（spec 数学性质）
         #[test]
         fn prop_double_conjugate_identity(re in -1e6f64..1e6, im in -1e6f64..1e6) {
             let ast = AstNode::FunctionCall(
@@ -1027,7 +1035,7 @@ mod tests {
             }
         }
 
-        /// 属性：模非负（spec Req 3 数学性质）
+        /// 属性：模非负（spec 数学性质）
         #[test]
         fn prop_abs_non_negative(re in -1e6f64..1e6, im in -1e6f64..1e6) {
             let ast = AstNode::FunctionCall(

@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
-//! Cache benchmarks (TEST.md §6, BENCH-002 / BENCH-003).
+//! Cache benchmarks (TEST.md §7).
 //!
 //! 运行：`cargo bench --bench cache_bench`
 //! 基线：`target/criterion/` 目录。
 
-use calnexus::{parse, AstCanonicalizer, CacheManager, EvalContext};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use calnexus::{AstCanonicalizer, CacheManager, EvalContext, parse};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-/// BENCH-002: cache hit < 100μs（第二次求值命中缓存）
+/// cache hit < 100μs（第二次求值命中缓存）
 fn bench_cache_hit(c: &mut Criterion) {
     let expressions = vec!["2+3", "sin(1.5)+cos(0.5)", "(2+9)*7-6", "100!"];
     let mut group = c.benchmark_group("cache_hit");
@@ -33,7 +33,7 @@ fn bench_cache_hit(c: &mut Criterion) {
     group.finish();
 }
 
-/// BENCH-003: cache miss < 1ms（第一次求值，冷启动）
+/// cache miss < 1ms（第一次求值，冷启动）
 fn bench_cache_miss(c: &mut Criterion) {
     let expressions = vec![
         "2+3",

@@ -2,7 +2,7 @@
 
 //! 单位换算核心数学函数。
 //!
-//! 设计依据：design.md D5（8 量纲 SI 基准系数表 + 温度仿射特例）
+//! 设计依据：8 量纲 SI 基准系数表 + 温度仿射特例
 //! Feature 门控：`unit = []`
 //!
 //! 从 `domains/unit.rs` 提取的纯函数：单位换算逻辑 + 错误构造。
@@ -11,7 +11,7 @@
 use crate::core::CalcError;
 
 use super::unit_table::{
-    all_unit_names, from_kelvin, is_temperature_unit, levenshtein, lookup, to_kelvin, Dimension,
+    Dimension, all_unit_names, from_kelvin, is_temperature_unit, levenshtein, lookup, to_kelvin,
 };
 
 /// 温度单位候选集（用于 "did you mean" 建议）。
@@ -28,7 +28,11 @@ pub fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError>
         return Err(CalcError::domain(format!(
             "convert_value requires finite value, got {}",
             value
-        )));
+        ))
+        .with_i18n(
+            "msg.unit.non_finite_value",
+            vec![("value".to_string(), value.to_string())],
+        ));
     }
     let from_is_temp = is_temperature_unit(from).unwrap_or(false);
     let to_is_temp = is_temperature_unit(to).unwrap_or(false);

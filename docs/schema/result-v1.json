@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kirky-x/calnexus/docs/schema/result-v1.json",
+  "title": "CalNexus --json output contract (v1)",
+  "description": "Schema for `calnexus --json` stdout output (success and error). Version field `v` is 1 for this contract.",
+  "oneOf": [
+    { "$ref": "#/$defs/success" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "success": {
+      "type": "object",
+      "required": ["v", "result", "domain", "cache"],
+      "properties": {
+        "v": { "const": 1 },
+        "result": {
+          "description": "Scalar/Complex are numeric; all other variants are strings holding the text form (same as CLI text output).",
+          "oneOf": [
+            { "type": "number" },
+            {
+              "type": "object",
+              "description": "Complex: re + im*i",
+              "required": ["re", "im"],
+              "properties": {
+                "re": { "type": "number" },
+                "im": { "type": "number" }
+              }
+            },
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "domain": {
+          "type": "string",
+          "description": "Computing domain that handled the expression: arithmetic | scientific | statistics | precision | number_theory | combinatorics | polynomial | complex | matrix | vector | symbolic | time | unit | fx (optional domains are feature-gated)."
+        },
+        "cache": { "enum": ["hit", "miss"] }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["v", "error"],
+      "properties": {
+        "v": { "const": 1 },
+        "error": {
+          "type": "object",
+          "required": ["kind", "message", "exit_code"],
+          "properties": {
+            "kind": {
+              "enum": [
+                "Parse",
+                "Eval",
+                "Overflow",
+                "DivisionByZero",
+                "Domain",
+                "Depth",
+                "NaNOrInf",
+                "UndefinedSymbol",
+                "Timeout",
+                "Usage"
+              ]
+            },
+            "message": { "type": "string" },
+            "span": {
+              "type": "object",
+              "description": "Character offsets into the original expression (present for parse errors).",
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "type": "integer", "minimum": 0 },
+                "end": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "hint": { "type": "string" },
+            "source": {
+              "type": "string",
+              "description": "Underlying error summary (network/io/serialization) when present."
+            },
+            "exit_code": {
+              "enum": [1, 2, 3],
+              "description": "1=evaluation error, 2=usage/system error, 3=timeout/unavailable."
+            }
+          }
+        }
+      }
+    }
+  }
+}

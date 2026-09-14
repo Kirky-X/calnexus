@@ -3,14 +3,14 @@
 //! MCP server 启动：`evaluate` tool 由 `#[forge]` 宏声明（evaluate.rs），
 //! 本模块仅负责构建/启动 SdForgeMcpServer（stdio 传输）。
 //!
-//! spec.md R-sdforge-003 定义接口契约。
+//! 定义接口契约。
 
 use super::ServerError;
 use sdforge::mcp::SdForgeMcpServer;
 
 /// 构建 CalNexus MCP server：`init_all_plugins()` + `sdforge::mcp::build()`。
 ///
-/// `init_all_plugins()` 替代 p1 的 `preserve_mcp_inventory()` 链接器 hack，
+/// `init_all_plugins()` 替代 `preserve_mcp_inventory()` 链接器 hack，
 /// 确保 `#[forge]` 注册的 evaluate tool 被 `mcp::build()` 收集。
 pub fn build_mcp_server() -> SdForgeMcpServer {
     sdforge::init_all_plugins();
@@ -51,7 +51,7 @@ impl McpServer {
 
     /// 同步入口：创建 multi-thread tokio runtime 阻塞运行 `start()`。
     /// 供 CLI `--serve-mcp` flag 调用。multi-thread 是 `#[forge]` MCP `call()`
-    /// 内部 `block_in_place` 的要求（spec.md R-sdforge-007 约束）。
+    /// 内部 `block_in_place` 的要求（约束）。
     pub fn run(&self) -> Result<(), ServerError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -96,7 +96,7 @@ mod tests {
         assert_eq!(server.server_name(), "custom-mcp");
     }
 
-    /// T002(h) spike gate：验证 `#[forge]` 宏生成的 evaluate tool 经
+    /// 验证 `#[forge]` 宏生成的 evaluate tool 经
     /// `init_all_plugins()` + inventory 收集后注册成功，且调用无 runtime panic。
     ///
     /// `call_tool_internal` → `tool().call()` 内部 `Handle::try_current()` 为 Err
@@ -109,9 +109,9 @@ mod tests {
     #[test]
     fn test_forge_evaluate_registers_and_calls() {
         let server = build_mcp_server();
-        // fx feature 启用时注册 3 个 tool（evaluate + fx_budget + fx_pricing）
-        // 否则仅 1 个（evaluate）
-        let expected_count = if cfg!(feature = "fx") { 3 } else { 1 };
+        // fx feature 启用时注册 4 个 tool（evaluate + list_functions + fx_budget + fx_pricing）
+        // 否则 2 个（evaluate + list_functions）
+        let expected_count = if cfg!(feature = "fx") { 4 } else { 2 };
         assert_eq!(
             server.tool_count(),
             expected_count,

@@ -1,3 +1,5 @@
+// CalcError 144 字节，函数签名触发 result_large_err——与 lib.rs 同论证
+#![allow(clippy::result_large_err)]
 // Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
 //! 端到端集成测试：parse → canonicalize → route → evaluate 全链路传递 numerical 分解函数。
@@ -10,7 +12,7 @@
 mod common;
 use common::default_router;
 
-use calnexus::{parse, AstCanonicalizer, CacheManager, EvalContext, EvalResult};
+use calnexus::{AstCanonicalizer, CacheManager, EvalContext, EvalResult, parse};
 
 /// 全链路求值：parse → canonicalize → cache → route → evaluate（router 含 MatrixDomain）。
 fn evaluate_full(expr: &str) -> Result<EvalResult, calnexus::CalcError> {
@@ -85,7 +87,7 @@ fn solve_end_to_end_returns_vector_satisfying_ax_eq_b() {
 
 #[test]
 fn precision_wrapping_numerical_end_to_end_errors() {
-    // T009 端到端：precision(50, eig(M)) 经路由（Matrix priority 30 抢）→ 专门 f64 错误
+    // 端到端：precision(50, eig(M)) 经路由（Matrix priority 30 抢）→ 专门 f64 错误
     let r = evaluate_full("precision(50, eig([[2,1],[1,2]]))");
     assert!(r.is_err());
     assert!(

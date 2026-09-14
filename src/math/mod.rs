@@ -15,9 +15,9 @@ pub mod number_theory;
 pub mod polynomial;
 pub mod precision;
 pub mod scientific;
+pub mod solvers;
 pub mod statistics;
 pub mod symbolic;
-pub mod solvers;
 pub mod vector;
 
 // feature-gated 可选域

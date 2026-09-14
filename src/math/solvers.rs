@@ -35,8 +35,13 @@ where
         let dfx = df(x);
         if dfx.abs() < 1e-30 {
             return Err(CalcError::domain(format!(
-                "newton_raphson: derivative is zero at x={}", x
-            )));
+                "newton_raphson: derivative is zero at x={}",
+                x
+            ))
+            .with_i18n(
+                "msg.solvers.newton_derivative_zero",
+                vec![("x".to_string(), x.to_string())],
+            ));
         }
         x -= fx / dfx;
     }
@@ -47,19 +52,17 @@ where
     Err(CalcError::domain(format!(
         "newton_raphson: did not converge after {} iterations",
         max_iter
-    )))
+    ))
+    .with_i18n(
+        "msg.solvers.newton_not_converged",
+        vec![("max_iter".to_string(), max_iter.to_string())],
+    ))
 }
 
 /// 二分法求根。
 ///
 /// 要求 `f(a) · f(b) ≤ 0`，否则返回 `DomainError`。
-pub fn bisection<F>(
-    f: F,
-    a: f64,
-    b: f64,
-    tol: f64,
-    max_iter: usize,
-) -> Result<f64, CalcError>
+pub fn bisection<F>(f: F, a: f64, b: f64, tol: f64, max_iter: usize) -> Result<f64, CalcError>
 where
     F: Fn(f64) -> f64,
 {
@@ -69,8 +72,16 @@ where
     let f_hi = f(hi);
     if f_lo * f_hi > 0.0 {
         return Err(CalcError::domain(format!(
-            "bisection: f({}) and f({}) have the same sign", lo, hi
-        )));
+            "bisection: f({}) and f({}) have the same sign",
+            lo, hi
+        ))
+        .with_i18n(
+            "msg.solvers.bisection_same_sign",
+            vec![
+                ("a".to_string(), lo.to_string()),
+                ("b".to_string(), hi.to_string()),
+            ],
+        ));
     }
     for _ in 0..max_iter {
         let mid = (lo + hi) / 2.0;
@@ -91,13 +102,7 @@ where
 /// Brent 方法求根（逆二次插值 + 二分回退）。
 ///
 /// 要求 `f(a) · f(b) ≤ 0`。
-pub fn brent<F>(
-    f: F,
-    a: f64,
-    b: f64,
-    tol: f64,
-    max_iter: usize,
-) -> Result<f64, CalcError>
+pub fn brent<F>(f: F, a: f64, b: f64, tol: f64, max_iter: usize) -> Result<f64, CalcError>
 where
     F: Fn(f64) -> f64,
 {
@@ -106,9 +111,16 @@ where
     let mut fa = f(a);
     let mut fb = f(b);
     if fa * fb > 0.0 {
-        return Err(CalcError::domain(format!(
-            "brent: f({}) and f({}) have the same sign", a, b
-        )));
+        return Err(
+            CalcError::domain(format!("brent: f({}) and f({}) have the same sign", a, b))
+                .with_i18n(
+                    "msg.solvers.brent_same_sign",
+                    vec![
+                        ("a".to_string(), a.to_string()),
+                        ("b".to_string(), b.to_string()),
+                    ],
+                ),
+        );
     }
     if fa.abs() < fb.abs() {
         std::mem::swap(&mut a, &mut b);
@@ -174,7 +186,11 @@ where
     Err(CalcError::domain(format!(
         "brent: did not converge after {} iterations",
         max_iter
-    )))
+    ))
+    .with_i18n(
+        "msg.solvers.brent_not_converged",
+        vec![("max_iter".to_string(), max_iter.to_string())],
+    ))
 }
 
 #[cfg(test)]
@@ -185,7 +201,10 @@ mod tests {
         assert!(
             (actual - expected).abs() < tol,
             "{}: expected {} but got {} (diff={})",
-            label, expected, actual, (actual - expected).abs()
+            label,
+            expected,
+            actual,
+            (actual - expected).abs()
         );
     }
 
@@ -201,14 +220,7 @@ mod tests {
     #[test]
     fn test_newton_cos_eq_x() {
         // cos(x) = x → x ≈ 0.7390851
-        let root = newton_raphson(
-            |x| x.cos() - x,
-            |x| -x.sin() - 1.0,
-            0.5,
-            1e-12,
-            100,
-        )
-        .unwrap();
+        let root = newton_raphson(|x| x.cos() - x, |x| -x.sin() - 1.0, 0.5, 1e-12, 100).unwrap();
         assert_approx(root, 0.7390851332151607, 1e-10, "cos(x)=x");
     }
 
@@ -222,7 +234,13 @@ mod tests {
     #[test]
     fn test_newton_no_convergence() {
         // f(x) = atan(x) * 100 with very few iterations
-        let result = newton_raphson(|x| x.atan() * 100.0, |x| 100.0 / (1.0 + x * x), 1e10, 1e-12, 2);
+        let result = newton_raphson(
+            |x| x.atan() * 100.0,
+            |x| 100.0 / (1.0 + x * x),
+            1e10,
+            1e-12,
+            2,
+        );
         assert!(result.is_err());
     }
 

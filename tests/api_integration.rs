@@ -94,7 +94,10 @@ fn test_stats_mean() {
 #[test]
 fn test_stats_std() {
     let cn = CalNexus::new();
-    let result = cn.stats().std(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]).unwrap();
+    let result = cn
+        .stats()
+        .std(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0])
+        .unwrap();
     let val = result.as_scalar().unwrap();
     // std dev ≈ 2.0
     assert!((val - 2.0).abs() < 0.1);

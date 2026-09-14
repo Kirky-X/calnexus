@@ -43,9 +43,10 @@ pub fn is_prime(n: &BigInt) -> bool {
 /// - `n < 0` → `Domain`
 pub fn prime_sieve(n: &BigInt) -> Result<Vec<u64>, CalcError> {
     if n.is_negative() {
-        return Err(CalcError::domain(
-            "prime_sieve() requires non-negative argument".to_string(),
-        ));
+        return Err(
+            CalcError::domain("prime_sieve() requires non-negative argument".to_string())
+                .with_i18n("msg.numbertheory.prime_sieve_non_negative", vec![]),
+        );
     }
     let n_u64 = n.to_u64().ok_or(CalcError::overflow())?;
     if n_u64 > MAX_SIEVE_N {
@@ -65,10 +66,15 @@ pub fn mod_inverse(a: &BigInt, m: &BigInt) -> Result<BigInt, CalcError> {
     let m_abs = m.abs();
     match mod_inverse_impl(a, &m_abs) {
         Some(inv) => Ok(inv),
-        None => Err(CalcError::domain(format!(
-            "mod_inverse: {} and {} are not coprime",
-            a, m
-        ))),
+        None => Err(
+            CalcError::domain(format!("mod_inverse: {} and {} are not coprime", a, m)).with_i18n(
+                "msg.numbertheory.mod_inverse_not_coprime",
+                vec![
+                    ("a".to_string(), a.to_string()),
+                    ("m".to_string(), m.to_string()),
+                ],
+            ),
+        ),
     }
 }
 
@@ -81,9 +87,10 @@ pub fn mod_pow(base: &BigInt, exp: &BigInt, m: &BigInt) -> Result<BigInt, CalcEr
         return Err(CalcError::division_by_zero());
     }
     if exp.is_negative() {
-        return Err(CalcError::domain(
-            "mod_pow() requires non-negative exponent".to_string(),
-        ));
+        return Err(
+            CalcError::domain("mod_pow() requires non-negative exponent".to_string())
+                .with_i18n("msg.numbertheory.mod_pow_non_negative", vec![]),
+        );
     }
     let m_abs = m.abs();
     Ok(mod_pow_bigint(base, exp, &m_abs))
@@ -102,19 +109,18 @@ pub fn euler_phi(n: &BigInt) -> BigInt {
 /// 返回最小非负解。模数不必两两互素——不兼容时返回 `DomainError`。
 pub fn crt(remainders: &[BigInt], moduli: &[BigInt]) -> Result<BigInt, CalcError> {
     if remainders.is_empty() || moduli.is_empty() {
-        return Err(CalcError::domain(
-            "crt(): empty input".to_string(),
-        ));
+        return Err(CalcError::domain("crt(): empty input".to_string())
+            .with_i18n("msg.numbertheory.crt_empty", vec![]));
     }
     if remainders.len() != moduli.len() {
-        return Err(CalcError::domain(
-            "crt(): remainders and moduli length mismatch".to_string(),
-        ));
+        return Err(
+            CalcError::domain("crt(): remainders and moduli length mismatch".to_string())
+                .with_i18n("msg.numbertheory.crt_length_mismatch", vec![]),
+        );
     }
     if moduli.iter().any(|m| m.is_zero()) {
-        return Err(CalcError::domain(
-            "crt(): zero modulus".to_string(),
-        ));
+        return Err(CalcError::domain("crt(): zero modulus".to_string())
+            .with_i18n("msg.numbertheory.crt_zero_modulus", vec![]));
     }
     // 迭代两两合并
     let mut cur_r = ((&remainders[0] % &moduli[0]) + &moduli[0]) % &moduli[0];
@@ -128,7 +134,15 @@ pub fn crt(remainders: &[BigInt], moduli: &[BigInt]) -> Result<BigInt, CalcError
             return Err(CalcError::domain(format!(
                 "crt(): incompatible congruences at index {} (gcd={} does not divide diff={})",
                 i, g, diff
-            )));
+            ))
+            .with_i18n(
+                "msg.numbertheory.crt_incompatible",
+                vec![
+                    ("index".to_string(), i.to_string()),
+                    ("gcd".to_string(), g.to_string()),
+                    ("diff".to_string(), diff.to_string()),
+                ],
+            ));
         }
         let lcm = &cur_m / &g * &m_i;
         // cur_r + cur_m * ((diff/g * s) mod (lcm/cur_m))
@@ -148,14 +162,18 @@ pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcEr
         return Err(CalcError::division_by_zero());
     }
     if !is_prime(p) {
-        return Err(CalcError::domain(format!(
-            "discrete_log(): modulus {} is not prime", p
-        )));
+        return Err(
+            CalcError::domain(format!("discrete_log(): modulus {} is not prime", p)).with_i18n(
+                "msg.numbertheory.discrete_log_not_prime",
+                vec![("modulus".to_string(), p.to_string())],
+            ),
+        );
     }
     if g.is_zero() {
-        return Err(CalcError::domain(
-            "discrete_log(): base g must not be zero".to_string(),
-        ));
+        return Err(
+            CalcError::domain("discrete_log(): base g must not be zero".to_string())
+                .with_i18n("msg.numbertheory.discrete_log_base_zero", vec![]),
+        );
     }
     let p_abs = p.abs();
     let one = BigInt::one();
@@ -164,9 +182,7 @@ pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcEr
 
     // m = ⌈√p⌉
     let m = sqrt_bigint(&p_abs) + &one;
-    let m_usize = m.to_usize().ok_or_else(|| {
-        CalcError::overflow()
-    })?;
+    let m_usize = m.to_usize().ok_or_else(CalcError::overflow)?;
 
     // Baby step: table[g^j mod p] = j for j in 0..m
     let mut table = std::collections::HashMap::new();
@@ -179,6 +195,7 @@ pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcEr
     let g_m = mod_pow_bigint(&g_mod, &m, &p_abs);
     let g_m_inv = mod_inverse_impl(&g_m, &p_abs).ok_or_else(|| {
         CalcError::domain("discrete_log(): base not invertible mod p".to_string())
+            .with_i18n("msg.numbertheory.discrete_log_base_not_invertible", vec![])
     })?;
 
     // Giant step: check h * (g^(-m))^i for i in 0..m
@@ -189,9 +206,10 @@ pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcEr
         }
         gamma = (&gamma * &g_m_inv) % &p_abs;
     }
-    Err(CalcError::domain(
-        "discrete_log(): no solution found".to_string(),
-    ))
+    Err(
+        CalcError::domain("discrete_log(): no solution found".to_string())
+            .with_i18n("msg.numbertheory.discrete_log_no_solution", vec![]),
+    )
 }
 
 /// BigInt 整数平方根（⌊√n⌋）。
@@ -299,13 +317,13 @@ fn is_prime_u64(n: u64) -> bool {
     if n == 2 {
         return true;
     }
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         return false;
     }
 
     let mut d = n - 1;
     let mut r = 0u32;
-    while d % 2 == 0 {
+    while d.is_multiple_of(2) {
         d /= 2;
         r += 1;
     }
@@ -568,8 +586,8 @@ mod tests {
     fn test_mod_inverse_negative() {
         let inv = mod_inverse(&BigInt::from(-3), &BigInt::from(11)).unwrap();
         // (-3) * inv ≡ 1 (mod 11)，验证 (inv * (-3) + k*11) == 1
-        let check = ((&inv * BigInt::from(-3)) % BigInt::from(11) + BigInt::from(11))
-            % BigInt::from(11);
+        let check =
+            ((&inv * BigInt::from(-3)) % BigInt::from(11) + BigInt::from(11)) % BigInt::from(11);
         assert_eq!(check, BigInt::from(1));
     }
 
@@ -692,7 +710,10 @@ mod tests {
         // 2^x ≡ 5 (mod 13)
         let x = discrete_log(&BigInt::from(2), &BigInt::from(5), &BigInt::from(13)).unwrap();
         // verify: 2^x mod 13 == 5
-        assert_eq!(mod_pow(&BigInt::from(2), &x, &BigInt::from(13)).unwrap(), BigInt::from(5));
+        assert_eq!(
+            mod_pow(&BigInt::from(2), &x, &BigInt::from(13)).unwrap(),
+            BigInt::from(5)
+        );
     }
 
     #[test]

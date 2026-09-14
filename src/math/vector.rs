@@ -11,8 +11,17 @@ use crate::core::CalcError;
 pub fn dot(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "dot(): dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "dot(): dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.dot_dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     Ok(a.iter().zip(b.iter()).map(|(x, y)| x * y).sum())
 }
@@ -20,7 +29,10 @@ pub fn dot(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
 /// 三维叉积。仅支持 3 维向量。
 pub fn cross(a: &[f64], b: &[f64]) -> Result<Vec<f64>, CalcError> {
     if a.len() != 3 || b.len() != 3 {
-        return Err(CalcError::domain("cross() requires 3-dimensional vectors".to_string()));
+        return Err(
+            CalcError::domain("cross() requires 3-dimensional vectors".to_string())
+                .with_i18n("msg.vector.cross_3d_only", vec![]),
+        );
     }
     Ok(vec![
         a[1] * b[2] - a[2] * b[1],
@@ -38,7 +50,10 @@ pub fn magnitude(v: &[f64]) -> f64 {
 pub fn normalize(v: &[f64]) -> Result<Vec<f64>, CalcError> {
     let norm = magnitude(v);
     if norm < 1e-15 {
-        return Err(CalcError::domain("cannot normalize zero vector".to_string()));
+        return Err(
+            CalcError::domain("cannot normalize zero vector".to_string())
+                .with_i18n("msg.vector.normalize_zero_vector", vec![]),
+        );
     }
     Ok(v.iter().map(|x| x / norm).collect())
 }
@@ -47,8 +62,17 @@ pub fn normalize(v: &[f64]) -> Result<Vec<f64>, CalcError> {
 pub fn vector_add(a: &[f64], b: &[f64]) -> Result<Vec<f64>, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "vector_add: dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "vector_add: dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     Ok(a.iter().zip(b.iter()).map(|(x, y)| x + y).collect())
 }
@@ -57,8 +81,17 @@ pub fn vector_add(a: &[f64], b: &[f64]) -> Result<Vec<f64>, CalcError> {
 pub fn vector_sub(a: &[f64], b: &[f64]) -> Result<Vec<f64>, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "vector_sub: dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "vector_sub: dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     Ok(a.iter().zip(b.iter()).map(|(x, y)| x - y).collect())
 }
@@ -72,13 +105,25 @@ pub fn scalar_mul_vec(v: &[f64], s: f64) -> Vec<f64> {
 pub fn angle(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "angle(): dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "angle(): dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.angle_dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     let norm_a = magnitude(a);
     let norm_b = magnitude(b);
     if norm_a < 1e-15 || norm_b < 1e-15 {
-        return Err(CalcError::domain("angle(): zero vector has no angle".to_string()));
+        return Err(
+            CalcError::domain("angle(): zero vector has no angle".to_string())
+                .with_i18n("msg.vector.angle_zero_vector", vec![]),
+        );
     }
     let cos_theta = dot(a, b)? / (norm_a * norm_b);
     Ok(cos_theta.clamp(-1.0, 1.0).acos())
@@ -87,7 +132,10 @@ pub fn angle(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
 /// 三维混合积 a·(b×c)。仅支持 3 维。
 pub fn scalar_triple(a: &[f64], b: &[f64], c: &[f64]) -> Result<f64, CalcError> {
     if a.len() != 3 || b.len() != 3 || c.len() != 3 {
-        return Err(CalcError::domain("scalar_triple() requires 3-dimensional vectors".to_string()));
+        return Err(CalcError::domain(
+            "scalar_triple() requires 3-dimensional vectors".to_string(),
+        )
+        .with_i18n("msg.vector.scalar_triple_3d_only", vec![]));
     }
     let cr = cross(b, c)?;
     dot(a, &cr)
@@ -97,13 +145,25 @@ pub fn scalar_triple(a: &[f64], b: &[f64], c: &[f64]) -> Result<f64, CalcError> 
 pub fn cosine_similarity(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "cosine_similarity(): dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "cosine_similarity(): dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.cosine_similarity_dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     let norm_a = magnitude(a);
     let norm_b = magnitude(b);
     if norm_a < 1e-15 || norm_b < 1e-15 {
-        return Err(CalcError::domain("cosine_similarity(): zero vector".to_string()));
+        return Err(
+            CalcError::domain("cosine_similarity(): zero vector".to_string())
+                .with_i18n("msg.vector.cosine_similarity_zero_vector", vec![]),
+        );
     }
     let cos = dot(a, b)? / (norm_a * norm_b);
     Ok(cos.clamp(-1.0, 1.0))
@@ -113,12 +173,24 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
 pub fn project(a: &[f64], b: &[f64]) -> Result<Vec<f64>, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "project(): dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "project(): dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.project_dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     let b_dot_b = dot(b, b)?;
     if b_dot_b == 0.0 {
-        return Err(CalcError::domain("project(): cannot project onto zero vector".to_string()));
+        return Err(
+            CalcError::domain("project(): cannot project onto zero vector".to_string())
+                .with_i18n("msg.vector.project_zero_vector", vec![]),
+        );
     }
     let scalar = dot(a, b)? / b_dot_b;
     Ok(scalar_mul_vec(b, scalar))
@@ -128,12 +200,24 @@ pub fn project(a: &[f64], b: &[f64]) -> Result<Vec<f64>, CalcError> {
 pub fn reflect(v: &[f64], n: &[f64]) -> Result<Vec<f64>, CalcError> {
     if v.len() != n.len() {
         return Err(CalcError::domain(format!(
-            "reflect(): dimension mismatch {} vs {}", v.len(), n.len()
-        )));
+            "reflect(): dimension mismatch {} vs {}",
+            v.len(),
+            n.len()
+        ))
+        .with_i18n(
+            "msg.vector.reflect_dim_mismatch",
+            vec![
+                ("a".to_string(), v.len().to_string()),
+                ("b".to_string(), n.len().to_string()),
+            ],
+        ));
     }
     let n_dot_n = dot(n, n)?;
     if n_dot_n == 0.0 {
-        return Err(CalcError::domain("reflect(): zero normal vector".to_string()));
+        return Err(
+            CalcError::domain("reflect(): zero normal vector".to_string())
+                .with_i18n("msg.vector.reflect_zero_vector", vec![]),
+        );
     }
     let scalar = 2.0 * dot(v, n)? / n_dot_n;
     let scaled_n = scalar_mul_vec(n, scalar);
@@ -144,35 +228,71 @@ pub fn reflect(v: &[f64], n: &[f64]) -> Result<Vec<f64>, CalcError> {
 pub fn euclidean(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "euclidean(): dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "euclidean(): dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.euclidean_dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
-    Ok(a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum::<f64>().sqrt())
+    Ok(a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y).powi(2))
+        .sum::<f64>()
+        .sqrt())
 }
 
 /// 曼哈顿距离。
 pub fn manhattan(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "manhattan(): dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "manhattan(): dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.manhattan_dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
     Ok(a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum())
 }
 
 /// 外积 a × b^T，返回 Vec<Vec<f64>>（行优先矩阵）。
 pub fn outer(a: &[f64], b: &[f64]) -> Vec<Vec<f64>> {
-    a.iter().map(|ai| b.iter().map(|bi| ai * bi).collect()).collect()
+    a.iter()
+        .map(|ai| b.iter().map(|bi| ai * bi).collect())
+        .collect()
 }
 
 /// 线性插值（向量版）：a + t * (b - a)。
 pub fn lerp_vec(a: &[f64], b: &[f64], t: f64) -> Result<Vec<f64>, CalcError> {
     if a.len() != b.len() {
         return Err(CalcError::domain(format!(
-            "lerp(): dimension mismatch {} vs {}", a.len(), b.len()
-        )));
+            "lerp(): dimension mismatch {} vs {}",
+            a.len(),
+            b.len()
+        ))
+        .with_i18n(
+            "msg.vector.lerp_dim_mismatch",
+            vec![
+                ("a".to_string(), a.len().to_string()),
+                ("b".to_string(), b.len().to_string()),
+            ],
+        ));
     }
-    Ok(a.iter().zip(b.iter()).map(|(ai, bi)| ai + t * (bi - ai)).collect())
+    Ok(a.iter()
+        .zip(b.iter())
+        .map(|(ai, bi)| ai + t * (bi - ai))
+        .collect())
 }
 
 /// 线性插值（标量版）。
@@ -187,13 +307,24 @@ mod tests {
     use super::*;
 
     fn assert_approx(actual: f64, expected: f64, tol: f64, label: &str) {
-        assert!((actual - expected).abs() < tol,
-            "{}: expected {} but got {} (diff={})", label, expected, actual, (actual - expected).abs());
+        assert!(
+            (actual - expected).abs() < tol,
+            "{}: expected {} but got {} (diff={})",
+            label,
+            expected,
+            actual,
+            (actual - expected).abs()
+        );
     }
 
     #[test]
     fn test_dot() {
-        assert_approx(dot(&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0]).unwrap(), 32.0, 1e-10, "dot");
+        assert_approx(
+            dot(&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0]).unwrap(),
+            32.0,
+            1e-10,
+            "dot",
+        );
     }
 
     #[test]
@@ -273,12 +404,22 @@ mod tests {
 
     #[test]
     fn test_euclidean() {
-        assert_approx(euclidean(&[0.0, 0.0], &[3.0, 4.0]).unwrap(), 5.0, 1e-10, "euclidean");
+        assert_approx(
+            euclidean(&[0.0, 0.0], &[3.0, 4.0]).unwrap(),
+            5.0,
+            1e-10,
+            "euclidean",
+        );
     }
 
     #[test]
     fn test_manhattan() {
-        assert_approx(manhattan(&[0.0, 0.0], &[3.0, 4.0]).unwrap(), 7.0, 1e-10, "manhattan");
+        assert_approx(
+            manhattan(&[0.0, 0.0], &[3.0, 4.0]).unwrap(),
+            7.0,
+            1e-10,
+            "manhattan",
+        );
     }
 
     #[test]

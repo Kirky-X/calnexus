@@ -138,9 +138,9 @@ impl<'a> DataAnalysisImpl<'a> {
     }
 
     pub fn chi2_test(&self, observed: &[f64], expected: &[f64]) -> Result<EvalResult, CalcError> {
-        Ok(hashmap_to_vector(
-            math::statistics::chi2_test(observed, expected),
-        ))
+        Ok(hashmap_to_vector(math::statistics::chi2_test(
+            observed, expected,
+        )))
     }
 
     // ── 相关 ──

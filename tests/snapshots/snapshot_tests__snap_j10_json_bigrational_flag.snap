@@ -1,0 +1,5 @@
+---
+source: tests/snapshot_tests.rs
+expression: stdout.trim()
+---
+{"cache":"miss","domain":"precision","result":"0.33333","v":1}

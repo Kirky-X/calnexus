@@ -1,14 +1,95 @@
-# CalNexus API 使用指南
+# 📘 CalNexus API 参考
 
-> 本文档描述 CalNexus 直接 API（`src/api/`）的使用方法。
-> 表达式求值 API（`evaluate()`）保持不变，直接 API 是其补充而非替代。
+> 本文档描述 CalNexus 的两类公开 API：**表达式求值 API**（`evaluate()`，经解析与域路由的完整流水线）与**直接 API**（`CalNexus` 门面，跳过解析的程序化调用）。
+> 直接 API 是表达式求值 API 的补充而非替代。
 
-## 1. 快速开始
+## 📋 目录
+
+<details open>
+<summary>📑 目录</summary>
+
+- [🎯 概述](#-概述)
+  - [API 设计原则](#api-设计原则)
+  - [📦 特性说明](#-特性说明)
+- [🧱 核心 API](#-核心-api)
+  - [表达式求值入口](#表达式求值入口)
+  - [CalNexus 门面](#calnexus-门面)
+  - [变量绑定](#变量绑定)
+- [🔌 分组 API](#-分组-api)
+  - [标量运算 — cn.scalar()](#标量运算--cnscalar)
+  - [线性代数 — cn.linalg()](#线性代数--cnlinalg)
+  - [数据分析 — cn.stats()](#数据分析--cnstats)
+  - [符号数学 — cn.symbolic()](#符号数学--cnsymbolic)
+  - [应用数学 — cn.applied()](#应用数学--cnapplied)
+- [🧱 类型包装器](#-类型包装器)
+- [🚨 错误类型](#-错误类型)
+- [🚪 特性门控 API](#-特性门控-api)
+- [💡 使用示例](#-使用示例)
+- [📚 相关文档](#-相关文档)
+
+</details>
+
+---
+
+## 🎯 概述
+
+### API 设计原则
+
+- **两条入口，一个内核**：表达式 API 面向用户输入（解析 → 规范化 → 缓存 → 域路由），直接 API 面向程序化调用（跳过解析/规范化开销）；两者共享同一数学函数层（`math/`）。
+- **依赖单向**：`api/` → `math/` → `core/`，严格单向；直接 API 不依赖 `domains/`。
+- **零依赖默认**：`default = []`，核心 API 无可选依赖，可作为嵌入式计算引擎。
+- **门控可选能力**：可选计算域与数值分解均为独立 feature，未启用则不可见。
+
+### 📦 特性说明
+
+| Feature | 启用模块 | 说明 |
+|---------|----------|------|
+| _(default, 无)_ | `scalar` / `linalg` / `stats` / `symbolic` | 核心 API，零额外依赖 |
+| `numerical` | `linalg.eig/svd/lu/qr/solve/matrix_exp` | 数值线性代数分解（nalgebra f64） |
+| `unit` | `applied.convert()` | 8 量纲物理单位换算 |
+| `time` | `applied.date/datetime/now/today/...` | 13 个时间函数（jiff 0.2 + IANA tzdb） |
+| `fx` | `applied.fx/fx_rate` | 汇率换算（frankfurter.dev API + 三级缓存） |
+
+> 服务端 feature（`cli`/`http`/`mcp`/`server`/`icu`/`ratelimit`/`docs`/`observability`）见 [🏗️ 架构文档](ARCHITECTURE.md) 的 Feature Gate 策略一节。
+
+---
+
+## 🧱 核心 API
+
+### 表达式求值入口
+
+```rust
+pub fn evaluate(
+    expr: &str,
+    ctx: &EvalContext,
+    precision: Option<usize>,
+    cache: &CacheManager,
+) -> Result<(EvalResult, String, bool, Option<usize>), CalcError>
+
+pub fn evaluate_with_router(
+    expr: &str,
+    ctx: &EvalContext,
+    precision: Option<usize>,
+    cache: &CacheManager,
+    router: &DomainRouter,
+) -> Result<(EvalResult, String, bool, Option<usize>), CalcError>
+```
+
+- `evaluate` 编排五阶段流水线：输入校验 → parse + canonicalize + 超时检查 → 缓存键构建 → 按 precision 模式分发（`precision` 模式绕过路由器走 BigRational；常规模式经 `DomainRouter` 域路由）。
+- 返回值四元组：`(结果, 命中域名, 是否缓存命中, 格式化精度回显)`。第 3 元素 `false` 表示本次真实求值（含非确定性旁路），`true` 表示命中缓存（含 single-flight follower 共享）；第 4 元素 `Option<usize>` 为表达式 `precision(N, expr)` 中的 N（precision 模式下为传入的 precision 参数），供输出层格式化使用。
+- `evaluate_with_router` 允许注入自定义 `DomainRouter`（下游可扩展自定义 `CalculationDomain`）；`evaluate` 绑定进程级默认路由器。
+- 缓存经 `try_get_with` single-flight：并发相同键只真实求值一次；非确定性函数（`now` / `today` / `fx` / `fx_rate`）旁路缓存读写。
+
+### CalNexus 门面
+
+`CalNexus` 是直接 API 的门面结构体，持有变量上下文，提供 5 个分组访问器：
 
 ```rust
 use calnexus::CalNexus;
 
-let cn = CalNexus::new();
+let cn = CalNexus::new();     // 创建默认实例
+// 或
+let cn = CalNexus::default(); // 同上
 
 // 标量运算
 let result = cn.scalar().add(2.0, 3.0).unwrap();
@@ -19,17 +100,17 @@ let result = cn.scalar().sin(std::f64::consts::FRAC_PI_2).unwrap();
 assert_eq!(result.as_scalar(), Some(1.0));
 ```
 
-## 2. CalNexus 实例
+分组访问器与实现：
 
-`CalNexus` 是门面结构体，持有变量上下文，提供 5 个分组访问器：
+| 访问器 | trait | 方法数 | 覆盖 |
+|--------|-------|--------|------|
+| `cn.scalar()` | `ScalarMath` | 37 | 算术(8) + 科学函数(14) + 精度(1) + 数论(9) + 组合(5) |
+| `cn.linalg()` | `LinearAlgebra` | 20 | 矩阵(8) + 向量(6) + 数值分解(6) |
+| `cn.stats()` | `DataAnalysis` | 32 | 基础统计(8) + 分布(16) + 假设检验(3) + 相关(2) + 回归(3) |
+| `cn.symbolic()` | `SymbolicMath` | 21 | 符号演算(5) + 多项式(6) + 复数(9) + 方程求解(1) |
+| `cn.applied()` | `AppliedMath` | 16 | 时间(13) + 单位(1) + 汇率(2)，feature 门控 |
 
-```rust
-let cn = CalNexus::new();   // 创建默认实例
-// 或
-let cn = CalNexus::default(); // 同上
-```
-
-### 2.1 变量绑定
+### 变量绑定
 
 ```rust
 cn.set_var("x", 10.0);
@@ -41,9 +122,11 @@ assert_eq!(cn.get_var("x"), None);
 
 变量通过 `RwLock<EvalContext>` 管理，支持多线程并发读取、独占写入。
 
-## 3. 分组 API
+---
 
-### 3.1 标量运算 — `cn.scalar()`
+## 🔌 分组 API
+
+### 标量运算 — cn.scalar()
 
 #### 算术
 
@@ -107,18 +190,7 @@ assert_eq!(cn.get_var("x"), None);
 | `stirling_first` | `(n: u64, k: u64) → Result<EvalResult, CalcError>` | 第一类 Stirling 数 |
 | `stirling_second` | `(n: u64, k: u64) → Result<EvalResult, CalcError>` | 第二类 Stirling 数 |
 
-```rust
-use calnexus::{CalNexus, BigNumber};
-
-let cn = CalNexus::new();
-// CRT: x≡2(mod 3), x≡3(mod 5), x≡2(mod 7) → x=23
-let r = vec![BigNumber::from_i64(2), BigNumber::from_i64(3), BigNumber::from_i64(2)];
-let m = vec![BigNumber::from_i64(3), BigNumber::from_i64(5), BigNumber::from_i64(7)];
-let result = cn.scalar().crt(&r, &m).unwrap();
-// result = BigInt(23)
-```
-
-### 3.2 线性代数 — `cn.linalg()`
+### 线性代数 — cn.linalg()
 
 #### 矩阵运算
 
@@ -155,27 +227,7 @@ let result = cn.scalar().crt(&r, &m).unwrap();
 | `solve` | `(a: &Matrix, b: &Vector) → Result<EvalResult, CalcError>` | 线性方程组求解 |
 | `matrix_exp` | `(m: &Matrix) → Result<EvalResult, CalcError>` | 矩阵指数 |
 
-```rust
-use calnexus::{CalNexus, Matrix, Vector};
-
-let cn = CalNexus::new();
-
-// 矩阵行列式
-let m = Matrix::from_rows(&[&[1.0, 2.0], &[3.0, 4.0]]);
-let r = cn.linalg().det(&m).unwrap();
-assert_eq!(r.as_scalar(), Some(-2.0));
-
-// 向量点积
-let a = Vector::new(&[1.0, 2.0, 3.0]);
-let b = Vector::new(&[4.0, 5.0, 6.0]);
-let r = cn.linalg().dot(&a, &b).unwrap();
-assert_eq!(r.as_scalar(), Some(32.0));
-
-// 特征值分解（需要 numerical feature）
-// let r = cn.linalg().eig(&m).unwrap();
-```
-
-### 3.3 数据分析 — `cn.stats()`
+### 数据分析 — cn.stats()
 
 #### 基础统计
 
@@ -234,21 +286,7 @@ assert_eq!(r.as_scalar(), Some(32.0));
 | `poly_reg` | `(x: &[f64], y: &[f64], degree: usize) → Result<EvalResult, CalcError>` | 多项式回归 |
 | `multi_reg` | `(x: &[Vec<f64>], y: &[f64]) → Result<EvalResult, CalcError>` | 多元回归 |
 
-```rust
-let cn = CalNexus::new();
-let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-
-let r = cn.stats().mean(&data).unwrap();
-assert_eq!(r.as_scalar(), Some(3.0));
-
-// 线性回归
-let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
-let r = cn.stats().lin_reg(&x, &y).unwrap();
-// 返回 JSON: {"slope": 2.0, "intercept": 0.0, "r_squared": 1.0}
-```
-
-### 3.4 符号数学 — `cn.symbolic()`
+### 符号数学 — cn.symbolic()
 
 #### 符号演算
 
@@ -292,24 +330,12 @@ let r = cn.stats().lin_reg(&x, &y).unwrap();
 | `solve_equation` | `(expr: &str, var: &str, method: &str, options: Option<&[f64]>) → Result<EvalResult, CalcError>` | 方程数值求解 |
 
 `solve_equation` 支持三种方法：
+
 - `"newton"`：牛顿法，options = `Some(&[x0])`（初始猜测）
 - `"bisection"`：二分法，options = `Some(&[a, b])`（区间）
 - `"brent"`：Brent 方法，options = `Some(&[a, b])`（区间）
 
-```rust
-let cn = CalNexus::new();
-// 求解 x²-2=0，牛顿法，初始猜测 1.5
-let r = cn.symbolic().solve_equation("x^2 - 2", "x", "newton", Some(&[1.5])).unwrap();
-let root = r.as_scalar().unwrap();
-assert!((root - std::f64::consts::SQRT_2).abs() < 1e-10);
-
-// 求解 sin(x)=0，二分法，区间 [3, 4] → π
-let r = cn.symbolic().solve_equation("sin(x)", "x", "bisection", Some(&[3.0, 4.0])).unwrap();
-let root = r.as_scalar().unwrap();
-assert!((root - std::f64::consts::PI).abs() < 1e-10);
-```
-
-### 3.5 应用数学 — `cn.applied()`
+### 应用数学 — cn.applied()
 
 #### 时间（`time` feature）
 
@@ -319,8 +345,8 @@ assert!((root - std::f64::consts::PI).abs() < 1e-10);
 | `datetime` | `(datetime_str: &str, tz: Option<&str>) → Result<EvalResult, CalcError>` | 日期时间构造 |
 | `timestamp` | `(datetime_str: &str) → Result<EvalResult, CalcError>` | 日期转时间戳 |
 | `from_timestamp` | `(secs: i64, tz: Option<&str>) → Result<EvalResult, CalcError>` | 时间戳转日期 |
-| `now` | `(tz: Option<&str>) → Result<EvalResult, CalcError>` | 当前时间 |
-| `today` | `(tz: Option<&str>) → Result<EvalResult, CalcError>` | 当前日期 |
+| `now` | `(tz: Option<&str>) → Result<EvalResult, CalcError>` | 当前时间（非确定性，旁路缓存） |
+| `today` | `(tz: Option<&str>) → Result<EvalResult, CalcError>` | 当前日期（非确定性，旁路缓存） |
 | `date_add` | `(date: &str, n: i64, unit: &str) → Result<EvalResult, CalcError>` | 日期加法 |
 | `date_diff` | `(a: &str, b: &str, unit: Option<&str>) → Result<EvalResult, CalcError>` | 日期差 |
 | `format_date` | `(date: &str, fmt: &str, tz: Option<&str>) → Result<EvalResult, CalcError>` | 日期格式化 |
@@ -339,17 +365,12 @@ assert!((root - std::f64::consts::PI).abs() < 1e-10);
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `fx` | `(amount: f64, from: &str, to: &str) → Result<EvalResult, CalcError>` | 汇率换算 |
-| `fx_rate` | `(from: &str, to: &str) → Result<EvalResult, CalcError>` | 查询汇率 |
+| `fx` | `(amount: f64, from: &str, to: &str) → Result<EvalResult, CalcError>` | 汇率换算（非确定性，旁路缓存） |
+| `fx_rate` | `(from: &str, to: &str) → Result<EvalResult, CalcError>` | 查询汇率（非确定性，旁路缓存） |
 
-```rust
-let cn = CalNexus::new();
-// 1000 米 → 1 千米
-let r = cn.applied().convert(1000.0, "m", "km").unwrap();
-assert_eq!(r.as_scalar(), Some(1.0));
-```
+---
 
-## 4. 类型包装器
+## 🧱 类型包装器
 
 直接 API 使用 5 个类型安全包装器，与 `EvalResult` 双向转换：
 
@@ -374,9 +395,50 @@ let result: EvalResult = m.into();
 let m2 = Matrix::try_from(result).unwrap();
 ```
 
-## 5. 向后兼容性
+---
 
-直接 API 是表达式 API 的**补充**，不替代现有接口：
+## 🚨 错误类型
+
+所有 API 的错误类型为 `CalcError`，其 `kind` 字段为 `ErrorKind` 枚举：
+
+| ErrorKind | 退出码 | 服务端映射 | 触发场景 |
+|-----------|--------|-----------|----------|
+| `Parse` | 1 | 400 InvalidInput | 表达式语法错误 |
+| `Eval` | 1 | 400 InvalidInput | 求值失败（定义域、未实现运算等） |
+| `Overflow` | 1 | 400 InvalidInput | 数值溢出 |
+| `DivisionByZero` | 1 | 400 InvalidInput | 除零 |
+| `Domain` | 1 | 400 InvalidInput | 函数定义域错误 |
+| `Depth` | 1 | 400 InvalidInput | 超出 AST 深度上限（`MAX_AST_DEPTH=256`） |
+| `NaNOrInf` | 1 | 400 InvalidInput | NaN / 无穷结果 |
+| `UndefinedSymbol` | 1 | 400 InvalidInput | 未绑定变量（附 `--var` / `:let` 提示） |
+| `Usage` | 2 | 400 InvalidInput（message 前缀 `Usage:`） | 用法/参数错误 |
+| `Timeout` | 3 | 503 ServiceUnavailable | 超过 `--timeout` |
+| `DependencyUnavailable` | 3 | 503 ServiceUnavailable | 上游依赖故障（fx 汇率源不可达），带 `Retry-After` |
+
+> **422 不来自 `ErrorKind`**：HTTP/MCP 的 422 `ValidationError` 由独立的请求体校验层（`server/types.rs::validate()`：expr ≤ 4096 字符、vars ≤ 1024 键、precision ≤ 10000）在求值之前产生；CLI 形态无此层，对应约束由 clap / `--precision` 校验承担（退出码 2）。
+
+`CalcError` 携带 `message`（本地化文案，`--lang` / HTTP `lang` 协商）、`hint`（修复建议）、`source_detail`（错误链）。退出码契约由 `ErrorKind::exit_code()` 统一给出：0 = 成功、1 = 计算错误、2 = 用法错误、3 = 超时/上游不可用。
+
+---
+
+## 🚪 特性门控 API
+
+| 特性 | 公开项 | 说明 |
+|------|--------|------|
+| `time` | `TimeDomain`、`applied()` 时间方法 | jiff 0.2 + 内嵌 IANA tzdb |
+| `unit` | `UnitDomain`、`applied().convert()` | 8 量纲 + 温度仿射 |
+| `fx` | `FxDomain`、`applied().fx/fx_rate` | frankfurter.dev + 三级缓存 + 熔断；`CALNEXUS_FX_*` 环境变量 |
+| `numerical` | `linalg()` 数值分解方法 | nalgebra f64 近似 |
+| `server` | `HttpServer` / `build_router` / `McpServer` / `build_mcp_server` | HTTP + MCP 服务 |
+| `icu` | 影响 `I18n` 的 BCP-47 解析实现（`I18n` / `Lang` 类型始终可用，不受门控） | 启用 ICU4X 语言标签解析；未启用时 `from_str` 退化为简单字符串匹配 |
+
+各计算域类型（`ArithmeticDomain` 等 14 个）均实现 `CalculationDomain` trait 并可经 `evaluate_with_router` 注入；`build_default_router()` 注册全部启用域。
+
+---
+
+## 💡 使用示例
+
+### 场景选择
 
 | 场景 | 推荐 API | 原因 |
 |------|----------|------|
@@ -385,38 +447,63 @@ let m2 = Matrix::try_from(result).unwrap();
 | 程序化调用已知运算 | 直接 API | 跳过解析/规范化开销 |
 | 嵌入式计算引擎 | 直接 API | 无需表达式解析依赖 |
 
-## 6. Feature Gate 表
+### 基础调用
 
-| Feature | 启用模块 | 说明 |
-|---------|----------|------|
-| _(default, 无)_ | `scalar` / `linalg` / `stats` / `symbolic` | 核心 API，零额外依赖 |
-| `numerical` | `linalg.eig/svd/lu/qr/solve/matrix_exp` | 数值线性代数分解（nalgebra f64） |
-| `unit` | `applied.convert()` | 8 量纲物理单位换算 |
-| `time` | `applied.date/datetime/now/today/...` | 13 个时间函数（jiff 0.2 + IANA tzdb） |
-| `fx` | `applied.fx/fx_rate` | 汇率换算（frankfurter.dev API + 三级缓存） |
+```rust
+use calnexus::{CalNexus, BigNumber, Matrix, Vector};
 
-`default = []`：核心库零依赖，可作为嵌入式计算引擎。
+let cn = CalNexus::new();
 
-> 注：上表仅列出与直接 API 相关的 feature。服务端 feature（`cli`/`http`/`mcp`/`server`/`icu`/`ratelimit`/`docs`/`graceful-shutdown`/`observability`）请参阅 ARCHITECTURE.md §5.3。
+// 矩阵行列式
+let m = Matrix::from_rows(&[&[1.0, 2.0], &[3.0, 4.0]]);
+let r = cn.linalg().det(&m).unwrap();
+assert_eq!(r.as_scalar(), Some(-2.0));
 
-## 7. 架构概览
+// 向量点积
+let a = Vector::new(&[1.0, 2.0, 3.0]);
+let b = Vector::new(&[4.0, 5.0, 6.0]);
+let r = cn.linalg().dot(&a, &b).unwrap();
+assert_eq!(r.as_scalar(), Some(32.0));
 
-```mermaid
-flowchart TD
-    subgraph L4b["L4b — 直接 API 层"]
-        API["api/<br/>CalNexus 门面<br/>5 个分组访问器<br/>类型包装器"]
-    end
+// 中国剩余定理：x≡2(mod 3), x≡3(mod 5), x≡2(mod 7) → x=23
+let r = vec![BigNumber::from_i64(2), BigNumber::from_i64(3), BigNumber::from_i64(2)];
+let m = vec![BigNumber::from_i64(3), BigNumber::from_i64(5), BigNumber::from_i64(7)];
+let result = cn.scalar().crt(&r, &m).unwrap();
+// result = BigInt(23)
 
-    subgraph L_math["L_math — 核心数学函数层"]
-        MATH["math/<br/>arithmetic / scientific / statistics /<br/>matrix / vector / complex / polynomial /<br/>symbolic / precision / number_theory /<br/>combinatorics / solvers / numerical /<br/>time / unit / fx"]
-    end
+// 线性回归
+let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+let r = cn.stats().lin_reg(&x, &y).unwrap();
+// 返回 JSON: {"slope": 2.0, "intercept": 0.0, "r_squared": 1.0}
 
-    subgraph L1["L1 — 核心基础层"]
-        CORE["core/<br/>types / parser / cache"]
-    end
+// 方程求解：x²-2=0，牛顿法
+let r = cn.symbolic().solve_equation("x^2 - 2", "x", "newton", Some(&[1.5])).unwrap();
+let root = r.as_scalar().unwrap();
+assert!((root - std::f64::consts::SQRT_2).abs() < 1e-10);
 
-    API --> MATH
-    MATH --> CORE
+// 单位换算：1000 米 → 1 千米
+let r = cn.applied().convert(1000.0, "m", "km").unwrap();
+assert_eq!(r.as_scalar(), Some(1.0));
 ```
 
-依赖方向：`api/` → `math/` → `core/`，严格单向，不依赖 `domains/`。
+### 自定义路由器注入
+
+```rust
+use calnexus::{evaluate_with_router, CacheManager, DomainRouter, EvalContext};
+
+let router = DomainRouter::new(); // 空路由器（无内置域）
+let cache = CacheManager::new();
+let ctx = EvalContext::new();
+// 空路由器下任何表达式都返回路由错误，证明路由器确实被注入消费
+let err = evaluate_with_router("1+1", &ctx, None, &cache, &router).unwrap_err();
+```
+
+---
+
+## 📚 相关文档
+
+- [📖 用户指南](USER_GUIDE.md) — CLI 使用教程
+- [🏗️ 架构文档](ARCHITECTURE.md) — 模块划分、依赖方向与数据流
+- [📈 性能指南](PERFORMANCE.md) — 直接 API 与表达式路径的性能对比
+- [📦 在线 API 文档](https://docs.rs/calnexus) — docs.rs 生成的 rustdoc

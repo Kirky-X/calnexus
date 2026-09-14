@@ -3,8 +3,8 @@
 //! Symbolic 计算域：符号微分、积分、化简、极限、泰勒级数。
 //!
 //! 设计依据：
-//! - design.md D2（SymbolicExpr 枚举 + AST 变换 + 字符串输出）
-//! - v1.0 symbolic-domain spec
+//! - SymbolicExpr 枚举 + AST 变换 + 字符串输出
+//! - symbolic-domain spec
 //!
 //! 路由策略：AST 含 diff/integrate/simplify/limit/taylor 函数调用时路由至本域。
 //! priority=30，与 Complex/Matrix/Vector 同级。
@@ -12,7 +12,7 @@
 //! 核心数据结构 [`SymbolicExpr`] 与 [`AstNode`] 双向转换，符号变换后格式化为
 //! 字符串返回 [`EvalResult::Symbolic`]。
 //!
-//! T021 重构：纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
+//! 重构：纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, CalcError, EvalContext, EvalResult, UnaryOp};
@@ -27,9 +27,9 @@ const SYMBOLIC_FUNCTIONS: &[&str] = &["diff", "integrate", "simplify", "limit", 
 // ============================ AstNode ↔ SymbolicExpr 转换 ============================
 // ast_to_symbolic 已迁移至 math::symbolic，此处保留 re-export 供向后兼容。
 
-// ============================ SymbolicDomain (TG3.7) ============================
+// ============================ SymbolicDomain ============================
 
-/// Symbolic 计算域（TG3.7）。
+/// Symbolic 计算域。
 ///
 /// priority=30，路由触发词：diff/integrate/simplify/limit/taylor。
 pub struct SymbolicDomain;
@@ -185,8 +185,10 @@ impl SymbolicDomain {
         // 验证 f64 → u32 范围，防止负数/超大值不安全转换
         if order_f < 0.0 || !order_f.is_finite() || order_f > u32::MAX as f64 {
             return Err(CalcError::domain(format!(
-                "taylor() order must be a non-negative finite integer, got {}", order_f
-            )).with_i18n(
+                "taylor() order must be a non-negative finite integer, got {}",
+                order_f
+            ))
+            .with_i18n(
                 "msg.symbolic.taylor_order_invalid",
                 vec![("order".to_string(), order_f.to_string())],
             ));
@@ -244,19 +246,19 @@ fn extract_number(ast: &AstNode) -> Result<f64, CalcError> {
     }
 }
 
-// ============================ 单元测试 (TG3.9) ============================
+// ============================ 单元测试 ============================
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
-    use crate::core::ErrorKind;
     use crate::core::BinaryOp;
-    use crate::math::symbolic::SymbolicExpr;
+    use crate::core::ErrorKind;
+    use crate::core::parse;
     use crate::math::symbolic as math_sym;
+    use crate::math::symbolic::SymbolicExpr;
     use std::collections::HashMap;
 
-    // ----- TG3.1 转换测试 -----
+    // ----- 转换测试 -----
 
     #[test]
     fn test_ast_to_symbolic_number() {
@@ -305,7 +307,7 @@ mod tests {
         assert_eq!(math_sym::symbolic_to_string(&sym), "2+x");
     }
 
-    // ----- TG3.2 求导测试 -----
+    // ----- 求导测试 -----
 
     #[test]
     fn test_diff_power_rule() {
@@ -378,7 +380,7 @@ mod tests {
         assert!(s.contains("cos(x)"), "expected cos(x) in: {}", s);
     }
 
-    // ----- TG3.3 积分测试 -----
+    // ----- 积分测试 -----
 
     #[test]
     fn test_integrate_power() {
@@ -435,7 +437,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ----- TG3.4 化简测试 -----
+    // ----- 化简测试 -----
 
     #[test]
     fn test_simplify_add_zero() {
@@ -510,7 +512,7 @@ mod tests {
         assert_eq!(result, SymbolicExpr::Const(5.0));
     }
 
-    // ----- TG3.5 极限测试 -----
+    // ----- 极限测试 -----
 
     #[test]
     fn test_limit_direct_substitution() {
@@ -561,7 +563,7 @@ mod tests {
         }
     }
 
-    // ----- TG3.6 泰勒级数测试 -----
+    // ----- 泰勒级数测试 -----
 
     #[test]
     fn test_taylor_exp() {
@@ -595,7 +597,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ----- TG3.7 路由测试 -----
+    // ----- 路由测试 -----
 
     #[test]
     fn test_domain_name_and_priority() {
@@ -625,7 +627,7 @@ mod tests {
         assert!(domain.supports(&ast));
     }
 
-    // ----- TG3.7 端到端 evaluate 测试 -----
+    // ----- 端到端 evaluate 测试 -----
 
     #[test]
     fn test_evaluate_diff_power() {
@@ -717,7 +719,7 @@ mod tests {
         assert_eq!(math_sym::eval_symbolic(&expr, &env).unwrap(), 5.0);
     }
 
-    // ----- TG3.10 proptest 属性测试 -----
+    // ----- proptest 属性测试 -----
 
     use proptest::prelude::*;
 
@@ -904,15 +906,27 @@ mod tests {
         let v = SymbolicExpr::Var("x".to_string());
         let ast_v = AstNode::Variable("x".to_string());
         assert_eq!(
-            ast_to_symbolic(&AstNode::FunctionCall("tan".to_string(), vec![ast_v.clone()])).unwrap(),
+            ast_to_symbolic(&AstNode::FunctionCall(
+                "tan".to_string(),
+                vec![ast_v.clone()]
+            ))
+            .unwrap(),
             SymbolicExpr::Tan(Box::new(v.clone()))
         );
         assert_eq!(
-            ast_to_symbolic(&AstNode::FunctionCall("ln".to_string(), vec![ast_v.clone()])).unwrap(),
+            ast_to_symbolic(&AstNode::FunctionCall(
+                "ln".to_string(),
+                vec![ast_v.clone()]
+            ))
+            .unwrap(),
             SymbolicExpr::Ln(Box::new(v.clone()))
         );
         assert_eq!(
-            ast_to_symbolic(&AstNode::FunctionCall("exp".to_string(), vec![ast_v.clone()])).unwrap(),
+            ast_to_symbolic(&AstNode::FunctionCall(
+                "exp".to_string(),
+                vec![ast_v.clone()]
+            ))
+            .unwrap(),
             SymbolicExpr::Exp(Box::new(v.clone()))
         );
         assert_eq!(
@@ -1257,7 +1271,10 @@ mod tests {
             Box::new(SymbolicExpr::Var("x".to_string())),
             Box::new(SymbolicExpr::Const(0.0)),
         );
-        assert_eq!(math_sym::simplify(&expr), SymbolicExpr::Var("x".to_string()));
+        assert_eq!(
+            math_sym::simplify(&expr),
+            SymbolicExpr::Var("x".to_string())
+        );
     }
 
     #[test]
@@ -1308,7 +1325,10 @@ mod tests {
             Box::new(SymbolicExpr::Var("x".to_string())),
             Box::new(SymbolicExpr::Const(1.0)),
         );
-        assert_eq!(math_sym::simplify(&expr), SymbolicExpr::Var("x".to_string()));
+        assert_eq!(
+            math_sym::simplify(&expr),
+            SymbolicExpr::Var("x".to_string())
+        );
     }
 
     #[test]
@@ -1349,7 +1369,10 @@ mod tests {
         let expr = SymbolicExpr::Neg(Box::new(SymbolicExpr::Neg(Box::new(SymbolicExpr::Var(
             "x".to_string(),
         )))));
-        assert_eq!(math_sym::simplify(&expr), SymbolicExpr::Var("x".to_string()));
+        assert_eq!(
+            math_sym::simplify(&expr),
+            SymbolicExpr::Var("x".to_string())
+        );
     }
 
     #[test]
@@ -1427,7 +1450,7 @@ mod tests {
         );
     }
 
-    // ===== TG9.2 补充覆盖：integrate/simplify/limit/taylor 未覆盖路径 =====
+    // ===== 补充覆盖：integrate/simplify/limit/taylor 未覆盖路径 =====
 
     #[test]
     fn test_integrate_add_linearity() {
@@ -1672,34 +1695,42 @@ mod tests {
             math_sym::eval_symbolic(
                 &SymbolicExpr::Add(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             5.0
         );
         assert_eq!(
             math_sym::eval_symbolic(
                 &SymbolicExpr::Sub(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             -1.0
         );
         assert_eq!(
             math_sym::eval_symbolic(
                 &SymbolicExpr::Mul(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             6.0
         );
         assert!(
             (math_sym::eval_symbolic(
                 &SymbolicExpr::Div(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap() - 2.0 / 3.0).abs() < 1e-10
+            )
+            .unwrap()
+                - 2.0 / 3.0)
+                .abs()
+                < 1e-10
         );
         assert_eq!(
             math_sym::eval_symbolic(
                 &SymbolicExpr::Pow(Box::new(x.clone()), Box::new(y.clone())),
                 &env
-            ).unwrap(),
+            )
+            .unwrap(),
             8.0
         );
 
@@ -1717,21 +1748,37 @@ mod tests {
             -2.0
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Sin(Box::new(x.clone())), &env).unwrap() - 2.0_f64.sin()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Sin(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.sin())
+            .abs()
+                < 1e-10
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Cos(Box::new(x.clone())), &env).unwrap() - 2.0_f64.cos()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Cos(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.cos())
+            .abs()
+                < 1e-10
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Tan(Box::new(x.clone())), &env).unwrap() - 2.0_f64.tan()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Tan(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.tan())
+            .abs()
+                < 1e-10
         );
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Exp(Box::new(x.clone())), &env).unwrap() - 2.0_f64.exp()).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Exp(Box::new(x.clone())), &env).unwrap()
+                - 2.0_f64.exp())
+            .abs()
+                < 1e-10
         );
 
         // Ln boundaries
         assert!(
-            (math_sym::eval_symbolic(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Const(1.0))), &env).unwrap() - 0.0).abs() < 1e-10
+            (math_sym::eval_symbolic(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Const(1.0))), &env)
+                .unwrap()
+                - 0.0)
+                .abs()
+                < 1e-10
         );
         assert!(matches!(
             math_sym::eval_symbolic(&SymbolicExpr::Ln(Box::new(SymbolicExpr::Const(0.0))), &env),

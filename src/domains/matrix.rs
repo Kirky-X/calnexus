@@ -4,14 +4,16 @@
 //!
 //! 设计依据：
 //! - matrix-domain spec：10 个 requirements / 21 个 scenarios
-//! - design.md D5：基于 `nalgebra::DMatrix` 实现，priority=30
+//! - 基于 `nalgebra::DMatrix` 实现，priority=30
 //!
 //! 路由策略：AST 含 `Matrix` 节点或 `det()`/`transpose()`/`inverse()`/`identity()` 函数调用时路由至本域。
 //! `EvalResult::Matrix(Vec<Vec<f64>>)` 保持 types.rs 无外部依赖（与 Complex 同策略）。
 
+use super::common::{
+    ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
+};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
-use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error, unsupported_function_error};
 use nalgebra::DMatrix;
 #[cfg(feature = "numerical")]
 use nalgebra::DVector;
@@ -36,7 +38,7 @@ const MATRIX_NUMERICAL_FUNCTIONS: &[&str] = &[
     "solve",
 ];
 
-/// 矩阵维度上限（防字面量大矩阵 DoS，p4 T008 MEDIUM-1；identity 与 eval_matrix_literal 共用）。
+/// 矩阵维度上限（防字面量大矩阵 DoS，identity 与 eval_matrix_literal 共用）。
 const MAX_MATRIX_DIM: usize = math_matrix::MAX_MATRIX_DIM;
 
 /// Matrix 计算域。
@@ -63,27 +65,27 @@ impl CalculationDomain for MatrixDomain {
         // numerical 分解函数短路（返回 EvalResult::Json/Vector，绕过 MatrixValue 类型限制）。
         // lu/qr/eig/svd/solve 在此直接委托 numerical.rs；非 numerical 函数返回 None 回退 eval_node。
         #[cfg(feature = "numerical")]
-        if let AstNode::FunctionCall(name, args) = ast {
-            if let Some(result) = self.try_numerical(name, args, &ctx)? {
-                return Ok(result);
-            }
+        if let AstNode::FunctionCall(name, args) = ast
+            && let Some(result) = self.try_numerical(name, args, &ctx)?
+        {
+            return Ok(result);
         }
 
         // precision() 包裹 matrix/numerical 子函数时被 Matrix 抢（priority 30 > Precision 25），
         // 但 Matrix 不处理 precision 外层。这些函数返回 f64 近似结果，precision 不适用——
-        // 给诚实错误（规则12 失败显性化），而非通用 "unsupported function" 迷惑用户（T009）。
-        if let AstNode::FunctionCall(name, _) = ast {
-            if name == "precision" {
-                return Err(CalcError::domain(format!(
-                    "precision() does not apply to matrix/numerical functions ({}): \
-                     they return f64 results",
-                    MATRIX_NUMERICAL_FUNCTIONS.join("/")
-                ))
-                .with_i18n(
-                    "msg.matrix.precision_not_applied",
-                    vec![("name".to_string(), MATRIX_NUMERICAL_FUNCTIONS.join("/"))],
-                ));
-            }
+        // 给诚实错误（失败显性化），而非通用 "unsupported function" 迷惑用户。
+        if let AstNode::FunctionCall(name, _) = ast
+            && name == "precision"
+        {
+            return Err(CalcError::domain(format!(
+                "precision() does not apply to matrix/numerical functions ({}): \
+                 they return f64 results",
+                MATRIX_NUMERICAL_FUNCTIONS.join("/")
+            ))
+            .with_i18n(
+                "msg.matrix.precision_not_applied",
+                vec![("name".to_string(), MATRIX_NUMERICAL_FUNCTIONS.join("/"))],
+            ));
         }
 
         let value = self.eval_node(ast, &ctx)?;
@@ -109,9 +111,7 @@ impl MatrixDomain {
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(MatrixValue::Scalar(*n)),
-            AstNode::Variable(name) => {
-                resolve_variable(ctx, name).map(MatrixValue::Scalar)
-            }
+            AstNode::Variable(name) => resolve_variable(ctx, name).map(MatrixValue::Scalar),
             AstNode::Matrix(rows) => self.eval_matrix_literal(rows, ctx),
             AstNode::BinaryOp(op, l, r) => {
                 let a = self.eval_node(l, ctx)?;
@@ -164,7 +164,7 @@ impl MatrixDomain {
                         return Err(CalcError::domain(
                             "matrix elements must be scalars".to_string(),
                         )
-                        .with_i18n("msg.matrix.elements_must_be_scalars", vec![]))
+                        .with_i18n("msg.matrix.elements_must_be_scalars", vec![]));
                     }
                 }
             }
@@ -175,7 +175,7 @@ impl MatrixDomain {
 
     /// 求值二元运算：按运算类型分发到对应处理方法。
     ///
-    /// 设计依据：T017 重构（cyc=25 → ≤15），按运算类型提取 dispatch 方法，
+    /// 按运算类型提取 dispatch 方法，
     /// 主函数仅负责标量/矩阵分流与运算分发，单一职责。
     fn eval_binary(
         &self,
@@ -255,15 +255,20 @@ impl MatrixDomain {
             }
             _ => Err(CalcError::domain(
                 "matrix add/sub requires two matrices of the same dimension".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.addsub_same_dim", vec![])),
         }
     }
 
     /// 矩阵乘法：委托 math_matrix::mat_mul / scalar_mul。
     fn eval_matrix_mul(&self, a: MatrixValue, b: MatrixValue) -> Result<MatrixValue, CalcError> {
         match (a, b) {
-            (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => Ok(MatrixValue::Matrix(math_matrix::scalar_mul(&m, s))),
-            (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => Ok(MatrixValue::Matrix(math_matrix::scalar_mul(&m, s))),
+            (MatrixValue::Scalar(s), MatrixValue::Matrix(m)) => {
+                Ok(MatrixValue::Matrix(math_matrix::scalar_mul(&m, s)))
+            }
+            (MatrixValue::Matrix(m), MatrixValue::Scalar(s)) => {
+                Ok(MatrixValue::Matrix(math_matrix::scalar_mul(&m, s)))
+            }
             (MatrixValue::Matrix(am), MatrixValue::Matrix(bm)) => {
                 Ok(MatrixValue::Matrix(math_matrix::mat_mul(&am, &bm)?))
             }
@@ -279,7 +284,8 @@ impl MatrixDomain {
             }
             _ => Err(CalcError::domain(
                 "matrix division only supports matrix / scalar".to_string(),
-            )),
+            )
+            .with_i18n("msg.matrix.division_only_scalar", vec![])),
         }
     }
 
@@ -302,7 +308,7 @@ impl MatrixDomain {
         }
     }
 
-    /// numerical 分解函数委托（feature-gated，p4 T008）。
+    /// numerical 分解函数委托（feature-gated）。
     ///
     /// lu/qr/eig/svd/solve 返回 `EvalResult::Json`/`Vector`，无法走 `eval_function` 的 `MatrixValue`
     /// 路径，故在 `evaluate` 顶层短路。返回 `Ok(None)` 表示非 numerical 函数，回退 eval_node。
@@ -394,10 +400,10 @@ impl MatrixDomain {
                 return Err(
                     CalcError::domain("solve() requires A to be a matrix".to_string())
                         .with_i18n("msg.matrix.solve_requires_matrix", vec![]),
-                )
+                );
             }
         };
-        // b：List（[1,2,3]）或单列 Matrix（[[1],[2],[3]]），design D5
+        // b：List（[1,2,3]）或单列 Matrix（[[1],[2],[3]]）
         let b = match &args[1] {
             AstNode::List(elements) => {
                 if elements.len() > MAX_MATRIX_DIM {
@@ -432,13 +438,13 @@ impl MatrixDomain {
                     return Err(CalcError::domain(
                         "solve() b matrix must be single-column".to_string(),
                     )
-                    .with_i18n("msg.matrix.solve_b_single_column", vec![]))
+                    .with_i18n("msg.matrix.solve_b_single_column", vec![]));
                 }
                 MatrixValue::Scalar(_) => {
                     return Err(CalcError::domain(
                         "solve() b must be a vector or single-column matrix".to_string(),
                     )
-                    .with_i18n("msg.matrix.solve_b_vector_or_column", vec![]))
+                    .with_i18n("msg.matrix.solve_b_vector_or_column", vec![]));
                 }
             },
         };
@@ -449,13 +455,21 @@ impl MatrixDomain {
     fn eval_det(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "det() requires exactly 1 argument, got {}", args.len()
-            )));
+                "det() requires exactly 1 argument, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.matrix.det_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
             MatrixValue::Matrix(matrix) => Ok(MatrixValue::Scalar(math_matrix::det(&matrix)?)),
-            _ => Err(CalcError::domain("det() requires a matrix argument".to_string())),
+            _ => Err(
+                CalcError::domain("det() requires a matrix argument".to_string())
+                    .with_i18n("msg.matrix.det_matrix_arg", vec![]),
+            ),
         }
     }
 
@@ -467,13 +481,21 @@ impl MatrixDomain {
     ) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "transpose() requires exactly 1 argument, got {}", args.len()
-            )));
+                "transpose() requires exactly 1 argument, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.matrix.transpose_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
             MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(math_matrix::transpose(&matrix))),
-            _ => Err(CalcError::domain("transpose() requires a matrix argument".to_string())),
+            _ => Err(
+                CalcError::domain("transpose() requires a matrix argument".to_string())
+                    .with_i18n("msg.matrix.transpose_matrix_arg", vec![]),
+            ),
         }
     }
 
@@ -481,13 +503,21 @@ impl MatrixDomain {
     fn eval_inverse(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "inverse() requires exactly 1 argument, got {}", args.len()
-            )));
+                "inverse() requires exactly 1 argument, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.matrix.inverse_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let m = self.eval_node(&args[0], ctx)?;
         match m {
             MatrixValue::Matrix(matrix) => Ok(MatrixValue::Matrix(math_matrix::inverse(&matrix)?)),
-            _ => Err(CalcError::domain("inverse() requires a matrix argument".to_string())),
+            _ => Err(
+                CalcError::domain("inverse() requires a matrix argument".to_string())
+                    .with_i18n("msg.matrix.inverse_matrix_arg", vec![]),
+            ),
         }
     }
 
@@ -495,26 +525,44 @@ impl MatrixDomain {
     fn eval_identity(&self, args: &[AstNode], ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
-                "identity() requires exactly 1 argument, got {}", args.len()
-            )));
+                "identity() requires exactly 1 argument, got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.matrix.identity_arg_count",
+                vec![("actual".to_string(), args.len().to_string())],
+            ));
         }
         let n_val = self.eval_node(&args[0], ctx)?;
         match n_val {
             MatrixValue::Scalar(n) => {
                 if n < 1.0 || n != n.trunc() {
                     return Err(CalcError::domain(format!(
-                        "identity() requires a positive integer, got {}", n
-                    )));
+                        "identity() requires a positive integer, got {}",
+                        n
+                    ))
+                    .with_i18n(
+                        "msg.matrix.identity_positive",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 // 检查 usize 转换安全性
                 if n > usize::MAX as f64 {
                     return Err(CalcError::domain(format!(
-                        "identity() argument {} exceeds maximum dimension", n
-                    )));
+                        "identity() argument {} exceeds maximum dimension",
+                        n
+                    ))
+                    .with_i18n(
+                        "msg.matrix.identity_arg_exceeds",
+                        vec![("value".to_string(), n.to_string())],
+                    ));
                 }
                 Ok(MatrixValue::Matrix(math_matrix::identity(n as usize)?))
             }
-            _ => Err(CalcError::domain("identity() requires a scalar argument".to_string())),
+            _ => Err(
+                CalcError::domain("identity() requires a scalar argument".to_string())
+                    .with_i18n("msg.matrix.identity_scalar", vec![]),
+            ),
         }
     }
 }
@@ -580,7 +628,7 @@ fn validate_matrix_dimensions(rows: &[Vec<AstNode>]) -> Result<usize, CalcError>
 
 /// 递归检查 AST 是否应路由至 MatrixDomain。
 ///
-/// 路由条件（spec Req 10）：
+/// 路由条件：
 /// - 含 `Matrix` 节点
 /// - 含 `det()`/`transpose()`/`inverse()`/`identity()` 函数调用
 fn contains_matrix(ast: &AstNode) -> bool {
@@ -589,7 +637,7 @@ fn contains_matrix(ast: &AstNode) -> bool {
         // 路由认领全集：det/transpose/inverse/identity 走 eval_function（返回 MatrixValue）；
         // lu/qr/eig/svd/solve 走 evaluate 顶层 numerical 短路（cfg feature="numerical"，返回 EvalResult）。
         // 与 MATRIX_FUNCTIONS 常量分工：本处是认领全集，MATRIX_FUNCTIONS 是 eval_function 白名单。
-        // 名单抽为 MATRIX_NUMERICAL_FUNCTIONS 常量，与 precision 错误信息共用零漂移（p4 审查 HIGH 处置）。
+        // 名单抽为 MATRIX_NUMERICAL_FUNCTIONS 常量，与 precision 错误信息共用零漂移。
         AstNode::FunctionCall(name, _) if MATRIX_NUMERICAL_FUNCTIONS.contains(&name.as_str()) => {
             true
         }
@@ -605,8 +653,8 @@ fn contains_matrix(ast: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::parse;
     use crate::core::ErrorKind;
+    use crate::core::parse;
 
     fn assert_approx(actual: f64, expected: f64) {
         assert!(
@@ -655,7 +703,7 @@ mod tests {
 
     #[test]
     fn test_matrix_literal_2x2() {
-        // [[1,2],[3,4]] → 2x2 Matrix（Req 1 Scen 1）
+        // [[1,2],[3,4]] → 2x2 Matrix
         let ast = parse("[[1,2],[3,4]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -664,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_matrix_literal_non_square() {
-        // [[1,2,3],[4,5,6]] → 2x3 Matrix（Req 1 Scen 2）
+        // [[1,2,3],[4,5,6]] → 2x3 Matrix
         let ast = parse("[[1,2,3],[4,5,6]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -673,7 +721,7 @@ mod tests {
 
     #[test]
     fn test_matrix_literal_single_row() {
-        // [[1,2,3]] → 1x3 Matrix（Req 1 Scen 3）
+        // [[1,2,3]] → 1x3 Matrix
         let ast = parse("[[1,2,3]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -684,7 +732,7 @@ mod tests {
 
     #[test]
     fn test_matrix_addition() {
-        // [[1,2],[3,4]] + [[5,6],[7,8]] → [[6,8],[10,12]]（Req 2 Scen 1）
+        // [[1,2],[3,4]] + [[5,6],[7,8]] → [[6,8],[10,12]]
         let ast = parse("[[1,2],[3,4]] + [[5,6],[7,8]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -693,7 +741,7 @@ mod tests {
 
     #[test]
     fn test_matrix_subtraction() {
-        // [[5,6],[7,8]] - [[1,2],[3,4]] → [[4,4],[4,4]]（Req 2 Scen 2）
+        // [[5,6],[7,8]] - [[1,2],[3,4]] → [[4,4],[4,4]]
         let ast = parse("[[5,6],[7,8]] - [[1,2],[3,4]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -704,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_matrix_multiplication_2x2() {
-        // [[1,2],[3,4]] * [[5,6],[7,8]] → [[19,22],[43,50]]（Req 3 Scen 1）
+        // [[1,2],[3,4]] * [[5,6],[7,8]] → [[19,22],[43,50]]
         let ast = parse("[[1,2],[3,4]] * [[5,6],[7,8]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -713,7 +761,7 @@ mod tests {
 
     #[test]
     fn test_matrix_multiplication_dim_match() {
-        // [[1,2,3]] * [[1],[2],[3]] → [[14]]（Req 3 Scen 2）
+        // [[1,2,3]] * [[1],[2],[3]] → [[14]]
         let ast = parse("[[1,2,3]] * [[1],[2],[3]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -724,7 +772,7 @@ mod tests {
 
     #[test]
     fn test_scalar_left_multiply_matrix() {
-        // 2 * [[1,2],[3,4]] → [[2,4],[6,8]]（Req 4 Scen 1）
+        // 2 * [[1,2],[3,4]] → [[2,4],[6,8]]
         let ast = parse("2 * [[1,2],[3,4]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -733,7 +781,7 @@ mod tests {
 
     #[test]
     fn test_matrix_right_multiply_scalar() {
-        // [[1,2],[3,4]] * 3 → [[3,6],[9,12]]（Req 4 Scen 2）
+        // [[1,2],[3,4]] * 3 → [[3,6],[9,12]]
         let ast = parse("[[1,2],[3,4]] * 3").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -744,7 +792,7 @@ mod tests {
 
     #[test]
     fn test_det_2x2() {
-        // det([[1,2],[3,4]]) → -2.0（Req 5 Scen 1）
+        // det([[1,2],[3,4]]) → -2.0
         let ast = parse("det([[1,2],[3,4]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -753,7 +801,7 @@ mod tests {
 
     #[test]
     fn test_det_3x3() {
-        // det([[1,2,3],[4,5,6],[7,8,10]]) → -3.0（Req 5 Scen 2）
+        // det([[1,2,3],[4,5,6],[7,8,10]]) → -3.0
         let ast = parse("det([[1,2,3],[4,5,6],[7,8,10]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -764,7 +812,7 @@ mod tests {
 
     #[test]
     fn test_transpose_square() {
-        // transpose([[1,2],[3,4]]) → [[1,3],[2,4]]（Req 6 Scen 1）
+        // transpose([[1,2],[3,4]]) → [[1,3],[2,4]]
         let ast = parse("transpose([[1,2],[3,4]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -773,7 +821,7 @@ mod tests {
 
     #[test]
     fn test_transpose_non_square() {
-        // transpose([[1,2,3],[4,5,6]]) → [[1,4],[2,5],[3,6]]（Req 6 Scen 2）
+        // transpose([[1,2,3],[4,5,6]]) → [[1,4],[2,5],[3,6]]
         let ast = parse("transpose([[1,2,3],[4,5,6]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -784,7 +832,7 @@ mod tests {
 
     #[test]
     fn test_inverse_invertible() {
-        // inverse([[1,2],[3,4]]) → [[-2,1],[1.5,-0.5]]（Req 7 Scen 1）
+        // inverse([[1,2],[3,4]]) → [[-2,1],[1.5,-0.5]]
         let ast = parse("inverse([[1,2],[3,4]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -793,7 +841,7 @@ mod tests {
 
     #[test]
     fn test_inverse_singular() {
-        // inverse([[1,2],[2,4]]) → DomainError（Req 7 Scen 2，奇异矩阵）
+        // inverse([[1,2],[2,4]]) → DomainError（奇异矩阵）
         let ast = parse("inverse([[1,2],[2,4]])").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -804,7 +852,7 @@ mod tests {
 
     #[test]
     fn test_identity_3() {
-        // identity(3) → [[1,0,0],[0,1,0],[0,0,1]]（Req 8 Scen 1）
+        // identity(3) → [[1,0,0],[0,1,0],[0,0,1]]
         let ast = parse("identity(3)").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -816,7 +864,7 @@ mod tests {
 
     #[test]
     fn test_identity_1() {
-        // identity(1) → [[1]]（Req 8 Scen 2）
+        // identity(1) → [[1]]
         let ast = parse("identity(1)").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -827,7 +875,7 @@ mod tests {
 
     #[test]
     fn test_add_dimension_mismatch() {
-        // [[1,2],[3,4]] + [[1,2,3],[4,5,6]] → DomainError（Req 9 Scen 1）
+        // [[1,2],[3,4]] + [[1,2,3],[4,5,6]] → DomainError
         let ast = parse("[[1,2],[3,4]] + [[1,2,3],[4,5,6]]").unwrap();
         let domain = MatrixDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -836,7 +884,7 @@ mod tests {
 
     #[test]
     fn test_mul_dimension_mismatch() {
-        // [[1,2]] * [[1,2],[3,4]] → DomainError（Req 9 Scen 2）
+        // [[1,2]] * [[1,2],[3,4]] → DomainError
         // 1x2 * 2x2 → actually this IS valid (1x2 * 2x2 = 1x2)
         // Wait, the spec says this should be DomainError. Let me re-read.
         // [[1,2]] is 1x2, [[1,2],[3,4]] is 2x2. 1x2 * 2x2 = 1x2. This is valid!
@@ -862,7 +910,7 @@ mod tests {
 
     #[test]
     fn test_route_matrix_node() {
-        // [[1,2],[3,4]] + [[5,6],[7,8]] → 含 Matrix 节点，路由到 MatrixDomain（Req 10 Scen 1）
+        // [[1,2],[3,4]] + [[5,6],[7,8]] → 含 Matrix 节点，路由到 MatrixDomain
         let ast = parse("[[1,2],[3,4]] + [[5,6],[7,8]]").unwrap();
         let domain = MatrixDomain;
         assert!(domain.supports(&ast));
@@ -870,7 +918,7 @@ mod tests {
 
     #[test]
     fn test_route_matrix_function() {
-        // det([[1,2],[3,4]]) → 含 det() 函数，路由到 MatrixDomain（Req 10 Scen 2）
+        // det([[1,2],[3,4]]) → 含 det() 函数，路由到 MatrixDomain
         let ast = parse("det([[1,2],[3,4]])").unwrap();
         let domain = MatrixDomain;
         assert!(domain.supports(&ast));
@@ -1401,7 +1449,7 @@ mod tests {
         assert!(domain.supports(&ast));
     }
 
-    // ===== 覆盖标量 Mod 非零路径（lines 174-175）=====
+    // ===== 覆盖标量 Mod 非零路径（lines 174-175） =====
 
     #[test]
     fn test_scalar_mod_non_zero_in_matrix() {
@@ -1416,7 +1464,7 @@ mod tests {
         assert_scalar(&result, 1.0);
     }
 
-    // ===== 覆盖测试辅助函数的 panic 分支（lines 401, 417）=====
+    // ===== 覆盖测试辅助函数的 panic 分支（lines 401, 417） =====
 
     #[test]
     #[should_panic(expected = "expected Scalar")]
@@ -1516,9 +1564,9 @@ mod tests {
         }
     }
 
-    // ===== T016: eval_binary dispatch table 回归测试（Phase 5 Red）=====
+    // ===== eval_binary dispatch table 回归测试 =====
     //
-    // 目的：重构 eval_binary（cyc=25 → ≤15）前后行为不变。
+    // 目的：重构 eval_binary 前后行为不变。
     // 覆盖：标量+标量（6 op + 边界）、矩阵+矩阵（add/sub + 维度）、
     //       标量×矩阵/矩阵×标量/矩阵×矩阵（mul + 维度）、矩阵/标量（div + 0）、
     //       矩阵 pow/mod（不支持）。
@@ -1604,9 +1652,10 @@ mod tests {
             2,
             &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         ));
-        assert!(dom
-            .eval_binary(BinaryOp::Add, m2x2(1.0, 2.0, 3.0, 4.0), m3x2.clone())
-            .is_err());
+        assert!(
+            dom.eval_binary(BinaryOp::Add, m2x2(1.0, 2.0, 3.0, 4.0), m3x2.clone())
+                .is_err()
+        );
 
         // ----- 6. 标量 × 矩阵 / 矩阵 × 标量 -----
         let sm = dom
@@ -1644,9 +1693,10 @@ mod tests {
         }
 
         // ----- 8. 矩阵 × 矩阵（维度不匹配：2x2 * 3x2）-----
-        assert!(dom
-            .eval_binary(BinaryOp::Mul, m2x2(1.0, 2.0, 3.0, 4.0), m3x2.clone())
-            .is_err());
+        assert!(
+            dom.eval_binary(BinaryOp::Mul, m2x2(1.0, 2.0, 3.0, 4.0), m3x2.clone())
+                .is_err()
+        );
 
         // ----- 9. 矩阵 / 标量 -----
         let md = dom
@@ -1659,40 +1709,45 @@ mod tests {
             }
             _ => panic!("expected Matrix"),
         }
-        assert!(dom
-            .eval_binary(BinaryOp::Div, m2x2(1.0, 2.0, 3.0, 4.0), s(0.0))
-            .is_err());
+        assert!(
+            dom.eval_binary(BinaryOp::Div, m2x2(1.0, 2.0, 3.0, 4.0), s(0.0))
+                .is_err()
+        );
 
         // ----- 10. 矩阵 Pow / Mod 不支持 -----
-        assert!(dom
-            .eval_binary(
+        assert!(
+            dom.eval_binary(
                 BinaryOp::Pow,
                 m2x2(1.0, 2.0, 3.0, 4.0),
                 m2x2(1.0, 2.0, 3.0, 4.0)
             )
-            .is_err());
-        assert!(dom
-            .eval_binary(
+            .is_err()
+        );
+        assert!(
+            dom.eval_binary(
                 BinaryOp::Mod,
                 m2x2(1.0, 2.0, 3.0, 4.0),
                 m2x2(1.0, 2.0, 3.0, 4.0)
             )
-            .is_err());
+            .is_err()
+        );
 
         // ----- 11. 标量 + 矩阵 类型不匹配（add 要求两矩阵）-----
-        assert!(dom
-            .eval_binary(BinaryOp::Add, s(1.0), m2x2(1.0, 2.0, 3.0, 4.0))
-            .is_err());
-        assert!(dom
-            .eval_binary(
+        assert!(
+            dom.eval_binary(BinaryOp::Add, s(1.0), m2x2(1.0, 2.0, 3.0, 4.0))
+                .is_err()
+        );
+        assert!(
+            dom.eval_binary(
                 BinaryOp::Div,
                 m2x2(1.0, 2.0, 3.0, 4.0),
                 m2x2(1.0, 2.0, 3.0, 4.0)
             )
-            .is_err());
+            .is_err()
+        );
     }
 
-    // ===== T008: numerical 分解端到端路由（cfg gate）=====
+    // ===== numerical 分解端到端路由（cfg gate） =====
     #[cfg(feature = "numerical")]
     fn assert_json_keys(v: &serde_json::Value, keys: &[&str]) {
         for k in keys {
@@ -1774,7 +1829,7 @@ mod tests {
     #[cfg(feature = "numerical")]
     #[test]
     fn evaluate_solve_matrix_b_routes_to_numerical() {
-        // b 为单列 Matrix [[5],[6]]（design D5 第二形态）
+        // b 为单列 Matrix [[5],[6]]（第二形态）
         let ast = parse("solve([[1,2],[3,4]], [[5],[6]])").unwrap();
         let result = MatrixDomain.evaluate(&ast, &default_ctx()).unwrap();
         match result {
@@ -1803,7 +1858,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ===== MEDIUM-1: 字面量大矩阵 DoS 防护（默认 feature）=====
+    // ===== 字面量大矩阵 DoS 防护（默认 feature） =====
     #[test]
     fn evaluate_huge_matrix_literal_rejected() {
         // 1001×1 矩阵字面量（超 MAX_MATRIX_DIM=1000）→ DomainError
@@ -1828,7 +1883,7 @@ mod tests {
     #[cfg(feature = "numerical")]
     #[test]
     fn evaluate_solve_huge_list_b_rejected() {
-        // solve(A, [1001 元素向量]) → DomainError（List b 维度上限，安全 LOW-1）
+        // solve(A, [1001 元素向量]) → DomainError（List b 维度上限）
         let b: Vec<&str> = vec!["0"; 1001];
         let src = format!("solve([[1]], [{}])", b.join(","));
         let ast = parse(&src).unwrap();
@@ -1836,7 +1891,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ===== T009: precision() × matrix/numerical 交互（f64 函数，precision 不适用）=====
+    // ===== precision() × matrix/numerical 交互（f64 函数，precision 不适用） =====
     #[test]
     fn evaluate_precision_wrapping_matrix_rejected() {
         // precision(50, det(M)) → 专门错误（matrix 函数返回 f64，precision 不适用）
@@ -1866,7 +1921,7 @@ mod tests {
     #[test]
     fn evaluate_precision_wrapping_nested_rejected() {
         // precision(50, det(lu(M))) 嵌套形态 → 同样专门错误（路由契约对任意嵌套深度成立，
-        // precision 外层在 line 64 短路，根本不进 det(lu(M)) 求值；p4 审查 MEDIUM 补齐）
+        // precision 外层在 line 64 短路，根本不进 det(lu(M)) 求值）
         let ast = parse("precision(50, det(lu([[1,2],[3,4]])))").unwrap();
         let result = MatrixDomain.evaluate(&ast, &default_ctx());
         assert!(result.is_err());

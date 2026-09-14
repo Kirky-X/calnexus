@@ -2,11 +2,11 @@
 
 //! SymbolicMath trait 实现。
 
-use crate::api::types::{Complex, Polynomial};
 use crate::api::CalNexus;
-use crate::core::{parse, CalcError, EvalResult};
+use crate::api::types::{Complex, Polynomial};
+use crate::core::{CalcError, EvalResult, parse};
 use crate::math;
-use crate::math::symbolic::{ast_to_symbolic, symbolic_to_string, SymbolicExpr};
+use crate::math::symbolic::{SymbolicExpr, ast_to_symbolic, symbolic_to_string};
 
 /// SymbolicMath API 访问器。
 pub struct SymbolicMathImpl<'a> {
@@ -60,51 +60,36 @@ impl<'a> SymbolicMathImpl<'a> {
         if _center != 0.0 {
             return Err(CalcError::domain(
                 "taylor_expand with non-zero center not yet available via direct API".to_string(),
-            ));
+            )
+            .with_i18n("msg.symbolic.taylor_center_unsupported", vec![]));
         }
         math::symbolic::taylor(&sym, var, order as u32)
     }
 
     // ── 多项式 ──
 
-    pub fn poly_add(
-        &self,
-        a: &Polynomial,
-        b: &Polynomial,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn poly_add(&self, a: &Polynomial, b: &Polynomial) -> Result<EvalResult, CalcError> {
         Ok(EvalResult::Polynomial(math::polynomial::add(
             a.coeffs(),
             b.coeffs(),
         )))
     }
 
-    pub fn poly_sub(
-        &self,
-        a: &Polynomial,
-        b: &Polynomial,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn poly_sub(&self, a: &Polynomial, b: &Polynomial) -> Result<EvalResult, CalcError> {
         Ok(EvalResult::Polynomial(math::polynomial::sub(
             a.coeffs(),
             b.coeffs(),
         )))
     }
 
-    pub fn poly_mul(
-        &self,
-        a: &Polynomial,
-        b: &Polynomial,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn poly_mul(&self, a: &Polynomial, b: &Polynomial) -> Result<EvalResult, CalcError> {
         Ok(EvalResult::Polynomial(math::polynomial::mul(
             a.coeffs(),
             b.coeffs(),
         )))
     }
 
-    pub fn poly_div(
-        &self,
-        a: &Polynomial,
-        b: &Polynomial,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn poly_div(&self, a: &Polynomial, b: &Polynomial) -> Result<EvalResult, CalcError> {
         let (quotient, _remainder) = math::polynomial::div(a.coeffs(), b.coeffs());
         Ok(EvalResult::Polynomial(quotient))
     }
@@ -119,38 +104,22 @@ impl<'a> SymbolicMathImpl<'a> {
 
     // ── 复数 ──
 
-    pub fn complex_add(
-        &self,
-        a: &Complex,
-        b: &Complex,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn complex_add(&self, a: &Complex, b: &Complex) -> Result<EvalResult, CalcError> {
         let r = math::complex::add(a.value(), b.value());
         Ok(EvalResult::Complex(r.re, r.im))
     }
 
-    pub fn complex_sub(
-        &self,
-        a: &Complex,
-        b: &Complex,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn complex_sub(&self, a: &Complex, b: &Complex) -> Result<EvalResult, CalcError> {
         let r = math::complex::sub(a.value(), b.value());
         Ok(EvalResult::Complex(r.re, r.im))
     }
 
-    pub fn complex_mul(
-        &self,
-        a: &Complex,
-        b: &Complex,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn complex_mul(&self, a: &Complex, b: &Complex) -> Result<EvalResult, CalcError> {
         let r = math::complex::mul(a.value(), b.value());
         Ok(EvalResult::Complex(r.re, r.im))
     }
 
-    pub fn complex_div(
-        &self,
-        a: &Complex,
-        b: &Complex,
-    ) -> Result<EvalResult, CalcError> {
+    pub fn complex_div(&self, a: &Complex, b: &Complex) -> Result<EvalResult, CalcError> {
         let r = math::complex::div(a.value(), b.value())?;
         Ok(EvalResult::Complex(r.re, r.im))
     }
@@ -187,7 +156,11 @@ impl<'a> SymbolicMathImpl<'a> {
         method: &str,
         options: Option<&[f64]>,
     ) -> Result<EvalResult, CalcError> {
-        let ctx = self.cn.ctx.read().unwrap();
+        let ctx = self
+            .cn
+            .ctx
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let cache = crate::core::CacheManager::new();
         let expr_owned = expr.to_string();
         let var_owned = var.to_string();
@@ -214,18 +187,20 @@ impl<'a> SymbolicMathImpl<'a> {
             }
             "bisection" => {
                 if opts.len() < 2 {
-                    return Err(CalcError::domain(
-                        "bisection requires options [a, b]".to_string(),
-                    ));
+                    return Err(
+                        CalcError::domain("bisection requires options [a, b]".to_string())
+                            .with_i18n("msg.symbolic.bisection_requires_options", vec![]),
+                    );
                 }
                 let root = math::solvers::bisection(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
             }
             "brent" => {
                 if opts.len() < 2 {
-                    return Err(CalcError::domain(
-                        "brent requires options [a, b]".to_string(),
-                    ));
+                    return Err(
+                        CalcError::domain("brent requires options [a, b]".to_string())
+                            .with_i18n("msg.symbolic.brent_requires_options", vec![]),
+                    );
                 }
                 let root = math::solvers::brent(f, opts[0], opts[1], 1e-12, 200)?;
                 Ok(EvalResult::Scalar(root))
@@ -233,7 +208,11 @@ impl<'a> SymbolicMathImpl<'a> {
             _ => Err(CalcError::domain(format!(
                 "unknown solver method: '{}'. Available: newton, bisection, brent",
                 method
-            ))),
+            ))
+            .with_i18n(
+                "msg.symbolic.unknown_solver_method",
+                vec![("method".to_string(), method.to_string())],
+            )),
         }
     }
 }

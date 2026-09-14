@@ -64,26 +64,25 @@ pub fn div(a: f64, b: f64) -> Result<f64, CalcError> {
 /// - 负底数 + 非整数指数 → `Domain`
 /// - 结果溢出 → `NaNOrInf`
 pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
-    // 0^0 = 1 (spec Req 2 Scen 3，组合数学约定)
+    // 0^0 = 1（组合数学约定）
     if a == 0.0 && b == 0.0 {
         return Ok(1.0);
     }
     // 负底数 + 非整数指数是域错误，不是 NaNOrInf
     if a < 0.0 && b.fract() != 0.0 {
-        return Err(
-            CalcError::domain(format!(
-                "negative base with non-integer exponent: {}^{}",
-                a, b
-            ))
-            .with_hint("use complex numbers for negative base with fractional exponent")
-            .with_i18n(
-                "msg.arithmetic.neg_base_frac_exp",
-                vec![
-                    ("base".to_string(), a.to_string()),
-                    ("exponent".to_string(), b.to_string()),
-                ],
-            ),
-        );
+        return Err(CalcError::domain(format!(
+            "negative base with non-integer exponent: {}^{}",
+            a, b
+        ))
+        .with_hint("use complex numbers for negative base with fractional exponent")
+        .with_hint_i18n("hint.complex_for_neg_base", vec![])
+        .with_i18n(
+            "msg.arithmetic.neg_base_frac_exp",
+            vec![
+                ("base".to_string(), a.to_string()),
+                ("exponent".to_string(), b.to_string()),
+            ],
+        ));
     }
     let r = a.powf(b);
     if !r.is_finite() {
