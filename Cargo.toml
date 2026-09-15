@@ -178,6 +178,12 @@ required-features = ["cli", "time", "unit", "fx"]
 name = "numerical_linalg_test"
 required-features = ["cli", "numerical"]
 
+# E2E 场景套件（specmark change: e2e-scenario-suite）：
+# 无 required-features —— 目标在一切 feature 组合下编译，内部 #[cfg] 门控
+# 启用/禁用两侧用例（--all-features 跑启用侧，default 跑禁用侧）。
+[[test]]
+name = "e2e"
+
 # base 自研库本地先行改动（随 base 发版后移除补丁）：
 # - limiteron：sync 模块（SyncCircuitBreaker / SyncFixedWindowLimiter）
 # - sdforge：extract_client_ip 公开化、RateLimitLayer Clone、ConnectInfo serve 变体
