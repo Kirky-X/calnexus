@@ -1,4 +1,18 @@
-# Contributor Covenant Code of Conduct
+# 🤝 CalNexus 行为准则
+
+> 本行为准则改编自 [Contributor Covenant](https://www.contributor-covenant.org) 2.1 版（见文末[归属](#归属)）。
+
+## 📋 目录
+
+- [我们的承诺](#我们的承诺)
+- [我们的准则](#我们的准则)
+- [执行职责](#执行职责)
+- [适用范围](#适用范围)
+- [执行](#执行)
+- [执行方针](#执行方针)
+- [归属](#归属)
+
+---
 
 ## 我们的承诺
 
