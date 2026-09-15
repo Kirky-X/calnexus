@@ -44,7 +44,8 @@ pub(crate) fn init_observability() {
 
 #[cfg(not(feature = "observability"))]
 pub(crate) fn init_observability() {}
-#[cfg(feature = "cli")]
+// 消费者 run_server_mode 需同时具备 cli 与 server；门控与其一致
+#[cfg(all(feature = "cli", feature = "server"))]
 pub(crate) use cache::init_shared_cache;
 pub use catalog::{ListFunctionsRequest, ListFunctionsResponse};
 pub use evaluate::{calc_error_to_api_error, calc_error_to_api_error_i18n};
