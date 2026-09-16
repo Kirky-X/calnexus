@@ -2,8 +2,6 @@
 
 //! MCP server 启动：`evaluate` tool 由 `#[forge]` 宏声明（evaluate.rs），
 //! 本模块仅负责构建/启动 SdForgeMcpServer（stdio 传输）。
-//!
-//! 定义接口契约。
 
 use super::ServerError;
 use sdforge::mcp::SdForgeMcpServer;
@@ -118,12 +116,10 @@ mod tests {
             "forge tools must register via #[forge]+init_all_plugins; \
              count mismatch ⇒ inventory submit lost (linker) → A2 回退"
         );
-        // 标量 2+3 → 5（成功路径）
         let r1 = server
             .call_tool_internal("evaluate", Some(serde_json::json!({"req":{"expr":"2+3"}})))
             .expect("scalar call_tool_internal no panic");
         assert!(!r1.is_error.unwrap_or(false), "2+3 should succeed");
-        // 带变量 x+1 (x=10) → 11（成功路径）
         let r2 = server
             .call_tool_internal(
                 "evaluate",

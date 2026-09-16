@@ -18,7 +18,6 @@ use rayon::prelude::*;
 use std::io::{self, BufRead, Read};
 use std::time::Instant;
 
-/// 批量最大条数。
 const MAX_BATCH_COUNT: usize = 1000;
 
 /// 批量处理器。
@@ -300,7 +299,6 @@ mod tests {
 
     #[test]
     fn test_read_lines_from_file() {
-        // 创建临时文件
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp, "2+3").unwrap();
         writeln!(tmp, "# comment").unwrap();
@@ -333,7 +331,6 @@ mod tests {
 
     #[test]
     fn test_batch_run_basic_expressions() {
-        // 创建临时文件含多条表达式
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp, "2+3").unwrap();
         writeln!(tmp, "4*5").unwrap();
@@ -341,7 +338,6 @@ mod tests {
 
         let ctx = EvalContext::new();
         let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
-        // 全部成功应返回 0
         assert_eq!(code, 0);
     }
 
@@ -379,7 +375,6 @@ mod tests {
 
         let ctx = EvalContext::new();
         let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, false, &I18n::default());
-        // 部分失败应返回 1
         assert_eq!(code, 1);
     }
 
@@ -423,7 +418,6 @@ mod tests {
 
     #[test]
     fn test_batch_line_exceeds_max_length() {
-        // 单行超过 MAX_EXPR_LEN=4096 → 返回 2（lines 55-61）
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         let long_line = "1+".repeat(2049); // 4098 字符，超过 4096
         writeln!(tmp, "{}", long_line).unwrap();
@@ -436,7 +430,6 @@ mod tests {
 
     #[test]
     fn test_batch_count_exceeds_maximum() {
-        // 超过 MAX_BATCH_COUNT=1000 → 返回 2（lines 74-79）
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         for _ in 0..1001 {
             writeln!(tmp, "1+1").unwrap();
@@ -450,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_batch_json_output_with_error() {
-        // JSON 输出含错误条目：覆盖 JSON Err 分支（lines 130-136）
+        // 覆盖 JSON Err 分支
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp, "2+3").unwrap();
         writeln!(tmp, "2++3").unwrap(); // 语法错误
@@ -458,7 +451,6 @@ mod tests {
 
         let ctx = EvalContext::new();
         let code = BatchProcessor::run(tmp.path().to_str().unwrap(), &ctx, true, &I18n::default());
-        // 部分失败 → 1
         assert_eq!(code, 1);
     }
 }

@@ -535,8 +535,7 @@ mod tests {
     }
 
     // === expr 字段校验 ===
-    // validate() 此前完全不校验 expr，导致空串、超长串、含 null 字节串全部通过。
-    // 这些都是 DoS / 注入向量，必须在入口拦截。
+    // 空串/超长/null 字节均为 DoS / 注入向量，回归覆盖入口拦截。
 
     #[test]
     fn test_validate_rejects_empty_expr() {
@@ -584,8 +583,7 @@ mod tests {
     }
 
     // === vars 键名长度 / 内容校验 ===
-    // validate() 此前仅校验 vars 总数，未校验单个键名长度和内容，
-    // 单个超长键名或含 null 字节键名可被滥用做内存攻击或注入向量。
+    // 超长或含 null 字节的键名为内存攻击 / 注入向量，回归覆盖入口拦截。
 
     #[test]
     fn test_validate_rejects_oversized_var_name() {

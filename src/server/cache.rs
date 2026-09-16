@@ -3,10 +3,7 @@
 //! Server 共享缓存：HTTP/MCP 协议共享的进程级 CacheManager。
 //!
 //! 使用全局 OnceLock 懒初始化，确保相同表达式的第二次请求能命中缓存
-//! （缓存语义）。
-//!
-//! 原 http.rs 和 mcp.rs 各自维护独立的 SHARED_CACHE，
-//! 导致 HTTP 和 MCP 请求不共享缓存。现统一到本模块，两协议共享同一缓存实例。
+//! （缓存语义）。统一单实例的动因：此前 HTTP/MCP 各自独立缓存导致跨协议不命中。
 
 use crate::CacheManager;
 use std::sync::OnceLock;
