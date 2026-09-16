@@ -82,13 +82,11 @@ impl DomainRouter {
         if self.domains.iter().any(|d| d.domain_name() == name) {
             return;
         }
-        // 聚合非确定性函数名（增量构建，查询路径无重复构建开销）
         for &func_name in domain.nondeterministic_functions() {
             self.nondeterministic_functions
                 .insert(func_name.to_string());
         }
         self.domains.push(domain);
-        // 稳定排序：同优先级时保持注册顺序
         self.domains
             .sort_by_key(|d| std::cmp::Reverse(d.priority()));
     }
@@ -143,7 +141,6 @@ impl DomainRouter {
     /// - 无任何申报时恒 false
     /// - 检测开销为 O(AST 节点数) 的 HashSet 查询
     pub fn is_nondeterministic(&self, ast: &AstNode) -> bool {
-        // 复用 collect_function_names 递归收集，再与 HashSet 做交集判断
         let functions = collect_function_names(ast);
         functions
             .iter()
@@ -423,7 +420,6 @@ mod tests {
 
     #[test]
     fn test_scientific_priority_higher_than_arithmetic() {
-        // Scientific priority > Arithmetic priority
         let arithmetic = MockArithmeticDomain;
         let scientific = MockScientificDomain;
         assert!(scientific.priority() > arithmetic.priority());
@@ -557,7 +553,6 @@ mod tests {
 
     #[test]
     fn test_router_loads_registered_domains() {
-        // Router loads registered domains
         let router = default_router();
         assert_eq!(router.domain_count(), 2);
         let names = router.domain_names();

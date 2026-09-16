@@ -5,7 +5,7 @@
 //! 设计依据：base 三角换算
 //! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
 //!
-//! 从 `domains/fx.rs` 提取的纯函数：汇率表结构 + 三角换算逻辑 + 错误构造。
+//! 汇率表结构 + 三角换算逻辑 + 错误构造。
 //! 不依赖任何 I/O（网络/文件），仅包含纯数据运算。
 
 use std::collections::HashMap;
@@ -29,7 +29,6 @@ pub struct RateTable {
 /// - base 币种汇率视为 1.0（如 EUR 在 EUR-base 表中不出现）
 /// - 未知币种 → DomainError（含支持币种数量提示，i18n msg.fx.unknown_currency）
 pub fn convert(value: f64, from: &str, to: &str, table: &RateTable) -> Result<f64, CalcError> {
-    // 同币种恒等（避免不必要的查表与除零风险）
     if from == to {
         return Ok(value);
     }
@@ -37,7 +36,6 @@ pub fn convert(value: f64, from: &str, to: &str, table: &RateTable) -> Result<f6
     let rate_from = get_rate(from, table)?;
     let rate_to = get_rate(to, table)?;
 
-    // 三角换算：value / rate[FROM] * rate[TO]
     Ok(value / rate_from * rate_to)
 }
 
@@ -104,7 +102,6 @@ mod tests {
     #[test]
     fn test_convert_with_base_from() {
         let table = eur_table();
-        // EUR → USD = 100 / 1.0 * 1.08 = 108
         let r = convert(100.0, "EUR", "USD", &table).unwrap();
         assert!((r - 108.0).abs() < 1e-9);
     }
@@ -112,7 +109,6 @@ mod tests {
     #[test]
     fn test_convert_with_base_to() {
         let table = eur_table();
-        // USD → EUR = 108 / 1.08 * 1.0 = 100
         let r = convert(108.0, "USD", "EUR", &table).unwrap();
         assert!((r - 100.0).abs() < 1e-9);
     }

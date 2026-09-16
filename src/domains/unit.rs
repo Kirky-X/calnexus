@@ -172,7 +172,6 @@ impl UnitDomain {
         if !UNIT_FUNCTIONS.contains(&name) {
             return Err(unsupported_function_error("unit", name));
         }
-        // UNIT_FUNCTIONS: convert / mod / abs
         match name {
             "convert" => self.eval_convert(args, ctx),
             "mod" => self.eval_mod(args, ctx),
@@ -867,8 +866,6 @@ mod tests {
         // Time
         assert!((eval_scalar(r#"convert(1,"h","s")"#).unwrap() - 3600.0).abs() < 1e-9);
     }
-
-    // ===== 底层函数单元测试已迁移至 math::unit =====
 
     #[test]
     fn test_contains_unit_function_str_returns_false() {

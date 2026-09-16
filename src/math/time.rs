@@ -211,6 +211,14 @@ pub fn build_span_for_unit(unit: Unit, n: i64) -> Result<Span, CalcError> {
 
 /// 计算 Span 在指定单位下的总数值（带符号）。
 pub fn span_total_in_unit(span: &Span, unit: Unit, a: &Zoned) -> Result<f64, CalcError> {
+    // 零跨度短路：时间戳相同则任意单位下差值恒为 0。
+    // jiff 0.2.x 对「零跨度 × 日历单位」（Day/Week/Month/Year）的 total
+    // 计算会在内部断言 `unit_start_and_end` 处 panic（断言要求两个不同
+    // 跨度产生不同时间戳，零跨度时退化为同一时间戳），故必须在进入
+    // total 前拦截，date_diff(a, a) 才能返回 0 而非打崩调用线程。
+    if span.is_zero() {
+        return Ok(0.0);
+    }
     let result = match unit {
         Unit::Second => span.total((Unit::Second, a)),
         Unit::Minute => span.total((Unit::Minute, a)),
@@ -566,6 +574,17 @@ mod tests {
         let b = parse_str_to_zoned("2026-07-25").unwrap();
         let diff = compute_date_diff(&a, &b, Unit::Day).unwrap();
         assert_eq!(diff, 205.0);
+    }
+
+    // 回归：零跨度 × 日历单位曾触发 jiff 内部断言 panic（见
+    // span_total_in_unit 零跨度短路注释），date_diff(a, a) 必须返回 0。
+    #[test]
+    fn test_compute_date_diff_identical_dates() {
+        let a = parse_str_to_zoned("2026-01-01").unwrap();
+        for unit in [Unit::Day, Unit::Week, Unit::Month, Unit::Year] {
+            let diff = compute_date_diff(&a, &a, unit).unwrap();
+            assert_eq!(diff, 0.0, "identical timestamps diff in {unit:?}");
+        }
     }
 
     #[test]

@@ -65,7 +65,6 @@ fn perf_003_cold_start_under_100ms() {
 
     eprintln!("perf_003 cold start median: {:?}", median);
 
-    // 目标 <100ms，硬失败 200ms（2x headroom）
     assert!(
         median.as_millis() < 200,
         "cold start {}ms exceeds 200ms hard limit (target 100ms)",
@@ -76,7 +75,6 @@ fn perf_003_cold_start_under_100ms() {
 /// 1000 表达式批量求值 < 1s（2x headroom：硬失败 2s）。
 #[test]
 fn perf_004_batch_1000_under_1s() {
-    // 生成 1000 表达式的批量文件
     let tmp = tempfile::NamedTempFile::new().expect("temp file");
     let mut content = String::new();
     for i in 0..1000 {
@@ -88,13 +86,11 @@ fn perf_004_batch_1000_under_1s() {
     std::fs::write(tmp.path(), &content).expect("write batch file");
     let path = tmp.path().to_str().expect("path to str");
 
-    // 预热
     let _warmup = calnexus_cli()
         .args(["--batch", path])
         .output()
         .expect("warmup failed");
 
-    // 测量
     let start = Instant::now();
     let output = calnexus_cli()
         .args(["--batch", path])
@@ -105,7 +101,6 @@ fn perf_004_batch_1000_under_1s() {
     assert!(output.status.success(), "batch should succeed");
     eprintln!("perf_004 batch 1000 exprs: {:?}", elapsed);
 
-    // 目标 <1s，硬失败 2s（2x headroom）
     assert!(
         elapsed.as_millis() < 2000,
         "batch 1000 exprs {}ms exceeds 2000ms hard limit (target 1000ms)",
@@ -117,7 +112,6 @@ fn perf_004_batch_1000_under_1s() {
 /// 若 valgrind 未安装，跳过。
 #[test]
 fn perf_005_valgrind_dhat_memory_check() {
-    // 检测 valgrind 是否可用
     let valgrind_check = std::process::Command::new("valgrind")
         .arg("--version")
         .output();
@@ -127,7 +121,6 @@ fn perf_005_valgrind_dhat_memory_check() {
         return;
     }
 
-    // 运行 valgrind --tool=dhat 检查内存泄漏
     let bin = assert_cmd::cargo::cargo_bin("calnexus");
     let output = std::process::Command::new("valgrind")
         .args(["--tool=dhat", "--quiet"])

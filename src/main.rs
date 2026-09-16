@@ -27,7 +27,6 @@ fn setup_panic_hook() {
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             eprintln!("calnexus: internal error (panic)");
-            // 调用默认 hook 打印 panic location + backtrace（如启用）
             default_hook(info);
             eprintln!("calnexus: please report this bug with the backtrace above");
         }));

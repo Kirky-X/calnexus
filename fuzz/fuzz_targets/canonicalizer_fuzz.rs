@@ -14,7 +14,6 @@ fuzz_target!(|data: &str| {
         if let Ok((canon_ast, cf1)) = AstCanonicalizer::canonicalize(&ast) {
             // 二次规范化
             if let Ok((_, cf2)) = AstCanonicalizer::canonicalize(&canon_ast) {
-                // 幂等性：二次规范化结果应一致
                 assert_eq!(
                     cf1.as_str(),
                     cf2.as_str(),

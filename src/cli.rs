@@ -301,7 +301,6 @@ fn run_latex_steps_mode(expr: &str, ctx: &EvalContext, cli: &Cli, i18n: &crate::
         }
     }
 
-    // --latex：求值并输出 LaTeX 结果
     if cli.latex {
         let cache = CacheManager::with_capacity_bytes(crate::core::DEFAULT_MAX_WEIGHT_BYTES);
         match evaluate(expr, ctx, cli.precision, &cache) {
@@ -775,7 +774,6 @@ mod tests {
         }
     }
 
-    /// 递归收集 JSON 中所有字符串叶子。
     fn collect_json_strings(v: &serde_json::Value, out: &mut Vec<String>) {
         match v {
             serde_json::Value::String(s) => out.push(s.clone()),
@@ -832,7 +830,6 @@ mod tests {
 
     #[test]
     fn test_canonicalize_no_fold_equivalent_expressions() {
-        // 3+2 和 2+3 应产生相同的规范形式
         let ast1 = parse("3+2").unwrap();
         let ast2 = parse("2+3").unwrap();
         let (_, cf1) = AstCanonicalizer::canonicalize_no_fold(&ast1).unwrap();

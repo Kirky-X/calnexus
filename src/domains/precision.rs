@@ -148,7 +148,6 @@ impl PrecisionDomain {
             BinaryOp::Pow => {
                 let exp = math_prec::rational_to_int(&b, "power exponent")?;
                 // 安全约束1：拒绝超大指数（绝对值），防止 DoS。
-                // 修复 + 修复：
                 // `BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
                 // 即先计算 `a^|exp|`（巨大中间值）再取倒数。故负指数绝对值超限同样会 DoS
                 // （`2^(-2000000000)` 计算 `2^2000000000` ~6 亿位数字）。必须用 `abs()` 检查。
@@ -473,7 +472,6 @@ mod tests {
 
     #[test]
     fn test_big_integer_addition() {
-        // 12345678901234567890 + 1 → 12345678901234567891
         let ast = parse("12345678901234567890 + 1").unwrap();
         let domain = PrecisionDomain;
         assert!(domain.supports(&ast));
@@ -494,7 +492,6 @@ mod tests {
 
     #[test]
     fn test_fraction_addition() {
-        // 1/3 + 1/6 → 1/2
         let ast = parse("1/3 + 1/6").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -504,7 +501,6 @@ mod tests {
 
     #[test]
     fn test_fraction_reduction() {
-        // 2/4 → 1/2
         let ast = parse("2/4").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -552,7 +548,6 @@ mod tests {
 
     #[test]
     fn test_factorial_5() {
-        // factorial(5) → 120
         let ast = parse("factorial(5)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -609,7 +604,6 @@ mod tests {
 
     #[test]
     fn test_fraction_times_integer() {
-        // 1/3 * 3 → 1
         let ast = parse("1/3 * 3").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -618,7 +612,6 @@ mod tests {
 
     #[test]
     fn test_fraction_division() {
-        // (1/2) / (1/4) → 2
         let ast = parse("(1/2) / (1/4)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -929,7 +922,7 @@ mod tests {
 
     #[test]
     fn test_number_float_conversion() {
-        // lines 70-71: 非整数 f64 → BigRational::from_float 成功路径
+        // 非整数 f64 → BigRational::from_float 成功路径
         let ast = AstNode::Number(1.5);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -938,7 +931,7 @@ mod tests {
 
     #[test]
     fn test_number_float_conversion_error() {
-        // lines 70-71: 非有限 f64 → from_float 返回 None → EvalError
+        // 非有限 f64 → from_float 返回 None → EvalError
         let ast = AstNode::Number(f64::INFINITY);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -947,7 +940,7 @@ mod tests {
 
     #[test]
     fn test_bignumber_parse_error() {
-        // lines 76-77: BigNumber 无效字符串 → ParseError
+        // BigNumber 无效字符串 → ParseError
         let ast = AstNode::BigNumber("abc".to_string());
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -956,7 +949,7 @@ mod tests {
 
     #[test]
     fn test_bound_integer_variable() {
-        // lines 80-83: 绑定的整数变量
+        // 绑定的整数变量
         let ast = AstNode::Variable("x".to_string());
         let ctx = EvalContext::new().with_var("x", 5.0);
         let domain = PrecisionDomain;
@@ -966,7 +959,7 @@ mod tests {
 
     #[test]
     fn test_bound_float_variable() {
-        // lines 84-88: 绑定的浮点变量 → from_float 成功
+        // 绑定的浮点变量 → from_float 成功
         let ast = AstNode::Variable("y".to_string());
         let ctx = EvalContext::new().with_var("y", 1.5);
         let domain = PrecisionDomain;
@@ -976,7 +969,7 @@ mod tests {
 
     #[test]
     fn test_bound_infinite_variable() {
-        // lines 85-87: 绑定的无限变量 → from_float 失败 → EvalError
+        // 绑定的无限变量 → from_float 失败 → EvalError
         let ast = AstNode::Variable("z".to_string());
         let ctx = EvalContext::new().with_var("z", f64::INFINITY);
         let domain = PrecisionDomain;
@@ -986,7 +979,7 @@ mod tests {
 
     #[test]
     fn test_unbound_variable() {
-        // lines 89-90: 未绑定变量 → EvalError
+        // 未绑定变量 → EvalError
         let ast = AstNode::Variable("w".to_string());
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -995,7 +988,7 @@ mod tests {
 
     #[test]
     fn test_unary_factorial_manual_ast() {
-        // lines 104-105: UnaryOp::Factorial（parser 不产生此节点）
+        // UnaryOp::Factorial（parser 不产生此节点）
         let ast = AstNode::UnaryOp(
             UnaryOp::Factorial,
             Box::new(AstNode::BigNumber("5".to_string())),
@@ -1007,7 +1000,7 @@ mod tests {
 
     #[test]
     fn test_power_exponent_too_large() {
-        // lines 140-141: 幂指数超过 i32 范围 → DomainError
+        // 幂指数超过 i32 范围 → DomainError
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::BigNumber("2".to_string())),
@@ -1020,7 +1013,7 @@ mod tests {
 
     #[test]
     fn test_binary_mod_normal() {
-        // lines 145-151: BinaryOp::Mod 正常路径（parser 将 % 转为 mod() 函数调用）
+        // BinaryOp::Mod 正常路径（parser 将 % 转为 mod() 函数调用）
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::BigNumber("10".to_string())),
@@ -1033,7 +1026,7 @@ mod tests {
 
     #[test]
     fn test_binary_mod_by_zero() {
-        // lines 145-146: BinaryOp::Mod 除零 → DivisionByZero
+        // BinaryOp::Mod 除零 → DivisionByZero
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::BigNumber("10".to_string())),
@@ -1046,7 +1039,7 @@ mod tests {
 
     #[test]
     fn test_factorial_function_wrong_arg_count() {
-        // lines 166-169: factorial() 参数数量错误
+        // factorial() 参数数量错误
         let ast = AstNode::FunctionCall(
             "factorial".to_string(),
             vec![AstNode::Number(5.0), AstNode::Number(6.0)],
@@ -1058,7 +1051,7 @@ mod tests {
 
     #[test]
     fn test_abs_function_wrong_arg_count() {
-        // lines 177-180: abs() 参数数量错误
+        // abs() 参数数量错误
         let ast = AstNode::FunctionCall(
             "abs".to_string(),
             vec![AstNode::Number(5.0), AstNode::Number(6.0)],
@@ -1070,7 +1063,7 @@ mod tests {
 
     #[test]
     fn test_precision_nested_in_function() {
-        // lines 187-189: precision() 嵌套在其他函数中 → DomainError
+        // precision() 嵌套在其他函数中 → DomainError
         let ast = AstNode::FunctionCall(
             "abs".to_string(),
             vec![AstNode::FunctionCall(
@@ -1085,7 +1078,7 @@ mod tests {
 
     #[test]
     fn test_mod_function_wrong_arg_count() {
-        // lines 194-197: mod() 参数数量错误
+        // mod() 参数数量错误
         let ast = AstNode::FunctionCall("mod".to_string(), vec![AstNode::Number(10.0)]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -1094,7 +1087,7 @@ mod tests {
 
     #[test]
     fn test_mod_function_div_by_zero() {
-        // line 202: mod() 第二参数为零 → DivisionByZero
+        // mod() 第二参数为零 → DivisionByZero
         let ast = AstNode::FunctionCall(
             "mod".to_string(),
             vec![
@@ -1109,7 +1102,7 @@ mod tests {
 
     #[test]
     fn test_contains_precision_unary_op() {
-        // line 231: contains_precision for UnaryOp
+        // contains_precision for UnaryOp
         let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::BigNumber("42".to_string())));
         let domain = PrecisionDomain;
         assert!(domain.supports(&ast));
@@ -1117,7 +1110,7 @@ mod tests {
 
     #[test]
     fn test_contains_precision_matrix() {
-        // line 232: contains_precision for Matrix
+        // contains_precision for Matrix
         let ast = AstNode::Matrix(vec![vec![AstNode::BigNumber("42".to_string())]]);
         let domain = PrecisionDomain;
         assert!(domain.supports(&ast));
@@ -1125,7 +1118,7 @@ mod tests {
 
     #[test]
     fn test_contains_precision_list() {
-        // line 233: contains_precision for List
+        // contains_precision for List
         let ast = AstNode::List(vec![AstNode::BigNumber("42".to_string())]);
         let domain = PrecisionDomain;
         assert!(domain.supports(&ast));
@@ -1133,7 +1126,7 @@ mod tests {
 
     #[test]
     fn test_precision_bignumber_valid() {
-        // lines 251-257: extract_precision_value BigNumber 成功路径
+        // extract_precision_value BigNumber 成功路径
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
             vec![AstNode::BigNumber("50".to_string()), AstNode::Number(1.0)],
@@ -1145,7 +1138,7 @@ mod tests {
 
     #[test]
     fn test_precision_bignumber_invalid() {
-        // lines 253-254: extract_precision_value BigNumber 解析失败
+        // extract_precision_value BigNumber 解析失败
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
             vec![AstNode::BigNumber("abc".to_string()), AstNode::Number(1.0)],
@@ -1157,7 +1150,7 @@ mod tests {
 
     #[test]
     fn test_precision_bignumber_out_of_range() {
-        // lines 255-257: extract_precision_value BigNumber 超出 usize 范围
+        // extract_precision_value BigNumber 超出 usize 范围
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
             vec![AstNode::BigNumber("-5".to_string()), AstNode::Number(1.0)],
@@ -1169,7 +1162,7 @@ mod tests {
 
     #[test]
     fn test_precision_non_literal_n() {
-        // lines 260-262: extract_precision_value 非字面量 → DomainError
+        // extract_precision_value 非字面量 → DomainError
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
             vec![AstNode::Variable("x".to_string()), AstNode::Number(1.0)],
@@ -1181,7 +1174,7 @@ mod tests {
 
     #[test]
     fn test_precision_n_zero() {
-        // lines 266-268: extract_precision_value N == 0 → DomainError
+        // extract_precision_value N == 0 → DomainError
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
             vec![AstNode::Number(0.0), AstNode::Number(1.0)],
@@ -1193,7 +1186,7 @@ mod tests {
 
     #[test]
     fn test_rational_to_int_error_factorial() {
-        // lines 287-290: rational_to_int 非整数操作数 → DomainError
+        // rational_to_int 非整数操作数 → DomainError
         let ast = AstNode::FunctionCall("factorial".to_string(), vec![AstNode::Number(1.5)]);
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -1202,7 +1195,7 @@ mod tests {
 
     #[test]
     fn test_rational_to_int_error_power() {
-        // lines 287-290: rational_to_int 非整数幂指数 → DomainError
+        // rational_to_int 非整数幂指数 → DomainError
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::BigNumber("2".to_string())),
@@ -1213,11 +1206,11 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== 覆盖 extract_precision_value BigNumber("0") 路径（lines 265-268） =====
+    // ===== 覆盖 extract_precision_value BigNumber("0") 路径 =====
 
     #[test]
     fn test_precision_bignumber_zero() {
-        // lines 265-268: extract_precision_value BigNumber("0") → v == 0 → DomainError
+        // extract_precision_value BigNumber("0") → v == 0 → DomainError
         // Number(0.0) 走 line 242 的 *n > 0.0 检查，不会到达 lines 265-268。
         // 只有 BigNumber("0") 经过 BigInt 解析后 v == 0 才能到达此分支。
         let ast = AstNode::FunctionCall(
@@ -1229,19 +1222,19 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== 覆盖测试辅助函数的 panic 分支（lines 382, 395） =====
+    // ===== 覆盖测试辅助函数的 panic 分支 =====
 
     #[test]
     #[should_panic(expected = "expected BigInt")]
     fn test_assert_bigint_panics_on_non_bigint() {
-        // 传入 Scalar 而非 BigInt → panic（line 382）
+        // 传入 Scalar 而非 BigInt → panic
         assert_bigint(&EvalResult::Scalar(1.0), "1");
     }
 
     #[test]
     #[should_panic(expected = "expected BigRational")]
     fn test_assert_bigrational_panics_on_non_bigrational() {
-        // 传入 BigInt 而非 BigRational → panic（line 395）
+        // 传入 BigInt 而非 BigRational → panic
         assert_bigrational(&EvalResult::BigInt(BigInt::from(1)), "1", "2");
     }
 

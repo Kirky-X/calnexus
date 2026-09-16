@@ -165,7 +165,6 @@ impl<'a> SymbolicMathImpl<'a> {
         let expr_owned = expr.to_string();
         let var_owned = var.to_string();
 
-        // 构建 f(x) 闭包：设置变量值后求值
         let f = |x: f64| -> f64 {
             let mut local_ctx = ctx.clone();
             local_ctx.vars.insert(var_owned.clone(), x);

@@ -16,9 +16,8 @@
 //! 请求携带 `ConnectInfo`，限流按真实对端 IP 生效（此前手写提取器无条件信任
 //! header，本地监听场景 header 即对端自报）。
 //!
-//! 历史脚注：sdforge 0.5.0-rc.4 的 `RateLimitLayer` 未派生 Clone 时，本模块
-//! 曾提供 `ShareableRateLimitLayer` 桥接层；上游修复后已删除，直用
-//! `RateLimitLayer::new`（`Router::layer` 要求 `Layer + Clone`）。
+//! `Router::layer` 要求 `Layer + Clone`，直用 `RateLimitLayer::new`
+//! （依赖上游已派生 Clone）。
 
 use std::future::Future;
 use std::pin::Pin;
@@ -27,9 +26,7 @@ use std::time::Duration;
 use limiteron::sync::{RateLimitRejection, SyncFixedWindowLimiter};
 use sdforge::security::{HttpRequestRateLimiter, RateLimitError, RateLimiter};
 
-/// 默认窗口内最大请求数。
 const DEFAULT_LIMIT: u64 = 120;
-/// 默认窗口长度（秒）。
 const DEFAULT_WINDOW_SECS: u64 = 60;
 
 /// 固定窗口限流器：limiteron 同步策略 + sdforge 契约的薄适配层。
@@ -113,7 +110,6 @@ mod tests {
                     window_seconds: 60
                 }
             ));
-            // 独立标识互不影响
             assert!(limiter.check("ip2").await.is_ok());
         });
     }

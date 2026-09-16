@@ -8,12 +8,6 @@ use crate::core::CalcError;
 
 /// Newton-Raphson 迭代求根。
 ///
-/// - `f`: 目标函数
-/// - `df`: 导数函数
-/// - `x0`: 初始猜测
-/// - `tol`: 收敛容差
-/// - `max_iter`: 最大迭代次数
-///
 /// 导数为零 → `DomainError`；超 `max_iter` → `DomainError`。
 pub fn newton_raphson<F, G>(
     f: F,

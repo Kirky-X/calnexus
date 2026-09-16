@@ -201,25 +201,21 @@ mod tests {
 
     #[test]
     fn test_addition() {
-        // 2+3 → 5.0
         assert_eq!(eval("2+3").unwrap(), 5.0);
     }
 
     #[test]
     fn test_subtraction() {
-        // 10-4 → 6.0
         assert_eq!(eval("10-4").unwrap(), 6.0);
     }
 
     #[test]
     fn test_multiplication() {
-        // 6*7 → 42.0
         assert_eq!(eval("6*7").unwrap(), 42.0);
     }
 
     #[test]
     fn test_division() {
-        // 20/4 → 5.0
         assert_eq!(eval("20/4").unwrap(), 5.0);
     }
 
@@ -227,7 +223,6 @@ mod tests {
 
     #[test]
     fn test_integer_power() {
-        // 2^10 → 1024.0
         assert_eq!(eval("2^10").unwrap(), 1024.0);
     }
 
@@ -248,19 +243,16 @@ mod tests {
 
     #[test]
     fn test_factorial_positive() {
-        // 5! → 120.0
         assert_eq!(eval("factorial(5)").unwrap(), 120.0);
     }
 
     #[test]
     fn test_factorial_zero() {
-        // 0! → 1.0
         assert_eq!(eval("factorial(0)").unwrap(), 1.0);
     }
 
     #[test]
     fn test_factorial_ten() {
-        // 10! → 3628800.0
         assert_eq!(eval("factorial(10)").unwrap(), 3628800.0);
     }
 
@@ -268,7 +260,6 @@ mod tests {
 
     #[test]
     fn test_modulo_positive() {
-        // 10%3 → 1.0
         assert_eq!(eval("mod(10,3)").unwrap(), 1.0);
     }
 
@@ -282,13 +273,11 @@ mod tests {
 
     #[test]
     fn test_abs_negative() {
-        // abs(-5) → 5.0
         assert_eq!(eval("abs(-5)").unwrap(), 5.0);
     }
 
     #[test]
     fn test_abs_positive() {
-        // abs(3.14) → 3.14
         let result = eval("abs(3.14)").unwrap();
         assert!((result - 3.14).abs() < 1e-10);
     }
@@ -323,7 +312,6 @@ mod tests {
 
     #[test]
     fn test_division_by_zero() {
-        // 5/0 → DivisionByZero
         let result = eval("5/0");
         assert!(result.is_err());
         assert!(
@@ -335,7 +323,6 @@ mod tests {
 
     #[test]
     fn test_modulo_by_zero() {
-        // 10%0 → DivisionByZero
         let result = eval("mod(10,0)");
         assert!(result.is_err());
         assert!(
@@ -382,7 +369,6 @@ mod tests {
 
     #[test]
     fn test_negative_base_integer_power() {
-        // (-2)^3 → -8.0
         assert_eq!(eval("(-2)^3").unwrap(), -8.0);
     }
 
@@ -402,14 +388,12 @@ mod tests {
 
     #[test]
     fn test_bound_variable() {
-        // x=3, x*2 → 6.0
         let ctx = EvalContext::new().with_var("x", 3.0);
         assert_eq!(eval_with_ctx("x*2", &ctx).unwrap(), 6.0);
     }
 
     #[test]
     fn test_unbound_variable() {
-        // y*2 without binding → EvalError
         let result = eval("y*2");
         assert!(result.is_err());
         assert!(

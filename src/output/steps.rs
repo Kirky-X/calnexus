@@ -102,7 +102,6 @@ fn walk(
             Ok(result)
         }
         AstNode::FunctionCall(name, args) => {
-            // 求值所有参数，对每个参数子树递归生成步骤
             let mut arg_values = Vec::with_capacity(args.len());
             for arg in args {
                 arg_values.push(walk(arg, ctx, steps, depth + 1)?);

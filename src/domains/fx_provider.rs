@@ -169,6 +169,28 @@ impl FrankfurterProvider {
         }
     }
 
+    /// 测试专用构造函数：缓存文件路径 + 注入抓取闭包。
+    ///
+    /// 并发一致性测试需要同时覆盖「L2 过期文件」与「确定性抓取结局」：
+    /// `with_cache_path` 走真实 ureq（结局依赖环境网络可达性），而
+    /// `with_fetcher` 强制无缓存文件——此构造器补上两者的组合，
+    /// 使并发场景与真实网络完全解耦（负载/有网环境下可复现）。
+    #[cfg(test)]
+    fn with_cache_path_and_fetcher(
+        path: PathBuf,
+        fetcher: Box<dyn Fn() -> Result<RateTable, CalcError> + Send + Sync>,
+        threshold: u32,
+        cooldown: Duration,
+    ) -> Self {
+        Self {
+            cache_path: Some(path),
+            in_memory: Mutex::new(None),
+            fetch_lock: Mutex::new(()),
+            breaker: SyncCircuitBreaker::new(threshold, cooldown),
+            fetcher: Some(TestFetcher(fetcher)),
+        }
+    }
+
     /// 网络抓取入口：生产走 `fetch_from_network`，测试走注入闭包。
     #[cfg(test)]
     fn fetch(&self) -> Result<RateTable, CalcError> {
@@ -770,8 +792,15 @@ mod tests {
 
     #[test]
     fn test_fetch_lock_concurrent_consistency() {
-        // 过期缓存 + 网络不可达（CI/沙箱环境）下 8 线程并发 rates()：
-        // 持锁序列化语义保证不死锁、结果一致（同一错误或同一数据）、无 panic。
+        // 过期缓存 + 注入式恒失败 fetcher 下 8 线程并发 rates()：
+        // 持锁序列化保证不死锁，全部线程得到同 kind 的
+        // DependencyUnavailable（fetch 失败与熔断 Open 同 kind），无 panic。
+        //
+        // 加固说明：本测试原实现走真实 ureq（with_cache_path），依赖
+        // 「环境网络不可达」假设——在有网机器的重负载并行下，上游首次
+        // 瞬断、后续恢复会令各线程出现合法的混合 Ok/Err，一致性断言
+        // 误报（CI 全量跑时观察到一次）。注入 fetcher 后场景与真实
+        // 网络完全解耦，任何环境确定性复现。
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let table = RateTable {
             base: "EUR".to_string(),
@@ -781,8 +810,11 @@ mod tests {
         // 写入后将 fetched_at 置 0（必然过期）
         write_cache_file(tmp.path(), &table, 0).unwrap();
 
-        let provider = std::sync::Arc::new(FrankfurterProvider::with_cache_path(
+        let provider = std::sync::Arc::new(FrankfurterProvider::with_cache_path_and_fetcher(
             tmp.path().to_path_buf(),
+            Box::new(|| Err(CalcError::dependency_unavailable("synthetic fx outage"))),
+            DEFAULT_BREAKER_THRESHOLD,
+            DEFAULT_BREAKER_COOLDOWN,
         ));
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
         let mut handles = vec![];
@@ -795,14 +827,58 @@ mod tests {
             }));
         }
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        // 全部一致：要么同错误（网络不可达 + 无 ALLOW_STALE），要么同数据
-        let first = &results[0];
-        for r in &results[1..] {
-            match (first, r) {
-                (Ok(a), Ok(b)) => assert_eq!(a.date, b.date),
-                (Err(a), Err(b)) => assert_eq!(a.kind, b.kind),
-                _ => panic!("并发 rates() 结果不一致"),
+        // 全部失败且同 kind：fetch 失败（前 threshold 次）与熔断 Open
+        // （其后）映射到同一 DependencyUnavailable kind
+        for r in &results {
+            match r {
+                Err(e) => assert_eq!(
+                    e.kind,
+                    crate::core::ErrorKind::DependencyUnavailable,
+                    "got {e:?}"
+                ),
+                Ok(t) => panic!("注入 fetcher 恒失败，不应出现成功结果：{t:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn test_fetch_lock_concurrent_success_consistency() {
+        // 成功侧镜像：过期缓存 + 注入式恒成功 fetcher。并发下部分线程
+        // 真实抓取并写回 L1/L2，其余经 double-check 命中——所有线程
+        // 必须看到同一张表（同 base/date/rates）。
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let table = RateTable {
+            base: "EUR".to_string(),
+            date: "2026-07-20".to_string(),
+            rates: mock_rates(),
+        };
+        write_cache_file(tmp.path(), &table, 0).unwrap(); // 置为必然过期
+
+        let provider = std::sync::Arc::new(FrankfurterProvider::with_cache_path_and_fetcher(
+            tmp.path().to_path_buf(),
+            Box::new(move || Ok(table.clone())),
+            DEFAULT_BREAKER_THRESHOLD,
+            DEFAULT_BREAKER_COOLDOWN,
+        ));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let mut handles = vec![];
+        for _ in 0..8 {
+            let p = std::sync::Arc::clone(&provider);
+            let b = std::sync::Arc::clone(&barrier);
+            handles.push(std::thread::spawn(move || {
+                b.wait();
+                p.rates()
+            }));
+        }
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let first = results[0]
+            .as_ref()
+            .expect("injected fetcher always succeeds");
+        for r in &results[1..] {
+            let t = r.as_ref().expect("all threads should succeed");
+            assert_eq!(t.base, first.base);
+            assert_eq!(t.date, first.date);
+            assert_eq!(t.rates, first.rates);
         }
     }
 

@@ -997,7 +997,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_bignumber() {
-        // eval_node BigNumber path
         let ast = AstNode::BigNumber("42".to_string());
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_scalar().unwrap(), 42.0);
@@ -1012,7 +1011,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_variable_bound() {
-        // eval_node Variable with bound value
         let ctx = EvalContext::new().with_var("x", 7.0);
         let ast = AstNode::Variable("x".to_string());
         let result = VectorDomain.evaluate(&ast, &ctx).unwrap();
@@ -1139,7 +1137,6 @@ mod tests {
 
     #[test]
     fn test_scalar_mod_by_zero() {
-        // eval_scalar_binary Mod by zero
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::Number(10.0)),
@@ -1151,7 +1148,6 @@ mod tests {
 
     #[test]
     fn test_scalar_div_zero() {
-        // eval_scalar_binary Div by zero (a != 0)
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(5.0)),
@@ -1188,7 +1184,6 @@ mod tests {
 
     #[test]
     fn test_unary_factorial_in_scalar() {
-        // eval_scalar UnaryOp::Factorial error
         let ast = AstNode::BinaryOp(
             BinaryOp::Mul,
             Box::new(AstNode::UnaryOp(
@@ -1211,7 +1206,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_matrix_rejected() {
-        // eval_node Matrix rejection
         let ast = AstNode::Matrix(vec![vec![AstNode::Number(1.0)]]);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
@@ -1219,7 +1213,6 @@ mod tests {
 
     #[test]
     fn test_unsupported_vector_binary_div() {
-        // List / List unsupported
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::List(vec![
@@ -1380,7 +1373,7 @@ mod tests {
 
     #[test]
     fn test_eval_node_bare_number() {
-        // eval_node 直接处理 Number → Scalar（line 64）
+        // eval_node 直接处理 Number → Scalar
         let ast = AstNode::Number(42.0);
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_scalar().unwrap(), 42.0);
@@ -1388,7 +1381,7 @@ mod tests {
 
     #[test]
     fn test_eval_node_unary_neg_non_list() {
-        // UnaryOp::Neg 非列表操作数 → 标量取反（lines 100-101）
+        // UnaryOp::Neg 非列表操作数 → 标量取反
         let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
         let result = VectorDomain.evaluate(&ast, &EvalContext::new()).unwrap();
         assert_eq!(result.as_scalar().unwrap(), -5.0);
@@ -1396,7 +1389,7 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_binary_div_success() {
-        // eval_scalar_binary Div 成功路径 b != 0（lines 171-172）
+        // eval_scalar_binary Div 成功路径 b != 0
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(10.0)),
@@ -1408,7 +1401,7 @@ mod tests {
 
     #[test]
     fn test_contains_vector_arithmetic_in_matrix() {
-        // contains_vector_arithmetic Matrix 分支（line 431）
+        // contains_vector_arithmetic Matrix 分支
         let ast = AstNode::Matrix(vec![vec![parse("[1,2]+[3,4]").unwrap()]]);
         assert!(VectorDomain.supports(&ast));
     }

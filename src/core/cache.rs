@@ -182,7 +182,6 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    // 辅助函数：解析 + 规范化，返回 CanonicalForm
     fn canon(input: &str) -> CanonicalForm {
         let ast = parse(input).unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();

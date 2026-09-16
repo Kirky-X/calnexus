@@ -139,7 +139,6 @@ impl ReplSession {
 
     /// 处理 `:let NAME = VALUE` 变量绑定。
     fn handle_let(&mut self, args: &str) {
-        // 解析 NAME = VALUE
         let eq_parts: Vec<&str> = args.splitn(2, '=').collect();
         if eq_parts.len() != 2 {
             eprintln!("{}", self.i18n.t("repl.let_missing_equals"));
@@ -348,7 +347,6 @@ mod tests {
     #[test]
     fn test_handle_let_expression() {
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
-        // let y = 2+3*4 → y = 14
         session.handle_let("y = 2+3*4");
         assert_eq!(session.ctx.get_var("y"), Some(14.0));
     }
@@ -357,7 +355,6 @@ mod tests {
     fn test_handle_let_missing_equals() {
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x 42");
-        // 应不绑定任何变量
         assert!(session.ctx.vars.is_empty());
     }
 
@@ -486,8 +483,6 @@ mod tests {
 
     #[test]
     fn test_command_clear() {
-        // clear 命令：打印 ANSI 清屏序列，返回 Continue
-        // 覆盖 lines 173-176（:clear 分支）
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         let result = session.handle_command(":clear");
         assert!(matches!(result, CommandResult::Continue));
@@ -495,28 +490,22 @@ mod tests {
 
     #[test]
     fn test_handle_let_non_scalar_result() {
-        // let x = 3+4i → evaluate 返回 Complex（非 Scalar）
-        // 覆盖 lines 222-226（Ok 分支但结果非 Scalar）
+        // let x = 3+4i → evaluate 返回 Complex（非 Scalar 分支）
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x = 3+4i");
-        // 非标量结果不应绑定变量
         assert!(session.ctx.get_var("x").is_none());
     }
 
     #[test]
     fn test_handle_let_eval_error() {
-        // let x = 2++3 → parse 失败 → evaluate 返回 Err
-        // 覆盖 lines 228-230（evaluate 错误分支）
+        // let x = 2++3 → f64 解析与 evaluate 双双失败（error1/error2 均上报）
         let mut session = ReplSession::new(EvalContext::new(), I18n::default());
         session.handle_let("x = 2++3");
-        // 求值失败不应绑定变量
         assert!(session.ctx.get_var("x").is_none());
     }
 
     #[test]
     fn test_complete_candidates_pos_not_at_end() {
-        // 光标不在行尾时直接返回空候选
-        // 覆盖 line 315（pos != line.len()）
         let (start, candidates) = complete_candidates("sin", 1);
         assert_eq!(start, 0);
         assert!(candidates.is_empty());
@@ -524,8 +513,7 @@ mod tests {
 
     #[test]
     fn test_complete_candidates_empty_prefix() {
-        // 行尾为非标识符字符时，提取的前缀为空 → 返回空候选
-        // 覆盖 line 339（prefix.is_empty()）
+        // "(" 行尾无标识符字符 → 提取前缀为空
         let (start, candidates) = complete_candidates("(", 1);
         assert_eq!(start, 0);
         assert!(candidates.is_empty());

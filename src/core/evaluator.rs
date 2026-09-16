@@ -139,7 +139,7 @@ fn build_cache_key(
         cf.as_str().to_string()
     };
 
-    // 混入 vars 哈希：按 key 字典序排序后 BLAKE3 哈希
+    // 混入 vars 哈希
     let mut vars_input: Vec<u8> = Vec::new();
     let mut sorted_vars: Vec<_> = ctx.vars.iter().collect();
     sorted_vars.sort_by_key(|(k, _)| *k);
@@ -209,7 +209,6 @@ fn eval_regular_mode(
         let result = domain.evaluate(canonical_ast, ctx)?;
         check_elapsed(start, ctx.timeout)?;
         let fmt_prec = extract_format_precision(canonical_ast);
-        // cache_hit = false，且不写入缓存
         return Ok((result, domain.domain_name().to_string(), false, fmt_prec));
     }
 

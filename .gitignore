@@ -59,8 +59,6 @@ Desktop.ini
 .codenexus/
 # fuzz testing build artifacts
 /fuzz/target
-# runtime logs
-/logs
 # reference templates
 temp/
 # spec source docs（ADD/PRD 已并入 docs/ARCHITECTURE.md 与 docs/archive/，见 git-workflow spec）

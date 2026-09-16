@@ -4,9 +4,6 @@
 
 ## 📋 目录
 
-<details open>
-<summary>📑 目录</summary>
-
 - [📌 支持版本](#-支持版本)
   - [最低支持 Rust 版本（MSRV）](#最低支持-rust-版本msrv)
   - [依赖安全](#依赖安全)
@@ -25,8 +22,6 @@
   - [面向库使用者](#面向库使用者)
   - [面向服务端部署](#面向服务端部署)
 - [📚 相关文档](#-相关文档)
-
-</details>
 
 ---
 
@@ -57,6 +52,7 @@ cargo deny check
 
 - 全部依赖禁用默认特性、按需最小化启用，缩小传递依赖面。
 - [周度定时工作流](https://github.com/kirky-x/calnexus/actions/workflows/audit.yml)自动执行 `cargo audit` + `cargo deny`，dependabot 跟踪依赖更新。
+- [CodeQL 静态安全分析](https://github.com/kirky-x/calnexus/actions/workflows/codeql.yml)（push/PR 触发 + 周日 UTC 0 点周度定时）。
 - 发布流水线内置发布前 `cargo audit --deny warnings` 门禁与版本一致性校验。
 - 第三方 GitHub Actions 全部 commit SHA 钉扎。
 

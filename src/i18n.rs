@@ -110,7 +110,6 @@ impl I18n {
             result.push_str(&remaining[..start]);
             if let Some(end) = remaining[start..].find('}') {
                 let placeholder_name = &remaining[start + 1..start + end];
-                // 查找匹配的 arg
                 if let Some((_, value)) = args.iter().find(|(name, _)| *name == placeholder_name) {
                     result.push_str(value);
                 } else {

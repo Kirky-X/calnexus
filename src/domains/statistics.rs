@@ -661,13 +661,11 @@ mod tests {
 
     #[test]
     fn test_standard_list_parse() {
-        // count([1,2,3,4,5]) → 5（5 元素 List）
         assert_eq!(eval("count([1,2,3,4,5])").unwrap(), 5.0);
     }
 
     #[test]
     fn test_single_element_list_parse() {
-        // count([42]) → 1（1 元素 List）
         assert_eq!(eval("count([42])").unwrap(), 1.0);
     }
 
@@ -675,13 +673,11 @@ mod tests {
 
     #[test]
     fn test_mean_standard() {
-        // mean([1,2,3,4,5]) → 3.0
         assert_eq!(eval("mean([1,2,3,4,5])").unwrap(), 3.0);
     }
 
     #[test]
     fn test_mean_single_element() {
-        // mean([5]) → 5.0
         assert_eq!(eval("mean([5])").unwrap(), 5.0);
     }
 
@@ -695,7 +691,6 @@ mod tests {
 
     #[test]
     fn test_variance_identical_elements() {
-        // variance([3,3,3,3]) → 0.0
         assert_eq!(eval("variance([3,3,3,3])").unwrap(), 0.0);
     }
 
@@ -709,7 +704,6 @@ mod tests {
 
     #[test]
     fn test_std_identical_elements() {
-        // std([5,5,5]) → 0.0
         assert_eq!(eval("std([5,5,5])").unwrap(), 0.0);
     }
 
@@ -717,13 +711,11 @@ mod tests {
 
     #[test]
     fn test_median_odd_length() {
-        // median([1,2,3,4,5]) → 3.0
         assert_eq!(eval("median([1,2,3,4,5])").unwrap(), 3.0);
     }
 
     #[test]
     fn test_median_even_length() {
-        // median([1,2,3,4]) → 2.5
         assert_eq!(eval("median([1,2,3,4])").unwrap(), 2.5);
     }
 
@@ -737,13 +729,11 @@ mod tests {
 
     #[test]
     fn test_min() {
-        // min([3,1,4,1,5,9,2,6]) → 1.0
         assert_eq!(eval("min([3,1,4,1,5,9,2,6])").unwrap(), 1.0);
     }
 
     #[test]
     fn test_max() {
-        // max([3,1,4,1,5,9,2,6]) → 9.0
         assert_eq!(eval("max([3,1,4,1,5,9,2,6])").unwrap(), 9.0);
     }
 
@@ -751,13 +741,11 @@ mod tests {
 
     #[test]
     fn test_sum() {
-        // sum([1,2,3,4,5]) → 15.0
         assert_eq!(eval("sum([1,2,3,4,5])").unwrap(), 15.0);
     }
 
     #[test]
     fn test_count() {
-        // count([1,2,3,4,5]) → 5.0
         assert_eq!(eval("count([1,2,3,4,5])").unwrap(), 5.0);
     }
 
@@ -765,7 +753,6 @@ mod tests {
 
     #[test]
     fn test_empty_list_mean() {
-        // mean([]) → DomainError
         let result = eval("mean([])");
         assert!(result.is_err());
         assert!(
@@ -777,7 +764,6 @@ mod tests {
 
     #[test]
     fn test_empty_list_sum() {
-        // sum([]) → DomainError
         let result = eval("sum([])");
         assert!(result.is_err());
         assert!(
@@ -909,7 +895,6 @@ mod tests {
 
     #[test]
     fn test_median_two_elements() {
-        // median([1, 2]) → 1.5
         assert_eq!(eval("median([1, 2])").unwrap(), 1.5);
     }
 
@@ -928,7 +913,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_result_not_finite() {
-        // line 48: evaluate() 结果非有限 → NaNOrInf
+        // evaluate() 结果非有限 → NaNOrInf
         // sum([1e308, 1e308]) = inf
         let ast = AstNode::FunctionCall(
             "sum".to_string(),
@@ -944,7 +929,7 @@ mod tests {
 
     #[test]
     fn test_unbound_variable_in_list() {
-        // lines 59-61: 列表中含未绑定变量 → EvalError
+        // 列表中含未绑定变量 → EvalError
         let ast = AstNode::FunctionCall(
             "mean".to_string(),
             vec![AstNode::List(vec![AstNode::Variable("y".to_string())])],
@@ -956,7 +941,7 @@ mod tests {
 
     #[test]
     fn test_unary_abs_manual_ast() {
-        // line 71: UnaryOp::Abs（parser 不产生此节点）
+        // UnaryOp::Abs（parser 不产生此节点）
         let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(-5.0)));
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
@@ -965,7 +950,7 @@ mod tests {
 
     #[test]
     fn test_unary_factorial_not_supported() {
-        // lines 72-74: UnaryOp::Factorial → DomainError
+        // UnaryOp::Factorial → DomainError
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let domain = StatisticsDomain;
         let result = domain.evaluate(&ast, &EvalContext::new());
@@ -974,7 +959,7 @@ mod tests {
 
     #[test]
     fn test_scalar_zero_div_zero() {
-        // lines 94-96: 0/0 → NaNOrInf
+        // 0/0 → NaNOrInf
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(0.0)),
@@ -987,7 +972,7 @@ mod tests {
 
     #[test]
     fn test_scalar_div_by_zero() {
-        // line 98: x/0 (x≠0) → DivisionByZero
+        // x/0 (x≠0) → DivisionByZero
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(5.0)),
@@ -1000,7 +985,7 @@ mod tests {
 
     #[test]
     fn test_scalar_div_normal() {
-        // line 100: 正常除法 a / b
+        // 正常除法 a / b
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(10.0)),
@@ -1013,7 +998,7 @@ mod tests {
 
     #[test]
     fn test_scalar_zero_pow_zero() {
-        // lines 103-104: 0^0 → 1.0
+        // 0^0 → 1.0
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::Number(0.0)),
@@ -1026,7 +1011,7 @@ mod tests {
 
     #[test]
     fn test_scalar_pow_normal() {
-        // line 106: a.powf(b) 正常路径
+        // a.powf(b) 正常路径
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::Number(2.0)),
@@ -1039,7 +1024,7 @@ mod tests {
 
     #[test]
     fn test_scalar_mod_by_zero() {
-        // lines 110-111: mod by zero → DivisionByZero
+        // mod by zero → DivisionByZero
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::Number(10.0)),
@@ -1052,7 +1037,7 @@ mod tests {
 
     #[test]
     fn test_scalar_mod_normal() {
-        // line 113: a % b 正常路径
+        // a % b 正常路径
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::Number(10.0)),
@@ -1065,7 +1050,7 @@ mod tests {
 
     #[test]
     fn test_scalar_result_not_finite() {
-        // line 117: eval_binary 结果非有限 → NaNOrInf
+        // eval_binary 结果非有限 → NaNOrInf
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Number(1e308)),
@@ -1078,7 +1063,7 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        // lines 203-205: Default impl
+        // Default impl
         let domain = StatisticsDomain;
         assert_eq!(domain.domain_name(), "statistics");
         assert_eq!(domain.priority(), 20);
@@ -1086,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_contains_statistics_unary_op() {
-        // line 216: contains_statistics_function for UnaryOp
+        // contains_statistics_function for UnaryOp
         let ast = AstNode::UnaryOp(
             UnaryOp::Neg,
             Box::new(AstNode::FunctionCall(
@@ -1111,7 +1096,7 @@ mod tests {
 
     #[test]
     fn test_contains_statistics_list() {
-        // line 218: contains_statistics_function for List
+        // contains_statistics_function for List
         let ast = AstNode::List(vec![AstNode::FunctionCall(
             "count".to_string(),
             vec![AstNode::List(vec![AstNode::Number(1.0)])],

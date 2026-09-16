@@ -102,7 +102,6 @@ impl AstCanonicalizer {
                 }
                 Ok(ast.clone())
             }
-            // 其他 Leaf 节点：直接克隆
             AstNode::Variable(_)
             | AstNode::Complex(_, _)
             | AstNode::BigNumber(_)
@@ -399,7 +398,6 @@ mod tests {
     use crate::core::ErrorKind;
     use crate::core::parser::parse;
 
-    // 辅助函数：解析 + 规范化，返回 CanonicalForm 字符串
     fn canon(input: &str) -> Result<String, CalcError> {
         let ast = parse(input)?;
         let (_, cf) = AstCanonicalizer::canonicalize(&ast)?;
@@ -648,7 +646,6 @@ mod tests {
         );
     }
 
-    // 辅助函数：计算 AST 深度
     fn ast_depth(ast: &AstNode) -> usize {
         match ast {
             AstNode::Number(_)

@@ -2,8 +2,6 @@
 
 //! HTTP server 启动：API 路由（显式注册）+ sdforge 健康探针 + /metrics + 优雅关闭。
 //!
-//! 定义接口契约。
-//!
 //! 路由注册策略（缓存重构期间发现的关键修复）：`#[forge]` 宏生成的 HTTP
 //! inventory 注册在 rlib/测试二进制场景下会被链接器 GC 静默丢弃（`#[forge]`
 //! 注解对象文件若无其他符号引用即整体剔除，404 且无任何告警）。因此 HTTP 路由
@@ -45,7 +43,6 @@ use std::sync::Arc;
 /// 请求体大小上限（64KB，安全前置任务：防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
 
-/// 优雅关闭排空超时：30 秒。
 const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// 构建 CalNexus HTTP Router：显式 API 路由 + sdforge 探针 + body limit +
@@ -139,8 +136,6 @@ fn register_cache_readiness_check() {
     });
 }
 
-/// `POST /api/v1/evaluate`：Json 提取 → `evaluate_with_timeout` → ApiError 契约。
-///
 /// 与 `#[forge]` 宏生成的 HTTP 外壳行为等价（Json 提取 + `.0` 解包 +
 /// `ApiError::into_response` 错误路径）。
 async fn evaluate_http_handler(
@@ -153,7 +148,6 @@ async fn evaluate_http_handler(
     }
 }
 
-/// `POST /api/v1/list_functions`：Json 提取 → `list_functions`（显式挂载）。
 async fn list_functions_http_handler(
     axum::extract::Json(_req): axum::extract::Json<super::catalog::ListFunctionsRequest>,
 ) -> axum::response::Response {
@@ -164,7 +158,6 @@ async fn list_functions_http_handler(
     }
 }
 
-/// `POST /api/v1/fx_budget`：Json 提取 → `fx_budget`（显式挂载，同上）。
 #[cfg(all(feature = "fx", feature = "mcp"))]
 async fn fx_budget_http_handler(
     axum::extract::Json(req): axum::extract::Json<FxBudgetRequest>,
@@ -176,7 +169,6 @@ async fn fx_budget_http_handler(
     }
 }
 
-/// `POST /api/v1/fx_pricing`：Json 提取 → `fx_pricing`（显式挂载，同上）。
 #[cfg(all(feature = "fx", feature = "mcp"))]
 async fn fx_pricing_http_handler(
     axum::extract::Json(req): axum::extract::Json<FxPricingRequest>,
@@ -201,7 +193,6 @@ async fn request_count_middleware(
     next.run(req).await
 }
 
-/// 读取全局请求计数。
 fn http_requests_total() -> u64 {
     HTTP_REQUESTS_TOTAL.load(Ordering::Relaxed)
 }
@@ -490,7 +481,6 @@ mod tests {
             "应从 W3C traceparent 提取 trace_id 回写 X-Trace-ID"
         );
 
-        // metrics 的 http_requests_total 应随请求增长
         let before = http_requests_total();
         let _ = router
             .clone()

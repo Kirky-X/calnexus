@@ -42,12 +42,10 @@ fn evaluate_full(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcError>
     let cache = CacheManager::new();
     let router = default_router();
 
-    // 缓存查询
     if let Some(cached) = cache.get(&cf) {
         return Ok(cached);
     }
 
-    // 路由 + 求值
     let domain = router.route(&canonical_ast)?;
     let result = domain.evaluate(&canonical_ast, ctx)?;
     cache.insert(&cf, &Ok(result.clone()));
@@ -76,13 +74,11 @@ fn evaluate_precision(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcE
 
 #[test]
 fn test_full_pipeline_arithmetic_basic() {
-    // 2+3 → 5（ArithmeticDomain）
     assert_eq!(evaluate("2+3").unwrap(), 5.0);
 }
 
 #[test]
 fn test_full_pipeline_arithmetic_complex() {
-    // (2+9)*7-6 → 71
     assert_eq!(evaluate("(2+9)*7-6").unwrap(), 71.0);
 }
 
@@ -100,14 +96,12 @@ fn test_full_pipeline_arithmetic_mod_abs() {
 
 #[test]
 fn test_full_pipeline_scientific_trig() {
-    // sin(pi/2) → 1（ScientificDomain）
     let result = evaluate("sin(pi/2)").unwrap();
     assert!((result - 1.0).abs() < 1e-10);
 }
 
 #[test]
 fn test_full_pipeline_scientific_log() {
-    // log(100, 10) → 2
     let result = evaluate("log(100, 10)").unwrap();
     assert!((result - 2.0).abs() < 1e-10);
 }
@@ -116,7 +110,6 @@ fn test_full_pipeline_scientific_log() {
 fn test_full_pipeline_scientific_gamma_erf() {
     // gamma(5) → 24, erf(1) ≈ 0.8427
     let result = evaluate("gamma(5) + erf(1)").unwrap();
-    // gamma(5)=24, erf(1)≈0.8427008
     assert!((result - 24.8427008).abs() < 1e-5);
 }
 
@@ -129,7 +122,6 @@ fn test_full_pipeline_mixed_arithmetic_scientific() {
 
 #[test]
 fn test_full_pipeline_variable_binding() {
-    // x=10, y=20 → x*y = 200
     let ctx = EvalContext::new().with_var("x", 10.0).with_var("y", 20.0);
     assert_eq!(evaluate_with_ctx("x*y", &ctx).unwrap(), 200.0);
 }
@@ -252,7 +244,6 @@ fn test_cache_get_or_compute_dedup() {
 
 #[test]
 fn test_cache_does_not_store_errors() {
-    // 错误结果不写入缓存
     let cf = calnexus::CanonicalForm::new("(+ 1 2)");
     let cache = CacheManager::new();
     cache.insert(&cf, &Err(CalcError::division_by_zero()));
@@ -263,7 +254,6 @@ fn test_cache_does_not_store_errors() {
 
 #[test]
 fn test_error_parse_error() {
-    // 语法错误 → ParseError
     let result = evaluate("2++");
     assert!(result.is_err());
     assert!(
@@ -275,7 +265,6 @@ fn test_error_parse_error() {
 
 #[test]
 fn test_error_unbalanced_parens() {
-    // 不平衡括号 → ParseError
     let result = evaluate("(2+3");
     assert!(result.is_err());
     assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Parse));
@@ -308,7 +297,6 @@ fn test_error_division_by_zero() {
 
 #[test]
 fn test_error_modulo_by_zero() {
-    // 10%0 → DivisionByZero
     let result = evaluate("mod(10,0)");
     assert!(result.is_err());
     assert!(
@@ -344,7 +332,6 @@ fn test_error_domain_error_asin_out_of_range() {
 
 #[test]
 fn test_error_domain_error_log_negative() {
-    // ln(-1) → DomainError
     let result = evaluate("ln(-1)");
     assert!(result.is_err());
     assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
@@ -406,16 +393,16 @@ fn test_all_seven_error_variants_covered() {
     // 元测试：确认 7 种 CalcError 变体均已在集成测试中覆盖传播路径
     // ParseError, EvalError, Overflow, NaNOrInf, DomainError, DepthExceeded, DivisionByZero
     let covered = [
-        matches!(evaluate("2++"), Err(e) if e.kind == ErrorKind::Parse), // ParseError
-        matches!(evaluate("factorial(1,2)"), Err(e) if e.kind == ErrorKind::Eval), // EvalError
-        matches!(evaluate("factorial(10001)"), Err(e) if e.kind == ErrorKind::Overflow), // Overflow
-        matches!(evaluate("1e308+1e308"), Err(e) if e.kind == ErrorKind::NaNOrInf), // NaNOrInf
-        matches!(evaluate("asin(2)"), Err(e) if e.kind == ErrorKind::Domain), // DomainError
+        matches!(evaluate("2++"), Err(e) if e.kind == ErrorKind::Parse),
+        matches!(evaluate("factorial(1,2)"), Err(e) if e.kind == ErrorKind::Eval),
+        matches!(evaluate("factorial(10001)"), Err(e) if e.kind == ErrorKind::Overflow),
+        matches!(evaluate("1e308+1e308"), Err(e) if e.kind == ErrorKind::NaNOrInf),
+        matches!(evaluate("asin(2)"), Err(e) if e.kind == ErrorKind::Domain),
         matches!(
             evaluate(&format!("1{}", "+1".repeat(300))),
             Err(e) if e.kind == ErrorKind::Depth
-        ), // DepthExceeded
-        matches!(evaluate("5/0"), Err(e) if e.kind == ErrorKind::DivisionByZero), // DivisionByZero
+        ),
+        matches!(evaluate("5/0"), Err(e) if e.kind == ErrorKind::DivisionByZero),
     ];
     for (i, ok) in covered.iter().enumerate() {
         assert!(ok, "error variant #{} not properly triggered", i);
@@ -452,10 +439,8 @@ fn test_cache_hit_performance() {
     let cache = CacheManager::new();
     cache.insert(&cf, &Ok(EvalResult::Scalar(5.0)));
 
-    // 预热
     let _ = cache.get(&cf);
 
-    // 测量 1000 次缓存命中
     let iterations = 1000;
     let start = std::time::Instant::now();
     for _ in 0..iterations {
@@ -496,14 +481,12 @@ fn test_cache_hit_performance() {
 
 #[test]
 fn test_complex_pipeline_literal() {
-    // 3+4i → parse → canonicalize → route(ComplexDomain) → evaluate → Complex(3,4)
     let result = evaluate_full("3+4i", &EvalContext::new()).unwrap();
     assert_eq!(result, EvalResult::Complex(3.0, 4.0));
 }
 
 #[test]
 fn test_complex_pipeline_addition() {
-    // (1+2i)+(3+4i) → 4+6i
     let result = evaluate_full("(1+2i)+(3+4i)", &EvalContext::new()).unwrap();
     assert_eq!(result, EvalResult::Complex(4.0, 6.0));
 }
@@ -523,14 +506,12 @@ fn test_complex_pipeline_multiplication() {
 
 #[test]
 fn test_complex_pipeline_abs() {
-    // abs(3+4i) → 5（标量结果）
     let result = evaluate("abs(3+4i)").unwrap();
     assert!((result - 5.0).abs() < 1e-10);
 }
 
 #[test]
 fn test_complex_pipeline_conj() {
-    // conj(3+4i) → 3-4i
     let result = evaluate_full("conj(3+4i)", &EvalContext::new()).unwrap();
     assert_eq!(result, EvalResult::Complex(3.0, -4.0));
 }
@@ -550,7 +531,6 @@ fn test_complex_pipeline_route_by_function() {
 
 #[test]
 fn test_matrix_pipeline_literal() {
-    // [[1,2],[3,4]] → Matrix([[1,2],[3,4]])
     let result = evaluate_full("[[1,2],[3,4]]", &EvalContext::new()).unwrap();
     match result {
         EvalResult::Matrix(m) => {
@@ -562,7 +542,6 @@ fn test_matrix_pipeline_literal() {
 
 #[test]
 fn test_matrix_pipeline_addition() {
-    // [[1,2],[3,4]] + [[5,6],[7,8]] → [[6,8],[10,12]]
     let result = evaluate_full("[[1,2],[3,4]] + [[5,6],[7,8]]", &EvalContext::new()).unwrap();
     match result {
         EvalResult::Matrix(m) => {
@@ -574,7 +553,6 @@ fn test_matrix_pipeline_addition() {
 
 #[test]
 fn test_matrix_pipeline_multiplication() {
-    // [[1,2],[3,4]] * [[5,6],[7,8]] → [[19,22],[43,50]]
     let result = evaluate_full("[[1,2],[3,4]] * [[5,6],[7,8]]", &EvalContext::new()).unwrap();
     match result {
         EvalResult::Matrix(m) => {
@@ -586,14 +564,12 @@ fn test_matrix_pipeline_multiplication() {
 
 #[test]
 fn test_matrix_pipeline_determinant() {
-    // det([[1,2],[3,4]]) → -2（标量结果）
     let result = evaluate("det([[1,2],[3,4]])").unwrap();
     assert!((result - (-2.0)).abs() < 1e-10);
 }
 
 #[test]
 fn test_matrix_pipeline_transpose() {
-    // transpose([[1,2],[3,4]]) → [[1,3],[2,4]]
     let result = evaluate_full("transpose([[1,2],[3,4]])", &EvalContext::new()).unwrap();
     match result {
         EvalResult::Matrix(m) => {
@@ -617,21 +593,18 @@ fn test_matrix_pipeline_route_by_function() {
 
 #[test]
 fn test_statistics_pipeline_mean() {
-    // mean([1,2,3,4,5]) → 3
     let result = evaluate("mean([1,2,3,4,5])").unwrap();
     assert!((result - 3.0).abs() < 1e-10);
 }
 
 #[test]
 fn test_statistics_pipeline_sum() {
-    // sum([1,2,3,4,5]) → 15
     let result = evaluate("sum([1,2,3,4,5])").unwrap();
     assert!((result - 15.0).abs() < 1e-10);
 }
 
 #[test]
 fn test_statistics_pipeline_median_odd() {
-    // median([1,2,3,4,5]) → 3（奇数个元素）
     let result = evaluate("median([1,2,3,4,5])").unwrap();
     assert!((result - 3.0).abs() < 1e-10);
 }
@@ -699,7 +672,6 @@ fn test_precision_pipeline_bigint_literal() {
 
 #[test]
 fn test_precision_pipeline_bigint_addition() {
-    // 大整数 + 1 → BigInt
     let result = evaluate_full("123456789012345678901234567890 + 1", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigInt(b) => {
@@ -1142,27 +1114,23 @@ fn test_polynomial_factor_pipeline() {
 
 #[test]
 fn test_v08_cache_dedup_same_expression() {
-    // 相同表达式缓存命中
     let cache = CacheManager::new();
     let ast = parse("gcd(12,18)").unwrap();
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
     let router = default_router();
 
-    // 首次求值
     let domain = router.route(&canonical_ast).unwrap();
     let result1 = domain
         .evaluate(&canonical_ast, &EvalContext::new())
         .unwrap();
     cache.insert(&cf, &Ok(result1.clone()));
 
-    // 缓存命中
     assert!(cache.get(&cf).is_some());
     assert_eq!(cache.get(&cf).unwrap(), result1);
 }
 
 #[test]
 fn test_v08_cache_dedup_different_expression() {
-    // 不同表达式缓存未命中
     let cache = CacheManager::new();
     let ast1 = parse("gcd(12,18)").unwrap();
     let (_, cf1) = AstCanonicalizer::canonicalize(&ast1).unwrap();
