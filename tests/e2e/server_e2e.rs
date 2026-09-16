@@ -24,7 +24,10 @@ async fn send(router: &SdRouter, req: Request<Body>) -> (StatusCode, Value) {
     let response = router.clone().oneshot(req).await.expect("oneshot failed");
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn post_json(uri: &str, body: Value) -> (StatusCode, Value) {
@@ -38,7 +41,11 @@ async fn post_json(uri: &str, body: Value) -> (StatusCode, Value) {
 }
 
 async fn get(uri: &str) -> (StatusCode, Value) {
-    let req = Request::builder().method("GET").uri(uri).body(Body::empty()).unwrap();
+    let req = Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
+        .unwrap();
     send(&build_router(), req).await
 }
 
@@ -55,11 +62,13 @@ async fn http_evaluate_and_list_functions() {
     assert_eq!(body["domain"], "arithmetic");
 
     // list_functions（既有套件未覆盖的端点）
-    let (status, body) =
-        post_json("/api/v1/list_functions", json!({})).await;
+    let (status, body) = post_json("/api/v1/list_functions", json!({})).await;
     assert_eq!(status, StatusCode::OK);
     let text = serde_json::to_string(&body).unwrap();
-    assert!(text.contains("gcd") || text.contains("functions"), "got {text}");
+    assert!(
+        text.contains("gcd") || text.contains("functions"),
+        "got {text}"
+    );
 }
 
 #[tokio::test]
@@ -75,7 +84,10 @@ async fn http_health_and_metrics_endpoints() {
     // ready 携带 cache 检查与 entry_count
     let (_, body) = get("/ready").await;
     let text = serde_json::to_string(&body).unwrap();
-    assert!(text.contains("cache") && text.contains("entry_count"), "got {text}");
+    assert!(
+        text.contains("cache") && text.contains("entry_count"),
+        "got {text}"
+    );
 
     // Prometheus 文本 + JSON 双格式
     let (status, body) = get("/metrics").await;
@@ -85,7 +97,10 @@ async fn http_health_and_metrics_endpoints() {
     let (status, body) = get("/metrics?format=json").await;
     assert_eq!(status, StatusCode::OK);
     // JSON 格式键名不带 calnexus_ 前缀（Prometheus 文本才带）
-    assert!(body.get("hits").is_some() && body.get("entry_count").is_some(), "got {body}");
+    assert!(
+        body.get("hits").is_some() && body.get("entry_count").is_some(),
+        "got {body}"
+    );
 }
 
 #[tokio::test]
@@ -95,7 +110,10 @@ async fn http_error_contract_and_validation() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["type"], "InvalidInput");
     let msg = body["message"].as_str().unwrap_or("");
-    assert!(msg.contains("DivisionByZero") || msg.contains("division"), "got {msg}");
+    assert!(
+        msg.contains("DivisionByZero") || msg.contains("division"),
+        "got {msg}"
+    );
 
     // 参数校验 → 422 ValidationError
     let (status, body) =
@@ -126,15 +144,20 @@ async fn http_request_id_and_lang() {
     let router = build_router();
     let response = router.oneshot(req).await.unwrap();
     assert_eq!(
-        response.headers().get("x-request-id").map(|v| v.to_str().unwrap()),
+        response
+            .headers()
+            .get("x-request-id")
+            .map(|v| v.to_str().unwrap()),
         Some("e2e-req-42")
     );
     // lang 字段协商 zh
-    let (status, body) =
-        post_json("/api/v1/evaluate", json!({"expr": "1/0", "lang": "zh"})).await;
+    let (status, body) = post_json("/api/v1/evaluate", json!({"expr": "1/0", "lang": "zh"})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let msg = body["message"].as_str().unwrap_or("");
-    assert!(msg.chars().any(|c| c >= '\u{4e00}'), "zh localized, got {msg}");
+    assert!(
+        msg.chars().any(|c| c >= '\u{4e00}'),
+        "zh localized, got {msg}"
+    );
 }
 
 #[cfg(feature = "fx")]
@@ -192,7 +215,10 @@ fn tool_text(result: sdforge::rmcp::model::CallToolResult) -> (bool, Value) {
             _ => String::new(),
         })
         .unwrap_or_default();
-    (is_err, serde_json::from_str(&text).unwrap_or(Value::String(text)))
+    (
+        is_err,
+        serde_json::from_str(&text).unwrap_or(Value::String(text)),
+    )
 }
 
 #[test]
@@ -313,11 +339,7 @@ fn ratelimit_fixed_window_returns_429_via_subprocess() {
             let mut reader = BufReader::new(s);
             let mut line = String::new();
             reader.read_line(&mut line).map_err(|e| e.to_string())?;
-            let status = line
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or("?")
-                .to_string();
+            let status = line.split_whitespace().nth(1).unwrap_or("?").to_string();
             statuses.push(status);
         }
         // 前 2 个放行（200），第 3 个起 429（固定窗口 60s 内）

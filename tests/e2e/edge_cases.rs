@@ -64,7 +64,10 @@ fn edge_number_theory_boundaries() {
     assert_eq!(err.kind, calnexus::ErrorKind::Domain);
     assert!(err.message.contains("not coprime"), "got {err}");
     // mod_pow 模数为 0 → DivisionByZero
-    assert_eq!(kind_of("mod_pow(2, 10, 0)"), calnexus::ErrorKind::DivisionByZero);
+    assert_eq!(
+        kind_of("mod_pow(2, 10, 0)"),
+        calnexus::ErrorKind::DivisionByZero
+    );
     // 门面 BigInt 通道：离散对数 3^x ≡ 6 (mod 17) → x = 15
     let cn = CalNexus::new();
     match cn
@@ -130,7 +133,16 @@ fn edge_sqrt_not_registered() {
 
 #[test]
 fn edge_empty_collections_rejected_by_pipeline() {
-    for expr in ["mean([])", "variance([])", "std([])", "median([])", "min([])", "max([])", "sum([])", "count([])"] {
+    for expr in [
+        "mean([])",
+        "variance([])",
+        "std([])",
+        "median([])",
+        "min([])",
+        "max([])",
+        "sum([])",
+        "count([])",
+    ] {
         let err = eval_err(expr);
         assert_eq!(err.kind, calnexus::ErrorKind::Domain, "{expr}");
         assert!(
@@ -298,7 +310,10 @@ fn edge_date_boundaries() {
     let err = eval_err("date(\"2026-02-29\")");
     assert_eq!(err.kind, calnexus::ErrorKind::Domain);
     assert!(err.message.contains("invalid date"), "got {err}");
-    assert!(matches!(eval_ok("date(\"2024-02-29\")"), EvalResult::DateTime(_)));
+    assert!(matches!(
+        eval_ok("date(\"2024-02-29\")"),
+        EvalResult::DateTime(_)
+    ));
     // 歧义数字格式显式拒绝并给出 parse_date 指引
     let err = eval_err("date(\"01/02/2026\")");
     assert_eq!(err.kind, calnexus::ErrorKind::Domain);
@@ -333,7 +348,10 @@ fn edge_date_diff_zero_span_regression() {
 #[test]
 fn edge_date_diff_signed_and_month_clamp() {
     // 负方向带符号
-    assert_scalar(&eval_ok("date_diff(\"2026-01-01\", \"2025-12-31\", \"day\")"), -1.0);
+    assert_scalar(
+        &eval_ok("date_diff(\"2026-01-01\", \"2025-12-31\", \"day\")"),
+        -1.0,
+    );
     // 月末钳制：2026-01-31 + 1 month = 2026-02-28（非闰年）
     match eval_ok("date_add(\"2026-01-31\", 1, \"month\")") {
         EvalResult::DateTime(s) => assert!(s.starts_with("2026-02-28"), "got {s}"),

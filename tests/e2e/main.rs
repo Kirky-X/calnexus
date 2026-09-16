@@ -25,16 +25,16 @@
 
 mod common;
 
-mod happy_path;
+mod cache_router;
 mod edge_cases;
 mod error_paths;
 mod feature_gates;
-mod cache_router;
+mod happy_path;
 mod security;
 
+#[cfg(feature = "cli")]
+mod cli_e2e;
 #[cfg(feature = "fx")]
 mod fx_mock;
 #[cfg(feature = "server")]
 mod server_e2e;
-#[cfg(feature = "cli")]
-mod cli_e2e;

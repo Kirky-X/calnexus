@@ -91,14 +91,10 @@ fn cli_batch_json_mixed_success_and_error_entries() {
 fn cli_batch_over_1000_entries_exit_2() {
     let content: String = (0..1001).map(|i| format!("{i}+1\n")).collect();
     let f = batch_file(&content);
-    cmd()
-        .arg("--batch")
-        .arg(f.path())
-        .assert()
-        .code(2)
-        .stderr(predicates::str::contains("1000").or(predicates::str::contains("批").or(
-            predicates::str::contains("entries").or(predicates::str::contains("limit")),
-        )));
+    cmd().arg("--batch").arg(f.path()).assert().code(2).stderr(
+        predicates::str::contains("1000").or(predicates::str::contains("批")
+            .or(predicates::str::contains("entries").or(predicates::str::contains("limit")))),
+    );
 }
 
 #[test]

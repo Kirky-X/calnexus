@@ -20,7 +20,6 @@ fn bench_cache_hit(c: &mut Criterion) {
         // 预填充缓存：第一次求值写入
         let ast = parse(expr).expect("parse failed");
         let (_canonical_ast, _) = AstCanonicalizer::canonicalize(&ast).expect("canon failed");
-        // 调用 evaluate 写入缓存
         let _ = calnexus::evaluate(expr, &ctx, None, &cache);
 
         group.bench_with_input(BenchmarkId::from_parameter(expr), expr, |b, e| {

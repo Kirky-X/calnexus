@@ -8,7 +8,7 @@
 #![allow(dead_code)]
 
 use calnexus::{
-    evaluate, evaluate_with_router, CalcError, CacheManager, DomainRouter, EvalContext, EvalResult,
+    CacheManager, CalcError, DomainRouter, EvalContext, EvalResult, evaluate, evaluate_with_router,
 };
 
 /// 默认上下文求值，返回 (result, domain, cache_hit, precision) 四元组。

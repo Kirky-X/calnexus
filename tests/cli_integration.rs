@@ -12,14 +12,12 @@ use assert_cmd::Command;
 
 #[test]
 fn test_basic_addition() {
-    // "2+3" → stdout contains "5", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("2+3").assert().success().stdout("5\n");
 }
 
 #[test]
 fn test_complex_arithmetic() {
-    // "(2+9)*7-6" → stdout contains "71", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("(2+9)*7-6").assert().success().stdout("71\n");
 }
@@ -28,14 +26,12 @@ fn test_complex_arithmetic() {
 
 #[test]
 fn test_stdin_simple_expression() {
-    // echo "2+3" | calnexus → stdout contains "5", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("2+3").assert().success().stdout("5\n");
 }
 
 #[test]
 fn test_stdin_scientific_expression() {
-    // echo "sin(pi/2)" | calnexus → stdout contains "1", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("sin(pi/2)")
         .assert()
@@ -47,7 +43,6 @@ fn test_stdin_scientific_expression() {
 
 #[test]
 fn test_json_arithmetic() {
-    // --json "2+3" → {"result":5,"domain":"arithmetic","cache":"miss"}
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json").arg("2+3").assert().success().stdout(
         r#"{"cache":"miss","domain":"arithmetic","result":5.0,"v":1}
@@ -57,7 +52,6 @@ fn test_json_arithmetic() {
 
 #[test]
 fn test_json_scientific() {
-    // --json "sin(pi/2)" → domain="scientific", result=1, cache="miss"
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
         .arg("sin(pi/2)")
@@ -73,7 +67,6 @@ fn test_json_scientific() {
 
 #[test]
 fn test_single_var_arithmetic() {
-    // --var x=10 "x*2" → 20
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
         .arg("x=10")
@@ -85,7 +78,6 @@ fn test_single_var_arithmetic() {
 
 #[test]
 fn test_single_var_scientific() {
-    // --var x=1 "sin(x)" → sin(1) ≈ 0.8414709848078965
     // 注：spec 给出的期望值 0.9999996829318346 与 sin(3.14) 不符（sin(3.14)≈0.00159），
     // 此处用 x=1 验证变量代入功能，期望值为 sin(1) 的正确结果。
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -101,7 +93,6 @@ fn test_single_var_scientific() {
 
 #[test]
 fn test_two_variables() {
-    // --var x=1 --var y=2 "x+y" → 3
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
         .arg("x=1")
@@ -115,7 +106,6 @@ fn test_two_variables() {
 
 #[test]
 fn test_three_variables() {
-    // --var x=1 --var y=2 --var z=3 "x+y+z" → 6
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
         .arg("x=1")
@@ -133,14 +123,12 @@ fn test_three_variables() {
 
 #[test]
 fn test_division_by_zero_exit_code() {
-    // "5/0" → exit 1, stderr non-empty
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("5/0").assert().failure().code(1);
 }
 
 #[test]
 fn test_modulo_by_zero_exit_code() {
-    // "10%0" → exit 1, stderr non-empty
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("10%0").assert().failure().code(1);
 }
@@ -149,14 +137,12 @@ fn test_modulo_by_zero_exit_code() {
 
 #[test]
 fn test_double_operator_exit_code() {
-    // "2++3" → exit 1, stderr contains parse error
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("2++3").assert().failure().code(1);
 }
 
 #[test]
 fn test_unbalanced_parens_exit_code() {
-    // "(2+3" → exit 1, stderr contains parse error
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("(2+3").assert().failure().code(1);
 }
@@ -165,7 +151,6 @@ fn test_unbalanced_parens_exit_code() {
 
 #[test]
 fn test_unknown_flag_exit_code() {
-    // --unknown-flag → exit 2（clap default）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--unknown-flag")
         .arg("2+3")
@@ -178,14 +163,12 @@ fn test_unknown_flag_exit_code() {
 
 #[test]
 fn test_no_args_piped_stdin() {
-    // echo "2+3" | calnexus (no args) → stdout contains "5", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("2+3").assert().success().stdout("5\n");
 }
 
 #[test]
 fn test_no_args_piped_stdin_scientific() {
-    // echo "cos(0)" | calnexus → stdout contains "1", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("cos(0)").assert().success().stdout("1\n");
 }
@@ -194,7 +177,6 @@ fn test_no_args_piped_stdin_scientific() {
 
 #[test]
 fn test_long_version_flag() {
-    // --version → stdout contains "calnexus", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd
         .arg("--version")
@@ -213,7 +195,6 @@ fn test_long_version_flag() {
 
 #[test]
 fn test_short_version_flag() {
-    // -V → stdout contains "calnexus", exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd.arg("-V").assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8(output).unwrap();
@@ -228,7 +209,6 @@ fn test_short_version_flag() {
 
 #[test]
 fn test_long_help_flag() {
-    // --help → stdout contains help text, exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd
         .arg("--help")
@@ -248,7 +228,6 @@ fn test_long_help_flag() {
 
 #[test]
 fn test_short_help_flag() {
-    // -h → stdout contains help text, exit 0
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     let output = cmd.arg("-h").assert().success().get_output().stdout.clone();
     let stdout = String::from_utf8(output).unwrap();
@@ -259,7 +238,6 @@ fn test_short_help_flag() {
 
 #[test]
 fn test_precision_flag_with_division() {
-    // --precision 5 "1/3" → "0.33333"
     // 覆盖 cli.rs lines 168, 172-175（precision 模式）+ lines 85, 87, 98（BigRational 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--precision")
@@ -299,7 +277,6 @@ fn test_precision_flag_zero_decimals() {
 
 #[test]
 fn test_precision_function_call() {
-    // precision(5, 1/3) → "0.33333"
     // 覆盖 cli.rs lines 210-214（extract_format_precision）+ lines 85, 87, 98（BigRational 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("precision(5, 1/3)")
@@ -310,7 +287,6 @@ fn test_precision_function_call() {
 
 #[test]
 fn test_precision_function_call_json() {
-    // --json precision(5, 1/3) → JSON with BigRational
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
         .arg("precision(5, 1/3)")
@@ -326,7 +302,6 @@ fn test_precision_function_call_json() {
 
 #[test]
 fn test_bigint_addition_output() {
-    // 大整数 + 1 → BigInt 输出
     // 覆盖 cli.rs lines 81, 97（BigInt 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("123456789012345678901234567890 + 1")
@@ -337,7 +312,6 @@ fn test_bigint_addition_output() {
 
 #[test]
 fn test_bigint_literal_output() {
-    // 单个大整数字面量 → BigInt 输出
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("123456789012345678901234567890")
         .assert()
@@ -347,7 +321,6 @@ fn test_bigint_literal_output() {
 
 #[test]
 fn test_bigint_json_output() {
-    // --json 大整数 → JSON with BigInt
     // 覆盖 cli.rs line 81（BigInt JSON 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
@@ -364,7 +337,6 @@ fn test_bigint_json_output() {
 
 #[test]
 fn test_complex_output_standard() {
-    // 3+4i → "3+4i"
     // 覆盖 cli.rs lines 69, 71, 95（Complex 输出 + format_complex 正虚部）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("3+4i").assert().success().stdout("3+4i\n");
@@ -372,7 +344,6 @@ fn test_complex_output_standard() {
 
 #[test]
 fn test_complex_output_negative_imaginary() {
-    // 3-4i → "3-4i"
     // 覆盖 cli.rs line 225（format_complex 负虚部分支）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("3-4i").assert().success().stdout("3-4i\n");
@@ -380,7 +351,6 @@ fn test_complex_output_negative_imaginary() {
 
 #[test]
 fn test_complex_json_output() {
-    // --json 3+4i → JSON with Complex
     // 覆盖 cli.rs lines 69, 71（Complex JSON 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json").arg("3+4i").assert().success().stdout(
@@ -393,7 +363,6 @@ fn test_complex_json_output() {
 
 #[test]
 fn test_matrix_output_2x2() {
-    // [[1,2],[3,4]] → "[[1,2],[3,4]]"
     // 覆盖 cli.rs lines 75, 77, 96（Matrix 输出 + format_matrix）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("[[1,2],[3,4]]")
@@ -404,7 +373,6 @@ fn test_matrix_output_2x2() {
 
 #[test]
 fn test_matrix_json_output() {
-    // --json [[1,2],[3,4]] → JSON with Matrix
     // 覆盖 cli.rs lines 75, 77（Matrix JSON 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
@@ -419,7 +387,6 @@ fn test_matrix_json_output() {
 
 #[test]
 fn test_matrix_output_1x3() {
-    // [[1,2,3]] → "[[1,2,3]]"
     // 覆盖 format_matrix 不同维度
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("[[1,2,3]]")
@@ -432,7 +399,6 @@ fn test_matrix_output_1x3() {
 
 #[test]
 fn test_bigrational_json_output_with_precision_flag() {
-    // --json --precision 5 "1/3" → JSON with BigRational
     // 覆盖 cli.rs lines 85, 87（BigRational JSON 输出）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
@@ -464,7 +430,6 @@ fn test_bigrational_output_fraction_form() {
 
 #[test]
 fn test_invalid_var_missing_equals_exit_code() {
-    // --var invalid（无 `=`）→ exit 2
     // 覆盖 cli.rs lines 52-54, 141（parse_vars 错误 + run 返回 2）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
@@ -477,7 +442,6 @@ fn test_invalid_var_missing_equals_exit_code() {
 
 #[test]
 fn test_invalid_var_non_numeric_value_exit_code() {
-    // --var x=abc（值非数字）→ exit 2
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--var")
         .arg("x=abc")
@@ -507,7 +471,6 @@ fn test_whitespace_only_stdin_exit_code() {
 
 #[test]
 fn test_bigint_multiplication_output() {
-    // 大整数乘法 → BigInt 输出
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("123456789012345678901234567890 * 2")
         .assert()
@@ -517,7 +480,6 @@ fn test_bigint_multiplication_output() {
 
 #[test]
 fn test_bigint_subtraction_output() {
-    // 大整数减法 → BigInt 输出
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("123456789012345678901234567890 - 1")
         .assert()
@@ -529,7 +491,6 @@ fn test_bigint_subtraction_output() {
 
 #[test]
 fn test_statistics_mean_cli() {
-    // mean([1,2,3,4,5]) → 3
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("mean([1,2,3,4,5])")
         .assert()
@@ -539,7 +500,6 @@ fn test_statistics_mean_cli() {
 
 #[test]
 fn test_statistics_sum_cli() {
-    // sum([1,2,3,4,5]) → 15
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("sum([1,2,3,4,5])")
         .assert()
@@ -549,7 +509,6 @@ fn test_statistics_sum_cli() {
 
 #[test]
 fn test_statistics_median_cli() {
-    // median([1,2,3,4,5]) → 3
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("median([1,2,3,4,5])")
         .assert()
@@ -559,7 +518,6 @@ fn test_statistics_median_cli() {
 
 #[test]
 fn test_statistics_json_output() {
-    // --json mean([1,2,3,4,5]) → domain="statistics"
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
         .arg("mean([1,2,3,4,5])")
@@ -573,7 +531,6 @@ fn test_statistics_json_output() {
 
 #[test]
 fn test_statistics_stdin_pipeline() {
-    // echo "sum([10,20,30])" | calnexus → 60
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.write_stdin("sum([10,20,30])")
         .assert()
@@ -882,7 +839,6 @@ fn test_cli_symbolic_limit() {
 
 #[test]
 fn test_json_vector_output() {
-    // --json [1,2]+[3,4] → JSON with Vector result
     // 覆盖 cli.rs lines 125, 127（Vector JSON 输出分支）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
@@ -897,7 +853,6 @@ fn test_json_vector_output() {
 
 #[test]
 fn test_json_polynomial_output() {
-    // --json poly_add(x+1,x+2) → JSON with Polynomial result
     // 覆盖 cli.rs lines 131, 133（Polynomial JSON 输出分支）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
@@ -912,7 +867,6 @@ fn test_json_polynomial_output() {
 
 #[test]
 fn test_json_complex_list_output() {
-    // --json roots(x^2+1) → JSON with ComplexList result
     // 覆盖 cli.rs lines 137, 139（ComplexList JSON 输出分支）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
@@ -927,7 +881,6 @@ fn test_json_complex_list_output() {
 
 #[test]
 fn test_json_symbolic_output() {
-    // --json diff(x^2, x) → JSON with Symbolic result
     // 覆盖 cli.rs line 143（Symbolic JSON 输出分支）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--json")
@@ -944,7 +897,6 @@ fn test_json_symbolic_output() {
 
 #[test]
 fn test_repl_invalid_var_exit_code() {
-    // --repl --var invalid（无 `=`）→ exit 2
     // 覆盖 cli.rs lines 55, 56, 57（REPL 模式 parse_vars 错误 + return 2）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -958,7 +910,6 @@ fn test_repl_invalid_var_exit_code() {
 
 #[test]
 fn test_batch_invalid_var_exit_code() {
-    // --batch <file> --var invalid（无 `=`）→ exit 2
     // 覆盖 cli.rs lines 68, 69, 70（batch 模式 parse_vars 错误 + return 2）
     let mut tmp = tempfile::NamedTempFile::new().unwrap();
     use std::io::Write;
@@ -979,7 +930,6 @@ fn test_batch_invalid_var_exit_code() {
 
 #[test]
 fn test_repl_complex_format_result() {
-    // REPL 中求值 3+4i → format_result Complex 分支
     // 覆盖 cli.rs line 296（format_result::Complex）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -991,7 +941,6 @@ fn test_repl_complex_format_result() {
 
 #[test]
 fn test_repl_matrix_format_result() {
-    // REPL 中求值 [[1,2],[3,4]] → format_result Matrix 分支
     // 覆盖 cli.rs line 297（format_result::Matrix）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -1003,7 +952,6 @@ fn test_repl_matrix_format_result() {
 
 #[test]
 fn test_repl_bigint_format_result() {
-    // REPL 中求值大整数 → format_result BigInt 分支
     // 覆盖 cli.rs line 298（format_result::BigInt）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -1015,7 +963,6 @@ fn test_repl_bigint_format_result() {
 
 #[test]
 fn test_repl_bigrational_format_result() {
-    // REPL --precision 5 中求值 1/3 → format_result BigRational 分支
     // 覆盖 cli.rs line 299（format_result::BigRational）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -1029,7 +976,6 @@ fn test_repl_bigrational_format_result() {
 
 #[test]
 fn test_repl_vector_format_result() {
-    // REPL 中求值 [1,2]+[3,4] → format_result Vector 分支
     // 覆盖 cli.rs line 300（format_result::Vector）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -1041,7 +987,6 @@ fn test_repl_vector_format_result() {
 
 #[test]
 fn test_repl_polynomial_format_result() {
-    // REPL 中求值 poly_add(x+1,x+2) → format_result Polynomial 分支
     // 覆盖 cli.rs line 301（format_result::Polynomial）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -1053,7 +998,6 @@ fn test_repl_polynomial_format_result() {
 
 #[test]
 fn test_repl_complex_list_format_result() {
-    // REPL 中求值 roots(x^2+1) → format_result ComplexList 分支
     // 覆盖 cli.rs line 302（format_result::ComplexList）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--repl")
@@ -1067,7 +1011,6 @@ fn test_repl_complex_list_format_result() {
 
 #[test]
 fn test_polynomial_sub_x2_minus_x() {
-    // poly_sub(x^2, x) → "x^2-x"
     // 覆盖 cli.rs lines 343（coef=0 跳过）, 351（i=1,coef=-1 → "-x"）,
     //   357-358（i=2,coef=1 → "x^2"）, 375（负项拼接）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1079,7 +1022,6 @@ fn test_polynomial_sub_x2_minus_x() {
 
 #[test]
 fn test_polynomial_neg_x2() {
-    // poly_sub(0, x^2) → "-x^2"
     // 覆盖 cli.rs lines 359-360（i>=2,coef=-1 → "-x^N"）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("poly_sub(0, x^2)")
@@ -1090,7 +1032,6 @@ fn test_polynomial_neg_x2() {
 
 #[test]
 fn test_polynomial_x_leading_one() {
-    // poly_add(x, 0) → "x"
     // 覆盖 cli.rs line 349（i=1,coef=1 → "x"）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("poly_add(x, 0)").assert().success().stdout("x\n");
@@ -1098,7 +1039,6 @@ fn test_polynomial_x_leading_one() {
 
 #[test]
 fn test_polynomial_all_zero_coeffs() {
-    // poly_sub(x, x) → "0"
     // 覆盖 cli.rs line 369（所有系数为零 → "0"）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("poly_sub(x, x)").assert().success().stdout("0\n");
@@ -1106,7 +1046,6 @@ fn test_polynomial_all_zero_coeffs() {
 
 #[test]
 fn test_polynomial_general_coef_high_degree() {
-    // poly_mul(2, x^2) → "2x^2"
     // 覆盖 cli.rs line 362（i>=2,一般系数 → "cx^N"）
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("poly_mul(2, x^2)")
@@ -1117,7 +1056,6 @@ fn test_polynomial_general_coef_high_degree() {
 
 // ===== 新增 CLI 标志集成测试 =====
 
-/// `--latex "diff(x^2,x)"` 输出 LaTeX 格式
 #[test]
 fn it_cli_003_latex_output() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1137,7 +1075,6 @@ fn it_cli_009_canonical_output() {
         .stdout("(+ 2 3)\n");
 }
 
-/// `--steps "(2+9)*7-6"` → 步骤输出
 #[test]
 fn it_cli_010_steps_output() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1147,7 +1084,6 @@ fn it_cli_010_steps_output() {
         .stdout(predicates::str::contains("2+9=11"));
 }
 
-/// IT-CLI: `--latex --json` 冲突应退出码 2
 #[test]
 fn it_cli_latex_json_conflict_exit_2() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1157,7 +1093,6 @@ fn it_cli_latex_json_conflict_exit_2() {
         .code(2);
 }
 
-/// IT-CLI: `--canonical --repl` 冲突应退出码 2
 #[test]
 fn it_cli_canonical_repl_conflict_exit_2() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1167,7 +1102,6 @@ fn it_cli_canonical_repl_conflict_exit_2() {
         .code(2);
 }
 
-/// IT-CLI: `--canonical --batch` 冲突应退出码 2
 #[test]
 fn it_cli_canonical_batch_conflict_exit_2() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1229,7 +1163,6 @@ fn it_cli_latex_eval_error_exit_1() {
 
 // ===== T0.4.7: --explain / --lang / --json error / 退出码契约 =====
 
-/// `--explain "2++3"` → stderr 包含详细解释，退出码 1
 #[test]
 fn test_explain_parse_error_exit_1() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1240,7 +1173,6 @@ fn test_explain_parse_error_exit_1() {
         .stderr(predicates::str::contains("Parse error"));
 }
 
-/// `--explain "1/0"` → stderr 包除零 hint，退出码 1
 #[test]
 fn test_explain_div_zero_hint() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1251,7 +1183,6 @@ fn test_explain_div_zero_hint() {
         .stderr(predicates::str::contains("check divisor"));
 }
 
-/// `--lang zh "2++3"` → stderr 包含中文错误消息，退出码 1
 #[test]
 fn test_lang_zh_parse_error() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1262,7 +1193,6 @@ fn test_lang_zh_parse_error() {
         .stderr(predicates::str::contains("解析错误"));
 }
 
-/// `--lang en "2++3"` → stderr 包含英文错误消息，退出码 1
 #[test]
 fn test_lang_en_parse_error() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1274,7 +1204,6 @@ fn test_lang_en_parse_error() {
 }
 
 /// `--json "2++3"` → stdout 输出 JSON error 对象（非双层嵌套），退出码 1
-/// 断言用 starts_with 捕获 `{"error":{"error":...}}` 双层嵌套 bug
 #[test]
 fn test_json_error_output_exit_1() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1290,7 +1219,6 @@ fn test_json_error_output_exit_1() {
     assert_eq!(json["error"]["exit_code"], 1);
 }
 
-/// `--explain --json` 互斥 → clap 报错，退出码 2
 #[test]
 fn test_explain_conflicts_with_json() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
@@ -1300,14 +1228,12 @@ fn test_explain_conflicts_with_json() {
         .code(2);
 }
 
-/// 成功求值退出码 0
 #[test]
 fn test_success_exit_0() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("2+3").assert().success().code(0);
 }
 
-/// `--explain "asin(2)"` → stderr 包含 domain hint，退出码 1
 #[test]
 fn test_explain_domain_hint() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();

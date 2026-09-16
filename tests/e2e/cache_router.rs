@@ -7,12 +7,12 @@
 //! `with_capacity_bytes` 淘汰语义、`stats()`、`MAX_CACHEABLE_BYTES`
 //! 大结果旁路与路由器结构契约（此前零覆盖）。
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use calnexus::{
-    evaluate, evaluate_with_router, AstNode, CacheKeyGen, CacheManager, CalculationDomain,
-    CanonicalForm, DomainRouter, EvalContext, EvalResult,
+    AstNode, CacheKeyGen, CacheManager, CalculationDomain, CanonicalForm, DomainRouter,
+    EvalContext, EvalResult, evaluate, evaluate_with_router,
 };
 
 use crate::common::{approx_eq, eval, eval_err};
@@ -84,12 +84,19 @@ fn cache_get_or_compute_single_compute() {
             Ok(EvalResult::Scalar(15.0))
         })
         .unwrap();
-    assert!(approx_eq(match v1 {
-        EvalResult::Scalar(x) => x,
-        _ => panic!(),
-    }, 15.0));
+    assert!(approx_eq(
+        match v1 {
+            EvalResult::Scalar(x) => x,
+            _ => panic!(),
+        },
+        15.0
+    ));
     assert_eq!(v1, v2);
-    assert_eq!(calls.load(Ordering::SeqCst), 1, "second call must hit cache");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "second call must hit cache"
+    );
 }
 
 #[test]
@@ -269,7 +276,11 @@ impl CalculationDomain for TagDomain {
     fn supports(&self, ast: &AstNode) -> bool {
         matches!(ast, AstNode::FunctionCall(n, _) if n == self.tag_fn)
     }
-    fn evaluate(&self, _ast: &AstNode, _ctx: &EvalContext) -> Result<EvalResult, calnexus::CalcError> {
+    fn evaluate(
+        &self,
+        _ast: &AstNode,
+        _ctx: &EvalContext,
+    ) -> Result<EvalResult, calnexus::CalcError> {
         Ok(EvalResult::Scalar(self.priority as f64))
     }
     fn priority(&self) -> u8 {
@@ -327,13 +338,15 @@ fn router_priority_descending_and_resolution() {
     assert_eq!(winner.domain_name(), "high");
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
-    let (r, d, _, _) =
-        evaluate_with_router("ping()", &ctx, None, &cache, &router).unwrap();
+    let (r, d, _, _) = evaluate_with_router("ping()", &ctx, None, &cache, &router).unwrap();
     assert_eq!(d, "high");
-    assert!(approx_eq(match r {
-        EvalResult::Scalar(x) => x,
-        _ => panic!(),
-    }, 90.0));
+    assert!(approx_eq(
+        match r {
+            EvalResult::Scalar(x) => x,
+            _ => panic!(),
+        },
+        90.0
+    ));
 }
 
 #[test]
@@ -362,9 +375,12 @@ fn router_full_pipeline_with_custom_domain() {
     let ctx = EvalContext::new();
     let (r, d, _, _) = evaluate_with_router("answer(42)", &ctx, None, &cache, &router).unwrap();
     assert_eq!(d, "answer");
-    assert!(approx_eq(match r {
-        EvalResult::Scalar(x) => x,
-        _ => panic!(),
-    }, 30.0));
+    assert!(approx_eq(
+        match r {
+            EvalResult::Scalar(x) => x,
+            _ => panic!(),
+        },
+        30.0
+    ));
     let _ = eval("2+3"); // 保持公共助手导入
 }

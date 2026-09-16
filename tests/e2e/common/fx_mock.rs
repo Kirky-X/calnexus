@@ -19,8 +19,7 @@ use std::collections::HashMap;
 use calnexus::domains::fx_provider::RateProvider;
 use calnexus::math::fx::{self, RateTable};
 use calnexus::{
-    AstNode, BinaryOp, CalcError, CalculationDomain, DomainRouter, EvalContext, EvalResult,
-    UnaryOp,
+    AstNode, BinaryOp, CalcError, CalculationDomain, DomainRouter, EvalContext, EvalResult, UnaryOp,
 };
 
 /// 手工汇率夹具（base EUR，含 4 个报价币种；数值为易手算的整数倍）。
@@ -178,9 +177,9 @@ impl MockFxDomain {
                 match op {
                     UnaryOp::Neg => Ok(EvalResult::Scalar(-v)),
                     UnaryOp::Abs => Ok(EvalResult::Scalar(v.abs())),
-                    UnaryOp::Factorial => Err(CalcError::domain(
-                        "factorial not supported in fx domain",
-                    )),
+                    UnaryOp::Factorial => {
+                        Err(CalcError::domain("factorial not supported in fx domain"))
+                    }
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_call(name, args, ctx),
@@ -188,9 +187,9 @@ impl MockFxDomain {
             AstNode::Str(_) => Err(CalcError::domain(
                 "string operand not supported in fx domain",
             )),
-            AstNode::Complex(..) | AstNode::Matrix(_) | AstNode::List(_) => Err(CalcError::domain(
-                "unsupported node in fx domain",
-            )),
+            AstNode::Complex(..) | AstNode::Matrix(_) | AstNode::List(_) => {
+                Err(CalcError::domain("unsupported node in fx domain"))
+            }
         }
     }
 

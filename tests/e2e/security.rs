@@ -7,7 +7,7 @@
 //! 输入长度上界、NaN/Inf 传播拦截。嵌套用例在 16MB 栈线程运行
 //! （守卫必须在栈溢出前拒绝输入——sec_011 同款前置条件）。
 
-use calnexus::{evaluate, CalNexus, CacheManager, ErrorKind, EvalContext, EvalResult};
+use calnexus::{CacheManager, CalNexus, ErrorKind, EvalContext, EvalResult, evaluate};
 
 use crate::common::{approx_eq, eval_err, eval_ok};
 
@@ -65,7 +65,10 @@ fn sec_control_and_unicode_chars_rejected_gracefully() {
     }
     // 多字节字符出现在错误消息中（不触发重切 UTF-8 边界 panic）
     let err = eval_err("🎉+1");
-    assert!(err.message.contains("🎉") || err.span.is_some(), "got {err}");
+    assert!(
+        err.message.contains("🎉") || err.span.is_some(),
+        "got {err}"
+    );
 }
 
 // ---------------------------------------------------------------------------

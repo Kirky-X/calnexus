@@ -70,9 +70,15 @@ fn facade_scientific_functions() {
         scalar_of(&s.atan(1.0).unwrap()),
         std::f64::consts::FRAC_PI_4
     ));
-    assert!(approx_eq(scalar_of(&s.ln(std::f64::consts::E).unwrap()), 1.0));
+    assert!(approx_eq(
+        scalar_of(&s.ln(std::f64::consts::E).unwrap()),
+        1.0
+    ));
     assert!(approx_eq(scalar_of(&s.log(8.0, 2.0).unwrap()), 3.0));
-    assert!(approx_eq(scalar_of(&s.exp(1.0).unwrap()), std::f64::consts::E));
+    assert!(approx_eq(
+        scalar_of(&s.exp(1.0).unwrap()),
+        std::f64::consts::E
+    ));
     assert!(approx_eq(scalar_of(&s.sinh(0.0).unwrap()), 0.0));
     assert!(approx_eq(scalar_of(&s.cosh(0.0).unwrap()), 1.0));
     assert!(approx_eq(scalar_of(&s.tanh(0.0).unwrap()), 0.0));
@@ -158,7 +164,10 @@ fn facade_combinatorics() {
     // S(4,2) = 7（第二类斯特林数）；s(4,4-2) = 11（第一类带符号）
     assert_eq!(bigint_of(s.stirling_second(4, 2).unwrap()), "7");
     let first = bigint_of(s.stirling_first(4, 2).unwrap());
-    assert!(first == "11" || first == "-11", "stirling_first(4,2), got {first}");
+    assert!(
+        first == "11" || first == "-11",
+        "stirling_first(4,2), got {first}"
+    );
 }
 
 #[test]
@@ -319,7 +328,10 @@ fn facade_stats_basic() {
     assert!(approx_eq(scalar_of(&st.mean(&data).unwrap()), 3.0));
     // 总体方差（除以 n 而非 n-1）：Σ(x-m)²/5 = 2.0
     assert!(approx_eq(scalar_of(&st.variance(&data).unwrap()), 2.0));
-    assert!(approx_eq(scalar_of(&st.std(&data).unwrap()), 2.0_f64.sqrt()));
+    assert!(approx_eq(
+        scalar_of(&st.std(&data).unwrap()),
+        2.0_f64.sqrt()
+    ));
     assert!(approx_eq(scalar_of(&st.median(&data).unwrap()), 3.0));
     assert!(approx_eq(scalar_of(&st.min(&data).unwrap()), 1.0));
     assert!(approx_eq(scalar_of(&st.max(&data).unwrap()), 5.0));
@@ -336,8 +348,14 @@ fn facade_distributions() {
         scalar_of(&st.norm_pdf(0.0, 0.0, 1.0).unwrap()),
         0.398_942_280_401_432_7
     ));
-    assert!(approx_eq(scalar_of(&st.norm_cdf(0.0, 0.0, 1.0).unwrap()), 0.5));
-    assert!(approx_eq(scalar_of(&st.norm_inv(0.5, 0.0, 1.0).unwrap()), 0.0));
+    assert!(approx_eq(
+        scalar_of(&st.norm_cdf(0.0, 0.0, 1.0).unwrap()),
+        0.5
+    ));
+    assert!(approx_eq(
+        scalar_of(&st.norm_inv(0.5, 0.0, 1.0).unwrap()),
+        0.0
+    ));
     // t 分布关于 0 对称：t_cdf(0)=0.5
     assert!(approx_eq(scalar_of(&st.t_cdf(0.0, 10.0).unwrap()), 0.5));
     assert!(approx_eq(
@@ -458,10 +476,9 @@ fn facade_symbolic_calculus() {
         other => panic!("integrate → Symbolic expected, got {other:?}"),
     }
     match sym.simplify("x+x").unwrap() {
-        EvalResult::Symbolic(s) => assert!(
-            s.contains("2*x") || s.contains("2x"),
-            "x+x → 2x, got {s}"
-        ),
+        EvalResult::Symbolic(s) => {
+            assert!(s.contains("2*x") || s.contains("2x"), "x+x → 2x, got {s}")
+        }
         other => panic!("simplify → Symbolic expected, got {other:?}"),
     }
     assert!(approx_eq(
@@ -609,17 +626,21 @@ fn facade_symbolic_solve_equation() {
     let sym = cn.symbolic();
     // x² - 4 = 0 在 x0=1 附近牛顿收敛到 x=2
     let root_newton = scalar_of(
-        &sym
-            .solve_equation("x^2 - 4", "x", "newton", Some(&[1.0]))
+        &sym.solve_equation("x^2 - 4", "x", "newton", Some(&[1.0]))
             .unwrap(),
     );
-    assert!(approx_eq(root_newton, 2.0), "newton root, got {root_newton}");
+    assert!(
+        approx_eq(root_newton, 2.0),
+        "newton root, got {root_newton}"
+    );
     let root_bisect = scalar_of(
-        &sym
-            .solve_equation("x^2 - 4", "x", "bisection", Some(&[0.0, 10.0]))
+        &sym.solve_equation("x^2 - 4", "x", "bisection", Some(&[0.0, 10.0]))
             .unwrap(),
     );
-    assert!(approx_eq(root_bisect, 2.0), "bisection root, got {root_bisect}");
+    assert!(
+        approx_eq(root_bisect, 2.0),
+        "bisection root, got {root_bisect}"
+    );
 }
 
 #[test]
@@ -666,11 +687,17 @@ fn facade_time_construction_and_arithmetic() {
         other => panic!("date_add → DateTime expected, got {other:?}"),
     }
     assert!(approx_eq(
-        scalar_of(&ap.date_diff("2026-01-01", "2026-07-25", Some("day")).unwrap()),
+        scalar_of(
+            &ap.date_diff("2026-01-01", "2026-07-25", Some("day"))
+                .unwrap()
+        ),
         205.0
     ));
     // now/today 只断言类型（值随时间变化）
-    assert!(matches!(ap.now(Some("UTC")).unwrap(), EvalResult::DateTime(_)));
+    assert!(matches!(
+        ap.now(Some("UTC")).unwrap(),
+        EvalResult::DateTime(_)
+    ));
     assert!(matches!(ap.today(None).unwrap(), EvalResult::DateTime(_)));
 }
 
@@ -691,7 +718,10 @@ fn facade_time_format_and_calendar() {
         other => panic!("reformat_date expected, got {other:?}"),
     }
     // 2026-07-25 是周六（ISO weekday 6）
-    assert!(approx_eq(scalar_of(&ap.weekday("2026-07-25").unwrap()), 6.0));
+    assert!(approx_eq(
+        scalar_of(&ap.weekday("2026-07-25").unwrap()),
+        6.0
+    ));
     // 2026-07-25 是当年第 206 天
     assert!(approx_eq(
         scalar_of(&ap.day_of_year("2026-07-25").unwrap()),
@@ -840,7 +870,7 @@ fn pipeline_variant_json() {
 #[cfg(feature = "time")]
 #[test]
 fn pipeline_time_expressions() {
-        // 多格式日期解析（ISO / 斜杠 / 紧凑数字）
+    // 多格式日期解析（ISO / 斜杠 / 紧凑数字）
     for (d, expected_start) in [
         ("2026-07-25", "2026-07-25"),
         ("2026/07/25", "2026-07-25"),
@@ -868,7 +898,7 @@ fn pipeline_time_expressions() {
 #[cfg(feature = "unit")]
 #[test]
 fn pipeline_unit_expressions() {
-        for (expr, expected) in [
+    for (expr, expected) in [
         ("convert(5, \"km\", \"m\")", 5000.0),
         ("convert(1, \"m\", \"cm\")", 100.0),
         ("convert(0, \"C\", \"K\")", 273.15),
@@ -884,7 +914,7 @@ fn pipeline_unit_expressions() {
 #[cfg(feature = "numerical")]
 #[test]
 fn pipeline_numerical_expressions() {
-        for (expr, keys) in [
+    for (expr, keys) in [
         ("lu([[4,2],[2,3]])", vec!["L", "U"]),
         ("qr([[1,2],[3,4]])", vec!["Q", "R"]),
         ("eig([[2,0],[0,3]])", vec!["values", "vectors"]),

@@ -9,12 +9,12 @@
 
 #![cfg(feature = "fx")]
 
+use calnexus::domains::RateProvider;
 use calnexus::math::fx::{self, RateTable};
 use calnexus::math::fx_scenario::{budget_calculation, pricing_calculation};
-use calnexus::domains::RateProvider;
 use calnexus::{ErrorKind, EvalResult};
 
-use crate::common::fx_mock::{mock_rate_table, MockFxDomain, StaticProvider};
+use crate::common::fx_mock::{MockFxDomain, StaticProvider, mock_rate_table};
 use crate::common::{approx_eq, assert_scalar, eval_via_router, eval_via_router_ok};
 
 fn scalar_of(r: &EvalResult) -> f64 {
@@ -83,7 +83,10 @@ fn fx_pipeline_errors() {
     let err = eval_via_router("fx(1, \"USD\", \"XXX\")", &router).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Domain);
     assert!(err.message.contains("unknown currency: XXX"), "got {err}");
-    assert!(err.message.contains('5'), "should mention 5 supported, got {err}");
+    assert!(
+        err.message.contains('5'),
+        "should mention 5 supported, got {err}"
+    );
     // 参数个数错误
     let err = eval_via_router("fx(1, \"USD\")", &router).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Domain);
@@ -104,7 +107,7 @@ fn fx_pipeline_errors() {
 
 #[test]
 fn fx_pipeline_nondeterministic_bypasses_cache() {
-    use calnexus::{evaluate_with_router, CacheManager, EvalContext};
+    use calnexus::{CacheManager, EvalContext, evaluate_with_router};
     // fx/fx_rate 声明为非确定性：同一表达式两次求值均 cache miss
     let router = MockFxDomain::router();
     let cache = CacheManager::new();
@@ -136,7 +139,10 @@ fn fx_math_layer_convert_and_rate() {
         fx::convert(110.0, "USD", "CNY", &table).unwrap(),
         780.0
     ));
-    assert!(approx_eq(fx::convert(1.0, "EUR", "USD", &table).unwrap(), 1.1));
+    assert!(approx_eq(
+        fx::convert(1.0, "EUR", "USD", &table).unwrap(),
+        1.1
+    ));
     // base 币种 rate 恒 1
     assert!(approx_eq(fx::get_rate("EUR", &table).unwrap(), 1.0));
     assert!(approx_eq(fx::get_rate("JPY", &table).unwrap(), 160.0));

@@ -109,7 +109,10 @@ fn gate_numerical_disabled_expression_unrouted() {
     for expr in ["lu([[1,2],[3,4]])", "eig([[1,0],[0,1]])"] {
         let err = eval_err(expr);
         assert_eq!(err.kind, calnexus::ErrorKind::Domain, "{expr}");
-        assert!(err.message.contains("lu") || err.message.contains("eig"), "{expr}: {err}");
+        assert!(
+            err.message.contains("lu") || err.message.contains("eig"),
+            "{expr}: {err}"
+        );
     }
 }
 
@@ -194,10 +197,14 @@ fn gate_facade_accessors_all_constructible() {
     let cn = CalNexus::default();
     // 五访问器在当前组合下均可产出并消费（trait 分发通道）
     assert!(cn.scalar().add(1.0, 1.0).is_ok());
-    assert!(cn.linalg().dot(
-        &calnexus::Vector::new(&[1.0]),
-        &calnexus::Vector::new(&[1.0])
-    ).is_ok());
+    assert!(
+        cn.linalg()
+            .dot(
+                &calnexus::Vector::new(&[1.0]),
+                &calnexus::Vector::new(&[1.0])
+            )
+            .is_ok()
+    );
     assert!(cn.stats().sum(&[1.0]).is_ok());
     assert!(cn.symbolic().simplify("x").is_ok());
     // applied 面至少有一种方法随组合可用：unit convert 或 time today；

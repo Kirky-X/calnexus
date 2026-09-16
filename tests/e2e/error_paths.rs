@@ -6,9 +6,9 @@
 //! （经 fx mock 恒失败源确定性复现，零网络）、`Usage`/`UndefinedSymbol`
 //! （公开构造器契约 + 表达式层映射现状钉住）与 `Timeout` 的 kind 级断言。
 
-use calnexus::{evaluate, CalcError, CacheManager, ErrorKind, EvalContext, EvalResult, I18n, Lang};
 #[cfg(feature = "fx")]
 use calnexus::DomainRouter;
+use calnexus::{CacheManager, CalcError, ErrorKind, EvalContext, EvalResult, I18n, Lang, evaluate};
 
 use crate::common::{approx_eq, eval_err, eval_ok};
 
