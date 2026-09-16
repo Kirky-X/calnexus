@@ -363,7 +363,6 @@ fn preprocess_strings(
                     .with_span(Span::new(start, i))
                     .with_i18n("msg.core.parse_unclosed_string", vec![]));
             }
-            // 生成占位符并存储 Str 节点
             let placeholder = format!("__str_{}", count);
             count += 1;
             placeholders.insert(placeholder.clone(), AstNode::Str(content));
@@ -414,10 +413,8 @@ fn preprocess_brackets(
                     .with_span(Span::new(start, i))
                     .with_i18n("msg.core.parse_unmatched_bracket", vec![]));
             }
-            // 提取子串并解析为 AST
             let literal: String = chars[start..i].iter().collect();
             let node = parse_bracket_literal(&literal)?;
-            // 生成占位符
             let placeholder = format!("__cb_{}", count);
             count += 1;
             placeholders.insert(placeholder.clone(), node);
@@ -450,7 +447,6 @@ fn preprocess_bigint(
 
     while i < chars.len() {
         if chars[i].is_ascii_digit() {
-            // 找到连续数字的结束位置
             let start = i;
             while i < chars.len() && chars[i].is_ascii_digit() {
                 i += 1;
@@ -534,7 +530,6 @@ fn replace_placeholders(
 /// 每行由 `[elem1,elem2,...]` 组成，元素递归调用 [`parse`]。
 fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
     let trimmed = input.trim();
-    // 必须以 `[[` 开头、`]]` 结尾
     if !trimmed.starts_with("[[") || !trimmed.ends_with("]]") {
         return Err(
             CalcError::parse(format!("invalid matrix literal: {}", trimmed))
@@ -547,7 +542,6 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
     }
     // 去掉外层 `[[` 和 `]]`，得到 `row1],[row2],[...`
     let inner = &trimmed[2..trimmed.len() - 2];
-    // 用 `],[` 分割行
     let rows_str = split_by_pattern(inner, "],[");
     let mut rows: Vec<Vec<AstNode>> = Vec::with_capacity(rows_str.len());
     for row_str in &rows_str {
@@ -584,7 +578,6 @@ fn parse_matrix_literal(input: &str) -> Result<AstNode, CalcError> {
 /// 元素递归调用 [`parse`]，支持任意表达式元素。
 fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
     let trimmed = input.trim();
-    // 必须以 `[` 开头、`]` 结尾
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
         return Err(
             CalcError::parse(format!("invalid list literal: {}", trimmed))
@@ -595,10 +588,8 @@ fn parse_list_literal(input: &str) -> Result<AstNode, CalcError> {
                 ),
         );
     }
-    // 去掉 `[` 和 `]`
     let inner = &trimmed[1..trimmed.len() - 1];
     let inner_trimmed = inner.trim();
-    // 空列表 `[]`
     if inner_trimmed.is_empty() {
         return Ok(AstNode::List(vec![]));
     }
@@ -684,7 +675,6 @@ fn validate_no_consecutive_operators(input: &str) -> Result<(), CalcError> {
                 if c != op_first {
                     continue;
                 }
-                // 跳过空格查找第二个字符
                 let mut j = i + 1;
                 while j < chars.len() && chars[j].is_whitespace() {
                     j += 1;
@@ -747,7 +737,6 @@ fn preprocess_factorial(input: &str) -> Result<String, CalcError> {
 fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
     let mut pos = chars.len();
 
-    // 跳过尾部空格
     while pos > 0 && chars[pos - 1].is_whitespace() {
         pos -= 1;
     }
@@ -766,7 +755,6 @@ fn find_operand_start(chars: &[char]) -> Result<usize, CalcError> {
         // 继续向左扫描函数名（如果 '(' 前面有字母）
         pos = scan_identifier_backward(chars, pos);
     } else {
-        // 向左扫描连续的数字、字母、小数点、下划线
         while pos > 0 {
             let c = chars[pos - 1];
             if c.is_alphanumeric() || c == '.' || c == '_' {

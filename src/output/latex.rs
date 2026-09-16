@@ -41,7 +41,6 @@ pub fn format_latex_scalar(v: f64) -> String {
         };
     }
     if v.fract() == 0.0 {
-        // Integer value: render without decimal point
         if v.abs() < 9e15 {
             return format!("{}", v as i64);
         }
@@ -71,11 +70,9 @@ fn has_floating_point_noise(s: &str) -> bool {
 /// - 实部为 0 → 仅虚部（`4i`），虚部为 ±1 时进一步简化为 `i` / `-i`
 /// - 一般形式 → `re + im i` 或 `re - im i`（虚部为 ±1 时简化为 `re + i` / `re - i`）
 pub fn format_latex_complex(re: f64, im: f64) -> String {
-    // Case 1: imaginary part is zero → just real part
     if im == 0.0 {
         return format_latex_scalar(re);
     }
-    // Case 2: real part is zero → just imaginary part
     if re == 0.0 {
         if im == 1.0 {
             return "i".to_string();
@@ -85,7 +82,6 @@ pub fn format_latex_complex(re: f64, im: f64) -> String {
         }
         return format!("{}i", format_latex_scalar(im));
     }
-    // Case 3: general form re ± im i
     let re_s = format_latex_scalar(re);
     if im == 1.0 {
         format!("{} + i", re_s)
