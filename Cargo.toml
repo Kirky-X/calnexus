@@ -18,11 +18,8 @@ default = []
 cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
-# HTTP: HTTP API 接口（基于 sdforge/http）
-# tokio/signal: 优雅关闭信号驱动（sdforge graceful 序列消费 Ctrl+C / SIGTERM）
-# sdforge/graceful: 优雅关闭序列（serve_with_graceful_shutdown，替代手写信号 select）
-# sdforge/health: 健康探针（/health /ready /live 挂载 sdforge handler + ReadinessCheck）
-# sdforge/context: 请求标识传播（context_middleware 替代手写 request_id 中间件）
+# HTTP: HTTP API 接口；sdforge/health 健康探针（/health /ready /live + ReadinessCheck）
+# sdforge/context 请求标识传播（context_middleware）
 http = ["dep:sdforge", "sdforge/http", "sdforge/graceful", "sdforge/health", "sdforge/context", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
@@ -34,7 +31,6 @@ unit = []
 fx = ["dep:ureq", "dep:dirs", "dep:limiteron"]
 # Numerical: 高级数值计算（eig/SVD 等）
 numerical = []
-# Server: HTTP + MCP 聚合
 server = ["http", "mcp"]
 # Ratelimit: HTTP 限流中间件（sdforge/ratelimit-http：RateLimitLayer + HttpRequestRateLimiter 契约；
 # 策略为 src/server/ratelimit.rs 固定窗口，经 Clone 桥接层挂载，CALNEXUS_RATELIMIT_* 可配）
@@ -50,17 +46,17 @@ mathexpr = { version = "0.1", default-features = false }
 # 缓存层（oxcache byte-weight：同步字节权重预算 + try_get_with single-flight；
 # 禁用默认特性避免 tokio/redis 等后端栈；键生成与 EvalResult 体积估算留在 src/core/cache.rs）
 oxcache = { version = "0.5.0-rc.4", default-features = false, features = ["byte-weight"] }
-# 错误派生（仅 std，禁用默认特性）
+# 错误派生
 thiserror = { version = "2.0", default-features = false }
-# 哈希（仅启用 std，禁用默认的 rayon/neon 等并行后端）
+# 哈希
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
-# 序列化（仅 std + derive，禁用默认的 unstable 特性）
+# 序列化
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
-# tokio 运行时（仅 rt，禁用默认的 full）
+# tokio 运行时
 tokio = { version = "1.0", default-features = false, features = ["rt"] }
-# 正则表达式（仅 std + unicode-perl，禁用默认的 perf-cache/perf-inline 等）
+# 正则表达式
 regex = { version = "1.0", default-features = false, features = ["std", "unicode-perl"] }
-# 数值计算（均禁用默认特性，仅启用 std + serde）
+# 数值计算（均禁用默认特性）
 num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
 # num-bigint: 锁定 0.4——num-rational 0.4.2（最新）固定 ^0.4，且 precision.rs 跨库传递 BigInt 类型，0.5 会破坏 BigRational 互操作
@@ -71,9 +67,9 @@ num-traits = { version = "0.2", default-features = false, features = ["std"] }
 # CLI 依赖（clap 通过 sdforge/cli 间接启用，features 由 sdforge 管理）
 rustyline = { version = "18.0", default-features = false, features = ["derive"], optional = true }
 rayon = { version = "1.12", default-features = false, optional = true }
-# ICU4X 国际化（仅 compiled_data，禁用默认特性）
+# ICU4X 国际化
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-# sdforge: CLI/HTTP/MCP 接口封装层（禁用默认特性，按需启用 cli/http/mcp）
+# sdforge: CLI/HTTP/MCP 接口封装层
 sdforge = { version = "0.5.0-rc.4", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
@@ -107,7 +103,6 @@ criterion = { version = "0.8", default-features = false, features = ["plotters"]
 expectrl = { version = "0.9", default-features = false }
 # tower: HTTP 集成测试用（ServiceExt::oneshot 测试 axum Router）
 tower = { version = "0.5", default-features = false, features = ["util"] }
-# http-body-util: 读取 HTTP response body（集成测试用）
 http-body-util = { version = "0.1", default-features = false }
 
 [lints.rust]
