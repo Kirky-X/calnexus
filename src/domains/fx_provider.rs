@@ -871,7 +871,9 @@ mod tests {
             }));
         }
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        let first = results[0].as_ref().expect("injected fetcher always succeeds");
+        let first = results[0]
+            .as_ref()
+            .expect("injected fetcher always succeeds");
         for r in &results[1..] {
             let t = r.as_ref().expect("all threads should succeed");
             assert_eq!(t.base, first.base);

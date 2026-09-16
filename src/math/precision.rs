@@ -73,7 +73,6 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
     let numer = abs.numer();
     let denom = abs.denom();
 
-    // 计算 value * 10^precision，然后四舍五入到整数
     let mut scale = BigInt::one();
     for _ in 0..precision {
         scale *= &ten;
@@ -86,7 +85,6 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
         let sign = if neg { "-" } else { "" };
         format!("{}{}", sign, rounded)
     } else {
-        // 分离整数部分和小数部分
         let int_part = &rounded / &scale;
         let frac_part = &rounded % &scale;
         let int_str = int_part.to_string();

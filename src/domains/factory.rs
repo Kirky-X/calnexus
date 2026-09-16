@@ -2,9 +2,6 @@
 
 //! 计算域工厂函数：构建默认路由器与 precision 域实例。
 //!
-//! 设计依据：mod.rs 只放 trait/struct/re-export，实现拆到独立文件。
-//! 将工厂函数从 mod.rs 移到本文件，避免 mod.rs 包含实现逻辑。
-//!
 //! 注册职责归 domains 层（知道自己有哪些实现），避免 src/core 反向依赖
 //! src/domains 的具体域类型（DIP 依赖倒置原则）。
 
@@ -65,15 +62,13 @@ pub(crate) fn build_precision_domain() -> Box<dyn CalculationDomain> {
 mod tests {
     use super::*;
 
-    // ===== 域优先级测试（从 core/domain.rs 迁移，消除 core → domains 类型依赖） =====
+    // ===== 域优先级测试 =====
     //
-    // priority 是 domains 层的属性，测试应在 domains 层进行（模块分层约定 + DIP）。
-    // 原测试位于 core/domain.rs，直接构造具体域类型，违反 ARCHITECTURE.md §2.3
-    // "core → domains 类型依赖 = 0" 声明。
+    // priority 是 domains 层的属性，测试应在 domains 层进行（模块分层约定 + DIP，
+    // 见 ARCHITECTURE.md §2.3 "core → domains 类型依赖 = 0" 声明）。
 
     #[test]
     fn test_priority_number_theory_equals_combinatorics() {
-        // NumberTheory(25) 与 Combinatorics(25) 同级
         let nt = NumberTheoryDomain;
         let cb = CombinatoricsDomain;
         assert_eq!(nt.priority(), 25);
@@ -82,7 +77,6 @@ mod tests {
 
     #[test]
     fn test_priority_vector_higher_than_polynomial() {
-        // Vector(30) > Polynomial(25)
         let vec = VectorDomain;
         let pol = PolynomialDomain;
         assert!(vec.priority() > pol.priority());

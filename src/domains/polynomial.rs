@@ -1214,7 +1214,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_bignumber() {
-        // eval_node BigNumber path
         let ast = AstNode::BigNumber("42".to_string());
         let result = PolynomialDomain
             .evaluate(&ast, &EvalContext::new())
@@ -1231,7 +1230,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_unary_abs_rejected() {
-        // eval_node UnaryOp::Abs rejection
         let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Number(5.0)));
         let result = PolynomialDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
@@ -1239,7 +1237,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_unary_neg_polynomial() {
-        // eval_node UnaryOp::Neg with polynomial expression
         let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(parse("x^2+1").unwrap()));
         let result = PolynomialDomain
             .evaluate(&ast, &EvalContext::new())
@@ -1250,7 +1247,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_variable_bound() {
-        // eval_node Variable with bound value
         let ctx = EvalContext::new().with_var("x", 5.0);
         let ast = AstNode::Variable("x".to_string());
         let result = PolynomialDomain.evaluate(&ast, &ctx).unwrap();
@@ -1285,7 +1281,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_bignumber() {
-        // eval_scalar BigNumber path via poly_eval
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![parse("x+1").unwrap(), AstNode::BigNumber("5".to_string())],
@@ -1298,7 +1293,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_bignumber_invalid() {
-        // eval_scalar BigNumber invalid via poly_eval
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![parse("x+1").unwrap(), AstNode::BigNumber("xyz".to_string())],
@@ -1309,7 +1303,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_variable() {
-        // eval_scalar Variable via poly_eval
         let ctx = EvalContext::new().with_var("y", 5.0);
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
@@ -1321,7 +1314,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_unbound_variable() {
-        // eval_scalar unbound variable via poly_eval
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![parse("x+1").unwrap(), AstNode::Variable("z".to_string())],
@@ -1332,7 +1324,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_neg() {
-        // eval_scalar UnaryOp::Neg via poly_eval
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1388,7 +1379,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_div_by_zero() {
-        // eval_scalar BinaryOp::Div by zero via poly_eval
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1446,7 +1436,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_mod_by_zero() {
-        // eval_scalar BinaryOp::Mod by zero via poly_eval
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1464,7 +1453,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_complex_rejected() {
-        // eval_scalar wildcard `_ =>` with Complex via poly_eval
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![parse("x+1").unwrap(), AstNode::Complex(1.0, 2.0)],
@@ -1847,7 +1835,7 @@ mod tests {
 
     #[test]
     fn test_eval_node_number_bare() {
-        // 覆盖 eval_node 的 AstNode::Number 分支（line 56）
+        // 覆盖 eval_node 的 AstNode::Number 分支
         // 直接对裸 Number AST 求值（不经过任何函数调用包装）
         let ast = AstNode::Number(7.0);
         let result = PolynomialDomain
@@ -1858,7 +1846,7 @@ mod tests {
 
     #[test]
     fn test_eval_node_binaryop_polynomial_bare() {
-        // 覆盖 eval_node 的 BinaryOp 成功返回路径（lines 63-64）
+        // 覆盖 eval_node 的 BinaryOp 成功返回路径
         // 对裸多项式表达式（非函数调用）求值，触发 expr_to_coeffs + 返回 Polynomial
         let result = eval_polynomial("x^2+2*x+1").unwrap();
         assert_vec_approx(&result, &[1.0, 2.0, 1.0]);
@@ -1866,7 +1854,7 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_sub() {
-        // 覆盖 eval_scalar 的 BinaryOp::Sub 分支（line 252）
+        // 覆盖 eval_scalar 的 BinaryOp::Sub 分支
         // poly_eval(x+1, 10-3) = poly_eval(x+1, 7) = 8
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
@@ -1887,7 +1875,7 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_mul() {
-        // 覆盖 eval_scalar 的 BinaryOp::Mul 分支（line 253）
+        // 覆盖 eval_scalar 的 BinaryOp::Mul 分支
         // poly_eval(x+1, 2*3) = poly_eval(x+1, 6) = 7
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),

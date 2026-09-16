@@ -275,7 +275,7 @@ impl CombinatoricsDomain {
     /// 求值两参数非负整数参数（P/C/stirling 共用 helper）。
     ///
     /// 校验：参数数量 == 2，n/k 均非负。
-    /// 错误消息含函数名（通过 `name` 参数注入），保持与原实现一致。
+    /// 错误消息含函数名（通过 `name` 参数注入）。
     fn eval_two_non_negative_args(
         &self,
         args: &[AstNode],
@@ -395,8 +395,6 @@ fn bigint_to_result(b: BigInt) -> EvalResult {
         EvalResult::BigInt(b)
     }
 }
-
-// 组合数学算法已迁移到 `math/combinatorics.rs`。
 
 /// 递归检查 AST 是否含组合函数调用。
 fn contains_combinatorics_function(ast: &AstNode) -> bool {
@@ -798,8 +796,6 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // 底层算法测试已迁移到 `math/combinatorics.rs`。
-
     #[test]
     fn test_bigint_to_result() {
         assert_eq!(bigint_to_result(BigInt::from(42)), EvalResult::Scalar(42.0));
@@ -811,7 +807,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_integer_number() {
-        // eval_node Number success (integer)
         let ast = AstNode::Number(42.0);
         let result = CombinatoricsDomain
             .evaluate(&ast, &EvalContext::new())
@@ -821,7 +816,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_bignumber() {
-        // eval_node BigNumber success
         let ast = AstNode::BigNumber("12345678901234567890".to_string());
         let result = CombinatoricsDomain
             .evaluate(&ast, &EvalContext::new())
@@ -831,7 +825,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_binaryop_success() {
-        // eval_node BinaryOp success: 2+3 = 5
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Number(2.0)),
@@ -845,7 +838,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_unary_neg() {
-        // eval_node UnaryOp::Neg
         let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
         let result = CombinatoricsDomain
             .evaluate(&ast, &EvalContext::new())
@@ -855,7 +847,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_unary_factorial_rejected() {
-        // eval_node UnaryOp::Factorial error
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
         let result = CombinatoricsDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
@@ -863,7 +854,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_non_integer() {
-        // eval_int non-integer error via function arg
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![AstNode::Number(3.14), AstNode::Number(2.0)],
@@ -874,7 +864,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_overflow() {
-        // eval_int overflow: number > i64::MAX
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![AstNode::Number(1.0e20), AstNode::Number(2.0)],
@@ -885,7 +874,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_bignumber_arg() {
-        // eval_int BigNumber success via function arg
         let ast = AstNode::FunctionCall(
             "C".to_string(),
             vec![AstNode::BigNumber("100".to_string()), AstNode::Number(50.0)],
@@ -898,7 +886,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_variable_success() {
-        // eval_int Variable success
         let ctx = EvalContext::new().with_var("x", 5.0);
         let ast = AstNode::FunctionCall(
             "P".to_string(),
@@ -910,7 +897,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_variable_non_integer() {
-        // eval_int Variable non-integer error
         let ctx = EvalContext::new().with_var("x", 3.14);
         let ast = AstNode::FunctionCall(
             "P".to_string(),
@@ -944,7 +930,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_unary_factorial_rejected() {
-        // eval_int UnaryOp::Factorial error
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![
@@ -958,7 +943,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_complex_rejected() {
-        // eval_int Complex rejection
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![AstNode::Complex(1.0, 2.0), AstNode::Number(2.0)],
@@ -1001,7 +985,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_binary_mod_by_zero() {
-        // eval_int_binary Mod by zero
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::Number(10.0)),
@@ -1033,7 +1016,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_binary_pow_negative() {
-        // eval_int_binary Pow negative exponent error
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![
@@ -1051,7 +1033,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_binary_pow_overflow() {
-        // eval_int_binary Pow overflow (exponent too large for u32)
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![

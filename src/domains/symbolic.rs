@@ -12,7 +12,7 @@
 //! 核心数据结构 [`SymbolicExpr`] 与 [`AstNode`] 双向转换，符号变换后格式化为
 //! 字符串返回 [`EvalResult::Symbolic`]。
 //!
-//! 重构：纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
+//! 纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, CalcError, EvalContext, EvalResult, UnaryOp};
@@ -25,7 +25,7 @@ pub use crate::math::symbolic::ast_to_symbolic;
 const SYMBOLIC_FUNCTIONS: &[&str] = &["diff", "integrate", "simplify", "limit", "taylor"];
 
 // ============================ AstNode ↔ SymbolicExpr 转换 ============================
-// ast_to_symbolic 已迁移至 math::symbolic，此处保留 re-export 供向后兼容。
+// ast_to_symbolic 实现在 math::symbolic，此处 re-export 供向后兼容。
 
 // ============================ SymbolicDomain ============================
 

@@ -864,8 +864,6 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // ===== 底层函数单元测试已迁移至 math::fx =====
-
     #[test]
     fn test_expect_str_arg_with_string() {
         let node = AstNode::Str("USD".to_string());

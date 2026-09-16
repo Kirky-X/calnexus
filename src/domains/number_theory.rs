@@ -31,8 +31,6 @@ const NUMBER_THEORY_FUNCTIONS: &[&str] = &[
     "euler_phi",
 ];
 
-// MR_BASES 已迁移到 `math/number_theory.rs`。
-
 /// NumberTheory 计算域。
 ///
 /// priority=25，支持 gcd/lcm/is_prime/prime_sieve/mod_inverse/mod_pow/euler_phi。
@@ -465,8 +463,6 @@ fn evalresult_to_bigint(result: EvalResult, ast: &AstNode) -> Result<BigInt, Cal
         )),
     }
 }
-
-// 数论算法已迁移到 `math/number_theory.rs`。
 
 /// 递归检查 AST 是否含数论函数调用。
 fn contains_number_theory_function(ast: &AstNode) -> bool {
@@ -939,8 +935,6 @@ mod tests {
         assert!(matches!(result, EvalResult::BigInt(_)));
     }
 
-    // 底层算法测试已迁移到 `math/number_theory.rs`。
-
     #[test]
     fn test_bigint_to_result_small() {
         assert_eq!(bigint_to_result(BigInt::from(42)), EvalResult::Scalar(42.0));
@@ -956,7 +950,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_integer_number() {
-        // eval_node Number success (integer)
         let ast = AstNode::Number(42.0);
         let result = NumberTheoryDomain
             .evaluate(&ast, &EvalContext::new())
@@ -966,7 +959,6 @@ mod tests {
 
     #[test]
     fn test_eval_node_bignumber() {
-        // eval_node BigNumber success
         let ast = AstNode::BigNumber("12345678901234567890".to_string());
         let result = NumberTheoryDomain
             .evaluate(&ast, &EvalContext::new())
@@ -976,7 +968,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_non_integer() {
-        // eval_int non-integer error
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![AstNode::Number(3.14), AstNode::Number(6.0)],
@@ -987,7 +978,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_overflow() {
-        // eval_int overflow: number > i64::MAX
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![AstNode::Number(1.0e20), AstNode::Number(6.0)],
@@ -998,7 +988,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_variable_success() {
-        // eval_int Variable success
         let ctx = EvalContext::new().with_var("x", 12.0);
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
@@ -1010,7 +999,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_variable_non_integer() {
-        // eval_int Variable non-integer error
         let ctx = EvalContext::new().with_var("x", 3.14);
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
@@ -1022,7 +1010,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_unary_abs() {
-        // eval_int UnaryOp::Abs
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![
@@ -1038,7 +1025,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_unary_factorial_rejected() {
-        // eval_int UnaryOp::Factorial error
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![
@@ -1079,7 +1065,6 @@ mod tests {
 
     #[test]
     fn test_eval_int_complex_rejected() {
-        // eval_int Complex/Matrix/List rejection
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![AstNode::Complex(1.0, 2.0), AstNode::Number(18.0)],
@@ -1178,8 +1163,6 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    // 底层算法测试（is_prime_bigint/miller_rabin/mod_pow_bigint）已迁移到 `math/number_theory.rs`。
-
     #[test]
     fn test_eval_int_function_call_returns_vector() {
         // 嵌套 prime_sieve 返回 Vector，eval_int FunctionCall 的 `_ =>` 分支
@@ -1194,8 +1177,6 @@ mod tests {
         let result = NumberTheoryDomain.evaluate(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
-
-    // proptest 属性测试继续。
 
     // ===== proptest 属性测试 =====
 
