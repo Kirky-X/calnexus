@@ -12,7 +12,8 @@ git config core.hooksPath .githooks
 ```
 
 That's it — the `pre-commit` hook will now run automatically before every
-`git commit`.
+`git commit`, and the `post-commit` hook will run after every successful
+commit.
 
 Verify it is active:
 
@@ -40,6 +41,19 @@ performs 9 checks:
 
 The hook prints colored `[PASS]`/`[FAIL]`/`[WARN]` output for each check and
 rejects the commit (exit code 1) if any blocking check fails.
+
+## The `post-commit` hook
+
+A best-effort cleanup step that runs **after** each successful commit. It
+deletes local build artifacts to reclaim disk space:
+
+- `cargo clean` plus any `target/` directories (all profiles)
+- Python artifacts: `__pycache__/`, `*.pyc`/`*.pyo`, `.pytest_cache/`,
+  `.mypy_cache/`, `.ruff_cache/`, `.hypothesis/`, `*.egg-info/`
+- root `build/` and `dist/` — only when nothing inside them is tracked
+
+`.venv/` and `node_modules/` are never touched. The hook never fails the
+commit (the commit already exists when it runs).
 
 ## Bypassing the hook
 
