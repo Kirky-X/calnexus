@@ -2,7 +2,7 @@
 name = "calnexus"
 version = "0.1.4"
 edition = "2024"
-authors = ["Kirky.X"]
+authors = ["Kirky-X <Kirky-X@outlook.com>"]
 license = "MIT"
 # MSRV 与 base 生态一致基线对齐（sdforge 0.5.0-rc 系要求 1.97.1；CI msrv 任务同步）
 rust-version = "1.97.1"
@@ -45,7 +45,7 @@ observability = ["dep:tracing", "dep:tracing-subscriber"]
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层（oxcache byte-weight：同步字节权重预算 + try_get_with single-flight；
 # 禁用默认特性避免 tokio/redis 等后端栈；键生成与 EvalResult 体积估算留在 src/core/cache.rs）
-oxcache = { version = "0.5.0-rc.4", default-features = false, features = ["byte-weight"] }
+oxcache = { version = "0.5.0-rc.4", path = "../base/oxcache", default-features = false, features = ["byte-weight"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
 # 哈希
@@ -53,9 +53,9 @@ blake3 = { version = "1.8", default-features = false, features = ["std"] }
 # 序列化
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
 # tokio 运行时
-tokio = { version = "1.0", default-features = false, features = ["rt"] }
+tokio = { version = "1.53", default-features = false, features = ["rt"] }
 # 正则表达式
-regex = { version = "1.0", default-features = false, features = ["std", "unicode-perl"] }
+regex = { version = "1.13", default-features = false, features = ["std", "unicode-perl"] }
 # 数值计算（均禁用默认特性）
 num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
@@ -69,8 +69,15 @@ rustyline = { version = "18.0", default-features = false, features = ["derive"],
 rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
+# Fluent 消息目录（specmark change unify-rust-i18n：concurrent FluentBundle 双束承载 FTL，
+# locales/{en,zh}/messages.ftl 经 include_str! 内嵌；concurrent 变体为 Send+Sync 可入 static）
+fluent-bundle = "0.16"
+# Fluent 语言标识（束构建用 LanguageIdentifier）
+unic-langid = "0.9"
+# 系统语言探测（检测链第 4 级：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en）
+sys-locale = "0.3"
 # sdforge: CLI/HTTP/MCP 接口封装层
-sdforge = { version = "0.5.0-rc.4", default-features = false, optional = true }
+sdforge = { version = "0.5.0-rc.4", path = "../base/sdforge", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
@@ -90,7 +97,7 @@ ureq = { version = "3.4", default-features = false, features = ["rustls"], optio
 dirs = { version = "7.0", default-features = false, optional = true }
 # limiteron: 同步限流原语（sync = tokio-free 熔断器/固定窗口；default = []，仅 std + parking_lot）。
 # fx feature 消费 SyncCircuitBreaker（汇率源熔断），ratelimit feature 消费 SyncFixedWindowLimiter
-limiteron = { version = "0.3.0-rc.4", default-features = false, features = ["sync"], optional = true }
+limiteron = { version = "0.3.0-rc.4", path = "../base/limiteron", default-features = false, features = ["sync"], optional = true }
 
 [dev-dependencies]
 proptest = { version = "1.11", default-features = false, features = ["std"] }

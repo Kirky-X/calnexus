@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! ICU4X 国际化模块：中英双语消息目录。
 //!
@@ -9,9 +10,11 @@
 //! - 消息目录外部化到 `locales/{en,zh}.json`，编译时通过 `include_str!` 嵌入
 //! - 简单消息用 `t(key)`，参数化消息用 `tf(key, args)`（`{name}` 占位符）
 //! - 未知键返回键本身（fail-loud）
-
-use std::collections::HashMap;
 use std::sync::OnceLock;
+
+use fluent_bundle::concurrent::FluentBundle;
+use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
+use unic_langid::LanguageIdentifier;
 
 /// 支持的语言。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -32,36 +35,13 @@ pub struct I18n {
     lang: Lang,
 }
 
-// 静态消息表：编译时嵌入 JSON，运行时解析一次后缓存。
-// `HashMap<&'static str, &'static str>` 借用 `include_str!` 的 'static 数据，
-// 零拷贝（JSON 中无转义字符，serde_json 可直接借用原始字节）。
-static EN_MESSAGES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-static ZH_MESSAGES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-
-/// 加载英文消息表（首次调用解析 JSON，后续直接返回缓存）。
-fn en_messages() -> &'static HashMap<&'static str, &'static str> {
-    EN_MESSAGES.get_or_init(|| {
-        let json = include_str!("../locales/en.json");
-        // 编译时 JSON 损坏是开发期错误，panic 提示修复（失败显性化）
-        serde_json::from_str(json).unwrap_or_else(|e| panic!("locales/en.json 解析失败: {e}"))
-    })
-}
-
-/// 加载中文消息表（首次调用解析 JSON，后续直接返回缓存）。
-fn zh_messages() -> &'static HashMap<&'static str, &'static str> {
-    ZH_MESSAGES.get_or_init(|| {
-        let json = include_str!("../locales/zh.json");
-        serde_json::from_str(json).unwrap_or_else(|e| panic!("locales/zh.json 解析失败: {e}"))
-    })
-}
-
 impl I18n {
     /// 创建指定语言的 i18n 上下文。
     pub fn new(lang: Lang) -> Self {
         Self { lang }
     }
 
-    /// 从 BCP-47 语言标签字符串解析语言。
+    /// 从 BCP-47 语言标签字符串解析语言（用户显式输入路径）。
     ///
     /// - "en"/"en-US"/"en-GB" → `Lang::En`
     /// - "zh"/"zh-CN"/"zh-TW" → `Lang::Zh`
@@ -75,56 +55,38 @@ impl I18n {
         Self::new(lang)
     }
 
+    /// 从系统语言检测链构造（`CALNEXUS_LANG` → `LC_ALL` → `LC_MESSAGES` →
+    /// `LANG` → sys-locale → en；检测结果进程内 `OnceLock` 缓存）。
+    ///
+    /// 用于无显式语言输入的入口：无 `--lang` 的 CLI、缺省 `lang` 字段的
+    /// HTTP/MCP 请求、panic hook 等全局文案。
+    pub fn from_detected() -> Self {
+        Self::new(detect_locale())
+    }
+
     /// 获取当前语言。
     pub fn lang(&self) -> Lang {
         self.lang
     }
 
-    /// 查询简单消息目录（无占位符）。
+    /// 查询简单消息目录（无参数占位符）。
     ///
-    /// 已知键返回对应语言的翻译文本；未知键返回键本身（fail-loud）。
-    pub fn t<'a>(&self, key: &'a str) -> &'a str {
-        let table = match self.lang {
-            Lang::En => en_messages(),
-            Lang::Zh => zh_messages(),
-        };
-        table.get(key).copied().unwrap_or(key)
+    /// 已知键返回对应语言的 Fluent 渲染文本；未知键返回键本身（fail-loud）。
+    /// 当前束缺失时回退英文束，仍缺失时回退键名；不 panic。
+    pub fn t(&self, key: &str) -> String {
+        self.tf(key, &[])
     }
 
-    /// 查询参数化消息目录（含 `{name}` 占位符）。
+    /// 查询参数化消息目录（`{ $name }` Fluent 占位符）。
     ///
-    /// 占位符格式：`{name}`，`args` 提供 `(name, value)` 键值对。
-    /// - 已知键：替换所有匹配的占位符后返回 `String`
-    /// - 未知键：返回键本身（fail-loud，不进行替换）
-    /// - 占位符未提供值：保留原样（便于调试缺失的参数）
+    /// - 已知键：由 Fluent 引擎用 `args` 渲染后返回 `String`
+    /// - 未知键：返回键本身（fail-loud，不渲染）
+    /// - 占位符未提供值：按 Fluent 语义原样回显 `{$name}`（便于定位缺失参数）
+    /// - 查找顺序：当前语言束 → 英文束 → 键名本身；不 panic
     pub fn tf(&self, key: &str, args: &[(&str, &str)]) -> String {
-        let template = self.t(key);
-        if args.is_empty() {
-            return template.to_string();
-        }
-        // 单次扫描替换，避免交叉占位符污染
-        // 旧实现顺序替换，若 args 值含其他占位符模式（如 {b}），会被后续迭代二次替换
-        let mut result = String::with_capacity(template.len());
-        let mut remaining = template;
-        while let Some(start) = remaining.find('{') {
-            result.push_str(&remaining[..start]);
-            if let Some(end) = remaining[start..].find('}') {
-                let placeholder_name = &remaining[start + 1..start + end];
-                if let Some((_, value)) = args.iter().find(|(name, _)| *name == placeholder_name) {
-                    result.push_str(value);
-                } else {
-                    // 未找到匹配：保留原始占位符
-                    result.push_str(&remaining[start..start + end + 1]);
-                }
-                remaining = &remaining[start + end + 1..];
-            } else {
-                // 无匹配 '}'：保留剩余文本
-                result.push_str(&remaining[start..]);
-                remaining = "";
-            }
-        }
-        result.push_str(remaining);
-        result
+        format_from_bundle(self.lang, key, args)
+            .or_else(|| format_from_bundle(Lang::En, key, args))
+            .unwrap_or_else(|| key.to_string())
     }
 }
 
@@ -133,6 +95,136 @@ impl Default for I18n {
         Self::new(Lang::default())
     }
 }
+
+// ============================================================================
+// 系统语言检测链（reference-pattern §2）
+// ============================================================================
+
+/// 检测结果进程内缓存（首调用确定，此后不变；并行测试安全）。
+static DETECTED_LANG: OnceLock<Lang> = OnceLock::new();
+
+/// 系统语言检测（强制顺序）：`CALNEXUS_LANG` → `LC_ALL` → `LC_MESSAGES` →
+/// `LANG` → sys-locale → en。结果域仅 `{En, Zh}`，任何失败/未知语言继续走链，
+/// 链尾必为 En。进程内缓存一次。
+pub(crate) fn detect_locale() -> Lang {
+    *DETECTED_LANG.get_or_init(|| detect_from(|key| std::env::var(key).ok()))
+}
+
+/// 检测链纯函数：env 读取经 `lookup` 抽象注入，便于无环境副作用的测试（§5）。
+fn detect_from(lookup: impl Fn(&str) -> Option<String>) -> Lang {
+    // 1. 项目覆盖变量（大写项目名）
+    if let Some(value) = lookup("CALNEXUS_LANG")
+        && let Some(lang) = normalize_env_value(&value)
+    {
+        return lang;
+    }
+    // 2. 显式 POSIX 环境链（Unix 上 sys-locale 内部也读这些，显式读是为
+    //    Windows/边缘环境确定性）
+    for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Some(value) = lookup(key)
+            && let Some(lang) = normalize_env_value(&value)
+        {
+            return lang;
+        }
+    }
+    // 3. sys-locale 系统探测
+    if let Some(locale) = sys_locale::get_locale()
+        && let Some(lang) = normalize_env_value(&locale)
+    {
+        return lang;
+    }
+    // 4. 终极回退
+    Lang::En
+}
+
+/// 归一化单个环境变量值（reference-pattern §2 normalize）：
+/// 去 `@modifier` 与 `.UTF-8` codeset、`_` → `-`；`C`/`POSIX`/空值 → `None`
+/// （回退链继续）；primary subtag 为 `zh` → `Zh`、`en` → `En`、其他语言 →
+/// `None`（不支持 → 回退链继续，链尾终结 en）。
+///
+/// 与用户显式输入的 BCP-47 解析（[`parse_lang`]）解耦：检测链行为在
+/// `icu` feature 两种组合下完全一致。
+fn normalize_env_value(raw: &str) -> Option<Lang> {
+    let trimmed = raw.trim();
+    let no_modifier = trimmed.split('@').next().unwrap_or("");
+    let no_codeset = no_modifier.split('.').next().unwrap_or("");
+    let tag = no_codeset.replace('_', "-");
+    if matches!(tag.as_str(), "" | "C" | "POSIX") {
+        return None;
+    }
+    // BCP-47 标签结构：language [-script] [-region] [-variant]，取 primary subtag。
+    // split('-') 而非 starts_with("zh")，避免误匹配 "zhongwen" 等字符串。
+    let primary = tag.split('-').next().unwrap_or("").to_ascii_lowercase();
+    match primary.as_str() {
+        "zh" => Some(Lang::Zh),
+        "en" => Some(Lang::En),
+        _ => None,
+    }
+}
+
+// ============================================================================
+// Fluent 双束（dbnexus catalog.rs 模式，reference-pattern §3）
+// ============================================================================
+
+/// 英文目录（编译期内嵌磁盘文件，二者不可能失同步）。
+const EN_FTL: &str = include_str!("../locales/en/messages.ftl");
+/// 中文目录（编译期内嵌磁盘文件，二者不可能失同步）。
+const ZH_FTL: &str = include_str!("../locales/zh/messages.ftl");
+
+/// 缓存并发 Fluent 束（线程安全，首访问构建一次）。
+static EN_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
+static ZH_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
+
+/// 目录键归一化：对外键为点分形式（`"msg.unbound_variable"`），FTL 标识符
+/// 不允许 `.`，查表前映射为 `-`（`"msg-unbound_variable"`）。
+fn fluent_id(key: &str) -> String {
+    key.replace('.', "-")
+}
+
+/// 从指定语言的束渲染消息；键缺失返回 `None`（由调用方回退，不 panic）。
+fn format_from_bundle(lang: Lang, key: &str, args: &[(&str, &str)]) -> Option<String> {
+    let bundle = match lang {
+        Lang::Zh => ZH_BUNDLE.get_or_init(|| build_bundle(ZH_FTL, "zh")),
+        Lang::En => EN_BUNDLE.get_or_init(|| build_bundle(EN_FTL, "en")),
+    };
+    let msg = bundle.get_message(&fluent_id(key))?;
+    let pattern = msg.value()?;
+    let mut fluent_args = FluentArgs::new();
+    for (name, value) in args {
+        fluent_args.set(*name, FluentValue::from(*value));
+    }
+    let mut errors = vec![];
+    Some(bundle.format_pattern(pattern, Some(&fluent_args), &mut errors).to_string())
+}
+
+/// 构建 concurrent 束：FTL 解析失败降级保留未解析资源（开发期错误显性化），
+/// `set_use_isolating(false)` 避免输出含 Unicode 隔离符。
+fn build_bundle(ftl: &'static str, langid: &'static str) -> FluentBundle<FluentResource> {
+    let resource = FluentResource::try_new(ftl.to_string()).unwrap_or_else(|e| e.0);
+    let langid: LanguageIdentifier = langid
+        .parse()
+        .unwrap_or_else(|_| "en".parse().expect("'en' is a valid language identifier"));
+    let mut bundle = FluentBundle::new_concurrent(vec![langid]);
+    bundle.set_use_isolating(false);
+    bundle
+        .add_resource(resource)
+        .expect("FTL resources should add without conflict");
+    bundle
+}
+
+/// 全局 `t()`：供无法持有 `I18n` 实例的位置使用（语言经检测链缓存）。
+///
+/// 当前 crate 内无生产调用点（panic hook 走 `I18n::from_detected()`），
+/// 仅供测试模块断言 panic 文案键存在；非测试构建 `#[cfg(test)]` 门控避免死代码。
+#[cfg(test)]
+pub(crate) fn global_t(key: &str) -> String {
+    static GLOBAL_I18N: OnceLock<I18n> = OnceLock::new();
+    GLOBAL_I18N.get_or_init(I18n::from_detected).t(key)
+}
+
+// ============================================================================
+// 用户显式输入的 BCP-47 解析（--lang / HTTP lang 字段）
+// ============================================================================
 
 /// 解析 BCP-47 语言标签为 `Lang`。
 ///
@@ -198,6 +290,12 @@ mod tests {
         assert_eq!(Lang::default(), Lang::En);
     }
 
+    #[test]
+    fn test_default_is_english() {
+        let i18n = I18n::default();
+        assert_eq!(i18n.lang(), Lang::En);
+    }
+
     // ===== I18n::new =====
 
     #[test]
@@ -207,12 +305,6 @@ mod tests {
 
         let zh = I18n::new(Lang::Zh);
         assert_eq!(zh.lang(), Lang::Zh);
-    }
-
-    #[test]
-    fn test_default_is_english() {
-        let i18n = I18n::default();
-        assert_eq!(i18n.lang(), Lang::En);
     }
 
     // ===== I18n::from_str — 基本解析 =====
@@ -354,147 +446,6 @@ mod tests {
         assert_eq!(I18n::from_str("En").lang(), Lang::En);
     }
 
-    // ===== I18n::t — 全消息键中英双语 =====
-
-    #[test]
-    fn test_all_message_keys_have_english_translation() {
-        let i18n = I18n::new(Lang::En);
-        let keys = [
-            "error.parse",
-            "error.eval",
-            "error.overflow",
-            "error.division_by_zero",
-            "error.domain",
-            "error.depth",
-            "error.nan_or_inf",
-            "error.undefined_symbol",
-            "error.timeout",
-            "error.usage",
-            "label.position",
-            "label.hint",
-            "label.error_kind",
-            "label.exit_code",
-            "label.suggestion",
-            // 参数化消息键（含占位符，但 t() 返回原始模板）
-            "msg.unbound_variable",
-            "msg.invalid_bignumber",
-            "msg.matrix_dim_mismatch",
-            "msg.function_arg_count",
-            "msg.unknown_function",
-            "msg.unknown_variable",
-        ];
-        for key in &keys {
-            let msg = i18n.t(key);
-            assert!(
-                msg != *key,
-                "key '{}' has no English translation (returned key itself)",
-                key
-            );
-            assert!(
-                !msg.is_empty(),
-                "key '{}' has empty English translation",
-                key
-            );
-        }
-    }
-
-    #[test]
-    fn test_all_message_keys_have_chinese_translation() {
-        let i18n = I18n::new(Lang::Zh);
-        let keys = [
-            "error.parse",
-            "error.eval",
-            "error.overflow",
-            "error.division_by_zero",
-            "error.domain",
-            "error.depth",
-            "error.nan_or_inf",
-            "error.undefined_symbol",
-            "error.timeout",
-            "error.usage",
-            "label.position",
-            "label.hint",
-            "label.error_kind",
-            "label.exit_code",
-            "label.suggestion",
-            "msg.unbound_variable",
-            "msg.invalid_bignumber",
-            "msg.matrix_dim_mismatch",
-            "msg.function_arg_count",
-            "msg.unknown_function",
-            "msg.unknown_variable",
-        ];
-        for key in &keys {
-            let msg = i18n.t(key);
-            assert!(
-                msg != *key,
-                "key '{}' has no Chinese translation (returned key itself)",
-                key
-            );
-            assert!(
-                !msg.is_empty(),
-                "key '{}' has empty Chinese translation",
-                key
-            );
-        }
-    }
-
-    // ===== I18n::t — 中英翻译不同 =====
-
-    #[test]
-    fn test_en_and_zh_translations_differ() {
-        let en = I18n::new(Lang::En);
-        let zh = I18n::new(Lang::Zh);
-        let keys = [
-            "error.parse",
-            "error.eval",
-            "error.overflow",
-            "error.division_by_zero",
-            "error.domain",
-            "error.depth",
-            "error.nan_or_inf",
-            "error.undefined_symbol",
-            "error.timeout",
-            "error.usage",
-            "label.position",
-            "label.hint",
-            "label.error_kind",
-            "label.exit_code",
-            "label.suggestion",
-            "msg.unbound_variable",
-            "msg.invalid_bignumber",
-            "msg.matrix_dim_mismatch",
-            "msg.function_arg_count",
-            "msg.unknown_function",
-            "msg.unknown_variable",
-        ];
-        for key in &keys {
-            assert_ne!(
-                en.t(key),
-                zh.t(key),
-                "key '{}' has identical en/zh translations",
-                key
-            );
-        }
-    }
-
-    // ===== I18n::t — 未知键 fail-loud =====
-
-    #[test]
-    fn test_unknown_key_returns_key_itself() {
-        let en = I18n::new(Lang::En);
-        assert_eq!(en.t("nonexistent.key"), "nonexistent.key");
-
-        let zh = I18n::new(Lang::Zh);
-        assert_eq!(zh.t("nonexistent.key"), "nonexistent.key");
-    }
-
-    #[test]
-    fn test_empty_key_returns_empty_string() {
-        let en = I18n::new(Lang::En);
-        assert_eq!(en.t(""), "");
-    }
-
     // ===== I18n::t — 具体翻译内容验证 =====
 
     #[test]
@@ -537,6 +488,70 @@ mod tests {
         assert_eq!(zh.t("label.error_kind"), "错误类别");
         assert_eq!(zh.t("label.exit_code"), "退出码");
         assert_eq!(zh.t("label.suggestion"), "建议");
+    }
+
+    // ===== I18n::t — 中英翻译不同 =====
+
+    #[test]
+    fn test_en_and_zh_translations_differ() {
+        let en = I18n::new(Lang::En);
+        let zh = I18n::new(Lang::Zh);
+        let keys = [
+            "error.parse",
+            "error.eval",
+            "error.overflow",
+            "error.division_by_zero",
+            "error.domain",
+            "error.depth",
+            "error.nan_or_inf",
+            "error.undefined_symbol",
+            "error.timeout",
+            "error.usage",
+            "label.position",
+            "label.hint",
+            "label.error_kind",
+            "label.exit_code",
+            "label.suggestion",
+        ];
+        for key in &keys {
+            assert_ne!(
+                en.t(key),
+                zh.t(key),
+                "key '{}' has identical en/zh translations",
+                key
+            );
+        }
+    }
+
+    // ===== I18n::t — 未知键 fail-loud（不 panic） =====
+
+    #[test]
+    fn test_unknown_key_returns_key_itself() {
+        let en = I18n::new(Lang::En);
+        assert_eq!(en.t("nonexistent.key"), "nonexistent.key");
+
+        let zh = I18n::new(Lang::Zh);
+        assert_eq!(zh.t("nonexistent.key"), "nonexistent.key");
+    }
+
+    #[test]
+    fn test_empty_key_returns_empty_string() {
+        let en = I18n::new(Lang::En);
+        assert_eq!(en.t(""), "");
+    }
+
+    /// 缺失键在英文束回退后仍缺失 → 返回键名本身，不 panic（§5.3）。
+    #[test]
+    fn test_missing_key_falls_back_through_en_bundle_without_panic() {
+        for lang in [Lang::En, Lang::Zh] {
+            let i18n = I18n::new(lang);
+            assert_eq!(i18n.t("no.such.key"), "no.such.key");
+            assert_eq!(
+                i18n.tf("no.such.key", &[("name", "x")]),
+                "no.such.key",
+                "tf missing key must return key itself without panic"
+            );
+        }
     }
 
     // ===== I18n::tf — 参数化消息 =====
@@ -615,95 +630,288 @@ mod tests {
             en.tf("nonexistent.key", &[("name", "x")]),
             "nonexistent.key"
         );
-
-        let zh = I18n::new(Lang::Zh);
-        assert_eq!(
-            zh.tf("nonexistent.key", &[("name", "x")]),
-            "nonexistent.key"
-        );
     }
 
+    /// 占位符缺参：Fluent 语义原样回显 `{$name}`（原 JSON 目录为 `{name}`）。
     #[test]
     fn test_tf_missing_placeholder_preserved() {
         let i18n = I18n::new(Lang::En);
-        // 模板 "Function {name} expects {expected} args, got {actual}"
-        // 只提供 name，缺失 expected 和 actual —— 占位符保留原样
+        // 模板 "Function { $name } expects { $expected } args, got { $actual }"
+        // 只提供 name，缺失 expected 和 actual —— Fluent 回显 {$expected}/{$actual}
         assert_eq!(
             i18n.tf("msg.function_arg_count", &[("name", "sin")]),
-            "Function sin expects {expected} args, got {actual}"
+            "Function sin expects {$expected} args, got {$actual}"
         );
     }
 
+    /// 空参数：tf 与 t 等价（同一 Fluent 渲染路径，缺参占位符回显）。
     #[test]
     fn test_tf_empty_args_equivalent_to_t() {
         let en = I18n::new(Lang::En);
-        // 空参数：tf 等价于 t（返回模板字符串）
         assert_eq!(
             en.tf("msg.unbound_variable", &[]),
-            "Unbound variable: {name}"
+            "Unbound variable: {$name}"
         );
         assert_eq!(en.tf("error.parse", &[]), en.t("error.parse"));
 
         let zh = I18n::new(Lang::Zh);
-        assert_eq!(zh.tf("msg.unbound_variable", &[]), "未绑定变量: {name}");
+        assert_eq!(zh.tf("msg.unbound_variable", &[]), "未绑定变量: {$name}");
         assert_eq!(zh.tf("error.parse", &[]), zh.t("error.parse"));
     }
 
+    /// 未知语言（"ar"）解析为 En，取 en 束（§5.3）。
     #[test]
-    fn test_tf_repeated_placeholder_replaces_all() {
-        let i18n = I18n::new(Lang::En);
-        // 如果模板中同一占位符出现多次，replace 会替换所有匹配
-        // 当前 JSON 中没有这种键，构造一个临时键验证逻辑（用未知键 + 自定义模板不可行，
-        // 改为验证已知键的单次替换行为）
-        let result = i18n.tf("msg.unknown_variable", &[("name", "y")]);
-        assert_eq!(result, "Unknown variable: y");
-        // 确保替换后没有残留占位符
-        assert!(!result.contains('{') || result.contains("got"));
-    }
-
-    // ===== 静态消息表加载 =====
-
-    #[test]
-    fn test_en_messages_table_not_empty() {
-        let table = en_messages();
-        assert!(!table.is_empty(), "English message table must not be empty");
-        // 至少包含 15 个原有键 + 6 个参数化键 = 21 个
-        assert!(
-            table.len() >= 21,
-            "English table should have at least 21 entries, got {}",
-            table.len()
-        );
-    }
-
-    #[test]
-    fn test_zh_messages_table_not_empty() {
-        let table = zh_messages();
-        assert!(!table.is_empty(), "Chinese message table must not be empty");
-        assert!(
-            table.len() >= 21,
-            "Chinese table should have at least 21 entries, got {}",
-            table.len()
-        );
-    }
-
-    #[test]
-    fn test_en_and_zh_tables_have_same_keys() {
-        let en = en_messages();
-        let zh = zh_messages();
-        // 两表键集必须一致（避免遗漏翻译）
+    fn test_unknown_language_uses_en_bundle() {
+        let i18n = I18n::from_str("ar");
+        assert_eq!(i18n.lang(), Lang::En);
+        assert_eq!(i18n.t("error.parse"), "Parse error");
         assert_eq!(
-            en.len(),
-            zh.len(),
-            "en/zh tables have different key counts: en={}, zh={}",
-            en.len(),
-            zh.len()
+            i18n.tf("msg.unbound_variable", &[("name", "foo")]),
+            "Unbound variable: foo"
         );
-        for key in en.keys() {
+    }
+
+    /// 首尾空白语义保留（FTL 引号字符串）：cached_suffix 的前导空格不丢。
+    #[test]
+    fn test_leading_whitespace_preserved() {
+        let en = I18n::new(Lang::En);
+        assert_eq!(en.t("label.cached_suffix"), " (cached)");
+        let zh = I18n::new(Lang::Zh);
+        assert_eq!(zh.t("label.cached_suffix"), " （已缓存）");
+    }
+
+    // ===== 守卫测试（reference-pattern §5）=====
+
+    /// 从 FTL 文本提取消息键集合（`id = value` 行，跳过注释/空行）。
+    fn ftl_keys(ftl: &str) -> Vec<String> {
+        ftl.lines()
+            .filter_map(|line| line.split_once(" = "))
+            .map(|(id, _)| id.trim().to_string())
+            .collect()
+    }
+
+    /// §5.1 键齐性：EN/ZH 两束 FTL 键集合必须一致（迁移不漏译）。
+    #[test]
+    fn test_en_zh_ftl_key_parity() {
+        let en_keys = ftl_keys(EN_FTL);
+        let zh_keys = ftl_keys(ZH_FTL);
+        let mut en_set = en_keys.clone();
+        en_set.sort();
+        en_set.dedup();
+        let mut zh_set = zh_keys.clone();
+        zh_set.sort();
+        zh_set.dedup();
+        assert_eq!(
+            en_set.len(),
+            zh_keys.len(),
+            "duplicate keys in ZH FTL: expected {} unique, got {}",
+            en_set.len(),
+            zh_keys.len()
+        );
+        assert_eq!(en_set.len(), zh_set.len(), "en/zh key counts differ");
+        for key in &en_set {
             assert!(
-                zh.contains_key(key),
-                "key '{}' exists in en.json but missing in zh.json",
-                key
+                zh_set.contains(key),
+                "key '{key}' exists in en/messages.ftl but missing in zh/messages.ftl"
             );
         }
+        for key in &zh_set {
+            assert!(
+                en_set.contains(key),
+                "key '{key}' exists in zh/messages.ftl but missing in en/messages.ftl"
+            );
+        }
+        // JSON 迁移基数：370 迁移键 + 21 新增键（panic/server/clap help）
+        assert!(
+            en_set.len() >= 391,
+            "catalog should have at least 391 keys, got {}",
+            en_set.len()
+        );
+        // 集合不含 '.'（FTL 标识符不允许）
+        assert!(
+            en_set.iter().all(|k| !k.contains('.')),
+            "FTL ids must not contain '.'"
+        );
+    }
+
+    /// §5.4 磁盘/内嵌同步守卫：include_str! 的常量与磁盘文件逐字节一致，
+    /// 且 locales/ 目录不存在未内嵌的落单资源文件。
+    #[test]
+    fn test_embedded_ftl_matches_locales_dir() {
+        assert_eq!(
+            EN_FTL,
+            std::fs::read_to_string("locales/en/messages.ftl")
+                .expect("read locales/en/messages.ftl"),
+            "embedded EN_FTL out of sync with locales/en/messages.ftl"
+        );
+        assert_eq!(
+            ZH_FTL,
+            std::fs::read_to_string("locales/zh/messages.ftl")
+                .expect("read locales/zh/messages.ftl"),
+            "embedded ZH_FTL out of sync with locales/zh/messages.ftl"
+        );
+        // 目录内只允许 {en,zh}/messages.ftl 成对文件，防止新增资源忘记内嵌
+        let mut disk: Vec<String> = Vec::new();
+        for entry in std::fs::read_dir("locales").expect("read locales dir") {
+            let entry = entry.expect("dir entry");
+            if !entry.file_type().expect("file type").is_dir() {
+                panic!("locales/ 顶层不应有散落文件: {:?}", entry.path());
+            }
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+            let ftl = entry.path().join("messages.ftl");
+            assert!(
+                ftl.exists(),
+                "locales/{dir_name}/ 缺少 messages.ftl"
+            );
+            disk.push(dir_name);
+        }
+        disk.sort();
+        assert_eq!(disk, vec!["en".to_string(), "zh".to_string()]);
+    }
+
+    // ===== 检测链（§5.2）：env 读取抽纯函数 detect_from =====
+
+    /// 构造合成 env 查表闭包（不触碰进程环境，并行测试安全）。
+    fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        let map: std::collections::HashMap<&str, &str> =
+            pairs.iter().copied().collect();
+        move |key| map.get(key).map(|v| v.to_string())
+    }
+
+    #[test]
+    fn test_detect_zh_cn_utf8() {
+        assert_eq!(
+            detect_from(env_of(&[("LANG", "zh_CN.UTF-8")])),
+            Lang::Zh
+        );
+    }
+
+    #[test]
+    fn test_detect_zh_tw() {
+        assert_eq!(detect_from(env_of(&[("LANG", "zh_TW")])), Lang::Zh);
+    }
+
+    #[test]
+    fn test_detect_fr_fr_falls_back_to_en() {
+        assert_eq!(detect_from(env_of(&[("LANG", "fr_FR")])), Lang::En);
+    }
+
+    #[test]
+    fn test_detect_c_locale_falls_back_to_en() {
+        assert_eq!(detect_from(env_of(&[("LANG", "C")])), Lang::En);
+        assert_eq!(detect_from(env_of(&[("LANG", "POSIX")])), Lang::En);
+        assert_eq!(detect_from(env_of(&[("LANG", "C.UTF-8")])), Lang::En);
+    }
+
+    #[test]
+    fn test_detect_empty_and_malformed_fall_back_to_en() {
+        assert_eq!(detect_from(env_of(&[("LANG", "")])), Lang::En);
+        assert_eq!(detect_from(env_of(&[("LANG", "   ")])), Lang::En);
+        assert_eq!(detect_from(env_of(&[("LANG", "!!!")])), Lang::En);
+        assert_eq!(detect_from(env_of(&[("LANG", "zhongwen")])), Lang::En);
+        assert_eq!(detect_from(env_of(&[])), Lang::En);
+    }
+
+    #[test]
+    fn test_detect_chain_order() {
+        // CALNEXUS_LANG 优先于 LC_ALL
+        assert_eq!(
+            detect_from(env_of(&[
+                ("CALNEXUS_LANG", "en"),
+                ("LC_ALL", "zh_CN.UTF-8"),
+                ("LANG", "zh_CN.UTF-8")
+            ])),
+            Lang::En
+        );
+        assert_eq!(
+            detect_from(env_of(&[
+                ("CALNEXUS_LANG", "zh"),
+                ("LC_ALL", "en_US.UTF-8")
+            ])),
+            Lang::Zh
+        );
+        // LC_ALL 优先于 LC_MESSAGES 与 LANG
+        assert_eq!(
+            detect_from(env_of(&[
+                ("LC_ALL", "zh_CN.UTF-8"),
+                ("LC_MESSAGES", "en_US.UTF-8"),
+                ("LANG", "en_US.UTF-8")
+            ])),
+            Lang::Zh
+        );
+        // LC_MESSAGES 优先于 LANG
+        assert_eq!(
+            detect_from(env_of(&[
+                ("LC_MESSAGES", "zh_CN.UTF-8"),
+                ("LANG", "en_US.UTF-8")
+            ])),
+            Lang::Zh
+        );
+        // 前级不支持语言（fr）→ 回退链继续，后级 zh 生效
+        assert_eq!(
+            detect_from(env_of(&[
+                ("LC_ALL", "fr_FR.UTF-8"),
+                ("LANG", "zh_CN.UTF-8")
+            ])),
+            Lang::Zh
+        );
+    }
+
+    /// 结果域收敛：任何输入链结果只能是 En 或 Zh（§0.4/§0.5）。
+    #[test]
+    fn test_detect_result_domain_is_en_or_zh() {
+        let samples = [
+            "zh", "zh-Hans", "zh-HK", "en", "en-GB", "de_DE", "ja", "ko_KR.eucKR",
+            "C", "POSIX", "", "zhongwen", "@@@", "en_x_@broken",
+        ];
+        for s in samples {
+            let lang = detect_from(env_of(&[("LANG", s)]));
+            assert!(matches!(lang, Lang::En | Lang::Zh), "input {s:?}");
+        }
+    }
+
+    // ===== normalize_env_value 细节 =====
+
+    #[test]
+    fn test_normalize_env_value_variants() {
+        assert_eq!(normalize_env_value("zh_CN.UTF-8"), Some(Lang::Zh));
+        assert_eq!(normalize_env_value("zh_TW"), Some(Lang::Zh));
+        assert_eq!(normalize_env_value("zh-Hant-HK"), Some(Lang::Zh));
+        assert_eq!(normalize_env_value("ZH"), Some(Lang::Zh));
+        assert_eq!(normalize_env_value("en_US.UTF-8"), Some(Lang::En));
+        assert_eq!(normalize_env_value("fr_FR"), None);
+        assert_eq!(normalize_env_value("C"), None);
+        assert_eq!(normalize_env_value("POSIX"), None);
+        assert_eq!(normalize_env_value(""), None);
+        // @modifier 剥离
+        assert_eq!(normalize_env_value("zh_CN@pinyin"), Some(Lang::Zh));
+    }
+
+    // ===== Fluent 束直测（不触碰全局 locale 状态，并行安全）=====
+
+    #[test]
+    fn test_bundle_direct_en_simple() {
+        assert_eq!(
+            format_from_bundle(Lang::En, "repl.welcome", &[]),
+            Some("CalNexus REPL — type :help for commands, :quit to exit".to_string())
+        );
+    }
+
+    #[test]
+    fn test_bundle_direct_zh_simple() {
+        assert_eq!(format_from_bundle(Lang::Zh, "repl.bye", &[]), Some("再见".to_string()));
+    }
+
+    #[test]
+    fn test_bundle_direct_unknown_key_returns_none() {
+        assert_eq!(format_from_bundle(Lang::En, "nonexistent-key", &[]), None);
+    }
+
+    // ===== global_t（panic hook 路径，不 panic）=====
+
+    #[test]
+    fn test_global_t_known_and_missing_keys() {
+        assert!(!global_t("panic.internal_error").is_empty());
+        assert_eq!(global_t("no.such.key"), "no.such.key");
     }
 }

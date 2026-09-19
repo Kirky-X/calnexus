@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 服务器语言协商：请求级 `lang` 字段 → `I18n` 上下文。
 //!
@@ -10,31 +11,33 @@
 //! 契约：不带 `lang`（或 `lang: "en"`）的响应与历史行为逐字节一致；
 //! 仅显式 `lang=zh` 时人可读文案（错误消息、fx note）切换中文。
 //! 机器可读字段（`kind` 协议名、503 `service`/`retry_after`、422 校验约束文本）保持英文。
-
 use crate::i18n::I18n;
 
-/// 从请求级 `lang` 字段解析 i18n 上下文（宽松：未知值回退英文）。
+/// 从请求级 `lang` 字段解析 i18n 上下文。
+///
+/// 显式值宽松解析（未知值回退英文）；缺省/空值走系统语言检测链。
 pub(crate) fn resolve_i18n(lang: Option<&str>) -> I18n {
     match lang {
         Some(s) if !s.trim().is_empty() => I18n::from_str(s.trim()),
-        _ => I18n::default(),
+        _ => I18n::from_detected(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::i18n::Lang;
+    use crate::i18n::{self, Lang};
 
+    /// 缺省 lang 跟随系统语言检测链（不再固定英文，T006 契约）。
     #[test]
-    fn none_defaults_to_english() {
-        assert_eq!(resolve_i18n(None).lang(), Lang::En);
+    fn none_uses_detected_locale() {
+        assert_eq!(resolve_i18n(None).lang(), i18n::detect_locale());
     }
 
     #[test]
-    fn empty_and_blank_default_to_english() {
-        assert_eq!(resolve_i18n(Some("")).lang(), Lang::En);
-        assert_eq!(resolve_i18n(Some("   ")).lang(), Lang::En);
+    fn empty_and_blank_use_detected_locale() {
+        assert_eq!(resolve_i18n(Some("")).lang(), i18n::detect_locale());
+        assert_eq!(resolve_i18n(Some("   ")).lang(), i18n::detect_locale());
     }
 
     #[test]

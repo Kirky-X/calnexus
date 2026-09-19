@@ -1,11 +1,11 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! Server evaluate 接口层：`#[forge]` 声明式封装 + `CalcError` → `ApiError` 映射。
 //!
 //! 单个 `#[forge]` async fn 同时生成 HTTP 路由与 MCP tool，
 //! 取代手写的 `inventory::submit!` + `SdForgeTool` 封装 + `preserve_*` 链接器 hack。
 //! 链接器 inventory 保留由 `sdforge::init_all_plugins()` 托管（http.rs/mcp.rs 调用）。
-
 use super::lang::resolve_i18n;
 use super::shared_cache;
 use super::{EvaluateRequest, EvaluateResponse};
@@ -79,8 +79,9 @@ pub(crate) async fn evaluate_with_timeout(
         match tokio::time::timeout(timeout, join_handle).await {
             Ok(Ok(r)) => r,
             Ok(Err(join_err)) => {
+                // 500 文案迁入 FTL 目录经请求级 i18n 输出（unify-rust-i18n T006）
                 return Err(ApiError::internal_with_source(
-                    "evaluate task failed",
+                    i18n.t("server.evaluate_task_failed"),
                     "spawn_blocking",
                     join_err,
                 ));
@@ -464,9 +465,12 @@ mod tests {
         }
     }
 
-    /// 请求 lang=None 端到端：错误 message 保持英文（契约回归）。
+    /// 请求 lang=None 端到端：错误 message 语言跟随系统语言检测链
+    /// （T006 起「缺省即英文」契约变更为「缺省即检测」；显式 lang=en 的
+    /// 英文机器契约由 calc_error_to_api_error_i18n_en_matches_legacy 覆盖）。
     #[tokio::test]
-    async fn test_evaluate_with_timeout_default_lang_keeps_english_error() {
+    async fn test_evaluate_with_timeout_default_lang_follows_detection() {
+        let expect_zh = crate::i18n::detect_locale() == crate::i18n::Lang::Zh;
         let req = EvaluateRequest {
             expr: "foo + 1".into(),
             vars: std::collections::HashMap::new(),
@@ -478,10 +482,17 @@ mod tests {
             .expect_err("undefined symbol must error");
         match err {
             ApiError::InvalidInput { message, .. } => {
-                assert!(
-                    message.starts_with("Eval:") && message.contains("unbound variable: foo"),
-                    "默认语言应保持英文机器契约，实际 {message:?}"
-                );
+                if expect_zh {
+                    assert!(
+                        message.contains("求值错误") && message.contains("未绑定变量"),
+                        "检测为 zh 时缺省 lang 应输出中文，实际 {message:?}"
+                    );
+                } else {
+                    assert!(
+                        message.starts_with("Eval:") && message.contains("unbound variable: foo"),
+                        "检测为 en 时缺省 lang 应保持英文契约，实际 {message:?}"
+                    );
+                }
             }
             other => panic!("期望 InvalidInput，得到 {other:?}"),
         }

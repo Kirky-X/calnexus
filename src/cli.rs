@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! CalNexus CLI：命令行数学表达式求值器。
 //!
@@ -9,7 +10,6 @@
 //! - 1：计算错误 / 解析错误
 //! - 2：用法错误
 //! - 3：超时
-
 use crate::core::evaluate;
 use crate::domains::format_bigrational;
 use crate::output::{format_canonical, format_latex, generate_steps};
@@ -40,9 +40,9 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["json"])]
     explain: bool,
 
-    /// Language for error messages: en or zh (default: en)
-    #[arg(long, default_value = "en", value_parser = clap::builder::PossibleValuesParser::new(["en", "zh"]))]
-    lang: String,
+    /// Language for error messages: en or zh (default: auto-detect from system locale)
+    #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(["en", "zh"]))]
+    lang: Option<String>,
 
     /// Arbitrary precision mode: format result to N decimal places using BigRational arithmetic
     #[arg(long, conflicts_with_all = ["canonical", "batch"])]
@@ -98,15 +98,19 @@ struct Cli {
 
 /// CLI 入口：解析参数、分发到对应模式处理函数，返回退出码。
 pub fn run() -> i32 {
-    // --help 文案本地化（cli.about）：clap derive 的 `about` 属性只接受静态字符串，
-    // 因此在 get_matches 前预读 `--lang` 并用 builder 覆盖 `about`。
+    // --help 文案本地化：clap derive 的 `about`/doc help 属性只接受静态字符串，
+    // 因此在 get_matches 前预读 `--lang`（缺省走系统语言检测链）构造 I18n，
+    // 用 builder 覆盖 about 与全部参数 help（见 localized_command）。
     // 运行时语言仍以 clap 解析出的 cli.lang 为准（合法输入下与预读结果一致）。
     let about_i18n = peek_lang_i18n();
-    let matches = Cli::command()
-        .about(about_i18n.t("cli.about"))
-        .get_matches();
+    let matches = localized_command(&about_i18n).get_matches();
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-    let i18n = crate::i18n::I18n::from_str(&cli.lang);
+    // 语言优先级：--lang 显式指定 > 系统语言检测链（CALNEXUS_LANG → LC_ALL →
+    // LC_MESSAGES → LANG → sys-locale → en）。--lang 无默认值，缺省即检测。
+    let i18n = match cli.lang.as_deref() {
+        Some(lang) => crate::i18n::I18n::from_str(lang),
+        None => crate::i18n::I18n::from_detected(),
+    };
 
     // 配置面：timeout / cache-size 统一解析
     // （优先级 flag > env > default；非法 env 值显性报错而非静默回退）
@@ -168,11 +172,13 @@ pub fn run() -> i32 {
     }
 }
 
-/// 预读原始参数中的 `--lang`，构造用于 `--help` 文案的 I18n（无 `--lang` 时默认英文）。
+/// 预读原始参数中的 `--lang`，构造用于 `--help` 文案的 I18n。
 ///
-/// clap derive 的 `about` 属性只接受静态字符串，无法在解析期本地化；因此正式解析前
-/// 扫描 `std::env::args_os()` 预读 `--lang <v>` / `--lang=<v>`。仅影响 `about` 覆盖
-/// 文案，运行时语言仍以 clap 解析出的 `cli.lang` 为准（合法输入下二者一致）。
+/// clap derive 的 `about`/doc help 属性只接受静态字符串，无法在解析期本地化；
+/// 因此正式解析前扫描 `std::env::args_os()` 预读 `--lang <v>` / `--lang=<v>`。
+/// 无 `--lang` 时不固定英文，而是走系统语言检测链（与运行时语言选择一致）。
+/// 仅影响 help 覆盖文案，运行时语言仍以 clap 解析出的 `cli.lang` 为准
+/// （合法输入下二者一致）。
 fn peek_lang_i18n() -> crate::i18n::I18n {
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -186,7 +192,46 @@ fn peek_lang_i18n() -> crate::i18n::I18n {
             return crate::i18n::I18n::from_str(&value.to_string_lossy());
         }
     }
-    crate::i18n::I18n::default()
+    crate::i18n::I18n::from_detected()
+}
+
+/// 构建 help 文案本地化的 clap `Command`（about + 全部参数 help 经 `I18n` 覆盖）。
+///
+/// clap derive 的 `about`/doc help 属性只接受静态字符串；参考 reference-pattern
+/// §4，在 `Cli::command()` 基础上按当前语言用 `Command::mut_arg` 动态覆盖。
+/// 参数 id 与 `Cli` 字段名一致；server 专属参数仅在 `server` feature 下覆盖。
+/// 覆盖范围：位置参数 expression、全局参数 vars/json/explain/lang/precision/
+/// repl/batch/latex/steps/canonical/timeout/cache_size/list_functions，以及
+/// server 组 bind/serve_http/serve_mcp（即全部用户可见参数）。
+fn localized_command(i18n: &crate::i18n::I18n) -> clap::Command {
+    const ARG_HELP: &[(&str, &str)] = &[
+        ("expression", "cli.help_expression"),
+        ("vars", "cli.help_var"),
+        ("json", "cli.help_json"),
+        ("explain", "cli.help_explain"),
+        ("lang", "cli.help_lang"),
+        ("precision", "cli.help_precision"),
+        ("repl", "cli.help_repl"),
+        ("batch", "cli.help_batch"),
+        ("latex", "cli.help_latex"),
+        ("steps", "cli.help_steps"),
+        ("canonical", "cli.help_canonical"),
+        ("timeout", "cli.help_timeout"),
+        ("cache_size", "cli.help_cache_size"),
+        ("list_functions", "cli.help_list_functions"),
+    ];
+    let mut cmd = Cli::command().about(i18n.t("cli.about"));
+    for (id, key) in ARG_HELP {
+        let text = i18n.t(key);
+        cmd = cmd.mut_arg(*id, move |arg| arg.help(text));
+    }
+    #[cfg(feature = "server")]
+    {
+        cmd = cmd.mut_arg("bind", |arg| arg.help(i18n.t("cli.help_bind")));
+        cmd = cmd.mut_arg("serve_http", |arg| arg.help(i18n.t("cli.help_serve_http")));
+        cmd = cmd.mut_arg("serve_mcp", |arg| arg.help(i18n.t("cli.help_serve_mcp")));
+    }
+    cmd
 }
 
 /// --list-functions：按域分组打印函数目录，退出码 0。
@@ -461,9 +506,8 @@ fn get_expression(cli: &Cli, i18n: &crate::i18n::I18n) -> Result<String, CalcErr
     }
     // 无位置参数：检查 stdin
     if io::stdin().is_terminal() {
-        // TTY stdin：显示 help 并退出（about 与 run() 同源，经 cli.about 本地化）
-        Cli::command()
-            .about(i18n.t("cli.about"))
+        // TTY stdin：显示 help 并退出（about 与参数 help 均与 run() 同源本地化）
+        localized_command(i18n)
             .try_get_matches_from(["calnexus", "--help"])
             .unwrap_or_else(|e| e.exit());
         return Err(CalcError::usage(String::new())); // unreachable：clap 会先退出
@@ -717,11 +761,9 @@ mod tests {
             .collect();
 
         for locale in ["en", "zh"] {
-            let path = format!("locales/{locale}.json");
+            let path = format!("locales/{locale}/messages.ftl");
             let raw = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-            let value: serde_json::Value =
-                serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {path}: {e}"));
-            collect_json_strings(&value, &mut seen);
+            collect_ftl_values(&raw, &mut seen);
         }
 
         let flag_re = regex::Regex::new(r"--[a-z][a-z0-9_-]*").unwrap();
@@ -764,8 +806,9 @@ mod tests {
         ];
         for (result, name) in variants {
             let out = format_json_output(&result, "test", false, None);
-            let parsed: serde_json::Value =
-                serde_json::from_str(&out).unwrap_or_else(|e| panic!("{name}: 非法 JSON: {e}"));
+            let parsed: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|e| {
+                panic!("{name}: {}: {e}", crate::i18n::global_t("panic.invalid_json"))
+            });
             assert_eq!(parsed["v"], 1, "{name}: 契约版本必须为 1");
             assert!(
                 parsed["result"].is_string() || parsed["result"].is_array(),
@@ -774,12 +817,17 @@ mod tests {
         }
     }
 
-    fn collect_json_strings(v: &serde_json::Value, out: &mut Vec<String>) {
-        match v {
-            serde_json::Value::String(s) => out.push(s.clone()),
-            serde_json::Value::Array(a) => a.iter().for_each(|x| collect_json_strings(x, out)),
-            serde_json::Value::Object(o) => o.values().for_each(|x| collect_json_strings(x, out)),
-            _ => {}
+    /// 从 FTL 文本提取全部消息值（`id = value` 行的 value 部分）。
+    /// 引号字符串（保留首尾空白的值）与普通值一并收集。
+    fn collect_ftl_values(ftl: &str, out: &mut Vec<String>) {
+        for line in ftl.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some((_, value)) = line.split_once(" = ") {
+                out.push(value.trim().to_string());
+            }
         }
     }
 
@@ -816,6 +864,89 @@ mod tests {
             cmd.get_about().map(|s| s.to_string()).as_deref(),
             Some("CalNexus: math expression evaluator")
         );
+    }
+
+    /// localized_command 覆盖 about + 全部参数 help：EN/ZH 下每个参数 help
+    /// 非空且与目录渲染一致（clap help 本地化覆盖面回归门）。
+    #[test]
+    fn localized_command_localizes_about_and_all_arg_helps() {
+        let cases: [(&str, &str); 2] = [
+            ("en", "CalNexus: math expression evaluator"),
+            ("zh", "CalNexus: 数学表达式求值器"),
+        ];
+        for (lang_tag, about) in cases {
+            let i18n = crate::i18n::I18n::from_str(lang_tag);
+            let cmd = localized_command(&i18n);
+            assert_eq!(
+                cmd.get_about().map(|s| s.to_string()).as_deref(),
+                Some(about),
+                "lang {lang_tag}: about mismatch"
+            );
+            let arg_help: &[(&str, &str)] = &[
+                ("expression", "cli.help_expression"),
+                ("vars", "cli.help_var"),
+                ("json", "cli.help_json"),
+                ("explain", "cli.help_explain"),
+                ("lang", "cli.help_lang"),
+                ("precision", "cli.help_precision"),
+                ("repl", "cli.help_repl"),
+                ("batch", "cli.help_batch"),
+                ("latex", "cli.help_latex"),
+                ("steps", "cli.help_steps"),
+                ("canonical", "cli.help_canonical"),
+                ("timeout", "cli.help_timeout"),
+                ("cache_size", "cli.help_cache_size"),
+                ("list_functions", "cli.help_list_functions"),
+            ];
+            for (id, key) in arg_help {
+                let arg = cmd
+                    .get_arguments()
+                    .find(|a| a.get_id() == *id)
+                    .unwrap_or_else(|| panic!("arg {id} not found"));
+                assert_eq!(
+                    arg.get_help().map(|s| s.to_string()).as_deref(),
+                    Some(i18n.t(key).as_str()),
+                    "lang {lang_tag}: arg {id} help not localized"
+                );
+            }
+            // zh 渲染必须含 CJK（本地化确实生效，而非回退英文原文）
+            if lang_tag == "zh" {
+                let vars_help = cmd
+                    .get_arguments()
+                    .find(|a| a.get_id() == "vars")
+                    .and_then(|a| a.get_help().map(|s| s.to_string()))
+                    .unwrap_or_default();
+                assert!(
+                    vars_help.chars().any(|c| c >= '\u{4e00}'),
+                    "zh help should contain CJK, got {vars_help:?}"
+                );
+            }
+        }
+        // server 专属参数仅在 server feature 下覆盖
+        #[cfg(feature = "server")]
+        {
+            let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+            let cmd = localized_command(&i18n);
+            for id in ["bind", "serve_http", "serve_mcp"] {
+                let arg = cmd
+                    .get_arguments()
+                    .find(|a| a.get_id() == id)
+                    .unwrap_or_else(|| panic!("arg {id} not found"));
+                assert!(
+                    arg.get_help()
+                        .map(|s| s.to_string())
+                        .is_some_and(|h| h.chars().any(|c| c >= '\u{4e00}')),
+                    "server arg {id} help should be localized in zh"
+                );
+            }
+        }
+    }
+
+    /// peek_lang_i18n 缺省路径：测试进程参数中无 `--lang` 时，
+    /// 预读结果必须与系统语言检测链一致（同源契约）。
+    #[test]
+    fn peek_lang_i18n_without_flag_matches_detection() {
+        assert_eq!(peek_lang_i18n().lang(), crate::i18n::detect_locale());
     }
 
     // ===== 新增 CLI 标志测试 =====
