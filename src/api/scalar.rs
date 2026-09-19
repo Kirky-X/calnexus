@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! ScalarMath trait 实现。
 

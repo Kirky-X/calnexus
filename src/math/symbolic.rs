@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 符号演算核心函数：微分/积分/化简/极限/泰勒展开。
 //!

@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! Scientific 计算域：三角函数、反三角函数、对数、指数、双曲函数、特殊函数。
 //!

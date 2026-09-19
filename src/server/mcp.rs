@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! MCP server 启动：`evaluate` tool 由 `#[forge]` 宏声明（evaluate.rs），
 //! 本模块仅负责构建/启动 SdForgeMcpServer（stdio 传输）。

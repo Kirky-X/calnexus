@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Kirky.X🌠
+# SPDX-License-Identifier: MIT
+
 """merge_delta_spec.py — 把 delta spec 确定性地合并进 main spec。
 
 替代 archive --sync 此前由 LLM 子 agent 执行的合并（见 references/archive.md）。

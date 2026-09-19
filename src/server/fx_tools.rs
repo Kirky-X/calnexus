@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! FX 场景化工具：`fx_budget` + `fx_pricing`（`#[forge]` 双协议端点）。
 //!

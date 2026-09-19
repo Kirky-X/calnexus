@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! L1 缓存管理器：oxcache 同步字节权重缓存（`byte-weight` feature）的领域封装，
 //! BLAKE3 单次哈希生成 256-bit 键。

@@ -1,6 +1,7 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 // CalcError 144 字节，函数签名触发 result_large_err——与 lib.rs 同论证
 #![allow(clippy::result_large_err)]
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 
 //! 端到端集成测试。
 //!

@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 数值线性代数核心函数：特征分解/SVD/LU/QR/线性方程组求解/矩阵指数。
 //!

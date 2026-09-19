@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 缓存键生成不应 panic，且等价表达式应产生相同键（无哈希碰撞 panic）。
 //!

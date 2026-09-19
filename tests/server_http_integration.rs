@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! HTTP server 集成测试：`POST /api/v1/evaluate` 端点（`#[forge]` 宏生成）。
 //!
@@ -10,9 +11,6 @@
 //! 测试使用 `tower::ServiceExt::oneshot` 直接测试 Router，无需启动真实 server。
 //!
 //! lib-feature-absorption：新增 health-check 端点测试（/health, /ready, /live）。
-
-#![cfg(feature = "server")]
-
 use calnexus::build_router;
 use http_body_util::BodyExt;
 use sdforge::axum::Body;
@@ -378,20 +376,27 @@ async fn test_metrics_http_requests_total() {
 
 // === 语言协商（lang 请求字段）===
 
-/// 默认（无 lang）错误消息保持英文机器契约：`"Eval: unbound variable: foo"`。
+/// 缺省（无 lang）错误消息跟随系统语言检测链（T006 起「缺省即英文」契约变更为
+/// 「缺省即检测」；显式 lang=en 的英文机器契约由 explicit_en 用例回归）。
 #[tokio::test]
-async fn test_http_evaluate_default_lang_english_error() {
+async fn test_http_evaluate_default_lang_follows_detection() {
+    let expect_zh = calnexus::I18n::from_detected().lang() == calnexus::Lang::Zh;
     let (status, body) = send_request(json!({"expr": "foo + 1"})).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["type"], "InvalidInput");
-    assert!(
-        body["message"]
-            .as_str()
-            .is_some_and(|m| m.starts_with("Eval:") && m.contains("unbound variable: foo")),
-        "默认语言应保持英文契约: {}",
-        body["message"]
-    );
+    let message = body["message"].as_str().expect("message field");
+    if expect_zh {
+        assert!(
+            message.contains("求值错误") && message.contains("未绑定变量"),
+            "检测为 zh 时缺省 lang 应输出中文: {message}"
+        );
+    } else {
+        assert!(
+            message.starts_with("Eval:") && message.contains("unbound variable: foo"),
+            "检测为 en 时缺省 lang 应保持英文契约: {message}"
+        );
+    }
 }
 
 /// lang=zh 错误消息切换中文：kind 标签 + 参数化 detail 均本地化。
@@ -414,13 +419,26 @@ async fn test_http_evaluate_zh_lang_localized_error() {
     assert_eq!(body["type"], "InvalidInput");
 }
 
-/// lang=en 显式请求：与缺省行为逐字节一致（契约回归）。
+/// lang=en 显式请求：保持英文机器契约（T006 起缺省 lang 跟随检测，此断言
+/// 改为「缺省语言 == 检测语言时二者一致」，显式 en 自身恒为英文契约）。
 #[tokio::test]
 async fn test_http_evaluate_explicit_en_matches_default() {
+    let expect_zh = calnexus::I18n::from_detected().lang() == calnexus::Lang::Zh;
     let (_, default_body) = send_request(json!({"expr": "foo + 1"})).await;
     let (_, en_body) = send_request(json!({"expr": "foo + 1", "lang": "en"})).await;
 
-    assert_eq!(default_body["message"], en_body["message"]);
+    // 显式 en 恒为英文契约
+    assert!(
+        en_body["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("Eval:") && m.contains("unbound variable")),
+        "lang=en 应保持英文契约: {}",
+        en_body["message"]
+    );
+    // 缺省 lang 仅在环境检测为 en 时与显式 en 逐字节一致
+    if !expect_zh {
+        assert_eq!(default_body["message"], en_body["message"]);
+    }
 }
 
 /// 未知 lang 值宽松回退英文（与 CLI --lang 行为一致）。

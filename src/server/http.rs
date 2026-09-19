@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! HTTP server 启动：API 路由（显式注册）+ sdforge 健康探针 + /metrics + 优雅关闭。
 //!

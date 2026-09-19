@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 测试共享 helper：消除 4 个测试文件中 calnexus_cli() / default_router() 的复制粘贴。
 // 不同测试文件只用部分 helper，允许 dead_code。

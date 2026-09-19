@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 数论核心函数：GCD/LCM/素数判定/素数筛/模逆/模幂/欧拉函数。
 //!

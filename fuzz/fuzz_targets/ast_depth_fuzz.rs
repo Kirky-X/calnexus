@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 深度嵌套输入 → 应返回 DepthExceeded 或解析错误，不 panic / 不栈溢出。
 //!

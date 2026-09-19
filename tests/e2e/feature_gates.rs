@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! S5 Feature Combinations —— 可选特性启用/禁用两侧的行为差异矩阵。
 //!

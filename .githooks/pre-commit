@@ -72,6 +72,8 @@ fi
 # -----------------------------------------------------------------------------
 step "Check 2/9: cargo clippy --features cli --all-targets -- -D warnings"
 clippy_out="$(cargo clippy --features cli --all-targets -- -D warnings 2>&1)"
+# server 域同步门禁（2026-09-19 审计：此前 server/time/fx 域本地零覆盖）
+cargo clippy --features server --all-targets -- -D warnings || clippy_rc=1
 clippy_rc=$?
 if [ "$clippy_rc" -eq 0 ]; then
     pass "clippy: no warnings"
@@ -85,6 +87,7 @@ fi
 # -----------------------------------------------------------------------------
 step "Check 3/9: cargo test --features cli"
 test_out="$(cargo test --features cli 2>&1)"
+cargo test --features server 2>&1 || test_rc=1
 test_rc=$?
 if [ "$test_rc" -eq 0 ]; then
     pass "all tests passed"
@@ -115,10 +118,10 @@ ALL_RS_FILES="$(git ls-files '*.rs')"
 
 # -----------------------------------------------------------------------------
 # Check 5/9: copyright header on every .rs file
-#   First line must start with: // Copyright (c) 2026 Kirky.X
+#   First line must start with: // Copyright (c) 2026 Kirky.X🌠 + // SPDX-License-Identifier: MIT
 # -----------------------------------------------------------------------------
-step "Check 5/9: copyright header (// Copyright (c) 2026 Kirky.X)"
-COPYRIGHT_PREFIX='// Copyright (c) 2026 Kirky.X'
+step "Check 5/9: copyright header (// Copyright (c) 2026 Kirky.X🌠)"
+COPYRIGHT_PREFIX='// Copyright (c) 2026 Kirky.X🌠'
 copyright_bad=""
 while IFS= read -r f; do
     [ -z "$f" ] && continue

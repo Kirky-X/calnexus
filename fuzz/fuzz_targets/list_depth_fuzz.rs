@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 嵌套列表/矩阵字面量 → 不 panic；结果为 Ok 或 DepthExceeded。
 //!

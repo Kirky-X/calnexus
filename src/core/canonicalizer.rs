@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! AST 规范化器：将解析后的 `AstNode` 转换为规范形式，用于 L1 缓存去重。
 //!

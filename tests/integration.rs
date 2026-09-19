@@ -1,6 +1,7 @@
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 // CalcError 144 字节，闭包返回值触发 result_large_err——与 lib.rs 同论证
 #![allow(clippy::result_large_err)]
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
 #![allow(clippy::approx_constant, non_snake_case)]
 
 //! 跨能力集成测试：解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出全链路。

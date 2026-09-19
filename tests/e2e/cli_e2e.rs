@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! S9 CLI E2E —— 批处理退出码契约、逐行错误结构、env 子进程隔离。
 //!

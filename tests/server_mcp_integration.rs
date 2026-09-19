@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! MCP server 集成测试：`evaluate` tool（`#[forge]` 宏生成）。
 //!
@@ -15,9 +16,6 @@
 //! 不经 `to_mcp_json`（该方法存在但 codegen 未调用）。
 //!
 //! 测试使用 `SdForgeMcpServer::call_tool_internal` 直接调用 tool，无需启动 stdio。
-
-#![cfg(feature = "server")]
-
 use calnexus::build_mcp_server;
 use sdforge::rmcp::model::{CallToolResult, ContentBlock};
 use serde_json::{Value, json};
@@ -266,9 +264,11 @@ fn test_mcp_evaluate_zh_lang_localized_error() {
     );
 }
 
-/// MCP-COLLANG-02: 缺省 lang → 英文契约不变。
+/// MCP-COLLANG-02: 缺省 lang 跟随系统语言检测链（T006 起契约变更）；
+/// 检测为 en 时保持英文契约。
 #[test]
-fn test_mcp_evaluate_default_lang_english_error() {
+fn test_mcp_evaluate_default_lang_follows_detection() {
+    let expect_zh = calnexus::I18n::from_detected().lang() == calnexus::Lang::Zh;
     let server = build_mcp_server();
     let r = server
         .call_tool_internal(
@@ -277,9 +277,15 @@ fn test_mcp_evaluate_default_lang_english_error() {
         )
         .expect("evaluate call_tool_internal");
     let text = serde_json::to_string(&r.content).unwrap_or_default();
-    assert!(
-        text.contains("unbound variable"),
-        "缺省 lang 应保持英文契约: {}",
-        text
-    );
+    if expect_zh {
+        assert!(
+            text.contains("未绑定变量"),
+            "检测为 zh 时缺省 lang 应输出中文: {text}"
+        );
+    } else {
+        assert!(
+            text.contains("unbound variable"),
+            "检测为 en 时缺省 lang 应保持英文契约: {text}"
+        );
+    }
 }

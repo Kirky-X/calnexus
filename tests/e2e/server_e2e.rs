@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! S8 Server E2E —— HTTP 端点矩阵、MCP 工具、docs/ratelimit feature 行为。
 //!

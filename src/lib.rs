@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! CalNexus 计算引擎：表达式解析、AST 规范化、L1 缓存、域路由。
 //!

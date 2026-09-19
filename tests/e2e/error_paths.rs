@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! S3 Error Paths —— 11 种 `ErrorKind` 全覆盖、错误 i18n 渲染、退出码契约。
 //!

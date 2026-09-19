@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! 矩阵维度验证 — 任意维度矩阵不应导致 OOM，应被合理拒绝或处理。
 //!

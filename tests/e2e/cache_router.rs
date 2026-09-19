@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Kirky.X. Licensed under the MIT License.
+// Copyright (c) 2026 Kirky.X🌠
+// SPDX-License-Identifier: MIT
 
 //! S6 缓存与路由 —— CacheManager 字节权重淘汰/统计、CacheKeyGen、
 //! DomainRouter 优先级/去重/不确定性、evaluate 缓存命中契约。
