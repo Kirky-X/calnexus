@@ -33,7 +33,7 @@ performs 9 checks:
 | 2 | `cargo clippy --features cli --all-targets -- -D warnings` | yes |
 | 3 | `cargo test --features cli` | yes |
 | 4 | `cargo build --release --features cli` with **zero warnings** | yes |
-| 5 | Every `.rs` file starts with `// Copyright (c) 2026 Kirky.X` | yes |
+| 5 | Every `.rs` file starts with `// Copyright (c) 2026 Kirky.X🌠` + `// SPDX-License-Identifier: MIT` | yes |
 | 6 | No `println!`/`dbg!` in library code (`eprintln!` OK in CLI/REPL) | yes |
 | 7 | No `TODO`/`FIXME`/`HACK` comments in `src/` | yes |
 | 8 | `Cargo.lock` exists and is tracked | yes |
