@@ -194,7 +194,11 @@ fn format_from_bundle(lang: Lang, key: &str, args: &[(&str, &str)]) -> Option<St
         fluent_args.set(*name, FluentValue::from(*value));
     }
     let mut errors = vec![];
-    Some(bundle.format_pattern(pattern, Some(&fluent_args), &mut errors).to_string())
+    Some(
+        bundle
+            .format_pattern(pattern, Some(&fluent_args), &mut errors)
+            .to_string(),
+    )
 }
 
 /// 构建 concurrent 束：FTL 解析失败降级保留未解析资源（开发期错误显性化），
@@ -759,10 +763,7 @@ mod tests {
             }
             let dir_name = entry.file_name().to_string_lossy().to_string();
             let ftl = entry.path().join("messages.ftl");
-            assert!(
-                ftl.exists(),
-                "locales/{dir_name}/ 缺少 messages.ftl"
-            );
+            assert!(ftl.exists(), "locales/{dir_name}/ 缺少 messages.ftl");
             disk.push(dir_name);
         }
         disk.sort();
@@ -773,17 +774,13 @@ mod tests {
 
     /// 构造合成 env 查表闭包（不触碰进程环境，并行测试安全）。
     fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
-        let map: std::collections::HashMap<&str, &str> =
-            pairs.iter().copied().collect();
+        let map: std::collections::HashMap<&str, &str> = pairs.iter().copied().collect();
         move |key| map.get(key).map(|v| v.to_string())
     }
 
     #[test]
     fn test_detect_zh_cn_utf8() {
-        assert_eq!(
-            detect_from(env_of(&[("LANG", "zh_CN.UTF-8")])),
-            Lang::Zh
-        );
+        assert_eq!(detect_from(env_of(&[("LANG", "zh_CN.UTF-8")])), Lang::Zh);
     }
 
     #[test]
@@ -861,8 +858,20 @@ mod tests {
     #[test]
     fn test_detect_result_domain_is_en_or_zh() {
         let samples = [
-            "zh", "zh-Hans", "zh-HK", "en", "en-GB", "de_DE", "ja", "ko_KR.eucKR",
-            "C", "POSIX", "", "zhongwen", "@@@", "en_x_@broken",
+            "zh",
+            "zh-Hans",
+            "zh-HK",
+            "en",
+            "en-GB",
+            "de_DE",
+            "ja",
+            "ko_KR.eucKR",
+            "C",
+            "POSIX",
+            "",
+            "zhongwen",
+            "@@@",
+            "en_x_@broken",
         ];
         for s in samples {
             let lang = detect_from(env_of(&[("LANG", s)]));
@@ -899,7 +908,10 @@ mod tests {
 
     #[test]
     fn test_bundle_direct_zh_simple() {
-        assert_eq!(format_from_bundle(Lang::Zh, "repl.bye", &[]), Some("再见".to_string()));
+        assert_eq!(
+            format_from_bundle(Lang::Zh, "repl.bye", &[]),
+            Some("再见".to_string())
+        );
     }
 
     #[test]

@@ -807,7 +807,10 @@ mod tests {
         for (result, name) in variants {
             let out = format_json_output(&result, "test", false, None);
             let parsed: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|e| {
-                panic!("{name}: {}: {e}", crate::i18n::global_t("panic.invalid_json"))
+                panic!(
+                    "{name}: {}: {e}",
+                    crate::i18n::global_t("panic.invalid_json")
+                )
             });
             assert_eq!(parsed["v"], 1, "{name}: 契约版本必须为 1");
             assert!(
