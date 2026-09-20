@@ -28,18 +28,43 @@ mod ratelimit;
 
 pub(crate) use cache::shared_cache;
 
-/// 初始化可观测日志：observability feature 下安装
-/// tracing-subscriber EnvFilter 消费 `RUST_LOG`（缺省 warn）。幂等（Once）。
+/// 初始化可观测日志：observability feature 下由 inklog LoggerManager 接管
+/// （消费 `RUST_LOG`，缺省 warn；同时捕获 sdforge/tower 等依赖的 tracing 事件）。
+/// 幂等（Once）。
+///
+/// inklog 构建是异步的，而本函数会被同步与异步（含 `#[tokio::test]` 的
+/// current-thread runtime）两种上下文调用——统一在专用线程上建独立 runtime
+/// 完成构建（常驻，LoggerManager 异步任务依赖其存活），对所有调用上下文零 panic 风险。
 #[cfg(feature = "observability")]
 pub(crate) fn init_observability() {
     use std::sync::Once;
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".to_string());
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::new(filter))
-            .with_target(false)
-            .try_init();
+        let level = std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".to_string());
+        let result = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("observability runtime");
+            let logger = rt.block_on(async {
+                inklog::LoggerManager::builder()
+                    .level(&level)
+                    .format("{timestamp} [{level}] {target} - {message}")
+                    .console(true)
+                    .console_colored(true)
+                    .build()
+                    .await
+            });
+            (logger, rt)
+        })
+        .join()
+        .expect("inklog init thread panicked");
+        let (logger, rt) = result;
+        if let Ok(logger) = logger {
+            // 进程生命周期内常驻；LoggerManager 异步任务依赖 runtime 存活，二者均不释放
+            std::mem::forget(logger);
+            std::mem::forget(rt);
+        }
     });
 }
 

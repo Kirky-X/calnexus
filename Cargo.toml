@@ -38,7 +38,7 @@ ratelimit = ["dep:sdforge", "sdforge/ratelimit-http", "dep:limiteron"]
 # Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
 docs = ["dep:sdforge", "sdforge/docs"]
 # Observability: tracing 日志（server 模式 EnvFilter 消费 RUST_LOG）
-observability = ["dep:tracing", "dep:tracing-subscriber"]
+observability = ["dep:tracing", "dep:inklog", "tokio/rt-multi-thread"]
 
 [dependencies]
 # 解析器
@@ -88,7 +88,9 @@ anyhow = { version = "1.0", default-features = false, features = ["std"], option
 async-trait = { version = "0.1", default-features = false, optional = true }
 # tracing: observability 支持（server 模式结构化日志；仅 observability feature 启用）
 tracing = { version = "0.1", default-features = false, optional = true }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std"], optional = true }
+# 生产日志（observability feature）：inklog 接管，tokio 经本 feature 门控进入
+# （CLI 纯构建不含 observability，保持 tokio-free 轻量化设计）
+inklog = { version = "0.3.0-rc.4", path = "../base/inklog", default-features = false, optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
