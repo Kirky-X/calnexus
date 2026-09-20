@@ -370,7 +370,7 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 
 ## 📄 许可证
 
-本项目基于 [MIT License](LICENSE) 开源。
+本项目基于 [MIT License](LICENSE) + [Commons Clause](LICENSE) 发布（商业使用需单独授权）。Copyright © 2026 Kirky.X🌠。
 
 ---
 

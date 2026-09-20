@@ -370,7 +370,7 @@ Full version history in the [📋 Changelog](docs/CHANGELOG.md) (following [Keep
 
 ## 📄 License
 
-This project is open-sourced under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE) with the additional [Commons Clause](LICENSE) condition (commercial use requires separate authorization). Copyright © 2026 Kirky.X🌠.
 
 ---
 
