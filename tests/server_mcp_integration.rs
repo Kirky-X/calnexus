@@ -264,7 +264,7 @@ fn test_mcp_evaluate_zh_lang_localized_error() {
     );
 }
 
-/// MCP-COLLANG-02: 缺省 lang 跟随系统语言检测链（T006 起契约变更）；
+/// MCP-COLLANG-02: 缺省 lang 跟随系统语言检测链（契约变更）；
 /// 检测为 en 时保持英文契约。
 #[test]
 fn test_mcp_evaluate_default_lang_follows_detection() {

@@ -79,7 +79,7 @@ pub(crate) async fn evaluate_with_timeout(
         match tokio::time::timeout(timeout, join_handle).await {
             Ok(Ok(r)) => r,
             Ok(Err(join_err)) => {
-                // 500 文案迁入 FTL 目录经请求级 i18n 输出（unify-rust-i18n T006）
+                // 500 文案迁入 FTL 目录经请求级 i18n 输出
                 return Err(ApiError::internal_with_source(
                     i18n.t("server.evaluate_task_failed"),
                     "spawn_blocking",
@@ -466,7 +466,7 @@ mod tests {
     }
 
     /// 请求 lang=None 端到端：错误 message 语言跟随系统语言检测链
-    /// （T006 起「缺省即英文」契约变更为「缺省即检测」；显式 lang=en 的
+    /// （「缺省即英文」契约变更为「缺省即检测」；显式 lang=en 的
     /// 英文机器契约由 calc_error_to_api_error_i18n_en_matches_legacy 覆盖）。
     #[tokio::test]
     async fn test_evaluate_with_timeout_default_lang_follows_detection() {

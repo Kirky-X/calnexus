@@ -267,7 +267,7 @@ pub fn manhattan(a: &[f64], b: &[f64]) -> Result<f64, CalcError> {
     Ok(a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).sum())
 }
 
-/// 外积 a × b^T，返回 Vec<Vec<f64>>（行优先矩阵）。
+/// 外积 a × b^T，返回 `Vec<Vec<f64>>`（行优先矩阵）。
 pub fn outer(a: &[f64], b: &[f64]) -> Vec<Vec<f64>> {
     a.iter()
         .map(|ai| b.iter().map(|bi| ai * bi).collect())

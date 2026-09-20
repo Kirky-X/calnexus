@@ -122,7 +122,7 @@ impl CacheManager {
         self.inner.get(&CacheKeyGen::hash(cf))
     }
 
-    /// 写入缓存（仅成功结果；估算超过 [`MAX_CACHEABLE_BYTES`] 的大结果跳过写入）。
+    /// 写入缓存（仅成功结果；估算超过 `MAX_CACHEABLE_BYTES` 的大结果跳过写入）。
     pub fn insert(&self, cf: &CanonicalForm, result: &Result<EvalResult, CalcError>) {
         if let Ok(value) = result {
             self.inner.insert(CacheKeyGen::hash(cf), value.clone());

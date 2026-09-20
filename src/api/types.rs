@@ -154,7 +154,7 @@ impl TryFrom<EvalResult> for Complex {
     }
 }
 
-/// 多项式包装器：封装 `Vec<f64>` 升幂系数（coef[i] 为 x^i 的系数）。
+/// 多项式包装器：封装 `Vec<f64>` 升幂系数（`coef[i]` 为 `x^i` 的系数）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Polynomial {
     coeffs: Vec<f64>,

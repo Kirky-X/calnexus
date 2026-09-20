@@ -10,7 +10,7 @@
 //! 路由策略：AST 含多项式函数调用（poly_add/poly_sub/poly_mul/poly_div/poly_eval/
 //! poly_diff/poly_integrate/roots/factor）时路由至本域。
 //!
-//! 多项式表示：系数向量 Vec<f64>，升幂存储（coef[i] = x^i 的系数）。
+//! 多项式表示：系数向量 `Vec<f64>`，升幂存储（`coef[i]` = `x^i` 的系数）。
 //! 输入语法：直接表达式 `poly_add(x^2+2x+1, x+1)`，域内 `expr_to_coeffs()` 转换。
 
 use super::common::{

@@ -7,7 +7,7 @@
 //! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
 //!
 //! 三级缓存读取链：
-//! 1. 内存 Mutex<Option<RateTable>>（进程级，FrankfurterProvider 单例）
+//! 1. 内存 `Mutex<Option<RateTable>>`（进程级，FrankfurterProvider 单例）
 //! 2. 文件缓存 `dirs::cache_dir()/calnexus/fx_rates.json`（TTL 内有效）
 //! 3. 网络 GET `https://api.frankfurter.dev/v1/latest?base=EUR`（成功后写回文件）
 //!

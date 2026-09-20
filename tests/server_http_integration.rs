@@ -376,7 +376,7 @@ async fn test_metrics_http_requests_total() {
 
 // === 语言协商（lang 请求字段）===
 
-/// 缺省（无 lang）错误消息跟随系统语言检测链（T006 起「缺省即英文」契约变更为
+/// 缺省（无 lang）错误消息跟随系统语言检测链（「缺省即英文」契约变更为
 /// 「缺省即检测」；显式 lang=en 的英文机器契约由 explicit_en 用例回归）。
 #[tokio::test]
 async fn test_http_evaluate_default_lang_follows_detection() {
@@ -419,7 +419,7 @@ async fn test_http_evaluate_zh_lang_localized_error() {
     assert_eq!(body["type"], "InvalidInput");
 }
 
-/// lang=en 显式请求：保持英文机器契约（T006 起缺省 lang 跟随检测，此断言
+/// lang=en 显式请求：保持英文机器契约（缺省 lang 跟随检测，此断言
 /// 改为「缺省语言 == 检测语言时二者一致」，显式 en 自身恒为英文契约）。
 #[tokio::test]
 async fn test_http_evaluate_explicit_en_matches_default() {

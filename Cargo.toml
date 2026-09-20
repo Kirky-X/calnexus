@@ -45,7 +45,7 @@ observability = ["dep:tracing", "dep:inklog", "tokio/rt-multi-thread"]
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层（oxcache byte-weight：同步字节权重预算 + try_get_with single-flight；
 # 禁用默认特性避免 tokio/redis 等后端栈；键生成与 EvalResult 体积估算留在 src/core/cache.rs）
-oxcache = { version = "0.5.0-rc.4", path = "../base/oxcache", default-features = false, features = ["byte-weight"] }
+oxcache = { version = "0.5.0-rc.5", default-features = false, features = ["byte-weight"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
 # 哈希
@@ -77,7 +77,7 @@ unic-langid = "0.9"
 # 系统语言探测（检测链第 4 级：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en）
 sys-locale = "0.3"
 # sdforge: CLI/HTTP/MCP 接口封装层
-sdforge = { version = "0.5.0-rc.4", path = "../base/sdforge", default-features = false, optional = true }
+sdforge = { version = "0.5.0-rc.5", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
@@ -90,7 +90,7 @@ async-trait = { version = "0.1", default-features = false, optional = true }
 tracing = { version = "0.1", default-features = false, optional = true }
 # 生产日志（observability feature）：inklog 接管，tokio 经本 feature 门控进入
 # （CLI 纯构建不含 observability，保持 tokio-free 轻量化设计）
-inklog = { version = "0.3.0-rc.4", path = "../base/inklog", default-features = false, optional = true }
+inklog = { version = "0.3.0-rc.5", default-features = false, optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
@@ -99,7 +99,7 @@ ureq = { version = "3.4", default-features = false, features = ["rustls"], optio
 dirs = { version = "7.0", default-features = false, optional = true }
 # limiteron: 同步限流原语（sync = tokio-free 熔断器/固定窗口；default = []，仅 std + parking_lot）。
 # fx feature 消费 SyncCircuitBreaker（汇率源熔断），ratelimit feature 消费 SyncFixedWindowLimiter
-limiteron = { version = "0.3.0-rc.4", path = "../base/limiteron", default-features = false, features = ["sync"], optional = true }
+limiteron = { version = "0.3.0-rc.5", default-features = false, features = ["sync"], optional = true }
 
 [dev-dependencies]
 proptest = { version = "1.11", default-features = false, features = ["std"] }
@@ -187,11 +187,3 @@ required-features = ["cli", "numerical"]
 # 启用/禁用两侧用例（--all-features 跑启用侧，default 跑禁用侧）。
 [[test]]
 name = "e2e"
-
-# base 自研库本地先行改动（随 base 发版后移除补丁）：
-# - limiteron：sync 模块（SyncCircuitBreaker / SyncFixedWindowLimiter）
-# - sdforge：extract_client_ip 公开化、RateLimitLayer Clone、ConnectInfo serve 变体
-[patch.crates-io]
-sdforge = { path = "/home/kirky/projects/base/sdforge" }
-limiteron = { path = "/home/kirky/projects/base/limiteron" }
-oxcache = { path = "/home/kirky/projects/base/oxcache" }

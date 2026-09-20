@@ -156,7 +156,7 @@ pub enum EvalResult {
     BigRational(num_rational::BigRational),
     /// 向量结果（新增）：向量域 cross/normalize 输出、素数筛、实根列表。
     Vector(Vec<f64>),
-    /// 多项式结果（新增）：系数向量，升幂存储（coef[i] 为 x^i 的系数）。
+    /// 多项式结果（新增）：系数向量，升幂存储（`coef[i]` 为 `x^i` 的系数）。
     Polynomial(Vec<f64>),
     /// 复数列表结果（新增）：复根列表，元素为 (实部, 虚部)。
     ComplexList(Vec<(f64, f64)>),

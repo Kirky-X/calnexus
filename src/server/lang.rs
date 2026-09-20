@@ -28,7 +28,7 @@ mod tests {
     use super::*;
     use crate::i18n::{self, Lang};
 
-    /// 缺省 lang 跟随系统语言检测链（不再固定英文，T006 契约）。
+    /// 缺省 lang 跟随系统语言检测链（不再固定英文，契约）。
     #[test]
     fn none_uses_detected_locale() {
         assert_eq!(resolve_i18n(None).lang(), i18n::detect_locale());

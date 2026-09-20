@@ -770,7 +770,7 @@ pub fn polynomial_regression(
     Ok((coeffs, r_squared))
 }
 
-/// 多元回归：y = c0 + c1*x1 + c2*x2 + ...。x 为 &[Vec<f64>]，每个内向量是一个特征。
+/// 多元回归：y = c0 + c1*x1 + c2*x2 + ...。x 为 `&[Vec<f64>]`，每个内向量是一个特征。
 ///
 /// 返回 (coefficients含截距, r_squared)。
 pub fn multiple_regression(x: &[Vec<f64>], y: &[f64]) -> Result<(Vec<f64>, f64), CalcError> {
