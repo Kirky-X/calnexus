@@ -74,7 +74,7 @@ jobs:
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
 
       - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc56dabe9d744d # v2.7.5
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # 安全 M-2：发布前 SAST 扫描（规则24：0 CRITICAL 才允许继续）
       - name: Install cargo-audit
