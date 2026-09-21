@@ -1,6 +1,6 @@
 [package]
 name = "calnexus"
-version = "0.1.4"
+version = "0.2.0-rc.1"
 edition = "2024"
 authors = ["Kirky-X <Kirky-X@outlook.com>"]
 license = "MIT"
