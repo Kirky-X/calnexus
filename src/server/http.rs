@@ -24,7 +24,6 @@
 //!   `HttpRequestRateLimiter` 契约，仅作用于 API 业务路由（探针/metrics 豁免）；
 //!   策略为 limiteron 同步固定窗口（`super::ratelimit`）。
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use super::EvaluateRequest;
@@ -181,21 +180,24 @@ async fn fx_pricing_http_handler(
     }
 }
 
-/// 全局 HTTP 请求计数（/metrics 的 calnexus_http_requests_total）。
-static HTTP_REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
-
-/// 请求计数中间件：标识传播已委托 sdforge context
-/// 中间件，本层仅维护 /metrics 的全局计数。
+/// 请求计数中间件：RED 指标采集委托 sdforge `metrics`
+/// （global_registry().record_request 按 (route,method,status) 三元组
+/// 计数+时延；`?format=json` 的读回走 route_count）。
 async fn request_count_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
-    next.run(req).await
-}
-
-fn http_requests_total() -> u64 {
-    HTTP_REQUESTS_TOTAL.load(Ordering::Relaxed)
+    let started = std::time::Instant::now();
+    let method = req.method().as_str().to_string();
+    let route = req.uri().path().to_string();
+    let resp = next.run(req).await;
+    sdforge::metrics::record_request(
+        &route,
+        &method,
+        resp.status().as_u16(),
+        started.elapsed().as_secs_f64(),
+    );
+    resp
 }
 
 /// Metrics 查询参数。
@@ -205,14 +207,15 @@ struct MetricsQuery {
     format: Option<String>,
 }
 
-/// GET /metrics：返回缓存统计数据（CacheManager::stats）。
+/// GET /metrics：返回缓存统计数据（CacheManager::stats）+ HTTP RED 指标
+/// （sdforge metrics 的 global_registry）。
 ///
 /// - 默认返回 Prometheus 文本格式（`Content-Type: text/plain; version=0.0.4`，
-///   含 `# HELP`/`# TYPE` 注释行，指标族 `calnexus_cache_*`）
-/// - `?format=json` 返回 JSON 格式（调试友好）
-///
-/// 不用 sdforge `metrics` feature 的 `/metrics`：MetricsRegistry 只覆盖 HTTP
-/// RED 指标（路由/方法/状态），不支持缓存 gauge 等自定义指标族。
+///   含 `# HELP`/`# TYPE` 注释行，指标族 `calnexus_cache_*` 与
+///   `sdforge_http_*`；路由基数注意：route 标签取 path，高基数路径
+///   （含 id 的 REST 路径）会放大序列——按 sdforge 指标模型如实呈现）
+/// - `?format=json` 返回 JSON 格式（调试友好，`http_route_count` 为
+///   registry 路由序列数，替代原全局计数）
 async fn metrics_handler(query: axum::extract::Query<MetricsQuery>) -> axum::response::Response {
     use axum::response::IntoResponse;
     let stats = super::cache::shared_cache().stats();
@@ -221,7 +224,7 @@ async fn metrics_handler(query: axum::extract::Query<MetricsQuery>) -> axum::res
             "hits": stats.hits,
             "misses": stats.misses,
             "entry_count": stats.entry_count,
-            "http_requests_total": http_requests_total(),
+            "http_route_count": sdforge::metrics::global_registry().route_count(),
         });
         (
             [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -239,13 +242,11 @@ async fn metrics_handler(query: axum::extract::Query<MetricsQuery>) -> axum::res
              # HELP calnexus_cache_entries Current number of cached entries.\n\
              # TYPE calnexus_cache_entries gauge\n\
              calnexus_cache_entries {}\n\
-             # HELP calnexus_http_requests_total Total HTTP requests handled.\n\
-             # TYPE calnexus_http_requests_total counter\n\
-             calnexus_http_requests_total {}\n",
+             {}",
             stats.hits,
             stats.misses,
             stats.entry_count,
-            http_requests_total()
+            sdforge::metrics::global_registry().render()
         );
         (
             [(

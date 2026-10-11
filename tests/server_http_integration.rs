@@ -369,8 +369,9 @@ async fn test_metrics_http_requests_total() {
         .to_bytes();
     let text = String::from_utf8_lossy(&bytes);
     assert!(
-        text.contains("calnexus_http_requests_total"),
-        "/metrics 应含 HTTP 请求计数"
+        text.contains("sdforge_http_requests_total"),
+        "/metrics 应含 sdforge RED 指标族（T011 后取代 calnexus_http_requests_total）: {}",
+        &text[..text.len().min(300)]
     );
 }
 
@@ -453,5 +454,83 @@ async fn test_http_evaluate_unknown_lang_falls_back_to_english() {
             .is_some_and(|m| m.starts_with("Eval:") && m.contains("unbound variable")),
         "未知 lang 应回退英文: {}",
         body["message"]
+    );
+}
+
+// ===== T010: /metrics 委托 sdforge metrics（RED 采集 + route_count 读回） =====
+
+/// GET /metrics 后 sdforge 全局 registry 应记录路由序列且 render 含
+/// `sdforge_http_requests_total` 指标族（原 `calnexus_http_requests_total`
+/// 手写 static 计数已删除）。
+#[tokio::test]
+async fn test_metrics_records_red_via_sdforge_registry() {
+    let registry = sdforge::metrics::global_registry();
+    registry.reset();
+
+    // 预热：中间件在 handler 返回之后才记录（record_request 在 next.run
+    // 之后），首个 /metrics 请求渲染时 registry 尚空——先打一个 /health
+    // 让 registry 有序列，再断言 /metrics 文本并入 sdforge  RED 族。
+    let warm = build_router()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("warmup oneshot failed");
+    assert_eq!(warm.status(), StatusCode::OK);
+
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8_lossy(&bytes);
+
+    assert!(
+        registry.route_count() >= 2,
+        "预热 + /metrics 两次请求后 registry 应至少两个路由序列"
+    );
+    assert!(
+        registry.render().contains("sdforge_http_requests_total"),
+        "registry render 应含 sdforge_http_requests_total 指标族"
+    );
+    assert!(
+        body.contains("sdforge_http_requests_total"),
+        "/metrics 文本输出应并入 sdforge RED 指标族: {}",
+        &body[..body.len().min(300)]
+    );
+}
+
+/// GET /metrics?format=json → JSON 分支含 `http_route_count` 字段
+/// （原 `http_requests_total` 全局计数的替代读回）。
+#[tokio::test]
+async fn test_metrics_json_branch_has_route_count() {
+    let router = build_router();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/metrics?format=json")
+        .body(Body::empty())
+        .unwrap();
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
+
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    assert!(
+        json.get("http_route_count").is_some(),
+        "json 分支应含 http_route_count 字段，实际: {}",
+        json
     );
 }
