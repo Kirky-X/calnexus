@@ -115,9 +115,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **T035**: `fx.rs` 6 个错误路径补全 i18n key 挂接（invalid bignumber / factorial not supported / string operand / matrix operand / complex operand / unsupported binary op）
-- **T036**: `time.rs` 7 个错误路径补全 i18n key 挂接（invalid bignumber / factorial not supported / string operand / matrix operand / complex operand / unary op unsupported / invalid date format）
-- **T037**: `FxDomain` 构造函数注入 `Box<dyn RateProvider>`，消除 spec↔code 矛盾（R-fx-004）；移除 `OnceLock`，新增 `new()` 与 `default()` 构造函数，`factory.rs` 改用 `FxDomain::default()`
+- `fx.rs` 6 个错误路径补全 i18n key 挂接（invalid bignumber / factorial not supported / string operand / matrix operand / complex operand / unsupported binary op）
+- `time.rs` 7 个错误路径补全 i18n key 挂接（invalid bignumber / factorial not supported / string operand / matrix operand / complex operand / unary op unsupported / invalid date format）
+- `FxDomain` 构造函数注入 `Box<dyn RateProvider>`，消除 spec↔code 矛盾（R-fx-004）；移除 `OnceLock`，新增 `new()` 与 `default()` 构造函数，`factory.rs` 改用 `FxDomain::default()`
 
 ### Testing
 

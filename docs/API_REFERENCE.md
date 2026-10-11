@@ -42,7 +42,7 @@
 | _(default, 无)_ | `scalar` / `linalg` / `stats` / `symbolic` | 核心 API，零额外依赖 |
 | `numerical` | `linalg.eig/svd/lu/qr/solve/matrix_exp` | 数值线性代数分解（nalgebra f64） |
 | `unit` | `applied.convert()` | 8 量纲物理单位换算 |
-| `time` | `applied.date/datetime/now/today/...` | 13 个时间函数（jiff 0.2 + IANA tzdb） |
+| `time` | `applied.date/datetime/now/today/...` | 13 个时间方法（表达式域含 14 个时间函数，jiff 0.2 + IANA tzdb） |
 | `fx` | `applied.fx/fx_rate` | 汇率换算（frankfurter.dev API + 三级缓存） |
 
 > 服务端 feature（`cli`/`http`/`mcp`/`server`/`icu`/`ratelimit`/`docs`/`observability`）见 [🏗️ 架构文档](ARCHITECTURE.md) 的 Feature Gate 策略一节。

@@ -23,7 +23,7 @@
 
 ## 🎯 概述
 
-CalNexus 的性能设计围绕一条原则展开：**让重复求值走缓存热路径，让首次求值尽量便宜**。热路径（缓存命中）返回 `Arc<EvalResult>` 零拷贝，无 JSON 序列化、无临时 runtime；冷路径（未命中）经过 解析 → 规范化 → 域路由 → 求值 四个阶段，每个阶段都有独立的基准守护。
+CalNexus 的性能设计围绕一条原则展开：**让重复求值走缓存热路径，让首次求值尽量便宜**。热路径（缓存命中）返回克隆的 `EvalResult`（免 JSON 序列化、无临时 runtime）；冷路径（未命中）经过 解析 → 规范化 → 域路由 → 求值 四个阶段，每个阶段都有独立的基准守护。
 
 ### 性能目标
 
@@ -148,8 +148,8 @@ cargo bench --features cli --bench cache_bench -- --save-baseline v0.1.5
 
 `CacheManager` 基于 oxcache `ByteWeightCache`（moka 内核，同步字节权重预算 + `try_get_with` single-flight；以 `default-features = false` 引入，规避 tokio/redis 等后端栈）：
 
-- **零拷贝命中**：缓存存储 `Arc<EvalResult>`，命中路径无序列化、无克隆、无临时 tokio runtime。
-- **single-flight**：`try_get_with` 保证并发相同键只真实求值一次，其余等待方共享同一 `Arc`；求值错误原样传播（不缓存错误）。
+- **命中免序列化**：缓存存储 `EvalResult`，命中路径克隆值返回，无 JSON 序列化、无临时 tokio runtime。
+- **single-flight**：`try_get_with` 保证并发相同键只真实求值一次，其余等待方各自取得缓存值克隆；求值错误原样传播（不缓存错误）。
 - **单次哈希键**：BLAKE3 对规范化 S-表达式一次哈希；`--precision` 与变量上下文参与键构建（精度感知）。
 - **字节权重预算**：默认 64MB，`--cache-size` 以条目数配置（× 4KB 近似折算）。
 - **大结果准入阈值**：大于 256KB 的结果不入缓存，防止单条目挤占预算。

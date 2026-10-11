@@ -22,8 +22,8 @@
 - [⚡ 性能设计](#-性能设计)
 - [🧭 架构决策记录（ADR）](#-架构决策记录adr)
 - [📚 相关文档](#-相关文档)
-- [附录 A：循环依赖修复策略（P2 Phase 1-3）](#附录-a循环依赖修复策略p2-phase-1-3)
-- [附录 B：复杂度治理（P2 Phase 4-8）](#附录-b复杂度治理p2-phase-4-8)
+- [附录 A：循环依赖修复策略（P2）](#附录-a循环依赖修复策略p2)
+- [附录 B：复杂度治理（P2）](#附录-b复杂度治理p2)
 - [附录 C：v0.1.5 架构变更记录](#附录-cv015-架构变更记录)
 
 ---
@@ -39,9 +39,9 @@ CalNexus 是一个命令行数学表达式求值器：11 个核心计算域 + 3 
 - **依赖方向铁律**：五层分层，依赖严格自上而下，下层不感知上层；`api/` → `math/` → `core/` 直接 API 路径不经过域路由。
 - **单一编排入口**：`core/evaluator.rs` 的 `evaluate()` 是唯一顶层求值入口，编排 parse → canonicalize → cache → route → evaluate 五阶段。
 - **规则 25（mod.rs 纪律）**：所有 `mod.rs` 仅含 `mod` 声明、`pub use` re-export 与类型定义；实现函数一律拆到独立文件（如 `domains/factory.rs`、`api/scalar.rs`）。
-- **单一事实源**：统一函数目录 `function_catalog` 同时供 REPL 补全、`--list-functions` 与 MCP `list_functions` 消费；HTTP 路由经 `build_router()` 显式挂载。
+- **函数目录**：统一函数目录 `function_catalog` 供 REPL 补全、`--list-functions` 与 MCP `list_functions` 消费；目录为展示清单，函数可求值性以各域白名单为准。HTTP 路由经 `build_router()` 显式挂载。
 - **feature 门控**：可选能力（CLI、服务端、可选域、数值分解、国际化）均为独立 feature；`default = []` 时核心库零依赖，可作嵌入式引擎。
-- **核心与外部依赖解耦**：缓存直连 moka、解析基于 mathexpr，全部依赖禁用默认特性、按需最小化启用。
+- **核心与外部依赖解耦**：缓存基于 oxcache `ByteWeightCache`（moka 内核）、解析基于 mathexpr，全部依赖禁用默认特性、按需最小化启用。
 
 ---
 
@@ -71,7 +71,7 @@ flowchart TD
     end
 
     subgraph Lmath["Lmath — 核心数学函数层"]
-        MATH["math/<br/>14 个纯函数模块<br/>(arithmetic / scientific / ...)"]
+        MATH["math/<br/>17 个纯函数模块<br/>(arithmetic / scientific / ...)"]
     end
 
     subgraph L1["L1 — 核心基础层"]
@@ -105,7 +105,7 @@ flowchart TD
 | `types.rs` | `AstNode` / `BinaryOp` / `UnaryOp` / `CalcError` / `EvalResult` / `Span` 等共享类型 |
 | `parser.rs` | 表达式字符串 → `AstNode`（递归下降解析器） |
 | `canonicalizer.rs` | AST 规范化（交换律排序 + 常量折叠 + 一元归一化）+ S-表达式序列化 |
-| `cache.rs` | L1 缓存管理器（moka::sync 直连：try_get_with single-flight、字节权重预算、Arc<EvalResult> 零拷贝命中；BLAKE3 单次哈希键） |
+| `cache.rs` | L1 缓存管理器（基于 oxcache `ByteWeightCache`、moka 内核：try_get_with single-flight、字节权重预算、命中克隆返回（免序列化）；BLAKE3 单次哈希键） |
 | `domain.rs` | `CalculationDomain` trait + `DomainRouter`（14 域优先级路由） |
 | `evaluator.rs` | 顶层 `evaluate()` 编排函数（parse → canonicalize → cache → route → evaluate）— **L3 编排层**，但位于 `src/core/` 目录下 |
 
@@ -143,7 +143,7 @@ flowchart TD
 | `ArithmeticDomain` | 10 | — | 基础四则运算 + 幂 + 取模 |
 | `ScientificDomain` | 20 | — | 三角/双曲/指数/对数/特殊函数 |
 | `StatisticsDomain` | 20 | — | 统计函数 |
-| `NumberTheoryDomain` | 25 | — | 数论（素数/GCD/LCM/斐波那契） |
+| `NumberTheoryDomain` | 25 | — | 数论（GCD/LCM/素数判定/筛法/模逆/模幂/欧拉函数） |
 | `CombinatoricsDomain` | 25 | — | 排列/组合/Catalan/Stirling |
 | `PolynomialDomain` | 25 | — | 多项式运算 |
 | `PrecisionDomain` | 25 | — | BigRational 高精度求值（绕过路由器） |
@@ -227,7 +227,7 @@ flowchart LR
 | `numerical` | `math/numerical.rs` → `domains/numerical.rs` + `api/linalg.rs` | 数值线性代数分解（eig/SVD/LU/QR/solve/matrix_exp，nalgebra f64） |
 | `ratelimit` | `server/ratelimit.rs` | HTTP 限流（sdforge ratelimit-http 契约） |
 | `docs` | sdforge/docs | OpenAPI + Swagger UI |
-| `observability` | tracing-subscriber | 结构化日志（RUST_LOG） |
+| `observability` | inklog `LoggerManager` | 结构化日志（RUST_LOG） |
 
 `default = []`：核心库零依赖，可作为嵌入式计算引擎被其他 crate 引用。
 
@@ -252,19 +252,19 @@ sequenceDiagram
     E->>C: parse + canonicalize
     C->>K: BLAKE3 规范形式查缓存（try_get_with）
     alt 命中
-        K-->>App: Arc<EvalResult> 零拷贝
+        K-->>App: EvalResult（克隆）
     else 未命中
         R->>R: is_nondeterministic? 旁路则跳过读写
         K->>R: 首个 supports() 命中域
         R->>D: 求值
         D-->>K: EvalResult（>256KB 不入缓存）
-        K-->>App: Arc<EvalResult>
+        K-->>App: EvalResult（克隆）
     end
 ```
 
 ### 缓存 single-flight 数据流
 
-并发相同表达式的多个请求在 `try_get_with` 处收敛：首个请求执行真实求值并写入缓存，其余等待方直接共享同一 `Arc<EvalResult>`；求值失败则错误原样传播给全部等待方且不污染缓存。
+并发相同表达式的多个请求在 `try_get_with` 处收敛：首个请求执行真实求值并写入缓存，其余等待方各自取得同一缓存值的克隆；求值失败则错误原样传播给全部等待方且不污染缓存。
 
 ### 服务模式数据流
 
@@ -286,7 +286,7 @@ sequenceDiagram
 
 ## ⚡ 性能设计
 
-- **缓存热路径零开销**：命中返回 `Arc<EvalResult>`，无序列化与临时 runtime；single-flight 消除并发重复求值。
+- **缓存热路径低开销**：命中返回 `EvalResult` 克隆，无序列化与临时 runtime；single-flight 消除并发重复求值。
 - **缓存有界**：字节权重预算（默认 64MB）+ 256KB 大结果准入阈值。
 - **键构建低成本**：规范化 S-表达式单次 BLAKE3 哈希；规范化器亚微秒级（基准数据见 [📈 性能指南](PERFORMANCE.md)）。
 - **编译期裁剪**：全部可选能力 feature 门控，控制编译时间与二进制体积；依赖禁用默认特性。
@@ -312,7 +312,7 @@ sequenceDiagram
 
 **决策**：L1-only 进程内缓存。理由：库场景下进程间共享缓存无意义；AST 规范化去重已能实现高命中率；去除 Redis 依赖实现零运维。
 
-**修订（v0.1.5）**：原实现为 oxcache 封装，现退役为 `moka::sync` 直连——`try_get_with` single-flight、字节权重预算、`Arc<EvalResult>` 零拷贝命中（详见附录 C 第 1 条）。决策本身（L1-only）不变。
+**修订（v0.1.5）**：缓存机制（`try_get_with` single-flight、字节权重预算、命中克隆返回）现由 oxcache `ByteWeightCache`（moka 内核）提供（详见附录 C 第 1 条及其后注）。决策本身（L1-only）不变。
 
 ### ADR-005：内置符号计算引擎
 
@@ -336,7 +336,7 @@ sequenceDiagram
 
 ---
 
-## 附录 A：循环依赖修复策略（P2 Phase 1-3）
+## 附录 A：循环依赖修复策略（P2）
 
 ### 修复前的问题
 
@@ -382,7 +382,7 @@ flowchart LR
 
 ---
 
-## 附录 B：复杂度治理（P2 Phase 4-8）
+## 附录 B：复杂度治理（P2）
 
 针对 codenexus 识别的 5 个圈复杂度热点（cyc > 15），按 TDD 流程（Red → Green → Commit → Verify）逐个重构。
 
@@ -425,11 +425,11 @@ flowchart LR
 
 v015-comprehensive-optimization（2026-09）：
 
-1. **缓存引擎重构**：oxcache 封装退役，`CacheManager` 直连 `moka::sync`——`try_get_with` 生产级 single-flight（并发相同键恰一次求值、错误原样传播），字节权重预算（默认 64MB）+ 256KB 大结果准入阈值，`Arc<EvalResult>` 命中零拷贝，单次 BLAKE3 键。连带消除 JSON 序列化存储、临时 tokio runtime 与 hex 键分配。
+1. **缓存引擎重构**：oxcache 封装退役，`CacheManager` 直连 `moka::sync`——`try_get_with` 生产级 single-flight（并发相同键恰一次求值、错误原样传播），字节权重预算（默认 64MB）+ 256KB 大结果准入阈值，`Arc<EvalResult>` 命中零拷贝，单次 BLAKE3 键。连带消除 JSON 序列化存储、临时 tokio runtime 与 hex 键分配。（后注：当前实现经 crates.io 的 oxcache 0.5.0-rc.6 `ByteWeightCache` 提供同等机制，但其 `get`/`get_or_compute` 返回克隆值——命中为克隆而非 `Arc` 零拷贝；本文各处缓存表述以此为准。）
 2. **HTTP 路由显式注册**：`#[forge]` inventory 注册在 rlib/测试二进制下会被链接器 GC 静默丢弃（生产 404），HTTP 路由改为 `build_router()` 显式挂载（单一事实源）；`#[forge]` 保留 MCP tool 注册与 schema 推导职责。
 3. **递归深度防护闭环**：括号字面量递归 thread-local RAII 守卫、mathexpr 前迭代括号预检、canonicalizer 深度守卫；fuzz 目标覆盖真实深度域。
 4. **错误语义服务化**：`ErrorKind::DependencyUnavailable`（exit_code=3）→ HTTP 503，与客户端 400 严格区分；`/ready`/`/live`/`/health` 三探针语义分离。
-5. **可观测性**：request-id/traceparent 中间件、`calnexus_http_requests_total`、observability feature 接入 tracing-subscriber（RUST_LOG）。
+5. **可观测性**：request-id/traceparent 中间件、HTTP RED 指标委托 sdforge metrics（`sdforge_http_requests_total{route,method,status}`）、observability feature 接入 inklog 单例（RUST_LOG，缺省 warn）。
 6. **公共 API**：`evaluate_with_router` 路由器可注入；`pub use server::*` 具名化；math/domains 标注内部 API 边界；统一函数目录 `function_catalog`（REPL 补全 / `--list-functions` / MCP `list_functions` 单一事实源）。
 7. **规格流程**：openspec/ 已收敛并入 `specmark/specs/`（27 个能力域），**specmark 为唯一 SDD 流程**。
 8. **sdforge 基座吸收（手写基础设施迁移）**：优雅关闭切换 `sdforge::http::serve_with_graceful_shutdown` + `default_shutdown_signal`；`/health` `/ready` 切换 `sdforge::health::readyz_handler`（checks 数组契约，cache 经 `register_readiness_check_fn` 注册）、`/live` 切换 `healthz_handler`；请求标识切换 `sdforge::context::context_middleware`（+W3C traceparent 提取 trace_id 回写 `X-Trace-ID`，task-local 上下文）。`ratelimit` feature 接通：`src/server/ratelimit.rs` 固定窗口 per-IP 策略实现 sdforge `HttpRequestRateLimiter` 契约，经 Clone 桥接层挂载，`CALNEXUS_RATELIMIT_LIMIT/WINDOW_SECS` 可配，探针/metrics 豁免限流。

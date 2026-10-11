@@ -219,7 +219,7 @@ Division by zero: divisor is zero
 
 ### 错误消息语言
 
-`--lang <en|zh>`（默认 `en`）切换人类可读文案：
+`--lang <en|zh>`（缺省自动检测系统语言，回退 `en`）切换人类可读文案：
 
 ```bash
 $ calnexus --lang zh 'foo + 1'
@@ -259,7 +259,7 @@ summary: 3 total, 3 ok, 0 errors, 0 cache hits, 4.589395ms
 
 ### 函数目录
 
-`--list-functions` 输出当前构建的完整函数目录（按域分组，feature 门控域仅在启用时出现）：
+`--list-functions` 输出当前构建的函数目录（按域分组，feature 门控域仅在启用时出现；目录为展示清单，函数可求值性以各域白名单为准）：
 
 ```text
 $ calnexus --list-functions
@@ -360,7 +360,7 @@ $ calnexus 'lu([[4,3],[6,3]])'
 | 环境变量 | 默认 | 说明 |
 |----------|------|------|
 | `CALNEXUS_TIMEOUT` | — | 求值超时（秒），对应 `--timeout` |
-| `CALNEXUS_CACHE_SIZE` | 64MB（字节权重） | 缓存预算，对应 `--cache-size`（条目 × 4KB 近似） |
+| `CALNEXUS_CACHE_SIZE` | 10000 条目（× 4KB ≈ 40MB） | 缓存预算，对应 `--cache-size`；库 API `CacheManager::new()` 默认 64MB 字节权重 |
 | `CALNEXUS_BIND_ADDR` | `127.0.0.1:3000` | HTTP 服务监听地址，对应 `--bind` |
 | `CALNEXUS_FX_TTL_HOURS` | 24 | fx 汇率快照有效期 |
 | `CALNEXUS_FX_ALLOW_STALE` | — | 网络失败时是否使用过期快照 |

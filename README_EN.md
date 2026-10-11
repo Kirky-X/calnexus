@@ -24,7 +24,7 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 <tr>
 <td align="center" width="25%">🧮<br><b>Full-Domain Coverage</b><br><span style="color:#64748B">11 core · 3 optional · on-demand builds</span></td>
 <td align="center" width="25%">🧠<br><b>Calculus</b><br><span style="color:#64748B">differentiate · simplify · limits · Taylor</span></td>
-<td align="center" width="25%">⚡<br><b>Microsecond Hits</b><br><span style="color:#64748B">zero-copy · single-flight · complexity-independent</span></td>
+<td align="center" width="25%">⚡<br><b>Microsecond Hits</b><br><span style="color:#64748B">serialization-free · single-flight · complexity-independent</span></td>
 <td align="center" width="25%">🌐<br><b>Server Mode</b><br><span style="color:#64748B">REST · MCP · probes &amp; rate limits</span></td>
 </tr>
 </table>
@@ -236,7 +236,7 @@ The endpoint list and language negotiation, Docker / Kubernetes deployment, obse
 
 ## 🏗️ Architecture
 
-CalNexus uses a five-layer architecture (entry → orchestration → computation domains → math functions → core infrastructure) with strictly top-down dependencies; with no features enabled the core library is dependency-free and embeddable. The core evaluation path: mathexpr parsing (implicit multiplication) → `AstCanonicalizer` normalization (constant folding, commutative sorting, S-expression canonical form) → `CacheManager` lookup (single-pass BLAKE3 key) → `DomainRouter` priority dispatch → the matching `CalculationDomain` evaluates, with cache hits collapsed through `try_get_with` single-flight and returned zero-copy as `Arc<EvalResult>`.
+CalNexus uses a five-layer architecture (entry → orchestration → computation domains → math functions → core infrastructure) with strictly top-down dependencies; with no features enabled the core library is dependency-free and embeddable. The core evaluation path: mathexpr parsing (implicit multiplication) → `AstCanonicalizer` normalization (constant folding, commutative sorting, S-expression canonical form) → `CacheManager` lookup (single-pass BLAKE3 key) → `DomainRouter` priority dispatch → the matching `CalculationDomain` evaluates, with cache hits collapsed through `try_get_with` single-flight and returned as a cloned `EvalResult` (no serialization round-trip).
 
 The per-layer responsibilities and module list, mermaid architecture and evaluation-sequence diagrams, interface-isolation traits, security and performance design, and the ADR decision records are documented in the [🏗️ Architecture Document](docs/ARCHITECTURE.md).
 
@@ -275,13 +275,13 @@ cargo fuzz run parser_fuzz
 
 ### 📊 Test Scale
 
-As of v0.1.4: grep statistics count 3007 `#[test]` / `#[tokio::test]` functions in total — 2466 unit tests (inline in `src/`), 541 integration & E2E tests (`tests/`, of which the E2E scenario suite has 145), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+As of v0.2.0-rc.1: grep statistics count 3036 `#[test]` / `#[tokio::test]` functions in total — 2493 unit tests (inline in `src/`), 543 integration & E2E tests (`tests/`, of which the E2E scenario suite has 145), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
 
 ---
 
 ## 📊 Performance
 
-Baselines were collected locally on a development machine (WSL2, linux 6.6) using criterion median estimates: cache hits sit in the low-microsecond range independent of expression complexity (`2+3` ≈ 1.29 µs), roughly a 10x win over the full pipeline (`2+3` ≈ 13.1 µs), with parsing and canonicalization in the sub-microsecond range; real-world performance depends on expression complexity and hardware — reproduce with `cargo bench --features cli`. The full baseline tables and measurement methodology are in [📈 Performance Guide · Baselines](docs/PERFORMANCE.md#-基线数据); design points such as zero-copy hits, single-flight, the byte-weight budget, the large-result admission threshold, and nondeterministic bypass are in [📈 Performance Guide · Cache Design](docs/PERFORMANCE.md#-缓存设计).
+Baselines were collected locally on a development machine (WSL2, linux 6.6) using criterion median estimates: cache hits sit in the low-microsecond range independent of expression complexity (`2+3` ≈ 0.90 µs), roughly a 12x win over the full pipeline (`2+3` ≈ 10.7 µs), with parsing and canonicalization in the sub-microsecond range; real-world performance depends on expression complexity and hardware — reproduce with `cargo bench --features cli`. The full baseline tables and measurement methodology are in [📈 Performance Guide · Baselines](docs/PERFORMANCE.md#-基线数据); design points such as serialization-free hits, single-flight, the byte-weight budget, the large-result admission threshold, and nondeterministic bypass are in [📈 Performance Guide · Cache Design](docs/PERFORMANCE.md#-缓存设计).
 
 ---
 
@@ -307,7 +307,7 @@ Please do **not** report security vulnerabilities through public issues. Email *
 <tr><th style="text-align:center">Status</th><th style="text-align:left">Direction</th><th style="text-align:left">Items</th></tr>
 <tr><td align="center">✅</td><td>Core engine (v0.1.0)</td><td>11 computation domains, symbolic calculus, REPL, batch processing, arbitrary precision, JSON output, implicit multiplication</td></tr>
 <tr><td align="center">✅</td><td>Optional domains & server (v0.1.3-v0.1.5)</td><td>Time / unit / fx domains, HTTP + MCP dual protocol, probe separation, rate limiting, observability, multi-platform releases & container images</td></tr>
-<tr><td align="center">✅</td><td>Cache engine modernization</td><td>Direct moka::sync, single-flight, byte-weight budget, BLAKE3 keys, large-result admission threshold</td></tr>
+<tr><td align="center">✅</td><td>Cache engine modernization</td><td>oxcache byte-weight cache (moka core), single-flight, byte-weight budget, BLAKE3 keys, large-result admission threshold</td></tr>
 <tr><td align="center">🚧</td><td>WebAssembly (wasm32) support</td><td><code>tokio::rt</code> (pulled in by server) does not support wasm32; the CLI-only shape is theoretically buildable but unverified. Until then wasm32 builds are <strong>not CI-gated and not guaranteed</strong>: <code>cargo build --target wasm32-unknown-unknown --no-default-features</code></td></tr>
 <tr><td align="center">📋</td><td>Numerical capability growth</td><td>Frontier-algorithm tracking and gap closure (see the <a href="docs/archive/RESEARCH_ANALYSIS.md">research analysis</a>)</td></tr>
 </table>
@@ -364,6 +364,7 @@ Full version history in the [📋 Changelog](docs/CHANGELOG.md) (following [Keep
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.2.0-rc.1 | unreleased | Fluent i18n migration, logging switched to inklog, E2E scenario suite, dependencies moved to crates.io, Commons Clause license condition (see the [CHANGELOG](docs/CHANGELOG.md) Unreleased section) |
 | 0.1.4 | 2026-07-26 | Release pipeline closed loop: automated `cargo publish` + pre-release security gates (`cargo audit`, version verification, dry-run validation) |
 | 0.1.3 | 2026-07-26 | Added time / unit / fx optional domains and 8 vector operations; nondeterministic function cache bypass |
 | 0.1.2 | 2026-07-21 | 20 doc-code consistency fixes; parser & canonicalizer boundary fixes (NaN total order, `0^0`, consecutive-operator validation) |

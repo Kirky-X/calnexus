@@ -21,7 +21,7 @@
 
 ### ❓ CalNexus 可以用于生产环境吗？
 
-可以。核心库 `default = []` 零依赖；2820 个测试、90.4% 行覆盖门禁（llvm-cov）、全 feature 组合零警告、CI 六腿测试矩阵与服务化错误语义（400/422/503）为生产部署提供保障。部署指引见 [🖥️ 服务模式指南](SERVER.md)。
+可以。核心库 `default = []`（无可选 feature 依赖，全部依赖禁用默认特性）；3000+ 个测试（权威口径 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`）、90.4% 行覆盖门禁（llvm-cov）、全 feature 组合零警告、CI 六腿测试矩阵与服务化错误语义（400/422/503）为生产部署提供保障。部署指引见 [🖥️ 服务模式指南](SERVER.md)。
 
 ### ❓ 支持哪些平台？
 
@@ -29,7 +29,7 @@ linux x86_64/aarch64（musl 静态）、macOS x86_64/aarch64、windows x86_64 �
 
 ### ❓ 项目采用什么许可证？
 
-MIT。详见 [LICENSE](../LICENSE)。
+MIT + Commons Clause（商业使用需单独授权）。详见 [LICENSE](../LICENSE)。
 
 ### ❓ 如何参与贡献？
 
@@ -99,11 +99,11 @@ Rust 1.97.1 及以上（MSRV，CI 有对应 MSRV 任务守护）。核心库无�
 
 ### ❓ CalNexus 有多快？
 
-本地 criterion 基线：简单表达式缓存命中约 1.3 µs，未命中全流水线（解析+规范化+求值+入缓存）约 13 µs，解析器对 `2+3` 约 286 ns。完整数据与口径见 [📈 性能指南](PERFORMANCE.md)。
+本地 criterion 基线：简单表达式缓存命中约 0.90 µs，未命中全流水线（解析+规范化+求值+入缓存）约 10.7 µs，解析器对 `2+3` 约 277 ns。完整数据与口径见 [📈 性能指南](PERFORMANCE.md)。
 
 ### ❓ 缓存如何工作？
 
-规范化 AST 的 BLAKE3 哈希为键，moka::sync 直连实现：命中返回 `Arc<EvalResult>` 零拷贝；并发相同键经 `try_get_with` single-flight 只求值一次；字节权重预算默认 64MB（`--cache-size` 可配）；大于 256KB 的结果不入缓存。详见 [📈 性能指南](PERFORMANCE.md)。
+规范化 AST 的 BLAKE3 哈希为键，基于 oxcache `ByteWeightCache`（moka 内核）实现：命中返回克隆的 `EvalResult`（免序列化）；并发相同键经 `try_get_with` single-flight 只求值一次；字节权重预算：库 API 默认 64MB，CLI 默认 10000 条（≈40MB，`--cache-size` 可配）；大于 256KB 的结果不入缓存。详见 [📈 性能指南](PERFORMANCE.md)。
 
 ### ❓ 批量求值会并行吗？
 
@@ -131,7 +131,7 @@ Rust 1.97.1 及以上（MSRV，CI 有对应 MSRV 任务守护）。核心库无�
 
 ### ❓ wasm32 为什么构建失败？
 
-`server` feature 引入的 `tokio::rt` 不支持 wasm32；缓存层已重构为 moka::sync 直连（v0.1.5 移除 oxcache→tokio 链），CLI-only 形态理论上可编译但未验证。在移除 tokio 依赖的构建组合评估完成前，wasm32 构建**不受 CI 门禁保护、不承诺可用**。
+`server` feature 引入的 `tokio::rt` 不支持 wasm32；缓存层已无 tokio 链（v0.1.5 重构），CLI-only 形态理论上可编译但未验证。在移除 tokio 依赖的构建组合评估完成前，wasm32 构建**不受 CI 门禁保护、不承诺可用**。
 
 ### ❓ 求值报 Timeout（退出码 3）？
 

@@ -24,7 +24,7 @@
 <tr>
 <td align="center" width="25%">🧮<br><b>全域求解</b><br><span style="color:#64748B">11 核心 · 3 可选 · 按需编译</span></td>
 <td align="center" width="25%">🧠<br><b>微积分</b><br><span style="color:#64748B">求导 · 化简 · 极限 · 泰勒</span></td>
-<td align="center" width="25%">⚡<br><b>微秒级命中</b><br><span style="color:#64748B">零拷贝 · 去重合并 · 复杂度无关</span></td>
+<td align="center" width="25%">⚡<br><b>微秒级命中</b><br><span style="color:#64748B">免序列化 · 去重合并 · 复杂度无关</span></td>
 <td align="center" width="25%">🌐<br><b>服务化</b><br><span style="color:#64748B">REST · MCP · 探针限流</span></td>
 </tr>
 </table>
@@ -236,7 +236,7 @@ HTTP 端点清单与语言协商、Docker / Kubernetes 部署、可观测性与 
 
 ## 🏗️ 架构
 
-CalNexus 采用五层分层架构（入口层 → 编排层 → 计算域层 → 数学函数层 → 核心基础层），依赖方向严格自上而下；`default` 无特性时核心库零依赖，可作嵌入式引擎。核心求值通路为：mathexpr 解析（支持隐式乘法）→ `AstCanonicalizer` 规范化（常量折叠、可交换排序、S-表达式规范形式）→ `CacheManager` 缓存查询（BLAKE3 单次哈希键）→ `DomainRouter` 按优先级路由 → 对应 `CalculationDomain` 求值，缓存命中经 `try_get_with` single-flight 合并以 `Arc<EvalResult>` 零拷贝返回。
+CalNexus 采用五层分层架构（入口层 → 编排层 → 计算域层 → 数学函数层 → 核心基础层），依赖方向严格自上而下；`default` 无特性时核心库零依赖，可作嵌入式引擎。核心求值通路为：mathexpr 解析（支持隐式乘法）→ `AstCanonicalizer` 规范化（常量折叠、可交换排序、S-表达式规范形式）→ `CacheManager` 缓存查询（BLAKE3 单次哈希键）→ `DomainRouter` 按优先级路由 → 对应 `CalculationDomain` 求值，缓存命中经 `try_get_with` single-flight 合并返回（克隆 `EvalResult`，无序列化往返）。
 
 五层职责与模块清单、mermaid 架构图与求值时序图、接口隔离 trait、安全与性能设计、ADR 决策记录见 [🏗️ 架构文档](docs/ARCHITECTURE.md)。
 
@@ -275,13 +275,13 @@ cargo fuzz run parser_fuzz
 
 ### 📊 测试规模
 
-截至 v0.1.4：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3007 个，其中单元测试 2466（`src/` 内联）、集成与 E2E 共 541（`tests/`，其中 E2E 场景套件 145）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
+截至 v0.2.0-rc.1：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3036 个，其中单元测试 2493（`src/` 内联）、集成与 E2E 共 543（`tests/`，其中 E2E 场景套件 145）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
 
 ---
 
 ## 📊 性能
 
-基线在开发机（WSL2、linux 6.6）本地采集（criterion 区间估计 median）：缓存命中稳定在微秒级且与表达式复杂度解耦（`2+3` 约 1.29 µs），相对全流水线（`2+3` 约 13.1 µs）约 10 倍提升，解析与规范化为亚微秒级；实际性能取决于表达式复杂度与硬件，可运行 `cargo bench --features cli` 复现。完整基线数据表与测量口径见 [📈 性能指南 · 基线数据](docs/PERFORMANCE.md#-基线数据)；零拷贝命中、single-flight、字节权重预算、大结果准入阈值与非确定性旁路等设计要点见 [📈 性能指南 · 缓存设计](docs/PERFORMANCE.md#-缓存设计)。
+基线在开发机（WSL2、linux 6.6）本地采集（criterion 区间估计 median）：缓存命中稳定在微秒级且与表达式复杂度解耦（`2+3` 约 0.90 µs），相对全流水线（`2+3` 约 10.7 µs）约 12 倍提升，解析与规范化为亚微秒级；实际性能取决于表达式复杂度与硬件，可运行 `cargo bench --features cli` 复现。完整基线数据表与测量口径见 [📈 性能指南 · 基线数据](docs/PERFORMANCE.md#-基线数据)；命中免序列化、single-flight、字节权重预算、大结果准入阈值与非确定性旁路等设计要点见 [📈 性能指南 · 缓存设计](docs/PERFORMANCE.md#-缓存设计)。
 
 ---
 
@@ -307,7 +307,7 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 <tr><th style="text-align:center">状态</th><th style="text-align:left">方向</th><th style="text-align:left">条目</th></tr>
 <tr><td align="center">✅</td><td>核心引擎（v0.1.0）</td><td>11 计算域、符号微积分、REPL、批量处理、任意精度、JSON 输出、隐式乘法</td></tr>
 <tr><td align="center">✅</td><td>可选域与服务化（v0.1.3-v0.1.5）</td><td>时间 / 单位 / 汇率域、HTTP + MCP 双协议、探针分离、限流、可观测性、多平台发布与容器镜像</td></tr>
-<tr><td align="center">✅</td><td>缓存引擎现代化</td><td>moka::sync 直连、single-flight、字节权重预算、BLAKE3 键、大结果准入阈值</td></tr>
+<tr><td align="center">✅</td><td>缓存引擎现代化</td><td>oxcache byte-weight 缓存（moka 内核）、single-flight、字节权重预算、BLAKE3 键、大结果准入阈值</td></tr>
 <tr><td align="center">🚧</td><td>WebAssembly (wasm32) 支持</td><td><code>tokio::rt</code>（server 引入）不支持 wasm32；CLI-only 形态理论上可编译，未验证。在此之前 wasm32 构建<strong>不受 CI 门禁保护、不承诺可用</strong>：<code>cargo build --target wasm32-unknown-unknown --no-default-features</code></td></tr>
 <tr><td align="center">📋</td><td>数值能力增强</td><td>前沿算法跟踪与功能缺口收敛（见 <a href="docs/archive/RESEARCH_ANALYSIS.md">研究分析</a>）</td></tr>
 </table>
@@ -364,6 +364,7 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 
 | 版本 | 日期 | 要点 |
 |------|------|------|
+| 0.2.0-rc.1 | 待发布 | i18n 迁移 Fluent、日志栈切换 inklog、E2E 场景套件、依赖全面切换 crates.io、许可补充 Commons Clause（详见 [CHANGELOG](docs/CHANGELOG.md) Unreleased） |
 | 0.1.4 | 2026-07-26 | Release pipeline 闭环：`cargo publish` 自动化 + 发布前安全门禁（`cargo audit`、版本校验、dry-run 验证） |
 | 0.1.3 | 2026-07-26 | 新增时间 / 单位 / 汇率三个可选计算域与 8 个向量运算；非确定性函数缓存旁路 |
 | 0.1.2 | 2026-07-21 | 20 项文档-代码一致性修复；解析与规范化边界行为修复（NaN 全序、`0^0`、连续运算符校验） |

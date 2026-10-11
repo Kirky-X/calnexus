@@ -86,7 +86,7 @@ docker run -p 3000:3000 calnexus:latest
 
 ## 📈 可观测性
 
-- `GET /metrics`：Prometheus 文本（`calnexus_cache_*` + `calnexus_http_requests_total`）
+- `GET /metrics`：Prometheus 文本（`calnexus_cache_*` 缓存族 + sdforge metrics 的 `sdforge_http_requests_total{route,method,status}` 与时延直方图）；`?format=json` 调试分支含 `http_route_count`。注意 route 标签取请求 path，含 id 的高基数 REST 路径会放大序列
 - `X-Request-ID`：入站透传或自动生成（`req-*`），响应回写；`traceparent` 同样透传（提取 trace_id 回写 `X-Trace-ID`）
 - `observability` feature 构建时，`RUST_LOG` 控制日志级别（默认 warn）
 - `ratelimit` feature 提供固定窗口 per-IP 限流：`CALNEXUS_RATELIMIT_LIMIT`（默认 120）、`CALNEXUS_RATELIMIT_WINDOW_SECS`（默认 60），探针与 metrics 豁免
