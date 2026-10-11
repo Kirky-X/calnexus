@@ -61,7 +61,7 @@ const CACHE_DIR_NAME: &str = "calnexus";
 const CACHE_FILE_NAME: &str = "fx_rates.json";
 
 /// L1（oxcache ByteWeightCache）单 key：汇率表唯一主键。
-const FX_RATES_KEY: &'static str = "fx:rates";
+const FX_RATES_KEY: &str = "fx:rates";
 
 /// L1 字节预算：1 MiB（单 key 缓存，预算不构成实际约束）。
 const FX_RATES_BUDGET_BYTES: u64 = 1024 * 1024;

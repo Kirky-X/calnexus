@@ -122,9 +122,12 @@ fn cache_capacity_eviction_bounds_entries() {
 
 #[test]
 fn cache_oversized_results_bypass_storage() {
-    // MAX_CACHEABLE_BYTES = 256KB：320_064 字节的 Vector 超限 → 返回但不存
+    // MAX_CACHEABLE_BYTES = 256KB（weigher 口径=JSON 序列化字节，T009 起）：
+    // 100_000 个 f64 的 Vector 序列化约 400KB（"0.0," 4 字节/元素）超限
+    // → 返回但不存。旧内存估重口径（64+n*8）下 40_000 元素=320KB 亦可超限，
+    // 新口径下需 10 万元素——fixture 随口径迁移。
     let cache = CacheManager::new();
-    let big = EvalResult::Vector(vec![0.0; 40_000]);
+    let big = EvalResult::Vector(vec![0.0; 100_000]);
     let cf = CanonicalForm::new("big-vector-fixture");
     cache.insert(&cf, &Ok(big.clone()));
     assert_eq!(cache.entry_count(), 0, "oversized result must bypass L1");
