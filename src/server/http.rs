@@ -308,7 +308,23 @@ impl HttpServer {
     /// 在 select 前注册 SIGTERM handler（早期信号缓冲，无竞态窗口）。
     /// ConnectInfo 变体使请求携带真实对端地址（`super::ratelimit` 标识提取消费）。
     async fn start_inner(&self) -> Result<(), ServerError> {
-        crate::server::init_observability();
+        // 日志初始化（observability feature）：async 上下文直接 await，无桥。
+        // 失败显性化：ConfigError（单例哨兵已占）视为"已初始化"幂等成功
+        // （重复调用不重试），其余错误上抛 ServerError::Http——不静默降级为
+        // 无日志运行。
+        #[cfg(feature = "observability")]
+        match crate::server::init_observability().await {
+            Ok(()) => {}
+            Err(inklog::InklogError::ConfigError(_)) => {}
+            Err(e) => {
+                return Err(ServerError::Http(format!(
+                    "observability init failed: {}",
+                    e
+                )));
+            }
+        }
+        #[cfg(not(feature = "observability"))]
+        crate::server::init_observability().await;
         let listener = tokio::net::TcpListener::bind(&self.addr)
             .await
             .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
