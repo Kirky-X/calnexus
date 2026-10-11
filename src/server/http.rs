@@ -499,7 +499,9 @@ mod tests {
             "应从 W3C traceparent 提取 trace_id 回写 X-Trace-ID"
         );
 
-        let before = http_requests_total();
+        // T011 后计数走 sdforge metrics RED：请求后 registry 应记录 /live 序列
+        let registry = sdforge::metrics::global_registry();
+        registry.reset();
         let _ = router
             .clone()
             .oneshot(
@@ -511,7 +513,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(http_requests_total() > before, "请求计数应单调增长");
+        assert!(
+            registry.route_count() >= 1,
+            "请求后 sdforge registry 应记录路由序列（RED 计数取代手写 static）"
+        );
     }
 
     #[cfg(feature = "ratelimit")]

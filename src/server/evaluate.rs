@@ -109,8 +109,34 @@ pub(crate) async fn evaluate_with_timeout(
 ///
 /// `kind` 名称作为 `message` 前缀保留可诊断性（要求 message 含 kind 前缀，
 /// 如 `"DivisionByZero: ..."`）；原始 message 追加其后（失败显性化）。
+/// `CalcError` → `ApiError` 的标准映射（机器契约，恒英文）。
+///
+/// - `Timeout`/`DependencyUnavailable` → `service_unavailable`（503 契约）
+/// - 其余 kind → `invalid_input`，message 为 `"{Kind}: {message}"`
+///
+/// 语言感知路径走 [`calc_error_to_api_error_i18n`]（协商 zh 时本地化）；
+/// 本 impl 是确定性基座，`From`/`Into` 均可直接使用。
+impl From<CalcError> for ApiError {
+    fn from(e: CalcError) -> Self {
+        match e.kind {
+            ErrorKind::Timeout | ErrorKind::DependencyUnavailable => {
+                ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS))
+            }
+            kind => ApiError::invalid_input(
+                format!("{}: {}", error_kind_prefix(kind), e.message),
+                None,
+                None,
+            ),
+        }
+    }
+}
+
+/// `CalcError` → `ApiError` 薄别名：经 [`From`] 转发，与标准映射逐字节一致。
+///
+/// 历史签名（`fn(CalcError) -> ApiError`）保留，调用方零改动；语言感知
+/// 协商路径请使用 [`calc_error_to_api_error_i18n`]。
 pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
-    calc_error_to_api_error_i18n(e, &I18n::default())
+    ApiError::from(e)
 }
 
 /// 语言感知版 `CalcError` → `ApiError` 映射（语言协商核心）。
@@ -375,7 +401,8 @@ mod tests {
         ];
         for e in cases {
             let legacy = calc_error_to_api_error(e.clone());
-            let via_i18n = calc_error_to_api_error_i18n(e, &I18n::default());
+            // 显式英文：I18n::default() 走 locale 检测，zh 系统下该测试会假失败
+            let via_i18n = calc_error_to_api_error_i18n(e, &I18n::new(crate::i18n::Lang::En));
             match (legacy, via_i18n) {
                 (
                     ApiError::InvalidInput { message: m1, .. },
@@ -383,6 +410,55 @@ mod tests {
                 ) => assert_eq!(m1, m2),
                 (a, b) => panic!("变体不一致: {a:?} vs {b:?}"),
             }
+        }
+    }
+
+    /// T012：From<CalcError> for ApiError 覆盖全部 11 个 ErrorKind——
+    /// 503 契约（Timeout/DependencyUnavailable）与 400 契约（其余，message
+    /// 含 kind 前缀）分流正确；薄别名与 From 输出逐字节一致。
+    #[test]
+    fn from_calc_error_covers_all_kinds() {
+        // 503 契约
+        let service_cases = [
+            CalcError::timeout(),
+            CalcError::dependency_unavailable("fx source down"),
+        ];
+        for e in service_cases {
+            match ApiError::from(e) {
+                ApiError::ServiceUnavailable { .. } => {}
+                other => panic!("Timeout/DependencyUnavailable 应映射 503，实际 {other:?}"),
+            }
+        }
+        // 400 契约（其余 9 个 kind，message 形如 "{Kind}: {message}"）
+        let client_cases = [
+            CalcError::parse("unexpected token"),
+            CalcError::eval("bad expression"),
+            CalcError::overflow(),
+            CalcError::division_by_zero(),
+            CalcError::domain("negative sqrt"),
+            CalcError::depth_exceeded(),
+            CalcError::nan_or_inf(),
+            CalcError::undefined_symbol("foo"),
+            CalcError::usage("bad flag"),
+        ];
+        for e in client_cases {
+            match ApiError::from(e) {
+                ApiError::InvalidInput { message, .. } => {
+                    assert!(
+                        message.contains(": "),
+                        "message 应含 kind 前缀（Kind: message），实际 {:?}",
+                        message
+                    );
+                }
+                other => panic!("客户端错误 kind 应映射 400，实际 {other:?}"),
+            }
+        }
+        // 薄别名与 From 逐字节一致（Debug 表示比对）
+        for e in [CalcError::domain("x"), CalcError::timeout()] {
+            assert_eq!(
+                format!("{:?}", calc_error_to_api_error(e.clone())),
+                format!("{:?}", ApiError::from(e)),
+            );
         }
     }
 
