@@ -179,8 +179,9 @@ impl ReplSession {
                                 "repl.let_invalid_value",
                                 &[
                                     ("value", value_str),
+                                    // error1：std ParseFloatError（库文案，无 i18n 目录键），保持原文
                                     ("error1", &e.to_string()),
-                                    ("error2", &e2.to_string())
+                                    ("error2", &e2.friendly(&self.i18n))
                                 ]
                             )
                         );
@@ -245,7 +246,7 @@ impl ReplSession {
                 eprintln!(
                     "{}",
                     self.i18n
-                        .tf("repl.eval_error", &[("error", &e.to_string())])
+                        .tf("repl.eval_error", &[("error", &e.friendly(&self.i18n))])
                 );
             }
         }

@@ -11,7 +11,7 @@ batch-line_too_long = 错误: 行 { $line } 超过最大长度 { $max }（实际
 batch-no_expressions = 错误: 无表达式可求值
 batch-read_failed = 错误: 读取输入失败: { $error }
 batch-summary = 汇总: 共 { $total } 条，成功 { $ok }，错误 { $errors }，缓存命中 { $hits }，耗时 { $elapsed }
-batch-text_error = 行 { $line }: { $expr } → 错误: { $error }
+batch-text_error = 行 { $line }: { $expr } → { $error }
 batch-text_result = 行 { $line }: { $expr } = { $value }  [{ $domain }{ $cached }]
 cli-about = CalNexus: 数学表达式求值器
 cli-cache_size_invalid = --cache-size 必须为正整数
@@ -356,10 +356,11 @@ msg-vector-reflect_zero_vector = reflect(): 无法对零法向量反射
 msg-vector-scalar_triple_3d_only = scalar_triple() 需要三维向量
 msg-vector-scalar_triple_arg_count = scalar_triple() 需要 3 个参数，得到 { $actual }
 msg-vector-unsupported_binary = 不支持的向量二元运算: { $op }
+msg-cache_weigher_serialize_failed = cache weigher 序列化失败，回退常量权重
 repl-bye = 再见
 repl-empty_var_name = 变量名为空
 repl-error = REPL 错误: { $error }
-repl-eval_error = 错误: { $error }
+repl-eval_error = { $error }
 repl-help_clear = { "  :clear              清屏" }
 repl-help_examples = 示例: 2+3*4, sin(pi/2), diff(x^2, x), gcd(12,18)
 repl-help_help = { "  :help               显示此帮助信息" }
@@ -378,7 +379,7 @@ repl-usage_let = 用法: :let NAME = VALUE
 repl-welcome = CalNexus REPL — 输入 :help 查看命令，:quit 退出
 
 # ---------------------------------------------------------------------------
-# T006 新增键：panic / server 500 文案与 clap help 本地化（迁移自源码硬编码）。
+# panic / server 500 文案与 clap help 本地化（迁移自源码硬编码）。
 # ---------------------------------------------------------------------------
 
 panic-internal_error = calnexus: 内部错误（panic）

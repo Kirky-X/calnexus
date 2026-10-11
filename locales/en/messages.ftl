@@ -11,7 +11,7 @@ batch-line_too_long = error: line { $line } exceeds max length { $max } (got { $
 batch-no_expressions = error: no expressions to evaluate
 batch-read_failed = error: failed to read input: { $error }
 batch-summary = summary: { $total } total, { $ok } ok, { $errors } errors, { $hits } cache hits, { $elapsed }
-batch-text_error = line { $line }: { $expr } → error: { $error }
+batch-text_error = line { $line }: { $expr } → { $error }
 batch-text_result = line { $line }: { $expr } = { $value }  [{ $domain }{ $cached }]
 cli-about = CalNexus: math expression evaluator
 cli-cache_size_invalid = --cache-size must be a positive integer
@@ -356,10 +356,11 @@ msg-vector-reflect_zero_vector = reflect(): cannot reflect across zero normal ve
 msg-vector-scalar_triple_3d_only = scalar_triple() requires 3-dimensional vectors
 msg-vector-scalar_triple_arg_count = scalar_triple() requires exactly 3 arguments, got { $actual }
 msg-vector-unsupported_binary = unsupported vector binary operation: { $op }
+msg-cache_weigher_serialize_failed = cache weigher serialization failed, falling back to constant weight
 repl-bye = bye
 repl-empty_var_name = variable name is empty
 repl-error = REPL error: { $error }
-repl-eval_error = error: { $error }
+repl-eval_error = { $error }
 repl-help_clear = { "  :clear              Clear the screen" }
 repl-help_examples = Examples: 2+3*4, sin(pi/2), diff(x^2, x), gcd(12,18)
 repl-help_help = { "  :help               Show this help message" }
@@ -378,7 +379,7 @@ repl-usage_let = usage: :let NAME = VALUE
 repl-welcome = CalNexus REPL — type :help for commands, :quit to exit
 
 # ---------------------------------------------------------------------------
-# T006 新增键：panic / server 500 文案与 clap help 本地化（迁移自源码硬编码）。
+# panic / server 500 文案与 clap help 本地化（迁移自源码硬编码）。
 # ---------------------------------------------------------------------------
 
 panic-internal_error = calnexus: internal error (panic)

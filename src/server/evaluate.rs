@@ -159,30 +159,16 @@ pub fn calc_error_to_api_error_i18n(e: CalcError, i18n: &I18n) -> ApiError {
     }
 }
 
-/// 按协商语言渲染 `CalcError` 的 detail 部分（不含 kind 前缀）。
-///
-/// 英文（缺省）路径返回原始 `message`（逐字节契约）；中文路径优先用
-/// `i18n_key`+`i18n_args` 目录渲染，无键时回退原始英文 message。
-/// 供 fx 工具等无 kind 前缀的错误映射点复用。
+/// 渲染 `CalcError` detail（不含 kind 前缀）：zh 优先 `i18n_key` 目录，无键回退英文 message。
 pub(crate) fn localized_error_detail(e: &CalcError, i18n: &I18n) -> String {
     if i18n.lang() == crate::i18n::Lang::Zh {
-        match e.i18n_key {
-            Some(key) => {
-                let args_ref: Vec<(&str, &str)> = e
-                    .i18n_args
-                    .iter()
-                    .map(|(k, v)| (k.as_str(), v.as_str()))
-                    .collect();
-                i18n.tf(key, &args_ref)
-            }
-            None => e.message.clone(),
-        }
+        e.localized_detail(i18n)
     } else {
         e.message.clone()
     }
 }
 
-/// `ErrorKind` → 协议层诊断前缀（变体名字面量，作为 `ApiError::InvalidInput` message 前缀保留可诊断性）。
+/// `ErrorKind` → 协议层诊断前缀（作为 `ApiError::InvalidInput` message 前缀）。
 fn error_kind_prefix(kind: ErrorKind) -> &'static str {
     match kind {
         ErrorKind::Parse => "Parse",

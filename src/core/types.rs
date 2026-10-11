@@ -687,17 +687,7 @@ impl CalcError {
                 span.end
             ));
         }
-        // 优先用 i18n_key + i18n_args（参数化消息），fallback 到 message（英文硬编码）
-        let detail = if let Some(key) = self.i18n_key {
-            let args_ref: Vec<(&str, &str)> = self
-                .i18n_args
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect();
-            i18n.tf(key, &args_ref)
-        } else {
-            self.message.clone()
-        };
+        let detail = self.localized_detail(i18n);
         s.push_str(&format!(": {}", detail));
         if let Some(hint) = self.hint_display(i18n) {
             s.push_str(&format!("\n  {}: {}", i18n.t("label.hint"), hint));
@@ -705,10 +695,37 @@ impl CalcError {
         s
     }
 
-    /// JSON 机器可读（--json）。手动构造避免 serde_json 运行时依赖。
+    /// batch 文本 sink 的单行本地化错误行：zh 走目录渲染（不含 source_detail），en 与 `Display` 一致；不含 span/hint（单行契约）。
+    pub fn localized_display(&self, i18n: &crate::i18n::I18n) -> String {
+        if i18n.lang() == crate::i18n::Lang::Zh {
+            format!(
+                "{}: {}",
+                i18n.t(self.kind.i18n_key()),
+                self.localized_detail(i18n)
+            )
+        } else {
+            self.to_string()
+        }
+    }
+
+    /// 本地化 detail：`i18n_key`+args 走目录渲染，无键回退英文 `message`。
+    pub(crate) fn localized_detail(&self, i18n: &crate::i18n::I18n) -> String {
+        match self.i18n_key {
+            Some(key) => {
+                let args_ref: Vec<(&str, &str)> = self
+                    .i18n_args
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                i18n.tf(key, &args_ref)
+            }
+            None => self.message.clone(),
+        }
+    }
+
+    /// JSON 机器可读输出（`--json`）。
     pub fn to_json(&self) -> String {
-        // serde_json 统一构造：控制字符/引号/反斜杠由 serde_json 正确转义，
-        // 替代手写 escape_json_string（三套拼接实现并存的坏味道退役）。
+        // serde_json 统一构造：控制字符/引号/反斜杠由 serde_json 正确转义
         let mut err = serde_json::json!({
             "kind": format!("{:?}", self.kind),
             "message": self.message,
@@ -1318,6 +1335,42 @@ mod tests {
         let friendly = e.friendly(&i18n);
         assert!(friendly.contains("定义域错误"));
         assert!(friendly.contains("矩阵维度不匹配: 期望 3x3, 实际 2x2"));
+    }
+
+    // ===== localized_display（batch 文本错误 sink）=====
+
+    /// 英文（缺省）：与 Display 逐字节一致（机器可读契约不变）。
+    #[test]
+    fn calc_error_localized_display_en_equals_to_string() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::En);
+        let e = CalcError::eval("unbound variable: x").with_i18n(
+            "msg.unbound_variable",
+            vec![("name".to_string(), "x".to_string())],
+        );
+        assert_eq!(e.localized_display(&i18n), e.to_string());
+        assert_eq!(
+            e.localized_display(&i18n),
+            "evaluation error: unbound variable: x"
+        );
+    }
+
+    /// 中文：本地化 kind 标签 + 本地化 detail（有 i18n_key 时走目录渲染）。
+    #[test]
+    fn calc_error_localized_display_zh_localizes_kind_and_detail() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+        let e = CalcError::eval("unbound variable: x").with_i18n(
+            "msg.unbound_variable",
+            vec![("name".to_string(), "x".to_string())],
+        );
+        assert_eq!(e.localized_display(&i18n), "求值错误: 未绑定变量: x");
+    }
+
+    /// 中文且无 i18n_key：detail 回退原始英文 message（与 server zh 路径一致）。
+    #[test]
+    fn calc_error_localized_display_zh_falls_back_to_message_without_i18n_key() {
+        let i18n = crate::i18n::I18n::new(crate::i18n::Lang::Zh);
+        let e = CalcError::parse("raw english detail");
+        assert_eq!(e.localized_display(&i18n), "解析错误: raw english detail");
     }
 
     #[test]

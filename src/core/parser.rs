@@ -849,19 +849,16 @@ fn insert_implicit_multiplication(input: &str) -> String {
     result
 }
 
-/// 判断 `chars[pos]` 处的 `e`/`E` 是否为科学计数法的一部分。
-/// 即 `e` 后面紧跟数字，或 `+`/`-` 后跟数字。
+/// 判断 `chars[pos]` 处的 `e`/`E` 是否为科学计数法一部分（后接数字或 +/-数字）。
 fn is_scientific_notation(chars: &[char], pos: usize) -> bool {
-    // pos 指向 'e' 或 'E'，检查下一个字符
     if let Some(&next) = chars.get(pos + 1) {
         if next.is_ascii_digit() {
             return true;
         }
-        if next == '+' || next == '-' {
-            // 检查 + / - 后是否有数字
-            if let Some(&next2) = chars.get(pos + 2) {
-                return next2.is_ascii_digit();
-            }
+        if (next == '+' || next == '-')
+            && let Some(&next2) = chars.get(pos + 2)
+        {
+            return next2.is_ascii_digit();
         }
     }
     false

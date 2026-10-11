@@ -65,22 +65,20 @@ fn serializer() -> &'static oxcache::infra::serialization::UnifiedSerializer {
     SERIALIZER.get_or_init(oxcache::infra::serialization::UnifiedSerializer::new)
 }
 
-/// 估算结果 → 权重的映射：`Ok(n)` 取 `n`；`Err` 回退 [`WEIGHT_FALLBACK_BYTES`]。
-/// 序列化失败只记一次 debug 日志（weigher 在插入热路径，失败通常系统性——
-/// 逐次刷屏无诊断增量）。
+/// 估算结果 → 权重映射：`Ok(n)` 取 `n`，`Err` 回退常量（失败只记一次日志）。
 fn map_estimate(size: oxcache::OxCacheResult<usize>) -> u64 {
     match size {
         Ok(n) => n as u64,
         Err(e) => {
-            // 仅 observability feature 下有 tracing；其余构建静默回退
-            // （weigher 热路径不做 IO 决策）。OnceLock 保证只记一次。
+            // 仅 observability 下惰性求值（weigher 热路径不做 IO 决策）；OnceLock 保证只警告一次。
             static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
             if WARNED.set(()).is_ok() {
                 #[cfg(feature = "observability")]
                 tracing::debug!(
                     error = %e,
                     fallback = WEIGHT_FALLBACK_BYTES,
-                    "cache weigher 序列化失败，回退常量权重"
+                    message = %crate::i18n::I18n::from_detected()
+                        .t("msg.cache_weigher_serialize_failed")
                 );
                 #[cfg(not(feature = "observability"))]
                 let _ = e;

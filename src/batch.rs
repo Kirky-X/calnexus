@@ -206,7 +206,7 @@ fn output_results(results: &[BatchResult], json: bool, i18n: &I18n) {
                             &[
                                 ("line", &r.line_no.to_string()),
                                 ("expr", &r.expr),
-                                ("error", &e.to_string())
+                                ("error", &e.localized_display(i18n))
                             ]
                         )
                     );
