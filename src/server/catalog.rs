@@ -1,12 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 函数目录接口：运行时自描述能力。
-//!
-//! sdforge 0.5.0-rc.2 的 MCP capabilities 声明 `resources: false`（不支持
-//! resource 暴露），故按 design 降级方案以 **tool** 形态提供函数目录；
-//! CLI 侧对应 `--list-functions`。数据源为统一目录
-//! [`crate::function_catalog`]（单一事实源）。
+//! 函数目录接口：以 tool 形态暴露运行时自描述的函数能力目录。
+//! 数据源为单一事实源 [`crate::function_catalog`]，CLI 侧对应 `--list-functions`。
 
 use sdforge::error::ApiError;
 use sdforge::forge;
@@ -31,9 +27,7 @@ pub struct ListFunctionsResponse {
     pub domains: Vec<DomainFunctions>,
 }
 
-/// `POST /api/v1/list_functions` + MCP `list_functions` tool。
-///
-/// 运行时函数目录：LLM/客户端可发现当前构建可用的全部函数（含 feature 门控域）。
+/// `POST /api/v1/list_functions` + MCP `list_functions`：列出当前构建可用函数（含 feature 门控域）。
 #[forge(
     name = "list_functions",
     version = 1,

@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! FX 场景化计算纯函数：留学预算 + 跨境定价。
-//!
-//! 从 `mcp_exchange_master` 整合的场景化工具，提取为不依赖 I/O 的纯函数。
-//! 接受 `&RateTable` 参数，由调用方（server 层）注入汇率数据。
+//! FX 场景化计算纯函数：留学预算 + 跨境定价，汇率表由调用方注入。
 
 use crate::core::CalcError;
 use crate::math::fx::{RateTable, convert};
@@ -73,9 +70,7 @@ pub struct PricingResult {
     pub pricing: Vec<PricingItem>,
 }
 
-/// 留学预算计算（纯函数，不依赖 I/O）。
-///
-/// 将外币学费和生活费换算为本币，计算总费用并给出 ±3% 汇率风险区间。
+/// 留学预算计算：外币学费/生活费换算本币，算总费用与 ±3% 汇率风险区间。
 pub fn budget_calculation(
     tuition: f64,
     tuition_currency: &str,
@@ -138,9 +133,7 @@ pub fn budget_calculation(
     })
 }
 
-/// 跨境电商多币种定价计算（纯函数，不依赖 I/O）。
-///
-/// 根据人民币成本、目标利润率、平台费率，计算各币种安全售价并回算实际利润率。
+/// 跨境多币种定价：按成本、目标利润率与平台费率算安全售价并回算实际利润率。
 pub fn pricing_calculation(
     cost_cny: f64,
     target_profit_rate: f64,
@@ -198,7 +191,6 @@ pub fn pricing_calculation(
         let target_revenue_cny = cost_cny / (1.0 - target_profit_rate);
 
         // 售价(外币) = 目标收入CNY / 安全汇率 / (1 - 平台费率)
-        // 即：售价 × safe_rate × (1 - platform_rate) >= target_revenue_cny
         let price_foreign = target_revenue_cny / safe_rate / (1.0 - platform_rate);
 
         // 回算验证（用实时汇率，非安全汇率）
@@ -243,8 +235,7 @@ mod tests {
 
     #[test]
     fn test_budget_happy_path_with_living() {
-        // 50000 USD 学费 + 2000 USD/月生活费，4年，换算为 CNY
-        // rate(USD→CNY) = 1/1.08 * 7.85 ≈ 7.2685
+        // 50000 USD 学费 + 2000 USD/月生活费，4 年，换算为 CNY
         let table = mock_table();
         let result = budget_calculation(50000.0, "USD", Some(2000.0), 4, "CNY", &table).unwrap();
 

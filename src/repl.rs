@@ -1,18 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! REPL 模式：基于 rustyline 的交互式读-求值-打印循环。
-//!
-//! 设计依据：
-//! - ReplSession 持有 DomainRouter + CacheManager + EvalContext
-//! - repl-mode spec
-//!
-//! 命令（以 `:` 开头）：
-//! - `:let NAME = VALUE` — 绑定变量
-//! - `:vars` — 列出所有已绑定变量
-//! - `:quit` / `:q` — 退出 REPL
-//! - `:help` — 显示帮助
-//! - `:clear` — 清屏
+//! REPL 模式：基于 rustyline 的交互式读-求值-打印循环，`:let`/`:vars`/`:clear`/`:help`/`:quit` 命令。
 
 use crate::cli::format_result;
 use crate::core::evaluate;
@@ -24,8 +13,7 @@ use rustyline::{Editor, Helper, Highlighter, Hinter, Result as RlResult, Validat
 /// REPL 命令补全候选：函数名 + REPL 命令。
 const REPL_COMMANDS: &[&str] = &[":let", ":vars", ":quit", ":q", ":help", ":clear"];
 
-/// 已知函数名（用于 Tab 补全；由统一函数目录派生，
-/// 含 feature 门控函数——修复审计发现的 convert/fx/now 缺失）。
+/// 已知函数名（用于 Tab 补全；由统一函数目录派生，含 feature 门控函数）。
 fn known_functions() -> Vec<&'static str> {
     crate::function_catalog::all_function_names()
 }
@@ -53,10 +41,7 @@ impl ReplSession {
         Self { ctx, cache, i18n }
     }
 
-    /// 启动 REPL 主循环。
-    ///
-    /// 读取输入 → 若 `:` 开头解析为 REPL 命令 → 否则 parse → evaluate → 打印结果。
-    /// 错误打印到 stderr 但不退出。返回退出码 0。
+    /// 启动 REPL 主循环：读入 → REPL 命令或 parse+evaluate → 打印结果；错误不退出。
     pub fn run(mut self) -> i32 {
         let mut rl: Editor<ReplHelper, _> = Editor::new().expect("failed to init rustyline Editor");
         rl.set_helper(Some(ReplHelper));
@@ -261,8 +246,7 @@ enum CommandResult {
 
 /// rustyline Helper：提供 Tab 补全。
 ///
-/// 手动实现 `Completer`（自定义补全逻辑），其余三个 trait 通过 derive 生成默认空实现。
-/// `Helper` 是 marker trait（要求 `Completer + Hinter + Highlighter + Validator`），derive 自动生成。
+/// 手动实现 `Completer`，其余三个 trait 由 derive 生成默认空实现。
 #[derive(Helper, Hinter, Validator, Highlighter)]
 struct ReplHelper;
 
@@ -279,9 +263,8 @@ impl Completer for ReplHelper {
     }
 }
 
-/// 纯函数：根据当前输入行和光标位置计算补全候选。
-///
-/// 抽离自 `Completer::complete` 以便单元测试无需构造 rustyline Context。
+/// 纯函数：根据当前输入行和光标位置计算补全候选（抽离自 `Completer::complete`
+/// 以便无需构造 rustyline Context 即可单测）。
 fn complete_candidates(line: &str, pos: usize) -> (usize, Vec<String>) {
     // 仅在行尾补全
     if pos != line.len() {

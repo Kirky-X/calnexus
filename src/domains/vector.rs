@@ -1,19 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Vector 计算域：向量算术、点积、叉积、模长、夹角、混合积、归一化。
-//!
-//! 设计依据：
-//! - vector-domain spec：7 个 requirements / 13+ scenarios
-//! - 复用 AstNode::List、priority=30
-//!
-//! 路由策略：
-//! - AST 含向量函数调用（dot/cross/norm/angle/normalize/scalar_triple/
-//!   cosine_similarity/project/reflect/euclidean/manhattan/outer/lerp）时路由至本域
-//! - AST 含 List 节点参与的 BinaryOp(Add/Sub/Mul) 时路由至本域（向量算术，含 Hadamard 积）
-//!
-//! 输入：AstNode::List 节点，元素必须为标量数值。
-//! 输出：EvalResult::Vector / EvalResult::Scalar / EvalResult::Matrix（outer）。
+//! Vector 计算域：向量算术、点积/叉积、模长/夹角、归一化与距离函数。
+//! 路由：AST 含向量函数调用，或含 List 参与的 Add/Sub/Mul 算术（含 Hadamard 积）。
+//! 输入 AstNode::List（元素为标量），输出 Vector / Scalar / Matrix（outer）。
 
 use super::common::{
     ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
@@ -41,9 +31,7 @@ const VECTOR_FUNCTIONS: &[&str] = &[
     "lerp",
 ];
 
-/// Vector 计算域。
-///
-/// priority=30，支持 dot/cross/norm/angle/normalize/scalar_triple 及向量算术。
+/// Vector 计算域：priority=30，支持向量函数调用与向量算术。
 pub struct VectorDomain;
 
 impl CalculationDomain for VectorDomain {
@@ -194,8 +182,7 @@ impl VectorDomain {
                 a / b
             }
             BinaryOp::Pow => {
-                // 显式处理 0^0=1（与 arithmetic/scientific/statistics 域一致，
-                // 组合数学约定）。Rust powf(0,0) 虽返回 1.0，但显式化以便跨域一致。
+                // 0^0 = 1（与 arithmetic/scientific/statistics 域一致的组合数学约定）
                 if a == 0.0 && b == 0.0 {
                     return Ok(1.0);
                 }
@@ -583,7 +570,7 @@ impl VectorDomain {
     }
 }
 
-/// 判断节点是否为 List（或含 List 的表达式）。
+/// 判断节点是否为 List。
 fn is_list_node(ast: &AstNode) -> bool {
     matches!(ast, AstNode::List(_))
 }

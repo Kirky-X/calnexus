@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 数论核心函数：GCD/LCM/素数判定/素数筛/模逆/模幂/欧拉函数。
-//!
-//! 从 `domains/number_theory.rs` 提取的纯数学逻辑，
-//! 供 `domains/`（AST 求值路径）和 `api/`（直接 API 路径）共用。
+//! 数论核心函数：GCD/LCM/素数判定/素数筛/模逆/模幂/欧拉函数，供 `domains/` 和 `api/` 共用。
 
 use num_bigint::BigInt;
 use num_integer::Integer as _;
@@ -38,10 +35,7 @@ pub fn is_prime(n: &BigInt) -> bool {
     is_prime_bigint(n)
 }
 
-/// 埃拉托斯特尼筛法：返回 ≤ `n` 的所有素数。
-///
-/// - `n > MAX_SIEVE_N` → `Overflow`
-/// - `n < 0` → `Domain`
+/// 埃拉托斯特尼筛法：返回 ≤ `n` 的素数；n<0 → Domain，n>MAX_SIEVE_N → Overflow。
 pub fn prime_sieve(n: &BigInt) -> Result<Vec<u64>, CalcError> {
     if n.is_negative() {
         return Err(
@@ -56,10 +50,7 @@ pub fn prime_sieve(n: &BigInt) -> Result<Vec<u64>, CalcError> {
     Ok(prime_sieve_u64(n_u64))
 }
 
-/// 模逆元：求 `x` 使得 `a * x ≡ 1 (mod m)`。
-///
-/// - `m == 0` → `DivisionByZero`
-/// - `gcd(a, m) ≠ 1` → `Domain`
+/// 模逆元：求 x 使 `a*x ≡ 1 (mod m)`；m=0 → DivisionByZero，不互素 → Domain。
 pub fn mod_inverse(a: &BigInt, m: &BigInt) -> Result<BigInt, CalcError> {
     if m.is_zero() {
         return Err(CalcError::division_by_zero());
@@ -79,10 +70,7 @@ pub fn mod_inverse(a: &BigInt, m: &BigInt) -> Result<BigInt, CalcError> {
     }
 }
 
-/// 模幂运算：`base^exp mod m`。
-///
-/// - `m == 0` → `DivisionByZero`
-/// - `exp < 0` → `Domain`
+/// 模幂运算 base^exp mod m；m=0 → DivisionByZero，exp<0 → Domain。
 pub fn mod_pow(base: &BigInt, exp: &BigInt, m: &BigInt) -> Result<BigInt, CalcError> {
     if m.is_zero() {
         return Err(CalcError::division_by_zero());
@@ -105,9 +93,7 @@ pub fn euler_phi(n: &BigInt) -> BigInt {
     euler_phi_impl(&n.abs())
 }
 
-/// 中国剩余定理：求解同余方程组 x ≡ rᵢ (mod mᵢ)。
-///
-/// 返回最小非负解。模数不必两两互素——不兼容时返回 `DomainError`。
+/// 中国剩余定理：解同余方程组，返回最小非负解；模数不必互素，不兼容返回 DomainError。
 pub fn crt(remainders: &[BigInt], moduli: &[BigInt]) -> Result<BigInt, CalcError> {
     if remainders.is_empty() || moduli.is_empty() {
         return Err(CalcError::domain("crt(): empty input".to_string())
@@ -154,10 +140,7 @@ pub fn crt(remainders: &[BigInt], moduli: &[BigInt]) -> Result<BigInt, CalcError
     Ok(cur_r)
 }
 
-/// 离散对数（Baby-step Giant-step）：求最小非负 x 使得 g^x ≡ h (mod p)。
-///
-/// - p 须为素数，g ≠ 0
-/// - O(√p) 时间和空间
+/// 离散对数（BSGS）：求最小非负 x 使 g^x ≡ h (mod p)；p 须为素数，O(√p)。
 pub fn discrete_log(g: &BigInt, h: &BigInt, p: &BigInt) -> Result<BigInt, CalcError> {
     if p.is_zero() {
         return Err(CalcError::division_by_zero());
@@ -240,8 +223,7 @@ fn sqrt_bigint(n: &BigInt) -> BigInt {
 
 // ===== 内部实现 =====
 
-/// BigInt Miller-Rabin 素数判定。
-/// n < 2^64 使用确定性基，n >= 2^64 使用 25 轮概率判定。
+/// BigInt Miller-Rabin 素数判定：n < 2^64 用确定性基，否则 25 轮概率判定。
 fn is_prime_bigint(n: &BigInt) -> bool {
     if n < &BigInt::from(2) {
         return false;

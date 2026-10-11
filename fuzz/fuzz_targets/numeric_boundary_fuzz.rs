@@ -24,12 +24,12 @@ fuzz_target!(|data: &str| {
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
     for expr in exprs {
-        // 限制表达式长度（避免触发长度限制）
+        // 超长表达式跳过
         if expr.len() > 4096 {
             continue;
         }
         if let Ok(ast) = parse(&expr) {
-            // 求值应不 panic（可能返回 Ok 或 Err）
+            // 求值不 panic
             let _ = calnexus::evaluate(&expr, &ctx, None, &cache);
             let _ = ast; // 抑制未使用警告
         }

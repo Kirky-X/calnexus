@@ -1,52 +1,25 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! CalNexus 二进制入口。
-//!
-//! 退出码：
-//! - 0：成功
-//! - 1：计算错误 / 解析错误
-//! - 2：用法错误（或未启用 cli feature）
-//! - 3：超时
-//! - 101：panic（Rust 约定，由 `std::process::abort` 或未捕获 panic 触发）
-//!
-//! 设置 panic hook 打印用户友好的简短错误消息到 stderr，
-//! 同时保留默认 backtrace（由 `RUST_BACKTRACE` 环境变量控制）。
-//! 此前 panic 直接打印 `thread 'main' panicked at ...` 对终端用户不友好。
-//!
-//! 两条 hook 文案经 i18n 目录（FTL 键 `panic.internal_error` / `panic.report_bug`）
-//! 按检测链（`CALNEXUS_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG` → sys-locale → en）
-//! 输出中/英文，无硬编码英文残留。
+//! CalNexus 二进制入口；panic hook 输出 i18n 短消息，退出码：0=成功，1=计算/解析错误，
+//! 2=用法错误（或未启用 cli feature），3=超时，101=panic。
 
 use std::io::Write;
 
-/// panic hook 使用的 i18n 上下文（`OnceLock` 进程内缓存一次）。
+/// panic hook 用的 i18n 上下文（OnceLock 缓存，避免 panic 路径上重新探测语言）。
 ///
-/// 语言经检测链确定（[`calnexus::I18n::from_detected`]），实例缓存避免在
-/// panic 路径上重复探测环境/构建 Fluent 束。`I18n::t` 对缺失键返回键名本身、
-/// 不 panic，因此 hook 内查询文案本身不会失败（「hook 自身绝不能再 panic」）。
+/// `I18n::t` 对缺失键返回键名而不 panic，保证 hook 自身不会失败。
 fn panic_hook_i18n() -> &'static calnexus::I18n {
     static HOOK_I18N: std::sync::OnceLock<calnexus::I18n> = std::sync::OnceLock::new();
     HOOK_I18N.get_or_init(calnexus::I18n::from_detected)
 }
 
-/// 安装 panic hook：打印简短错误前缀，再调用默认 hook 输出 backtrace。
-///
-/// 设计权衡：
-/// - 保留默认 backtrace 行为（开发者调试需要，由 RUST_BACKTRACE 控制）
-/// - 在默认输出前追加用户友好的简短错误前缀，结尾追加报告提示；两条文案均取
-///   `panic.internal_error` / `panic.report_bug` 的译文（en/zh），输出格式
-///   （`calnexus: ` 前缀 + 换行 + 默认 hook 输出 + 结尾提示）与既有实现一致
-/// - hook 自身不 panic：文案来自预热后的缓存 `I18n`，写出走 `writeln!` 并忽略
-///   写入错误（`eprintln!` 写 stderr 失败会 panic，在 hook 内即「panic 中 panic」→ abort）
-/// - 全局生效（影响所有线程的 panic 行为）
-/// - 使用 Once 保证幂等，多次调用不叠加 hook
+/// 安装 panic hook：i18n 前缀+报告提示；内部用 writeln! 忽略错误（eprintln! 失败会 panic）。
 fn setup_panic_hook() {
     use std::sync::Once;
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        // 预热：语言检测与束构建在安装 hook 之前完成，此后 panic 路径只读缓存
-        // （hook 内不做任何可能失败的初始化工作）。
+        // 预热：语言检测与束构建在安装 hook 前完成，panic 路径只读缓存
         let i18n: &'static calnexus::I18n = panic_hook_i18n();
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
@@ -91,8 +64,7 @@ mod tests {
         setup_panic_hook();
     }
 
-    /// 验证 hook 文案取自 FTL 目录（`panic.internal_error` / `panic.report_bug`），
-    /// 即主路径不再硬编码英文：两个键在 en/zh 束中均存在且与硬编码旧文案一致（en）。
+    /// 断言 hook 文案取自 FTL 目录（非硬编码英文），且 en/zh 键均存在。
     #[test]
     fn test_panic_hook_messages_come_from_catalog() {
         let en = calnexus::I18n::new(calnexus::Lang::En);
@@ -119,11 +91,7 @@ mod tests {
         assert_ne!(en.t("panic.internal_error"), zh.t("panic.internal_error"));
     }
 
-    /// 子进程探针：仅当 `CALNEXUS_PANIC_PROBE` 置位时 panic。
-    ///
-    /// 由 [`test_panic_hook_outputs_localized_message`] 以子进程方式调用
-    /// （`--ignored --exact --nocapture`）。常规 `cargo test` 不执行；即便显式
-    /// `cargo test -- --ignored` 运行，未置位环境变量时也直接返回，不产生误报。
+    /// 子进程探针：仅 `CALNEXUS_PANIC_PROBE` 置位时 panic，由下方测试以子进程调用。
     #[test]
     #[ignore = "由 test_panic_hook_outputs_localized_message 以子进程方式调用"]
     fn panic_hook_probe_child() {
@@ -134,11 +102,9 @@ mod tests {
         panic!("probe: intentional panic for panic-hook i18n verification");
     }
 
-    /// 端到端验证 panic hook 输出随检测链切换语言：
-    /// `LANG=zh_CN.UTF-8` → 中文文案，`LANG=C` → 英文文案，且格式为
-    /// `calnexus: <文案>` 前后两行包夹默认 hook 输出。
+    /// 端到端验证 panic hook 文案随 LANG 切换（zh_CN.UTF-8 中文、C 英文）。
     ///
-    /// 以子进程运行（检测链结果进程内 `OnceLock` 缓存，同进程无法切换语言）。
+    /// 须以子进程运行（检测结果进程内 `OnceLock` 缓存，同进程无法切换语言）。
     #[test]
     fn test_panic_hook_outputs_localized_message() {
         let exe = std::env::current_exe().expect("current_exe");

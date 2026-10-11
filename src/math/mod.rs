@@ -1,12 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 核心数学函数层（L3）。
+//! 核心数学函数层（L3）：各计算域的纯数学函数，供 `domains/` 和 `api/` 共用。
 //!
-//! 将各计算域的实际数学运算逻辑提取为独立 `pub fn`，
-//! 供 `domains/`（AST 求值路径）和 `api/`（直接 API 路径）共用。
-//!
-//! 依赖方向：`math/` → `core/`（仅依赖 types/error），不依赖 `domains/` 或 `api/`。
+//! 依赖方向：`math/` → `core/`（仅 types/error），不依赖 `domains/` 或 `api/`。
 
 pub mod arithmetic;
 pub mod combinatorics;

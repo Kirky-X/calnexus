@@ -3,19 +3,7 @@
 
 //! 物理单位换算域：8 量纲线性/仿射换算。
 //!
-//! 设计依据：自建换算表 + 温度仿射特例 + 混合表达式求值语义
-//! Feature 门控：`unit = []`
-//!
-//! 函数表：
-//! - `convert(value, "from", "to")`：单位换算。线性单位经 SI 基准系数换算，
-//!   温度（C/F/K/R）走仿射路径。
-//!
-//! 路由策略：AST 含 `convert` 函数调用时路由至本域。
-//! evaluate 处理完整 AST（参照 number_theory.rs 递归结构）：
-//! - 算术包围：`convert(100,"cm","m")*2`、`-convert(1,"km","m")` 正确求值
-//! - 域内嵌套：`convert(convert(1,"m","cm"),"cm","m")` 正确求值
-//! - 跨域函数混入：`sin(1)+convert(...)` 显式报错（消息含函数名）
-//! - Str 仅作为 FunctionCall 实参合法；出现在 BinaryOp/UnaryOp 中报错
+//! 含 convert 等白名单函数调用时路由至本域；温度走仿射路径，priority=30。
 
 use super::common::{
     ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
@@ -25,10 +13,7 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 
 use crate::math::unit as math_unit;
 
-/// 单位换算函数白名单。
-///
-/// `mod`/`abs` 由 parser 将 `x%y`/`abs(x)` 转换为函数调用形式（见 parser.rs），
-/// 当它们包围 `convert` 结果时需路由至本域处理（算术包围语义）。
+/// 单位换算函数白名单：mod/abs 由 parser 转换而来，包围 convert 结果时需路由至本域。
 const UNIT_FUNCTIONS: &[&str] = &["convert", "mod", "abs"];
 
 /// 单位换算域：支持 `convert(value, "from", "to")` 覆盖 8 个量纲。
@@ -226,10 +211,7 @@ impl UnitDomain {
         Ok(EvalResult::Scalar(v.abs()))
     }
 
-    /// `convert(value, "from", "to")`：单位换算。
-    ///
-    /// 线性单位经 SI 基准系数换算：`value * from_coeff / to_coeff`
-    /// 温度（C/F/K/R）走仿射路径：`from_kelvin(to_kelvin(value, from), to)`
+    /// `convert(value, "from", "to")`：线性单位走 SI 系数，温度走仿射路径。
     fn eval_convert(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 3 {
             return Err(CalcError::domain(format!(
@@ -433,7 +415,7 @@ mod tests {
 
     #[test]
     fn test_convert_identity() {
-        // 同单位换算恒等：convert(x,"m","m") = x
+        // 同单位换算恒等
         assert!((eval_scalar(r#"convert(42,"m","m")"#).unwrap() - 42.0).abs() < 1e-9);
     }
 
@@ -466,7 +448,6 @@ mod tests {
 
     #[test]
     fn test_convert_temperature_k_to_f_roundtrip() {
-        // 300K → F：300-273.15=26.85°C → 26.85*9/5+32 = 80.33°F
         assert!((eval_scalar(r#"convert(300,"K","F")"#).unwrap() - 80.33).abs() < 1e-9);
     }
 
@@ -496,12 +477,10 @@ mod tests {
 
     #[test]
     fn test_convert_unknown_unit_with_suggestion() {
-        // "metre" 未收录，应建议 "meter"/"metre"（其实 metre 在表中，换个未收录的）
-        // 用 "metr" 应建议 "meter"/"metre"（距离 1）
+        // "metr" 未收录，消息应含 "did you mean" 且建议相近的 meter/metre
         let result = eval(r#"convert(1,"metr","m")"#);
         let err = result.expect_err("expected error");
         assert_eq!(err.kind, ErrorKind::Domain);
-        // 消息含 "did you mean" 建议且包含相近单位
         assert!(err.message.contains("did you mean"), "msg: {}", err.message);
         // 应建议 meter 或 metre（距离 1）
         assert!(
@@ -566,31 +545,26 @@ mod tests {
 
     #[test]
     fn test_arithmetic_wrapping_mul() {
-        // convert(100,"cm","m")*2 = 1*2 = 2
         assert!((eval_scalar(r#"convert(100,"cm","m")*2"#).unwrap() - 2.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_arithmetic_wrapping_add() {
-        // convert(1,"km","m")+1 = 1000+1 = 1001
         assert!((eval_scalar(r#"convert(1,"km","m")+1"#).unwrap() - 1001.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_arithmetic_wrapping_unary_neg() {
-        // -convert(1,"km","m") = -1000
         assert!((eval_scalar(r#"-convert(1,"km","m")"#).unwrap() - (-1000.0)).abs() < 1e-9);
     }
 
     #[test]
     fn test_arithmetic_wrapping_unary_abs() {
-        // abs(-convert(1,"km","m")) = 1000
         assert!((eval_scalar(r#"abs(-convert(1,"km","m"))"#).unwrap() - 1000.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_nested_convert() {
-        // convert(convert(1,"m","cm"),"cm","m") = convert(100,"cm","m") = 1
         assert!(
             (eval_scalar(r#"convert(convert(1,"m","cm"),"cm","m")"#).unwrap() - 1.0).abs() < 1e-9
         );
@@ -608,9 +582,7 @@ mod tests {
 
     #[test]
     fn test_cross_domain_function_alone_rejected() {
-        // 单独的 sin(1) 在 unit 域 evaluate 中也应被拒绝
-        // 但 supports() 不会路由到 unit（因 AST 不含 convert）
-        // 此测试验证 evaluate 直接调用时的行为
+        // 单独 sin(1) 直接调用 evaluate 时应被拒绝（supports() 不会路由到 unit）
         let ast = AstNode::FunctionCall("sin".to_string(), vec![AstNode::Number(1.0)]);
         let result = UnitDomain.evaluate(&ast, &EvalContext::new());
         let err = result.expect_err("expected error");
@@ -692,7 +664,6 @@ mod tests {
 
     #[test]
     fn test_pi_constant() {
-        // convert(pi,"m","m") = pi（恒等换算）
         let result = eval_scalar(r#"convert(pi,"m","m")"#).unwrap();
         assert!((result - std::f64::consts::PI).abs() < 1e-9);
     }
@@ -781,13 +752,11 @@ mod tests {
 
     #[test]
     fn test_power_operation() {
-        // convert(1,"m","m")^2 = 1
         assert!((eval_scalar(r#"convert(1,"m","m")^2"#).unwrap() - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_subtraction() {
-        // convert(1,"km","m") - convert(500,"m","m") = 1000 - 500 = 500
         assert!(
             (eval_scalar(r#"convert(1,"km","m")-convert(500,"m","m")"#).unwrap() - 500.0).abs()
                 < 1e-9
@@ -796,13 +765,11 @@ mod tests {
 
     #[test]
     fn test_division() {
-        // convert(1,"km","m") / 2 = 500
         assert!((eval_scalar(r#"convert(1,"km","m")/2"#).unwrap() - 500.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_modulo() {
-        // convert(1010,"m","m") % 1000 = 10
         assert!((eval_scalar(r#"convert(1010,"m","m")%1000"#).unwrap() - 10.0).abs() < 1e-9);
     }
 

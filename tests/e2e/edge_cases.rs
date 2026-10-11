@@ -1,14 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S2 Edge Cases —— 数值边界、空集合、零值、极小/极大精度。
-//!
-//! 行为经探针实测钉住（探针结论即本模块断言的契约）：
-//! - 空集合经 `evaluate` 管线一律 Domain 错误；门面 `stats()` 直接透传
-//!   math 层（`mean([])` = NaN、`sum([])` = -0.0、`count([])` = 0.0）
-//! - `perm/comb` k>n 在组合数学域函数层面返回 0（经门面验证），表达式
-//!   `perm(3,5)` 因域 supports 校验拒绝而回落路由错误（Domain）
-//! - `date_diff(a, a)` 曾在 jiff 内部 panic，修复后任意单位返回 0
+//! S2 边界用例：数值边界、空集合、零值、精度极值与日期/单位边界契约。
 
 use calnexus::math::precision::format_bigrational;
 use calnexus::{CalNexus, EvalResult};
@@ -32,11 +25,10 @@ fn kind_of(expr: &str) -> calnexus::ErrorKind {
 
 #[test]
 fn edge_factorial_limits() {
-    // 上限内合法（10000 产生 ~35660 位数字）
+    // 上限内合法
     assert!(matches!(eval_ok("factorial(100)"), EvalResult::Scalar(_)));
-    // 超限 → Overflow（MAX_FACTORIAL_INPUT = 10_000）
+    // 超限 → Overflow（上限 10_000）
     assert_eq!(kind_of("factorial(10001)"), calnexus::ErrorKind::Overflow);
-    // 0! = 1
     assert_scalar(&eval_ok("factorial(0)"), 1.0);
 }
 
@@ -53,10 +45,9 @@ fn edge_pow_boundaries() {
 
 #[test]
 fn edge_number_theory_boundaries() {
-    // gcd(0, 0) = 0；gcd(0, n) = n（表达式层标量通道）
+    // gcd 零参数语义（表达式层标量通道）
     assert_scalar(&eval_ok("gcd(0, 0)"), 0.0);
     assert_scalar(&eval_ok("gcd(0, 18)"), 18.0);
-    // 0 与 1 非素数；2 是最小素数
     assert_scalar(&eval_ok("is_prime(0)"), 0.0);
     assert_scalar(&eval_ok("is_prime(1)"), 0.0);
     assert_scalar(&eval_ok("is_prime(2)"), 1.0);
@@ -69,7 +60,7 @@ fn edge_number_theory_boundaries() {
         kind_of("mod_pow(2, 10, 0)"),
         calnexus::ErrorKind::DivisionByZero
     );
-    // 门面 BigInt 通道：离散对数 3^x ≡ 6 (mod 17) → x = 15
+    // 门面 BigInt 通道：离散对数
     let cn = CalNexus::new();
     match cn
         .scalar()
@@ -100,7 +91,7 @@ fn edge_combinatorics_boundaries_via_facade() {
     assert_eq!(bigint_of(s.comb(5, 0).unwrap()), "1");
     assert_eq!(bigint_of(s.comb(5, 5).unwrap()), "1");
     assert_eq!(bigint_of(s.catalan(0).unwrap()), "1");
-    // 大 n 不溢出（BigInt 精确通道）：C(60,30) = 118264581564861424
+    // 大 n 不溢出（BigInt 精确通道）
     assert_eq!(bigint_of(s.comb(60, 30).unwrap()), "118264581564861424");
 }
 
@@ -121,8 +112,7 @@ fn edge_scientific_domain_boundaries() {
 
 #[test]
 fn edge_sqrt_not_registered() {
-    // sqrt 未注册为域函数（复数运算经 `i` 字面量与 complex_* 通道）——
-    // 钉住「未知函数回落 Domain 路由错误」契约
+    // sqrt 未注册为域函数，未知函数回落 Domain 路由错误
     let err = eval_err("sqrt(-1)");
     assert_eq!(err.kind, calnexus::ErrorKind::Domain);
     assert!(err.message.contains("sqrt"), "got {err}");
@@ -155,7 +145,7 @@ fn edge_empty_collections_rejected_by_pipeline() {
 
 #[test]
 fn edge_empty_collections_via_facade_passthrough() {
-    // 门面直通 math 层：NaN/±0.0 而非错误（与管线行为刻意不同，两处均钉住）
+    // 门面直通 math 层：NaN/±0.0 而非错误（与管线刻意不同）
     let cn = CalNexus::new();
     let st = cn.stats();
     match st.mean(&[]).unwrap() {
@@ -171,7 +161,7 @@ fn edge_empty_collections_via_facade_passthrough() {
 
 #[test]
 fn edge_single_element_stats() {
-    // 单元素集合：方差/标准差为 0，均值为元素本身
+    // 单元素集合：方差/标准差为 0
     assert_scalar(&eval_ok("variance([5])"), 0.0);
     assert_scalar(&eval_ok("std([5])"), 0.0);
     assert_scalar(&eval_ok("mean([5])"), 5.0);
@@ -226,12 +216,12 @@ fn edge_zero_matrix() {
 #[test]
 fn edge_zero_unit_conversion() {
     assert_scalar(&eval_ok("convert(0, \"km\", \"m\")"), 0.0);
-    // 绝对零度：0K = -273.15°C（单位域做纯公式换算）
+    // 绝对零度经纯公式换算：0K = -273.15°C
     assert!(approx_eq(
         scalar_of(&eval_ok("convert(0, \"K\", \"C\")")),
         -273.15
     ));
-    // 低于绝对零度的输入不校验物理可行性（纯公式语义钉住）
+    // 低于绝对零度不校验物理可行性（纯公式语义）
     assert!(approx_eq(
         scalar_of(&eval_ok("convert(-300, \"C\", \"K\")")),
         -26.85
@@ -259,16 +249,14 @@ fn edge_precision_formatting() {
         EvalResult::BigRational(q) => q,
         other => panic!("BigRational expected, got {other:?}"),
     };
-    // 门面 precision_eval 语义：先按 f64 求值再转 BigRational（有理数是
-    // f64 值的精确表示，非符号级 1/3——后者由管线 precision(N, expr)
-    // 提供，见 happy_path::pipeline_variant_bigint_and_bigrational）
+    // 门面 precision_eval 先按 f64 求值再转 BigRational（非符号级 1/3）
     assert_eq!(format_bigrational(&q, Some(5)), "0.33333");
     assert_eq!(format_bigrational(&q, None), q.to_string()); // 整数位精确还原
     let half = match cn.scalar().precision_eval(5, "1/2").unwrap() {
         EvalResult::BigRational(q) => q,
         other => panic!("BigRational expected, got {other:?}"),
     };
-    // 0.5 可被 f64 精确表示 → 门面路径同样得到符号级 1/2
+    // 0.5 可被 f64 精确表示
     assert_eq!(format_bigrational(&half, Some(1)), "0.5");
     assert_eq!(format_bigrational(&half, None), "1/2");
     let half = match cn.scalar().precision_eval(5, "1/2").unwrap() {
@@ -286,7 +274,7 @@ fn edge_bigint_precision_preserved() {
         EvalResult::BigInt(v) => assert_eq!(v.to_string(), "123456789012345678901234567890"),
         other => panic!("BigInt expected, got {other:?}"),
     }
-    // 大整数参与运算仍保持 BigInt 通道（≥16 位整数字面量 → BigNumber AST）
+    // 大整数运算保持 BigInt 通道（≥16 位字面量 → BigNumber AST）
     match eval_ok("123456789012345678 + 0") {
         EvalResult::BigInt(v) => assert_eq!(v.to_string(), "123456789012345678"),
         other => panic!("BigInt expected, got {other:?}"),
@@ -295,7 +283,7 @@ fn edge_bigint_precision_preserved() {
 
 #[test]
 fn edge_f64_representation_quirks() {
-    // f64 语义钉住：0.1+0.2 落在 0.3 附近但位模式不等（未做十进制补偿）
+    // f64 语义：0.1+0.2 近似 0.3 但位模式不等（未做十进制补偿）
     let v = scalar_of(&eval_ok("0.1 + 0.2"));
     assert!((v - 0.3).abs() < 1e-15 && v != 0.3);
 }
@@ -319,7 +307,7 @@ fn edge_date_boundaries() {
     let err = eval_err("date(\"01/02/2026\")");
     assert_eq!(err.kind, calnexus::ErrorKind::Domain);
     assert!(err.message.contains("ambiguous"), "got {err}");
-    // 非闰世纪 1900 非闰年；整除 400 的 2000 是闰年
+    // 非闰世纪年 1900 不闰
     assert_scalar(&eval_ok("is_leap_year(1900)"), 0.0);
     // Unix 纪元往返
     match eval_ok("from_timestamp(0, \"UTC\")") {
@@ -327,7 +315,7 @@ fn edge_date_boundaries() {
         other => panic!("DateTime expected, got {other:?}"),
     }
     assert_scalar(&eval_ok("timestamp(\"1969-12-31T00:00:00Z\")"), -86_400.0);
-    // 负偏移加法：2026-01-01 - 1 day = 2025-12-31
+    // 负偏移日期加法
     match eval_ok("date_add(\"2026-01-01\", -1, \"day\")") {
         EvalResult::DateTime(s) => assert!(s.starts_with("2025-12-31"), "got {s}"),
         other => panic!("DateTime expected, got {other:?}"),
@@ -337,8 +325,7 @@ fn edge_date_boundaries() {
 #[cfg(feature = "time")]
 #[test]
 fn edge_date_diff_zero_span_regression() {
-    // 回归：零跨度 × 日历单位曾在 jiff 内部断言 panic（修复见
-    // src/math/time.rs span_total_in_unit），date_diff(a, a) 必须为 0
+    // 回归：零跨度曾在 jiff 内部 panic，date_diff(a, a) 任意单位必须为 0
     for unit in ["day", "week", "month", "year", "hour", "min", "s"] {
         let expr = format!("date_diff(\"2026-01-01\", \"2026-01-01\", \"{unit}\")");
         assert_scalar(&eval_ok(&expr), 0.0);
@@ -353,7 +340,7 @@ fn edge_date_diff_signed_and_month_clamp() {
         &eval_ok("date_diff(\"2026-01-01\", \"2025-12-31\", \"day\")"),
         -1.0,
     );
-    // 月末钳制：2026-01-31 + 1 month = 2026-02-28（非闰年）
+    // 月末钳制到当月最后一天（非闰年）
     match eval_ok("date_add(\"2026-01-31\", 1, \"month\")") {
         EvalResult::DateTime(s) => assert!(s.starts_with("2026-02-28"), "got {s}"),
         other => panic!("DateTime expected, got {other:?}"),
@@ -368,7 +355,7 @@ fn edge_date_diff_signed_and_month_clamp() {
 #[cfg(feature = "time")]
 #[test]
 fn edge_unknown_timezone_and_chinese_date() {
-    // 未知时区 → Domain（datetime/now 的 tz 实参校验）
+    // 未知时区 → Domain（tz 实参校验）
     let err = eval_err("datetime(\"2026-01-01 10:00:00\", \"Bad/Zone\")");
     assert_eq!(err.kind, calnexus::ErrorKind::Domain);
     assert!(err.message.contains("unknown timezone"), "got {err}");
@@ -413,7 +400,7 @@ fn edge_unit_dimension_mismatch() {
 #[cfg(feature = "unit")]
 #[test]
 fn edge_unit_average_calendar_units() {
-    // 时间单位用平均历法值：d=86400s、wk=604800s、yr=31_557_600s
+    // 时间单位用平均历法值
     assert_scalar(&eval_ok("convert(1, \"yr\", \"s\")"), 31_557_600.0);
     assert_scalar(&eval_ok("convert(1, \"wk\", \"s\")"), 604_800.0);
     assert_scalar(&eval_ok("convert(1, \"d\", \"h\")"), 24.0);

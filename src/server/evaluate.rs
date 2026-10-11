@@ -3,9 +3,7 @@
 
 //! Server evaluate 接口层：`#[forge]` 声明式封装 + `CalcError` → `ApiError` 映射。
 //!
-//! 单个 `#[forge]` async fn 同时生成 HTTP 路由与 MCP tool，
-//! 取代手写的 `inventory::submit!` + `SdForgeTool` 封装 + `preserve_*` 链接器 hack。
-//! 链接器 inventory 保留由 `sdforge::init_all_plugins()` 托管（http.rs/mcp.rs 调用）。
+//! 单个 `#[forge]` async fn 同时生成 HTTP 路由与 MCP tool（inventory 保留由 `init_all_plugins()` 托管）。
 use super::lang::resolve_i18n;
 use super::shared_cache;
 use super::{EvaluateRequest, EvaluateResponse};
@@ -16,26 +14,12 @@ use sdforge::error::ApiError;
 use sdforge::forge;
 use std::time::Duration;
 
-/// 请求级超时（秒）：防止慢攻击（slowloris）与无限循环表达式耗尽连接资源。
-///
-/// 安全约束：HTTP/MCP 请求必须在合理时间内返回（成功或 503）。
-/// 与 `CalcError::Timeout`（计算层超时，由 evaluate 内部 Alarm 控制）互补：
-/// - 计算层超时：精确中断 evaluate 内部的循环
-/// - 请求级超时：兜底保护，覆盖 spawn_blocking 启动 / 缓存写入等任何意外延迟
+/// 请求级超时秒数：慢攻击兜底（计算层超时由 evaluate 内部 Alarm 控制）。
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 
-/// `POST /api/v1/evaluate` + MCP `evaluate` tool（单函数双协议）。
+/// `POST /api/v1/evaluate` + MCP `evaluate` tool（`#[forge]` 生成路由与 schema）。
 ///
-/// `#[forge]` 宏自动生成 axum handler（消费 `EvaluateRequest` body + `ApiError::into_response`
-/// 错误路径）与 MCP tool struct/schema（input_schema 从 `EvaluateRequest` 字段推导），
-/// 并 `inventory::submit!` 注册。`name="evaluate"` + `version=1` 决定路径前缀 `/api/v1`，
-/// 叠加 `path="/evaluate"` → 最终路由 `/api/v1/evaluate`。
-///
-/// 函数体内保留 `spawn_blocking` 隔离同步求值（避免阻塞 tokio 异步运行时）：
-/// `#[forge]` 只生成外层路由/tool 外壳，函数体仍是 CalNexus 代码，隔离策略不变。
-///
-/// 用 `tokio::time::timeout` 包裹 `spawn_blocking`，超时返回 503
-/// ServiceUnavailable（`retry_after=REQUEST_TIMEOUT_SECS`），防止慢攻击。
+/// 超时返回 503 ServiceUnavailable（`retry_after=REQUEST_TIMEOUT_SECS`）。
 #[forge(
     name = "evaluate",
     version = 1,
@@ -48,38 +32,28 @@ pub(crate) async fn evaluate(req: EvaluateRequest) -> Result<EvaluateResponse, A
     evaluate_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await
 }
 
-/// 带超时的 evaluate 实现（可测试入口）。
-///
-/// 提取为独立函数以便单元测试注入短超时验证 503 路径，避免依赖真实慢表达式。
-/// `evaluate` 公开入口固定使用 `REQUEST_TIMEOUT_SECS`。
-///
-/// 超时映射：`Err(Elapsed)` → `ApiError::service_unavailable("evaluate", Some(secs))`
-/// （HTTP 503 / MCP SERVICE_UNAVAILABLE，与 `CalcError::Timeout` 路径一致）。
-/// spawn_blocking panic：保留原 `internal_with_source` 500 路径（不脱敏，因为
-/// `ApiError::Internal` 序列化时 `source` 字段 `#[serde(skip)]`，客户端仅见通用消息）。
+/// 带超时的 evaluate 实现（可测试入口）：超时→503，spawn_blocking panic→500 internal。
 pub(crate) async fn evaluate_with_timeout(
     req: EvaluateRequest,
     timeout: Duration,
 ) -> Result<EvaluateResponse, ApiError> {
     req.validate()?;
-    // 语言协商：请求级 lang 字段 → I18n（缺省/未知值回退英文，见 lang::resolve_i18n）
+    // 语言协商：req.lang → I18n（缺省/未知值回退英文）
     let i18n = resolve_i18n(req.lang.as_deref());
     let ctx = req.to_eval_context();
     let precision = req.precision;
     let expr = req.expr.clone();
-    // spawn_blocking 把同步 evaluate（内部 CacheManager 为 oxcache 同步字节权重实现）
-    // 移到无 runtime context 的阻塞线程池，避免 "Cannot start a runtime from within a runtime"。
+    // spawn_blocking 隔离同步求值，避免 "Cannot start a runtime from within a runtime"
     let join_handle = tokio::task::spawn_blocking(move || {
         let cache = shared_cache();
         eval_expr(&expr, &ctx, precision, cache)
     });
-    // 请求级超时兜底，覆盖 spawn_blocking 启动 / evaluate 内部任何意外延迟。
-    // 计算层 Alarm 已在 evaluate 内部精确中断循环，此处仅作慢攻击防御。
+    // 请求级超时兜底：覆盖 spawn_blocking 启动等意外延迟（慢攻击防御）
     let (result, domain, cache_hit, fmt_prec) =
         match tokio::time::timeout(timeout, join_handle).await {
             Ok(Ok(r)) => r,
             Ok(Err(join_err)) => {
-                // 500 文案迁入 FTL 目录经请求级 i18n 输出
+                // 500 文案经请求级 i18n 输出
                 return Err(ApiError::internal_with_source(
                     i18n.t("server.evaluate_task_failed"),
                     "spawn_blocking",
@@ -99,13 +73,7 @@ pub(crate) async fn evaluate_with_timeout(
     ))
 }
 
-/// `CalcError` → `ApiError` 的标准映射（机器契约，恒英文）。
-///
-/// - `Timeout`/`DependencyUnavailable` → `service_unavailable`（503 契约）
-/// - 其余 kind → `invalid_input`，message 为 `"{Kind}: {message}"`
-///
-/// 语言感知路径走 [`calc_error_to_api_error_i18n`]（协商 zh 时本地化）；
-/// 本 impl 是确定性基座，`From`/`Into` 均可直接使用。
+/// `CalcError` → `ApiError` 标准映射（恒英文）：Timeout/DependencyUnavailable→503，其余→400。
 impl From<CalcError> for ApiError {
     fn from(e: CalcError) -> Self {
         match e.kind {
@@ -121,26 +89,16 @@ impl From<CalcError> for ApiError {
     }
 }
 
-/// `CalcError` → `ApiError` 薄别名：经 [`From`] 转发，与标准映射逐字节一致。
-///
-/// 历史签名（`fn(CalcError) -> ApiError`）保留，调用方零改动；语言感知
-/// 协商路径请使用 [`calc_error_to_api_error_i18n`]。
+/// `CalcError` → `ApiError` 薄别名（经 `From` 转发），与标准映射逐字节一致。
 pub fn calc_error_to_api_error(e: CalcError) -> ApiError {
     ApiError::from(e)
 }
 
-/// 语言感知版 `CalcError` → `ApiError` 映射（语言协商核心）。
-///
-/// - `i18n` 为英文（缺省/显式 `lang=en`）：输出与 [`calc_error_to_api_error`] 逐字节一致
-///   （`"{Kind}: {message}"`，机器契约不变）。
-/// - `i18n` 为中文（请求 `lang=zh`）：message 变为 `"{本地化 kind 标签}: {本地化 detail}"`，
-///   detail 优先用 `i18n_key`+`i18n_args` 目录渲染，无键时回退原始英文 message
-///   （与 CLI `friendly()` 的双重模式一致）。
-/// - 503 路径（Timeout/DependencyUnavailable）不受语言影响（`service`/`retry_after` 为协议字段）。
+/// 语言感知映射：en 与标准映射逐字节一致，zh 本地化 message，503 路径不受语言影响。
 pub fn calc_error_to_api_error_i18n(e: CalcError, i18n: &I18n) -> ApiError {
     match e.kind {
         ErrorKind::Timeout => ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS)),
-        // 上游依赖故障 → 503（不再误标为客户端 400）
+        // 上游依赖故障 → 503
         ErrorKind::DependencyUnavailable => {
             ApiError::service_unavailable("evaluate", Some(REQUEST_TIMEOUT_SECS))
         }
@@ -279,10 +237,9 @@ mod tests {
     }
 
     // === 请求级超时（防止慢攻击 / slowloris）===
-    // evaluate_with_timeout 是 evaluate 的可测试入口，注入短超时验证 503 路径。
+    // 注入短超时验证 503 路径。
 
-    /// 简单表达式 + 充足超时 → 成功返回 EvaluateResponse（基线）。
-    /// 不验证 cache 状态（可能被前序测试缓存命中），仅验证成功返回 + 域名正确。
+    /// 简单表达式 + 充足超时 → 成功返回 EvaluateResponse（不验证 cache 状态）。
     #[tokio::test]
     async fn test_evaluate_with_timeout_succeeds_on_simple_expr() {
         let req = EvaluateRequest {
@@ -295,13 +252,11 @@ mod tests {
         assert!(result.is_ok(), "simple expr should succeed within 5s");
         let resp = result.unwrap();
         assert_eq!(resp.domain, "arithmetic");
-        // cache 字段为 "hit" 或 "miss"（取决于前序测试是否已缓存该表达式）
+        // cache 状态取决于前序测试是否已缓存该表达式
         assert!(resp.cache == "hit" || resp.cache == "miss");
     }
 
-    /// 零超时（1ns）→ 立即返回 ServiceUnavailable（503）。
-    /// 使用 `precision(10000, factorial(10000))`（CPU 密集计算）确保 1ns 内不可能完成，
-    /// 避免简单表达式在缓存命中时 1ns 内完成导致测试不稳定。
+    /// 零超时（1ns）→ 503；用 CPU 密集表达式避免缓存命中致测试不稳定。
     #[tokio::test]
     async fn test_evaluate_with_timeout_returns_service_unavailable_on_zero_timeout() {
         let req = EvaluateRequest {
@@ -320,9 +275,7 @@ mod tests {
         }
     }
 
-    /// 真实慢表达式 + 短超时 → ServiceUnavailable（503）。
-    /// `factorial(10000)` 在 precision domain 内触发 CPU 密集计算（大整数阶乘 + 高精度格式化）。
-    /// timeout=1ms 确保稳定性（不依赖机器绝对性能，只需 spawn_blocking 启动 + 计算超过 1ms）。
+    /// 慢表达式 + 超时 1ms → 503（不依赖机器绝对性能）。
     #[tokio::test]
     async fn test_evaluate_with_timeout_returns_service_unavailable_on_slow_expr() {
         let req = EvaluateRequest {
@@ -389,9 +342,7 @@ mod tests {
         }
     }
 
-    /// T012：From<CalcError> for ApiError 覆盖全部 11 个 ErrorKind——
-    /// 503 契约（Timeout/DependencyUnavailable）与 400 契约（其余，message
-    /// 含 kind 前缀）分流正确；薄别名与 From 输出逐字节一致。
+    /// `From<CalcError> for ApiError` 覆盖全部 11 个 ErrorKind；薄别名与 From 输出一致。
     #[test]
     fn from_calc_error_covers_all_kinds() {
         // 503 契约
@@ -517,9 +468,7 @@ mod tests {
         }
     }
 
-    /// 请求 lang=None 端到端：错误 message 语言跟随系统语言检测链
-    /// （「缺省即英文」契约变更为「缺省即检测」；显式 lang=en 的
-    /// 英文机器契约由 calc_error_to_api_error_i18n_en_matches_legacy 覆盖）。
+    /// 请求 lang=None 端到端：错误文案语言跟随系统检测（缺省即检测，非固定英文）。
     #[tokio::test]
     async fn test_evaluate_with_timeout_default_lang_follows_detection() {
         let expect_zh = crate::i18n::detect_locale() == crate::i18n::Lang::Zh;

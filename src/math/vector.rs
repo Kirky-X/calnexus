@@ -2,9 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 //! 向量核心函数：点积/叉积/模/归一化/加减/距离/投影/反射等。
-//!
-//! 将 `domains/vector.rs` 中的向量数学逻辑提取为独立 `pub fn`，
-//! 接收 `&[f64]` 参数，供域层和 API 层共用。
 
 use crate::core::CalcError;
 

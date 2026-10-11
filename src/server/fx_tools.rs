@@ -2,12 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 //! FX 场景化工具：`fx_budget` + `fx_pricing`（`#[forge]` 双协议端点）。
-//!
-//! 基于 `math::fx_scenario` 纯函数 + `FrankfurterProvider` 三级缓存汇率。
-//! Feature 门控：`fx`（依赖 math::fx_scenario + domains::fx_provider）。
-//!
-//! `#[forge]` 宏自动生成 HTTP 路由（`POST /api/v1/fx_budget`）与 MCP tool 注册。
-//! `spawn_blocking` 隔离同步 `RateProvider::rates()` 调用（与 evaluate handler 策略一致）。
+//! 基于 math::fx_scenario 纯函数 + FrankfurterProvider 汇率缓存；feature = "fx"。
+//! `spawn_blocking` 隔离同步 `RateProvider::rates()` 调用。
 
 use crate::domains::fx_provider::{FrankfurterProvider, RateProvider};
 use crate::math::fx_scenario::{budget_calculation, pricing_calculation};
@@ -33,8 +29,7 @@ pub struct FxBudgetRequest {
     pub duration_years: u32,
     /// 本币代码（ISO 4217，如 "CNY"）。
     pub home_currency: String,
-    /// 响应语言（可选，语言协商：BCP-47 标签，如 "en"/"zh-CN"；缺省/未知值回退英文）。
-    /// 影响 `exchange_risk.note` 文案与错误消息；协议字段保持英文。
+    /// 响应语言（BCP-47；缺省/未知回退英文；仅影响文案，协议字段保持英文）。
     #[serde(default)]
     pub lang: Option<String>,
 }
@@ -82,8 +77,7 @@ pub struct FxPricingRequest {
     /// 汇率安全缓冲（0 <= buffer <= 0.5，如 0.05 = 5%）。
     #[serde(default = "default_safety_buffer")]
     pub safety_buffer: f64,
-    /// 响应语言（可选，语言协商：BCP-47 标签，如 "en"/"zh-CN"；缺省/未知值回退英文）。
-    /// 影响错误消息；协议字段保持英文。
+    /// 响应语言（BCP-47；缺省/未知回退英文；仅影响文案，协议字段保持英文）。
     #[serde(default)]
     pub lang: Option<String>,
 }
@@ -236,9 +230,7 @@ impl FxPricingRequest {
 // #[forge] handlers
 // ============================================================
 
-/// `POST /api/v1/fx_budget` + MCP `fx_budget` tool。
-///
-/// 留学费用预算：将外币学费和生活费换算为本币，计算总费用并给出 ±3% 汇率风险区间。
+/// `POST /api/v1/fx_budget` + MCP `fx_budget`：留学预算换算本币并给出 ±3% 汇率风险区间。
 #[forge(
     name = "fx_budget",
     version = 1,
@@ -250,7 +242,7 @@ impl FxPricingRequest {
 pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, ApiError> {
     req.validate()?;
 
-    // 语言协商：请求级 lang 字段 → I18n（缺省/未知值回退英文，见 lang::resolve_i18n）
+    // 语言协商：请求级 lang → I18n（缺省/未知回退英文）
     let i18n = super::lang::resolve_i18n(req.lang.as_deref());
     let tuition = req.tuition;
     let tuition_currency = req.tuition_currency.clone();
@@ -263,7 +255,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
         let table = provider.rates().map_err(|e| {
-            // 保留底层错误源（503 语义 + 可诊断性）
+            // 保留底层错误源（503 语义）
             ApiError::service_unavailable_with_source(
                 "fx_budget",
                 Some(5),
@@ -280,7 +272,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
             &table,
         )
         .map(|result| (result, rate_date))
-        // 语言协商：CalcError 携带 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
+        // CalcError 携 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
         .map_err(|e| {
             ApiError::invalid_input(
                 super::evaluate::localized_error_detail(&e, &i18n_in_task),
@@ -310,7 +302,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
                     result.exchange_risk.high,
                     result.exchange_risk.currency
                 ),
-                // 用户可见文案走 i18n 目录 + 请求级语言协商（缺省英文）
+                // 用户可见文案经 i18n 目录 + 请求级语言协商
                 note: i18n.t("msg.fx.budget_risk_note").to_string(),
             },
             rate_date,
@@ -324,9 +316,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     }
 }
 
-/// `POST /api/v1/fx_pricing` + MCP `fx_pricing` tool。
-///
-/// 跨境电商多站点定价：根据人民币成本和目标利润率，计算各币种安全售价。
+/// `POST /api/v1/fx_pricing` + MCP `fx_pricing`：按成本与目标利润率计算各币种安全售价。
 #[forge(
     name = "fx_pricing",
     version = 1,
@@ -338,7 +328,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
 pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingResponse, ApiError> {
     req.validate()?;
 
-    // 语言协商：请求级 lang 字段 → I18n（缺省/未知值回退英文，见 lang::resolve_i18n）
+    // 语言协商：请求级 lang → I18n（缺省/未知回退英文）
     let i18n = super::lang::resolve_i18n(req.lang.as_deref());
     let cost = req.cost_cny;
     let profit_rate = req.target_profit_rate;
@@ -354,7 +344,7 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
     let join_result = tokio::task::spawn_blocking(move || {
         let provider = shared_provider();
         let table = provider.rates().map_err(|e| {
-            // 保留底层错误源（503 语义 + 可诊断性）
+            // 保留底层错误源（503 语义）
             ApiError::service_unavailable_with_source(
                 "fx_pricing",
                 Some(5),
@@ -372,7 +362,7 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
             &table,
         )
         .map(|result| (result, rate_date))
-        // 语言协商：CalcError 携带 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
+        // CalcError 携 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
         .map_err(|e| {
             ApiError::invalid_input(
                 super::evaluate::localized_error_detail(&e, &i18n),

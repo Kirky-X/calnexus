@@ -3,10 +3,7 @@
 // CalcError 144 字节，函数签名触发 result_large_err——与 lib.rs 同论证
 #![allow(clippy::result_large_err)]
 
-//! 端到端集成测试：parse → canonicalize → route → evaluate 全链路传递 numerical 分解函数。
-//!
-//! 聚焦**管线契约**（EvalResult::Json keys / Vector 变体 / solve 还原 / precision 错误），
-//! 不重复 `numerical.rs` 单测已覆盖的数学还原（L·U=P·M 等是单测职责）。
+//! 端到端集成测试：数字分解函数经全链路传递，聚焦管线契约而非数学还原（单测职责）。
 
 #![cfg(feature = "numerical")]
 
@@ -75,7 +72,6 @@ fn svd_end_to_end_returns_json_with_usvt() {
 #[test]
 fn solve_end_to_end_returns_vector_satisfying_ax_eq_b() {
     // A·x = b 端到端还原：A=[[2,1],[1,3]], b=[3,5] → x≈[0.8, 1.4]
-    // 验证 2*0.8+1*1.4=3.0 与 1*0.8+3*1.4=5.0
     let r = evaluate_full("solve([[2,1],[1,3]],[3,5])").unwrap();
     let x = match r {
         EvalResult::Vector(v) => v,

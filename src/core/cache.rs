@@ -1,21 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! L1 缓存管理器：oxcache 同步字节权重缓存（`byte-weight` feature）的领域封装，
-//! BLAKE3 单次哈希生成 256-bit 键。
-//!
-//! 分层（ADD ADR-001：L1-only 进程内，无 L2/Redis）：
-//! - 机制层 `oxcache::sync::ByteWeightCache`：字节权重预算驱逐、single-flight
-//!   （moka `try_get_with` per-key 并发去重，compute 错误传播给所有等待者且不缓存）、
-//!   命中计数（leader 计 miss / follower 计 hit）
-//! - 领域层（本模块）：`CanonicalForm` → BLAKE3 256-bit 键（无 hex 中间分配）、
-//!   `EvalResult` 体积估算（权重与准入共用；口径=oxcache UnifiedSerializer 的
-//!   JSON 序列化字节，失败回退常量 64——weigher 每次插入触发一次完整序列化）、
-//!   仅缓存 `Ok(EvalResult)` 语义
-//!
-//! 核心类型：
-//! - [`CacheKeyGen`]：将 `CanonicalForm` 单次 BLAKE3 哈希为 `[u8; 32]` 键
-//! - [`CacheManager`]：线程安全的 L1 缓存，仅存储 `Ok(EvalResult)`，字节权重预算驱逐
+//! L1 缓存管理器：oxcache 字节权重缓存的领域封装，BLAKE3 单次哈希生成 256-bit 键。
+//! 仅缓存 `Ok(EvalResult)`；权重超预算驱逐；并发同 key 仅一个 compute 执行（错误不缓存）。
 
 use oxcache::sync::ByteWeightCache;
 
@@ -24,13 +11,10 @@ use crate::core::types::{CalcError, CanonicalForm, EvalResult};
 /// 默认字节权重预算：64 MB。
 pub const DEFAULT_MAX_WEIGHT_BYTES: u64 = 64 * 1024 * 1024;
 
-/// 单条结果准入阈值：估算超过此值（256 KB）的结果不入缓存。
-///
-/// 历史背景：oxcache 时代缓存按条目数计（10000 条），单条 BigRational 结果可达
-/// ~800KB，理论上限 8GB 内存放大；字节权重预算 + 单条准入阈值双重防护。
+/// 单条结果准入阈值（256KB），超限结果不入缓存。
 pub const MAX_CACHEABLE_BYTES: u64 = 256 * 1024;
 
-/// 缓存统计快照（/metrics 端点消费）。
+/// 缓存统计快照（/metrics 端点消费；single-flight 下 leader 计 miss、follower 计 hit）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CacheStats {
     /// 命中次数。
@@ -41,15 +25,11 @@ pub struct CacheStats {
     pub entry_count: u64,
 }
 
-/// 缓存键生成器：使用 BLAKE3 对 `CanonicalForm` 的 S-表达式字符串单次哈希。
-///
-/// 生成 256-bit（32 字节）键，直接作为 moka 缓存键（无 hex String 中间分配）。
+/// 缓存键生成器：BLAKE3 单次哈希 `CanonicalForm` 得 256-bit 键（无 hex 中间分配）。
 pub struct CacheKeyGen;
 
 impl CacheKeyGen {
-    /// 对 `CanonicalForm` 生成 256-bit BLAKE3 哈希键。
-    ///
-    /// 返回 `[u8; 32]`，BLAKE3 对空输入也有定义输出。
+    /// 生成 256-bit BLAKE3 哈希键（空输入也有定义输出）。
     pub fn hash(cf: &CanonicalForm) -> [u8; 32] {
         *blake3::hash(cf.as_str().as_bytes()).as_bytes()
     }
@@ -88,21 +68,12 @@ fn map_estimate(size: oxcache::OxCacheResult<usize>) -> u64 {
     }
 }
 
-/// 估算 `EvalResult` 的缓存权重（字节）。
-///
-/// 口径=oxcache `UnifiedSerializer` 的 JSON 序列化字节数（与缓存存储形态
-/// 一致，不再是独立的下界近似）；序列化失败回退 [`WEIGHT_FALLBACK_BYTES`]。
-/// 代价：每次插入触发一次完整序列化（weigher  semantics），已在
-/// `--cache-size` help 与模块文档注明。
+/// 估算 `EvalResult` 缓存权重：以 UnifiedSerializer JSON 序列化字节为准，失败回退常量（每次插入触发一次完整序列化）。
 pub fn estimate_result_bytes(r: &EvalResult) -> u64 {
     map_estimate(serializer().estimate_size(r))
 }
 
-/// L1 缓存管理器。
-///
-/// 封装 `oxcache::sync::ByteWeightCache`（Send + Sync），进程内有效，
-/// 仅缓存 `Ok(EvalResult)`。容量为字节权重预算（默认 64MB），无时间 TTL
-/// （仅权重驱逐）；命中/未命中计数由 oxcache 层维护。
+/// L1 缓存管理器：进程内 `Ok(EvalResult)` 缓存，字节权重预算驱逐，无 TTL。
 pub struct CacheManager {
     inner: ByteWeightCache<[u8; 32], EvalResult, fn(&EvalResult) -> u64>,
 }
@@ -113,10 +84,7 @@ impl CacheManager {
         Self::with_capacity_bytes(DEFAULT_MAX_WEIGHT_BYTES)
     }
 
-    /// 创建指定字节权重预算的缓存管理器。
-    ///
-    /// CLI `--cache-size N` 按平均 4KB/条换算为 `N * 4096` 字节预算
-    /// （moka weigher 模型下容量单位为权重字节，help 文档注明近似语义）。
+    /// 创建指定字节权重预算的缓存管理器（`--cache-size N` 按 4KB/条换算）。
     pub fn with_capacity_bytes(max_bytes: u64) -> Self {
         Self {
             inner: ByteWeightCache::new(max_bytes, estimate_result_bytes as fn(&EvalResult) -> u64)
@@ -136,12 +104,7 @@ impl CacheManager {
         }
     }
 
-    /// 查询或计算（single-flight）。
-    ///
-    /// 基于 oxcache 层的 moka `try_get_with`：并发相同 key 仅 leader 执行
-    /// `compute`，等待者共享 leader 结果；`compute` 返回 `Err` 时错误原样
-    /// 传播给所有等待者（真实 CalcError 语义，无 "cache backend error" 包装）
-    /// 且不写缓存。
+    /// 查询或计算：并发相同 key 仅有 leader 执行 compute，错误原样传播且不缓存。
     pub fn get_or_compute<F>(&self, cf: &CanonicalForm, compute: F) -> Result<EvalResult, CalcError>
     where
         F: FnOnce() -> Result<EvalResult, CalcError>,
@@ -171,8 +134,7 @@ impl Default for CacheManager {
     }
 }
 
-// 编译期 Send + Sync 约束检查
-// coverage 运行时排除：const fn 在编译期执行，无法被行覆盖
+// 编译期 Send + Sync 约束检查（coverage 排除：const fn 编译期执行）。
 #[cfg(not(coverage))]
 const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
@@ -196,7 +158,7 @@ mod tests {
         cf
     }
 
-    // ===== Requirement 1: 缓存命中 =====
+    // ===== 缓存命中 =====
 
     #[test]
     fn test_cache_hit_returns_cached_value() {
@@ -219,7 +181,7 @@ mod tests {
         assert_eq!(hit2, EvalResult::Scalar(42.0));
     }
 
-    // ===== Requirement 2: 缓存未命中 =====
+    // ===== 缓存未命中 =====
 
     #[test]
     fn test_cache_miss_returns_none() {
@@ -255,7 +217,7 @@ mod tests {
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
-    // ===== Requirement 3: 等价表达式缓存去重 =====
+    // ===== 等价表达式缓存去重 =====
 
     #[test]
     fn test_commutative_equivalent_share_cache() {
@@ -290,7 +252,7 @@ mod tests {
         assert_eq!(cache.get(&cf_3minus2), None, "不同规范形式不应命中");
     }
 
-    // ===== Requirement 4: 缓存键生成 =====
+    // ===== 缓存键生成 =====
 
     #[test]
     fn test_same_canonical_form_same_key() {
@@ -321,7 +283,7 @@ mod tests {
         assert!(key.iter().any(|&b| b != 0));
     }
 
-    // ===== Requirement 5: 缓存 TTL 等于进程生命周期 =====
+    // ===== 缓存 TTL 等于进程生命周期 =====
 
     #[test]
     fn test_cache_persists_within_process() {
@@ -345,7 +307,7 @@ mod tests {
         assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(2.0)));
     }
 
-    // ===== Requirement 6: 缓存线程安全 =====
+    // ===== 缓存线程安全 =====
 
     #[test]
     fn test_cache_manager_is_send_sync() {
@@ -405,7 +367,7 @@ mod tests {
         }
     }
 
-    // ===== Requirement 7: 缓存不存储错误结果 =====
+    // ===== 缓存不存储错误结果 =====
 
     #[test]
     fn test_error_result_not_cached() {
@@ -530,8 +492,7 @@ mod tests {
 
     #[test]
     fn test_follower_receives_real_error_not_backend_error() {
-        // compute 错误原样传播给所有等待者（含 follower），
-        // 不得出现 oxcache 时代的 "cache backend error" 包装。
+        // compute 错误原样传播给所有等待者，不得包装为后端错误。
         let cache = Arc::new(CacheManager::new());
         let cf = canon("err-path/0");
 
@@ -610,7 +571,7 @@ mod tests {
         assert_eq!(stats.entry_count, cache.entry_count());
     }
 
-    // ===== 估算函数（口径：oxcache UnifiedSerializer JSON 序列化字节） =====
+    // ===== 估算函数（口径：JSON 序列化字节） =====
 
     #[test]
     fn test_estimate_result_bytes_variants_positive() {

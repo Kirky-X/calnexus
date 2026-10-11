@@ -1,11 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S5 Feature Combinations —— 可选特性启用/禁用两侧的行为差异矩阵。
-//!
-//! e2e 目标无 required-features：本模块在一切组合下编译，`#[cfg]` 门控
-//! 只让当前组合下有意义的断言参与编译。`--all-features` 跑启用侧，
-//! default（及单 feature 组合）跑禁用侧。
+//! S5 特性组合：可选特性启用/禁用两侧行为差异，cfg 门控保证全组合可编译。
 
 use calnexus::{I18n, Lang};
 
@@ -59,9 +55,7 @@ fn gate_unit_disabled_falls_back_to_routing_error() {
 #[cfg(feature = "fx")]
 #[test]
 fn gate_fx_enabled_default_router_includes_fx() {
-    // 默认路由器（evaluate）在工厂注册 FxDomain::default()：
-    // 有网/有缓存 → 成功且归属 fx 域；断网且无缓存 → DependencyUnavailable。
-    // 两侧均接受（CI 断网确定性；缓存文件存在与否不改变绿/红）。
+    // 默认路由器已注册 fx：成功或 DependencyUnavailable 两侧均接受
     match crate::common::eval("fx_rate(\"USD\", \"EUR\")") {
         Ok((r, domain, _, _)) => {
             assert_eq!(domain, "fx");
@@ -105,8 +99,7 @@ fn gate_numerical_enabled_trait_has_decompositions() {
 #[test]
 fn gate_numerical_disabled_expression_unrouted() {
     use crate::common::eval_err;
-    // lu/eig 由 MatrixDomain 在 numerical 下委托；禁用时 MatrixDomain 仍
-    // 接单但拒绝执行（unsupported function，Domain kind）
+    // numerical 禁用时 MatrixDomain 仍接单但拒绝执行（Domain）
     for expr in ["lu([[1,2],[3,4]])", "eig([[1,0],[0,1]])"] {
         let err = eval_err(expr);
         assert_eq!(err.kind, calnexus::ErrorKind::Domain, "{expr}");
@@ -118,7 +111,7 @@ fn gate_numerical_disabled_expression_unrouted() {
 }
 
 // ---------------------------------------------------------------------------
-// icu —— BCP-47 解析路径在两种实现下行为对齐 + 已知分歧点钉住
+// icu —— BCP-47 解析：两实现对齐与已知分歧
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -181,7 +174,7 @@ fn gate_format_bigrational_reachable() {
         other => panic!("BigRational expected, got {other:?}"),
     };
     assert_eq!(fmt(&q, None), "1/2");
-    // crate 根再导出仅在 cli/http/mcp 下可见——当前组合可见时验证一致性
+    // crate 根再导出仅在 cli/http/mcp 下可见
     #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
     {
         assert_eq!(calnexus::format_bigrational(&q, Some(2)), "0.50");
@@ -208,8 +201,7 @@ fn gate_facade_accessors_all_constructible() {
     );
     assert!(cn.stats().sum(&[1.0]).is_ok());
     assert!(cn.symbolic().simplify("x").is_ok());
-    // applied 面至少有一种方法随组合可用：unit convert 或 time today；
-    // 两者皆无时仅验证访问器可产出
+    // applied 面至少一种方法随组合可用，否则仅验证访问器可产出
     let ap = cn.applied();
     #[cfg(feature = "unit")]
     assert!(ap.convert(1.0, "m", "cm").is_ok());

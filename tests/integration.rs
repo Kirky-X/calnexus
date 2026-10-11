@@ -1,15 +1,10 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
-// CalcError 144 字节，闭包返回值触发 result_large_err——与 lib.rs 同论证
+// CalcError 144 字节触发 result_large_err，与 lib.rs 同论证
 #![allow(clippy::result_large_err)]
 #![allow(clippy::approx_constant, non_snake_case)]
 
-//! 跨能力集成测试：解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出全链路。
-//!
-//! 使用真实 ArithmeticDomain + ScientificDomain 验证端到端管线。覆盖：
-//! - 全链路成功路径（算术 + 科学 + 混合 + 变量绑定）
-//! - L1 缓存去重（交换律等价 / 常量折叠等价 共享缓存）
-//! - 错误传播链（7 种 CalcError 各自正确传播）
+//! 跨能力集成测试：解析→规范化→缓存→路由→计算→输出全链路（含错误传播）。
 
 mod common;
 use common::default_router;
@@ -19,14 +14,12 @@ use calnexus::{
     parse,
 };
 
-/// 全链路求值（无变量绑定）：parse → canonicalize → cache → route → evaluate。
-/// 仅用于标量结果；非标量结果返回 EvalError。
+/// 全链路标量求值（无变量绑定）；非标量结果返回 EvalError。
 fn evaluate(expr: &str) -> Result<f64, CalcError> {
     evaluate_with_ctx(expr, &EvalContext::new())
 }
 
-/// 全链路求值（带变量绑定）。
-/// 仅用于标量结果；非标量结果返回 EvalError。
+/// 全链路标量求值（带变量绑定）；非标量结果返回 EvalError。
 fn evaluate_with_ctx(expr: &str, ctx: &EvalContext) -> Result<f64, CalcError> {
     let result = evaluate_full(expr, ctx)?;
     result
@@ -34,8 +27,7 @@ fn evaluate_with_ctx(expr: &str, ctx: &EvalContext) -> Result<f64, CalcError> {
         .ok_or_else(|| CalcError::eval("unexpected non-scalar result".to_string()))
 }
 
-/// 全链路求值（返回完整 EvalResult，支持 Complex/Matrix/BigInt/BigRational）。
-/// 解析 → 规范化 → 缓存查询 → 路由 → 计算 → 写回缓存。
+/// 全链路求值，返回完整 EvalResult（支持 Complex/Matrix/BigInt/BigRational）。
 fn evaluate_full(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
     let ast = parse(expr)?;
     let (canonical_ast, cf) = AstCanonicalizer::canonicalize(&ast)?;
@@ -54,8 +46,7 @@ fn evaluate_full(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcError>
     Ok(result)
 }
 
-/// 全链路求值（直接使用 PrecisionDomain，绕过路由器）。
-/// 用于 --precision N 模式与 precision(N, expr) 函数路径的对照验证。
+/// 直接使用 PrecisionDomain 的全链路求值（绕过路由器）。
 fn evaluate_precision(expr: &str, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
     use calnexus::CalculationDomain;
     let ast = parse(expr)?;
@@ -85,13 +76,11 @@ fn test_full_pipeline_arithmetic_complex() {
 
 #[test]
 fn test_full_pipeline_arithmetic_power_factorial() {
-    // 2^10 + 5! → 1024 + 120 = 1144
     assert_eq!(evaluate("2^10 + factorial(5)").unwrap(), 1144.0);
 }
 
 #[test]
 fn test_full_pipeline_arithmetic_mod_abs() {
-    // 10%3 + abs(-2) → 1 + 2 = 3
     assert_eq!(evaluate("mod(10,3) + abs(-2)").unwrap(), 3.0);
 }
 
@@ -109,14 +98,13 @@ fn test_full_pipeline_scientific_log() {
 
 #[test]
 fn test_full_pipeline_scientific_gamma_erf() {
-    // gamma(5) → 24, erf(1) ≈ 0.8427
     let result = evaluate("gamma(5) + erf(1)").unwrap();
     assert!((result - 24.8427008).abs() < 1e-5);
 }
 
 #[test]
 fn test_full_pipeline_mixed_arithmetic_scientific() {
-    // sin(pi/2) + 2*3 → 1 + 6 = 7（路由到 ScientificDomain）
+    // 混合表达式路由到 ScientificDomain
     let result = evaluate("sin(pi/2) + 2*3").unwrap();
     assert!((result - 7.0).abs() < 1e-10);
 }
@@ -129,13 +117,13 @@ fn test_full_pipeline_variable_binding() {
 
 #[test]
 fn test_full_pipeline_constant_folding_in_pipeline() {
-    // 2*3+1 → 常量折叠为 7，路由到 Arithmetic，求值 7
+    // 常量折叠后路由到 Arithmetic
     assert_eq!(evaluate("2*3+1").unwrap(), 7.0);
 }
 
 #[test]
 fn test_full_pipeline_pi_e_constants() {
-    // e^0 → 1（ScientificDomain 预绑定 e）
+    // 验证 ScientificDomain 预绑定的 e 常量
     let result = evaluate("exp(0)").unwrap();
     assert!((result - 1.0).abs() < 1e-10);
 }
@@ -391,8 +379,7 @@ fn test_error_eval_error_wrong_arg_count() {
 
 #[test]
 fn test_all_seven_error_variants_covered() {
-    // 元测试：确认 7 种 CalcError 变体均已在集成测试中覆盖传播路径
-    // ParseError, EvalError, Overflow, NaNOrInf, DomainError, DepthExceeded, DivisionByZero
+    // 元测试：7 种 CalcError 变体均在此覆盖
     let covered = [
         matches!(evaluate("2++"), Err(e) if e.kind == ErrorKind::Parse),
         matches!(evaluate("factorial(1,2)"), Err(e) if e.kind == ErrorKind::Eval),
@@ -414,14 +401,12 @@ fn test_all_seven_error_variants_covered() {
 
 #[test]
 fn test_cold_start_performance() {
-    // 验证冷启动性能：全链路求值（parse → canonicalize → cache → route → evaluate）
-    // 目标 < 100ms（release 构建）。debug 构建可能较慢，仅作参考。
+    // 冷启动目标 <100ms（debug 仅作参考）
     let start = std::time::Instant::now();
     let result = evaluate("2+3").unwrap();
     let elapsed = start.elapsed();
 
     assert_eq!(result, 5.0);
-    // release 构建应 < 1ms，debug 构建也远低于 100ms
     assert!(
         elapsed.as_millis() < 100,
         "cold start took {:?}, expected < 100ms",
@@ -432,8 +417,7 @@ fn test_cold_start_performance() {
 
 #[test]
 fn test_cache_hit_performance() {
-    // 验证缓存命中性能：重复求值同一表达式 < 100μs
-    // 预填充缓存后，测量 cache.get() 的耗时
+    // 预填充缓存后测量 cache.get() 单次耗时
     use calnexus::CanonicalForm;
 
     let cf = CanonicalForm::new("(+ 2 3)");
@@ -459,7 +443,7 @@ fn test_cache_hit_performance() {
         per_hit / 1000
     );
 
-    // 目标 < 100μs/hit（release 构建）。debug 构建可能较慢，放宽到 1ms。
+    // 目标 <100μs/hit（debug 放宽到 1ms）
     let limit_ns = if cfg!(debug_assertions) {
         1_000_000 // 1ms (debug)
     } else {
@@ -475,8 +459,7 @@ fn test_cache_hit_performance() {
 
 // ===== 跨域集成测试：Complex/Matrix/Statistics/Precision 全链路 =====
 //
-// 扩展 tests/integration.rs，覆盖 Complex/Matrix/Statistics/Precision 四个新域的
-// 解析 → 规范化 → 缓存查询 → 路由 → 计算 → 输出 全链路。
+// 覆盖四个新域的解析 → 规范化 → 缓存 → 路由 → 计算 → 输出全链路。
 
 // ----- Complex 域全链路 -----
 
@@ -494,7 +477,6 @@ fn test_complex_pipeline_addition() {
 
 #[test]
 fn test_complex_pipeline_multiplication() {
-    // (1+2i)*(3-4i) → 3-4i+6i-8i² = 3+2i+8 = 11+2i
     let result = evaluate_full("(1+2i)*(3-4i)", &EvalContext::new()).unwrap();
     match result {
         EvalResult::Complex(re, im) => {
@@ -519,8 +501,7 @@ fn test_complex_pipeline_conj() {
 
 #[test]
 fn test_complex_pipeline_route_by_function() {
-    // conj(3+4i) 无 Complex 字面量但含 conj() → 仍路由到 ComplexDomain
-    // 注：实际上 conj 参数含 Complex 节点，此处验证 conj() 函数路由触发
+    // 验证 conj() 函数触发 ComplexDomain 路由
     let ast = parse("conj(3+4i)").unwrap();
     let (canonical_ast, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
     let router = default_router();
@@ -612,21 +593,20 @@ fn test_statistics_pipeline_median_odd() {
 
 #[test]
 fn test_statistics_pipeline_median_even() {
-    // median([1,2,3,4]) → 2.5（偶数个元素取中间两数均值）
+    // 偶数个元素取中间两数均值
     let result = evaluate("median([1,2,3,4])").unwrap();
     assert!((result - 2.5).abs() < 1e-10);
 }
 
 #[test]
 fn test_statistics_pipeline_variance() {
-    // variance([1,2,3,4,5]) → 2（总体方差 N）
+    // 总体方差（分母 N）
     let result = evaluate("variance([1,2,3,4,5])").unwrap();
     assert!((result - 2.0).abs() < 1e-10);
 }
 
 #[test]
 fn test_statistics_pipeline_std() {
-    // std([1,2,3,4,5]) → √2
     let result = evaluate("std([1,2,3,4,5])").unwrap();
     assert!((result - std::f64::consts::SQRT_2).abs() < 1e-10);
 }
@@ -651,7 +631,7 @@ fn test_statistics_pipeline_route_by_function() {
 
 #[test]
 fn test_statistics_pipeline_empty_list_error() {
-    // mean([]) → DomainError（空列表）
+    // 空列表 → DomainError
     let result = evaluate("mean([])");
     assert!(result.is_err());
     assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
@@ -696,14 +676,10 @@ fn test_precision_pipeline_bigint_multiplication() {
 
 #[test]
 fn test_precision_pipeline_bigrational_division() {
-    // precision(5, 1/3) → BigRational（f64 近似，因为规范化阶段 1/3 被常量折叠为 0.333...）
-    // 注：1/3 在规范化阶段被折叠为 f64 近似值，PrecisionDomain 接收的是 Number(0.333...)
-    //     通过 BigRational::from_float 转换为近似分数。格式化到 5 位小数仍输出 "0.33333"。
-    //     此处验证：结果是 BigRational 变体 + 格式化输出正确
+    // 规范化阶段 1/3 折叠为 f64 近似，验证结果仍为 BigRational 且格式化正确
     let result = evaluate_full("precision(5, 1/3)", &EvalContext::new()).unwrap();
     match &result {
         EvalResult::BigRational(r) => {
-            // 格式化到 5 位小数应输出 0.33333（验证精度保留）
             let formatted = calnexus::format_bigrational(r, Some(5));
             assert_eq!(formatted, "0.33333");
         }
@@ -713,7 +689,6 @@ fn test_precision_pipeline_bigrational_division() {
 
 #[test]
 fn test_precision_pipeline_bigrational_addition() {
-    // precision(5, 1/3 + 1/6) → BigRational(1/2)
     let result = evaluate_full("precision(5, 1/3 + 1/6)", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigRational(r) => {
@@ -726,7 +701,7 @@ fn test_precision_pipeline_bigrational_addition() {
 
 #[test]
 fn test_precision_pipeline_bigrational_reduction() {
-    // precision(5, 2/4) → BigRational(1/2)（自动约分）
+    // 验证自动约分
     let result = evaluate_full("precision(5, 2/4)", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigRational(r) => {
@@ -739,9 +714,7 @@ fn test_precision_pipeline_bigrational_reduction() {
 
 #[test]
 fn test_precision_pipeline_big_power() {
-    // 大整数幂：123456789012345678901234567890^2 → BigInt
-    // 注：2^100 两个操作数均为 Number，规范化阶段被常量折叠为 f64；
-    //     此处使用 BigNumber 基数避免折叠，保留 BigInt 精确求值路径。
+    // 用 BigNumber 基数避免常量折叠，保留 BigInt 精确求值路径
     let result = evaluate_full("123456789012345678901234567890^2", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigInt(b) => {
@@ -756,8 +729,7 @@ fn test_precision_pipeline_big_power() {
 
 #[test]
 fn test_precision_pipeline_direct_precision_domain() {
-    // 通过 evaluate_precision（绕过路由器）直接使用 PrecisionDomain
-    // 验证 --precision N 模式的等价路径
+    // 验证 --precision N 模式的等价路径（绕过路由器）
     let result = evaluate_precision("1/3 + 1/6", &EvalContext::new()).unwrap();
     match result {
         EvalResult::BigRational(r) => {
@@ -792,23 +764,18 @@ fn test_precision_pipeline_route_by_function() {
 
 #[test]
 fn test_cache_dedup_complex_equivalent() {
-    // 复数节点不参与交换律排序（canonicalizer 仅排序 Number/Variable 操作数）。
-    // (1+2i)+(3+4i) 与 (3+4i)+(1+2i) 规范形式不同，但求值结果相同。
-    // 此处验证：相同表达式重复求值产生相同规范形式 → 共享缓存；
-    //           不同顺序的复数加法规范形式不同 → 不共享缓存（符合当前设计）。
+    // 复数节点不参与交换律排序，不同顺序规范形式不同但求值结果相同
     let ast1 = parse("(1+2i)+(3+4i)").unwrap();
     let ast2 = parse("(3+4i)+(1+2i)").unwrap();
     let (_, cf1) = AstCanonicalizer::canonicalize(&ast1).unwrap();
     let (_, cf2) = AstCanonicalizer::canonicalize(&ast2).unwrap();
     assert_ne!(cf1, cf2, "复数节点不参与交换律排序，规范形式应不同");
 
-    // 但两者求值结果相同
     let r1 = evaluate_full("(1+2i)+(3+4i)", &EvalContext::new()).unwrap();
     let r2 = evaluate_full("(3+4i)+(1+2i)", &EvalContext::new()).unwrap();
     assert_eq!(r1, r2, "求值结果应相同");
     assert_eq!(r1, EvalResult::Complex(4.0, 6.0));
 
-    // 相同表达式重复求值 → 相同规范形式 → 共享缓存
     let cache = CacheManager::new();
     cache.insert(&cf1, &Ok(EvalResult::Complex(4.0, 6.0)));
     assert_eq!(
@@ -820,8 +787,7 @@ fn test_cache_dedup_complex_equivalent() {
 
 #[test]
 fn test_cache_dedup_statistics_equivalent() {
-    // sum([1,2,3]) 与 sum([3,2,1]) 列表元素顺序不同 → 规范形式不同 → 不共享缓存
-    // （List 不交换，验证列表不被错误去重）
+    // 列表元素顺序不同则规范形式不同（List 不交换，防止错误去重）
     let ast1 = parse("sum([1,2,3])").unwrap();
     let ast2 = parse("sum([3,2,1])").unwrap();
     let (_, cf1) = AstCanonicalizer::canonicalize(&ast1).unwrap();
@@ -833,14 +799,14 @@ fn test_cache_dedup_statistics_equivalent() {
 
 #[test]
 fn test_error_complex_unbound_variable() {
-    // 复数域中未绑定变量（非 i） → EvalError
+    // 复数域中未绑定变量 → EvalError
     let result = evaluate_full("conj(x)", &EvalContext::new());
     assert!(result.is_err());
 }
 
 #[test]
 fn test_error_matrix_dimension_mismatch() {
-    // [[1,2],[3,4]] + [[1,2,3]] → 维度不一致 → DomainError
+    // 矩阵维度不一致 → DomainError
     let result = evaluate_full("[[1,2],[3,4]] + [[1,2,3]]", &EvalContext::new());
     assert!(result.is_err());
     assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
@@ -848,7 +814,7 @@ fn test_error_matrix_dimension_mismatch() {
 
 #[test]
 fn test_error_matrix_singular_inverse() {
-    // inverse([[1,2],[2,4]]) → 奇异矩阵 → DomainError
+    // 奇异矩阵求逆 → DomainError
     let result = evaluate_full("inverse([[1,2],[2,4]])", &EvalContext::new());
     assert!(result.is_err());
     assert!(matches!(&result, Err(e) if e.kind == ErrorKind::Domain));
@@ -856,14 +822,13 @@ fn test_error_matrix_singular_inverse() {
 
 #[test]
 fn test_error_statistics_non_numeric_list() {
-    // mean([1,x,3]) 含变量 x → DomainError 或 EvalError（非数值列表）
+    // 含变量的列表非数值 → DomainError 或 EvalError
     let result = evaluate("mean([1,x,3])");
     assert!(result.is_err());
 }
 
 #[test]
 fn test_error_precision_division_by_zero() {
-    // precision(5, 1/0) → DivisionByZero
     let result = evaluate_precision("1/0", &EvalContext::new());
     assert!(result.is_err());
     assert!(
@@ -877,7 +842,7 @@ fn test_error_precision_division_by_zero() {
 
 #[test]
 fn test_all_ten_domains_routed() {
-    // 元测试：验证 全部 10 个域均能被路由器正确分发
+    // 元测试：10 个域均被路由器正确分发
     let cases: &[(&str, &str)] = &[
         ("2+3", "arithmetic"),
         ("sin(pi/2)", "scientific"),
@@ -1185,7 +1150,6 @@ fn test_v08_error_non_polynomial_expression() {
 
 #[test]
 fn test_v10_symbolic_diff_power_rule() {
-    // diff(x^2, x) → 2*x → Symbolic("2*x")
     let result = evaluate_full("diff(x^2, x)", &EvalContext::new());
     let s = result.unwrap().as_symbolic().unwrap().clone();
     assert!(s.contains("2"), "expected coefficient 2 in '{}'", s);
@@ -1194,7 +1158,6 @@ fn test_v10_symbolic_diff_power_rule() {
 
 #[test]
 fn test_v10_symbolic_diff_trig() {
-    // diff(sin(x), x) → cos(x)
     let result = evaluate_full("diff(sin(x), x)", &EvalContext::new());
     let s = result.unwrap().as_symbolic().unwrap().clone();
     assert!(s.contains("cos"), "expected cos in '{}'", s);
@@ -1202,7 +1165,7 @@ fn test_v10_symbolic_diff_trig() {
 
 #[test]
 fn test_v10_symbolic_diff_chain_rule() {
-    // diff(sin(x^2), x) → cos(x^2)*2*x
+    // 链式法则求导应包含 cos
     let result = evaluate_full("diff(sin(x^2), x)", &EvalContext::new());
     let s = result.unwrap().as_symbolic().unwrap().clone();
     assert!(s.contains("cos"), "expected cos in '{}'", s);
@@ -1210,7 +1173,6 @@ fn test_v10_symbolic_diff_chain_rule() {
 
 #[test]
 fn test_v10_symbolic_simplify_add_zero() {
-    // simplify(x+0) → x
     let result = evaluate_full("simplify(x+0)", &EvalContext::new());
     let s = result.unwrap().as_symbolic().unwrap().clone();
     assert_eq!(s, "x");
@@ -1218,7 +1180,6 @@ fn test_v10_symbolic_simplify_add_zero() {
 
 #[test]
 fn test_v10_symbolic_simplify_mul_one() {
-    // simplify(1*x) → x
     let result = evaluate_full("simplify(1*x)", &EvalContext::new());
     let s = result.unwrap().as_symbolic().unwrap().clone();
     assert_eq!(s, "x");
@@ -1226,7 +1187,6 @@ fn test_v10_symbolic_simplify_mul_one() {
 
 #[test]
 fn test_v10_symbolic_limit_direct() {
-    // limit(x^2, x, 3) → 9 (Scalar)
     let result = evaluate_full("limit(x^2, x, 3)", &EvalContext::new());
     let v = result.unwrap().as_scalar().unwrap();
     assert!((v - 9.0).abs() < 1e-9, "expected 9.0, got {}", v);
@@ -1234,7 +1194,7 @@ fn test_v10_symbolic_limit_direct() {
 
 #[test]
 fn test_v10_symbolic_limit_lhopital() {
-    // limit(sin(x)/x, x, 0) → 1 (L'Hôpital, Scalar)
+    // L'Hôpital 法则求极限
     let result = evaluate_full("limit(sin(x)/x, x, 0)", &EvalContext::new());
     let v = result.unwrap().as_scalar().unwrap();
     assert!((v - 1.0).abs() < 1e-9, "expected 1.0, got {}", v);
@@ -1242,7 +1202,6 @@ fn test_v10_symbolic_limit_lhopital() {
 
 #[test]
 fn test_v10_symbolic_taylor_exp() {
-    // taylor(exp(x), x, 3) → 1+x+0.5*x^2+0.16666...*x^3
     let result = evaluate_full("taylor(exp(x), x, 3)", &EvalContext::new());
     let s = result.unwrap().as_symbolic().unwrap().clone();
     assert!(s.contains("1"), "expected constant 1 in '{}'", s);
@@ -1253,7 +1212,7 @@ fn test_v10_symbolic_taylor_exp() {
 
 #[test]
 fn test_v10_bignumber_is_prime_routes_to_number_theory() {
-    // is_prime(1000000000000000009) → 路由到 NumberTheory 而非 Precision
+    // BigNumber 参数应路由到 NumberTheory 而非 Precision
     let ast = parse("is_prime(1000000000000000009)").unwrap();
     let (canonical, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
     let router = default_router();
@@ -1263,7 +1222,7 @@ fn test_v10_bignumber_is_prime_routes_to_number_theory() {
 
 #[test]
 fn test_v10_bignumber_gcd_routes_to_number_theory() {
-    // gcd(BigNumber, BigNumber) → 路由到 NumberTheory
+    // BigNumber 参数路由到 NumberTheory
     let ast = parse("gcd(1000000000000000009, 1000000000000000007)").unwrap();
     let (canonical, _) = AstCanonicalizer::canonicalize(&ast).unwrap();
     let router = default_router();
@@ -1285,7 +1244,6 @@ fn test_v10_bignumber_pure_routes_to_precision() {
 
 #[test]
 fn test_v10_implicit_mult_2x() {
-    // 2x → 2*x → 2*3 = 6 (when x=3)
     let ctx = EvalContext::new().with_var("x", 3.0);
     let result = evaluate_with_ctx("2x", &ctx).unwrap();
     assert_eq!(result, 6.0);
@@ -1293,14 +1251,13 @@ fn test_v10_implicit_mult_2x() {
 
 #[test]
 fn test_v10_implicit_mult_2x_no_var() {
-    // 2x with no var binding → error (undefined variable x)
+    // 未绑定变量时应报错
     let result = evaluate("2x");
     assert!(result.is_err());
 }
 
 #[test]
 fn test_v10_implicit_mult_paren() {
-    // 3(x+1) → 3*(x+1) → 3*4 = 12 (when x=3)
     let ctx = EvalContext::new().with_var("x", 3.0);
     let result = evaluate_with_ctx("3(x+1)", &ctx).unwrap();
     assert_eq!(result, 12.0);
@@ -1310,7 +1267,6 @@ fn test_v10_implicit_mult_paren() {
 
 #[test]
 fn test_v10_poly_div_exact() {
-    // (x^2-1)/(x-1) → x+1
     let result = evaluate_full("poly_div(x^2-1, x-1)", &EvalContext::new());
     let p = result.unwrap().as_polynomial().unwrap().clone();
     // 升幂存储：[1, 1] → 1 + x
@@ -1319,7 +1275,6 @@ fn test_v10_poly_div_exact() {
 
 #[test]
 fn test_v10_poly_div_by_number() {
-    // poly_div(2*x+4, 2) → x+2
     let result = evaluate_full("poly_div(2*x+4, 2)", &EvalContext::new());
     let p = result.unwrap().as_polynomial().unwrap().clone();
     assert_eq!(p, vec![2.0, 1.0]);
@@ -1327,7 +1282,6 @@ fn test_v10_poly_div_by_number() {
 
 #[test]
 fn test_v10_roots_cubic_real() {
-    // roots(x^3-6*x^2+11*x-6) → 1, 2, 3
     let result = evaluate_full("roots(x^3-6*x^2+11*x-6)", &EvalContext::new());
     let v = result.unwrap().as_vector().unwrap().clone();
     assert_eq!(v.len(), 3);
@@ -1340,7 +1294,7 @@ fn test_v10_roots_cubic_real() {
 
 #[test]
 fn test_v10_roots_cubic_one_real() {
-    // roots(x^3+1) → -1 (one real root, two complex roots) → ComplexList
+    // 一个实根两个复根 → ComplexList
     let result = evaluate_full("roots(x^3+1)", &EvalContext::new());
     let v = result.unwrap().as_complex_list().unwrap().clone();
     assert_eq!(v.len(), 3);
@@ -1353,7 +1307,6 @@ fn test_v10_roots_cubic_one_real() {
 
 #[test]
 fn test_v10_roots_quartic() {
-    // roots(x^4-5*x^2+4) → -2, -1, 1, 2
     let result = evaluate_full("roots(x^4-5*x^2+4)", &EvalContext::new());
     let v = result.unwrap().as_vector().unwrap().clone();
     assert_eq!(v.len(), 4);
@@ -1367,7 +1320,7 @@ fn test_v10_roots_quartic() {
 
 #[test]
 fn test_v10_roots_quartic_repeated() {
-    // roots(x^4-2*x^2+1) → -1, -1, 1, 1 (repeated roots)
+    // 重根表达式求根不应失败
     let result = evaluate_full("roots(x^4-2*x^2+1)", &EvalContext::new());
     let v = result.unwrap().as_vector().unwrap().clone();
     assert!(!v.is_empty());
@@ -1375,14 +1328,11 @@ fn test_v10_roots_quartic_repeated() {
 
 // ===== 公开 API 稳定性测试（模块移动后不应破坏） =====
 //
-// 验证 evaluator/symbolic 模块移动到 core/domains 后，
-// calnexus:: 公开 API 导出列表保持不变。编译时验证：若 re-export
-// 断裂，本测试无法编译。
+// 验证模块移动后公开 API 导出不变（re-export 断裂则无法编译）。
 
 #[test]
 fn test_public_api_unchanged_after_move() {
-    // 验证 core 层导出（evaluator 移入 core 后应通过 calnexus::evaluate 访问）。
-    // clippy::type_complexity：把 evaluate 函数指针类型提取为 type alias，避免内联复杂类型。
+    // core 层导出经 calnexus:: 访问；提取 type alias 以避免 clippy::type_complexity。
     type EvaluateFn =
         fn(
             &str,
@@ -1397,8 +1347,7 @@ fn test_public_api_unchanged_after_move() {
     let _: calnexus::AstCanonicalizer = calnexus::AstCanonicalizer;
     let _: calnexus::CacheManager = calnexus::CacheManager::new();
 
-    // 验证 domains 层导出（symbolic 移入 domains 后应通过 calnexus::SymbolicDomain 访问）。
-    // clippy::default_constructed_unit_structs：unit struct 直接构造，不调 ::default()。
+    // domains 层 unit struct 直接构造，不调 ::default()。
     let _: calnexus::SymbolicDomain = calnexus::SymbolicDomain;
     let _: calnexus::ArithmeticDomain = calnexus::ArithmeticDomain;
     let _: calnexus::CombinatoricsDomain = calnexus::CombinatoricsDomain;
@@ -1411,10 +1360,10 @@ fn test_public_api_unchanged_after_move() {
     let _: calnexus::StatisticsDomain = calnexus::StatisticsDomain;
     let _: calnexus::VectorDomain = calnexus::VectorDomain;
 
-    // 验证 i18n 导出（I18n 非 unit struct，仍用 ::default()）
+    // I18n 非 unit struct，仍用 ::default()
     let _: calnexus::I18n = calnexus::I18n::default();
 
-    // 运行时验证：evaluate 函数可正常调用
+    // 运行时验证 evaluate 可正常调用
     let ctx = calnexus::EvalContext::new();
     let cache = calnexus::CacheManager::new();
     let (result, domain, cache_hit, fmt_prec) =
@@ -1427,28 +1376,25 @@ fn test_public_api_unchanged_after_move() {
 
 // ===== SymbolicDomain 通过 domains 命名空间访问测试 =====
 //
-// `calnexus::SymbolicDomain` 和 `calnexus::domains::SymbolicDomain`
-// 都可通过以下两个路径访问。
+// 验证 crate 根 re-export 与 domains 命名空间两条访问路径。
 
 #[test]
 fn test_symbolic_domain_accessible_via_domains() {
-    // 路径 1：通过 crate 根 re-export 访问（当前已可用）
+    // 路径 1：crate 根 re-export
     let _: calnexus::SymbolicDomain = calnexus::SymbolicDomain;
 
-    // 路径 2：通过 domains 子模块命名空间访问
+    // 路径 2：domains 子模块命名空间
     let _: calnexus::domains::SymbolicDomain = calnexus::domains::SymbolicDomain;
 
     // 两条路径应指向同一类型
     fn assert_same_type(_: calnexus::SymbolicDomain) {}
     assert_same_type(calnexus::domains::SymbolicDomain);
 
-    // 运行时验证：SymbolicDomain 可被注册到 DomainRouter 并处理符号表达式
-    // 注：register 签名接受 Box<dyn CalculationDomain>，编译器自动处理 trait bound，无需 use trait
+    // SymbolicDomain 注册到 DomainRouter 后处理符号表达式（无需 use trait）
     let mut router = calnexus::DomainRouter::new();
     router.register(Box::new(calnexus::domains::SymbolicDomain));
     let ctx = calnexus::EvalContext::new();
     let cache = calnexus::CacheManager::new();
-    // simplify(2*x+3*x) → 5*x
     let (result, domain, _hit, _fmt) =
         calnexus::evaluate("simplify(2*x+3*x)", &ctx, None, &cache).unwrap();
     match result {

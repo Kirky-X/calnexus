@@ -1,10 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Numerical 线性代数分解（feature-gated，`numerical` feature 启用）。
-//!
-//! 委托层：调用 `math::numerical::*` 获取纯数学结果，包装为 `EvalResult`。
-//! 由 MatrixDomain 委托调用；路由入口仍是 MatrixDomain（priority=30）。
+//! Numerical 线性代数分解（feature-gated）。
+//! 委托层：调用 `math::numerical::*`，包装为 `EvalResult`；路由入口是 MatrixDomain。
 
 #![cfg(feature = "numerical")]
 
@@ -103,8 +101,7 @@ mod tests {
         }
     }
 
-    /// nalgebra 0.35 + `features=["std"]` 下 LU/QR/SVD/SymmetricEigen 可用。
-    /// 闭环 design R1：无需补 nalgebra feature。
+    /// 确认 nalgebra 0.35 下 LU/QR/SVD/SymmetricEigen 可用，无需额外 feature。
     #[test]
     fn nalgebra_decompose_symbols_available() {
         let m: DMatrix<f64> = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);

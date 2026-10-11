@@ -1,14 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 批量处理：从文件或 stdin 并行求值表达式。
-//!
-//! 设计依据：
-//! - BatchProcessor::run + rayon 并行
-//! - batch-processing spec
+//! 批量处理：从文件或 stdin 并行求值表达式（rayon）。
 //!
 //! 约束：单条 ≤ 4096 字符、总条数 ≤ 1000；超限返回错误并标明行号。
-//! 流程：读取 → 解析验证 → 预规范化（串行）→ 并行求值（rayon）→ 按序输出 + 缓存统计。
 
 use crate::cli::format_result;
 use crate::core::MAX_EXPR_LEN;
@@ -25,15 +20,9 @@ const MAX_BATCH_COUNT: usize = 1000;
 pub struct BatchProcessor;
 
 impl BatchProcessor {
-    /// 执行批量求值。
-    ///
-    /// - `path`: 文件路径，`"-"` 表示从 stdin 读取
-    /// - `ctx`: 变量上下文
-    /// - `json`: 是否输出 JSON 格式（JSON 输出键名保留英文，DP-4 机器可读契约）
-    /// - `i18n`: 国际化上下文，用于本地化错误与汇总消息
+    /// 执行批量求值（便捷入口，默认缓存）。
     ///
     /// 返回退出码：0=全部成功，1=部分失败，2=系统错误。
-    /// 以默认缓存运行（便捷入口；CLI 配置面走 [`Self::run_with_cache`]）。
     #[allow(dead_code)] // 纯 build（非 --all-targets）下仅测试使用
     pub fn run(path: &str, ctx: &EvalContext, json: bool, i18n: &I18n) -> i32 {
         Self::run_with_cache(path, ctx, json, i18n, crate::CacheManager::new())
@@ -64,8 +53,7 @@ impl BatchProcessor {
     }
 }
 
-/// 读取并验证批量条目：跳过注释/空行，校验长度与数量上限。
-/// 返回 `Err(exit_code)` 表示系统错误（exit_code=2）。
+/// 读取并验证批量条目：跳过注释/空行，校验长度与数量上限；出错返回 `Err(2)`。
 fn read_and_validate_entries(path: &str, i18n: &I18n) -> Result<Vec<BatchEntry>, i32> {
     let lines = match read_lines(path) {
         Ok(lines) => lines,
@@ -144,9 +132,7 @@ fn evaluate_entries(
         .collect()
 }
 
-/// 输出结果：JSON 数组或文本行，保持原始顺序。
-///
-/// JSON 输出键名保留英文（DP-4 机器可读契约）；文本输出走 i18n。
+/// 输出结果：JSON 数组或文本行，保持原始顺序（JSON 键名保留英文，DP-4 契约）。
 fn output_results(results: &[BatchResult], json: bool, i18n: &I18n) {
     if json {
         // serde_json 统一构造：转义由 serde_json 处理，控制字符/引号安全
@@ -258,8 +244,7 @@ struct BatchResult {
     result: Result<(EvalResult, String, bool, Option<usize>), crate::CalcError>,
 }
 
-/// 读取文件或 stdin 的行，返回 (行号, 原始行) 列表。
-/// 行号从 1 开始。
+/// 读取文件或 stdin 的行，返回 (行号, 原始行) 列表，行号从 1 开始。
 fn read_lines(path: &str) -> io::Result<Vec<(usize, String)>> {
     let mut lines: Vec<(usize, String)> = Vec::new();
     if path == "-" {

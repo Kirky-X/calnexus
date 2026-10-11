@@ -1,14 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S1 Happy Path —— 各域函数在合法输入下的预期行为。
-//!
-//! 覆盖：门面五访问器（含既有套件缺失的 `cn.symbolic()` 全链路与
-//! trait 泛型分发通道）、`evaluate` 管线全部可达 `EvalResult` 变体、
-//! time/unit/numerical 可选域启用侧表达式正常路径。
-//!
-//! 注：`format_bigrational` 走 `math::precision` 公开路径（crate 根
-//! 再导出被 cli/http/mcp 门控，而本目标需在全部 feature 组合下编译）。
+//! S1 正常路径：门面五访问器、evaluate 管线各 EvalResult 变体与可选域表达式。
 
 use calnexus::math::precision::format_bigrational;
 use calnexus::{
@@ -44,7 +37,7 @@ fn facade_scalar_arithmetic_inherent() {
 
 #[test]
 fn facade_scalar_arithmetic_via_trait_generic() {
-    // trait 泛型分发通道（公共 Semver 面的另一半）
+    // trait 泛型分发通道
     fn drive<T: ScalarMath>(s: &T) -> (f64, f64) {
         let a = scalar_of(&s.add(20.0, 22.0).unwrap());
         let b = scalar_of(&s.mul(6.0, 7.0).unwrap());
@@ -83,7 +76,6 @@ fn facade_scientific_functions() {
     assert!(approx_eq(scalar_of(&s.sinh(0.0).unwrap()), 0.0));
     assert!(approx_eq(scalar_of(&s.cosh(0.0).unwrap()), 1.0));
     assert!(approx_eq(scalar_of(&s.tanh(0.0).unwrap()), 0.0));
-    // Γ(5) = 4! = 24；erf(0) = 0
     assert!(approx_eq(scalar_of(&s.gamma(5.0).unwrap()), 24.0));
     assert!(approx_eq(scalar_of(&s.erf(0.0).unwrap()), 0.0));
 }
@@ -110,7 +102,6 @@ fn facade_number_theory() {
         EvalResult::Scalar(v) => assert_eq!(v, 0.0),
         other => panic!("is_prime(96) falsy expected, got {other:?}"),
     }
-    // 2^10 mod 1000 = 24
     match s
         .mod_pow(
             &BigNumber::from_i64(2),
@@ -122,12 +113,10 @@ fn facade_number_theory() {
         EvalResult::BigInt(v) => assert_eq!(v.to_string(), "24"),
         other => panic!("mod_pow → BigInt(24) expected, got {other:?}"),
     }
-    // φ(10) = 4
     match s.euler_phi(&BigNumber::from_i64(10)).unwrap() {
         EvalResult::BigInt(v) => assert_eq!(v.to_string(), "4"),
         other => panic!("euler_phi(10) → BigInt(4) expected, got {other:?}"),
     }
-    // CRT: x ≡ 2 (mod 3), x ≡ 3 (mod 5) → x = 8
     match s
         .crt(
             &[BigNumber::from_i64(2), BigNumber::from_i64(3)],
@@ -138,7 +127,6 @@ fn facade_number_theory() {
         EvalResult::BigInt(v) => assert_eq!(v.to_string(), "8"),
         other => panic!("crt → BigInt(8) expected, got {other:?}"),
     }
-    // 3 ≡ 1 (mod 7) 的模逆元为 5
     match s
         .mod_inverse(&BigNumber::from_i64(3), &BigNumber::from_i64(7))
         .unwrap()
@@ -162,7 +150,7 @@ fn facade_combinatorics() {
     assert_eq!(bigint_of(s.perm(5, 2).unwrap()), "20");
     assert_eq!(bigint_of(s.comb(5, 2).unwrap()), "10");
     assert_eq!(bigint_of(s.catalan(3).unwrap()), "5");
-    // S(4,2) = 7（第二类斯特林数）；s(4,4-2) = 11（第一类带符号）
+    // 斯特林数：第二类与第一类（带符号）
     assert_eq!(bigint_of(s.stirling_second(4, 2).unwrap()), "7");
     let first = bigint_of(s.stirling_first(4, 2).unwrap());
     assert!(
@@ -280,7 +268,6 @@ fn facade_vector_ops() {
 fn facade_linalg_numerical() {
     let cn = CalNexus::new();
     let l = cn.linalg();
-    // 对称正定矩阵，特征值 1 与 3
     let m = Matrix::from_rows(&[&[2.0, 1.0], &[1.0, 2.0]]);
     match l.eig(&m).unwrap() {
         EvalResult::Json(v) => {
@@ -299,7 +286,6 @@ fn facade_linalg_numerical() {
             other => panic!("{name} → Json expected, got {other:?}"),
         }
     }
-    // A x = b：A=[[2,1],[1,2]], b=[3,3] → x=[1,1]
     let a = Matrix::from_rows(&[&[2.0, 1.0], &[1.0, 2.0]]);
     let b = Vector::new(&[3.0, 3.0]);
     match l.solve(&a, &b).unwrap() {
@@ -309,7 +295,6 @@ fn facade_linalg_numerical() {
         }
         other => panic!("solve → Vector expected, got {other:?}"),
     }
-    // exp([[0]]) = [[1]]
     let zero = Matrix::from_rows(&[&[0.0]]);
     match l.matrix_exp(&zero).unwrap() {
         EvalResult::Matrix(rows) => assert!(approx_eq(rows[0][0], 1.0)),
@@ -327,7 +312,7 @@ fn facade_stats_basic() {
     let st = cn.stats();
     let data = [1.0, 2.0, 3.0, 4.0, 5.0];
     assert!(approx_eq(scalar_of(&st.mean(&data).unwrap()), 3.0));
-    // 总体方差（除以 n 而非 n-1）：Σ(x-m)²/5 = 2.0
+    // 总体方差：除以 n 而非 n-1
     assert!(approx_eq(scalar_of(&st.variance(&data).unwrap()), 2.0));
     assert!(approx_eq(
         scalar_of(&st.std(&data).unwrap()),
@@ -344,7 +329,7 @@ fn facade_stats_basic() {
 fn facade_distributions() {
     let cn = CalNexus::new();
     let st = cn.stats();
-    // 标准正态 pdf(0)=0.3989…，cdf(0)=0.5
+    // 标准正态基准值
     assert!(approx_eq(
         scalar_of(&st.norm_pdf(0.0, 0.0, 1.0).unwrap()),
         0.398_942_280_401_432_7
@@ -357,14 +342,14 @@ fn facade_distributions() {
         scalar_of(&st.norm_inv(0.5, 0.0, 1.0).unwrap()),
         0.0
     ));
-    // t 分布关于 0 对称：t_cdf(0)=0.5
+    // t 分布关于 0 对称
     assert!(approx_eq(scalar_of(&st.t_cdf(0.0, 10.0).unwrap()), 0.5));
     assert!(approx_eq(
         scalar_of(&st.t_pdf(0.0, 10.0).unwrap()),
         0.389_108_383_929_251_2
     ));
     assert!(approx_eq(scalar_of(&st.t_inv(0.5, 10.0).unwrap()), 0.0));
-    // χ²：pdf 值与 cdf(0)=0
+    // χ² 基准值
     assert!(approx_eq(
         scalar_of(&st.chi2_pdf(1.0, 2.0).unwrap()),
         0.303_265_329_877_984_8
@@ -375,13 +360,11 @@ fn facade_distributions() {
     assert!(scalar_of(&st.f_pdf(1.0, 3.0, 5.0).unwrap()) > 0.0);
     assert!(scalar_of(&st.f_cdf(1.0, 3.0, 5.0).unwrap()) > 0.0);
     assert!(scalar_of(&st.f_inv(0.5, 3.0, 5.0).unwrap()) > 0.0);
-    // Poisson: pmf(0; 1) = e^-1
     assert!(approx_eq(
         scalar_of(&st.poisson_pmf(0.0, 1.0).unwrap()),
         1.0 / std::f64::consts::E
     ));
     assert!(scalar_of(&st.poisson_cdf(2.0, 1.0).unwrap()) < 1.0);
-    // Binomial: pmf(0; 3, 0.5) = 0.125
     assert!(approx_eq(
         scalar_of(&st.binom_pmf(0.0, 3.0, 0.5).unwrap()),
         0.125
@@ -393,15 +376,13 @@ fn facade_distributions() {
 fn facade_hypothesis_and_correlation() {
     let cn = CalNexus::new();
     let st = cn.stats();
-    // 假设检验门面把 math 层 HashMap 转成 Vector——std HashMap 随机序，
-    // 契约只能钉住长度与有限性（表达式层无 t_test/chi2_test 函数，
-    // 该门面即唯一入口）
+    // 门面把 math 层 HashMap 转 Vector，顺序不定：只钉长度与有限性
     let a = [1.0, 2.0, 3.0, 4.0, 5.0];
     match st.t_test_one(&a, 3.0).unwrap() {
         EvalResult::Vector(v) => {
             assert_eq!(v.len(), 4);
             assert!(v.iter().all(|x| x.is_finite()), "all finite, got {v:?}");
-            // t(mu=mean)=0 与 p=1 必在值集合中
+            // t=0 与 p=1 必在值集合中
             assert!(v.contains(&0.0), "t=0 expected in {v:?}");
             assert!(v.contains(&1.0), "p=1 expected in {v:?}");
         }
@@ -441,8 +422,7 @@ fn facade_hypothesis_and_correlation() {
         EvalResult::Json(v) => assert!(!v.to_string().is_empty()),
         other => panic!("poly_reg → Json expected, got {other:?}"),
     }
-    // multi_reg 特征按列组织：每列长度 == y.len()；内部自加截距，
-    // 显式传全 1 列会奇异（Domain），故仅传 x 特征列
+    // multi_reg 特征按列组织，内部自加截距：只传特征列，勿传全 1 列
     let x2 = vec![vec![1.0, 2.0, 3.0, 4.0]];
     match st.multi_reg(&x2, &y).unwrap() {
         EvalResult::Json(v) => assert!(!v.to_string().is_empty()),
@@ -455,7 +435,7 @@ fn facade_hypothesis_and_correlation() {
 }
 
 // ---------------------------------------------------------------------------
-// 门面 · SymbolicMath（既有套件缺口：cn.symbolic() 全链路）
+// 门面 · SymbolicMath
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -486,7 +466,7 @@ fn facade_symbolic_calculus() {
         scalar_of(&sym.limit("x^2", "x", 3.0).unwrap()),
         9.0
     ));
-    // L'Hôpital：sin(x)/x 在 x→0 为 1
+    // L'Hôpital：sin(x)/x 在 x→0 的极限
     assert!(approx_eq(
         scalar_of(&sym.limit("sin(x)/x", "x", 0.0).unwrap()),
         1.0
@@ -521,7 +501,6 @@ fn facade_symbolic_polynomial() {
         }
         other => panic!("poly_mul → Polynomial expected, got {other:?}"),
     }
-    // (x² - 1) ÷ (x - 1) = x + 1
     let num = Polynomial::new(&[-1.0, 0.0, 1.0]);
     let den = Polynomial::new(&[-1.0, 1.0]);
     match sym.poly_div(&num, &den).unwrap() {
@@ -531,7 +510,7 @@ fn facade_symbolic_polynomial() {
         }
         other => panic!("poly_div → Polynomial expected, got {other:?}"),
     }
-    // 二次式 x²+1 → 复根 ±i（ComplexList）；一次式回落实根 Vector
+    // 二次式 → ComplexList；一次式 → 实根 Vector
     match sym.poly_roots(&Polynomial::new(&[1.0, 0.0, 1.0])).unwrap() {
         EvalResult::ComplexList(roots) => {
             assert_eq!(roots.len(), 2);
@@ -570,7 +549,6 @@ fn facade_symbolic_complex() {
         }
         other => panic!("complex_sub → Complex expected, got {other:?}"),
     }
-    // (1+2i)(3-i) = 5 + 5i
     match sym.complex_mul(&a, &b).unwrap() {
         EvalResult::Complex(re, im) => {
             assert!(approx_eq(re, 5.0));
@@ -578,7 +556,6 @@ fn facade_symbolic_complex() {
         }
         other => panic!("complex_mul → Complex expected, got {other:?}"),
     }
-    // z/z = 1
     match sym.complex_div(&a, &a).unwrap() {
         EvalResult::Complex(re, im) => {
             assert!(approx_eq(re, 1.0));
@@ -601,7 +578,6 @@ fn facade_symbolic_complex() {
         }
         other => panic!("complex_conj → Complex expected, got {other:?}"),
     }
-    // e^{iπ} ≈ -1
     match sym
         .complex_exp(&Complex::new(0.0, std::f64::consts::PI))
         .unwrap()
@@ -625,7 +601,7 @@ fn facade_symbolic_complex() {
 fn facade_symbolic_solve_equation() {
     let cn = CalNexus::new();
     let sym = cn.symbolic();
-    // x² - 4 = 0 在 x0=1 附近牛顿收敛到 x=2
+    // x²-4 求根：牛顿与二分法
     let root_newton = scalar_of(
         &sym.solve_equation("x^2 - 4", "x", "newton", Some(&[1.0]))
             .unwrap(),
@@ -682,7 +658,7 @@ fn facade_time_construction_and_arithmetic() {
         EvalResult::DateTime(s) => assert!(s.starts_with("2026-01-01T00:00:00"), "got {s}"),
         other => panic!("from_timestamp → DateTime expected, got {other:?}"),
     }
-    // date_add 跨闰月钳制：2026-01-31 + 1 month = 2026-02-28
+    // date_add 跨月钳制到 2 月末
     match ap.date_add("2026-01-31", 1, "month").unwrap() {
         EvalResult::DateTime(s) => assert!(s.starts_with("2026-02-28"), "got {s}"),
         other => panic!("date_add → DateTime expected, got {other:?}"),
@@ -718,12 +694,12 @@ fn facade_time_format_and_calendar() {
         EvalResult::Symbolic(s) => assert_eq!(s, "25/07/2026"),
         other => panic!("reformat_date expected, got {other:?}"),
     }
-    // 2026-07-25 是周六（ISO weekday 6）
+    // ISO weekday：周六 = 6
     assert!(approx_eq(
         scalar_of(&ap.weekday("2026-07-25").unwrap()),
         6.0
     ));
-    // 2026-07-25 是当年第 206 天
+    // day_of_year 序数
     assert!(approx_eq(
         scalar_of(&ap.day_of_year("2026-07-25").unwrap()),
         206.0
@@ -747,12 +723,12 @@ fn facade_unit_convert() {
         scalar_of(&ap.convert(1.0, "kg", "g").unwrap()),
         1000.0
     ));
-    // 温度：100°C = 212°F
+    // 温度仿射换算
     assert!(approx_eq(
         scalar_of(&ap.convert(100.0, "C", "F").unwrap()),
         212.0
     ));
-    // 数据：1 KiB = 1024 B（二进制前缀与十进制 KB 区分）
+    // 二进制前缀 KiB 与十进制 KB 区分
     assert!(approx_eq(
         scalar_of(&ap.convert(1.0, "KiB", "B").unwrap()),
         1024.0

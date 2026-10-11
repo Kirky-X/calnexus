@@ -1,23 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 汇率换算域：fx/fx_rate 函数 + frankfurter.dev 在线 API。
-//!
-//! 设计依据：Provider trait 注入 + 三级缓存 + stale 策略 + 混合表达式求值语义
-//! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
-//!
-//! 函数表：
-//! - `fx(value, "FROM", "TO")`：换算金额，经 base 三角计算 `value / rate[FROM] * rate[TO]`
-//! - `fx_rate("FROM", "TO")`：查询汇率，等价于 `fx(1, FROM, TO)`
-//!
-//! 路由策略：AST 含 fx/fx_rate 函数调用时路由至本域。
-//! evaluate 处理完整 AST（参照 number_theory.rs / unit.rs 递归结构）：
-//! - 算术包围：`fx(100,"USD","CNY")+1`、`-fx(...)` 正确求值
-//! - 域内嵌套：`fx(fx(100,"USD","EUR"),"EUR","CNY")` 正确求值
-//! - 跨域函数混入：`sin(1)+fx(...)` 显式报错（消息含函数名）
-//! - Str 仅作为 FunctionCall 实参合法；出现在 BinaryOp/UnaryOp 中报错
-//!
-//! 非确定性：fx/fx_rate 申报为非确定性函数，永不进 L1 缓存。
+//! 汇率换算域：fx/fx_rate 函数，经 Provider 注入与三级缓存获取汇率。
+//! 支持算术包围与域内嵌套；Str 仅可作实参，跨域函数混入报错。
+//! fx/fx_rate 为非确定性函数，永不进 L1 缓存。
 
 use super::common::{
     ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
@@ -28,24 +14,13 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 use super::fx_provider::{FrankfurterProvider, RateProvider};
 use crate::math::fx as math_fx;
 
-/// fx 域函数白名单（用于路由 supports() 和非确定性申报）。
-///
-/// 仅 fx/fx_rate 触发路由至本域；mod/abs 由 parser 从 `a%b`/`abs(x)` 转换而来，
-/// 仅在算术包围 fx 结果时随父表达式进入本域（不在 contains_fx_function 中识别，
-/// 避免误路由纯 `mod(1,2)` 表达式）。
+/// fx 域函数白名单：仅 fx/fx_rate 触发路由，避免 mod/abs 误路由。
 const FX_FUNCTIONS: &[&str] = &["fx", "fx_rate"];
 
-/// 求值阶段支持的函数白名单（含算术包围函数 mod/abs）。
-///
-/// 与 FX_FUNCTIONS 的区别：本表用于 eval_function 分发，额外包含 mod/abs，
-/// 以处理 `fx(...)%1000`（解析为 `mod(fx(...), 1000)`）等算术包围表达式。
+/// 求值函数白名单：在 FX_FUNCTIONS 之上额外含 mod/abs，用于处理算术包围。
 const FX_EVAL_FUNCTIONS: &[&str] = &["fx", "fx_rate", "mod", "abs"];
 
-/// 汇率换算域：支持 `fx(value, "FROM", "TO")` 和 `fx_rate("FROM", "TO")`。
-///
-/// 构造函数 `new(provider)` 接受 `Box<dyn RateProvider>` 注入：
-/// 测试套件用 mock provider，CI 断网环境全绿；生产用 `default()` 注入
-/// FrankfurterProvider。
+/// 汇率换算域：支持 fx / fx_rate，provider 可注入（测试用 mock）。
 pub struct FxDomain {
     provider: Box<dyn RateProvider>,
 }
@@ -86,9 +61,7 @@ impl CalculationDomain for FxDomain {
     }
 }
 
-/// 递归求值 AST 节点（使用指定 provider）。
-///
-/// 测试入口：直接传入 mock provider，避免出网。
+/// 递归求值 AST 节点（可注入 provider，测试入口避免出网）。
 fn eval_with_provider(
     ast: &AstNode,
     ctx: &EvalContext,
@@ -202,9 +175,7 @@ fn eval_function(
     }
 }
 
-/// `mod(a, b)`：取模函数（parser 将 `a%b` 转换为 `mod(a,b)`）。
-///
-/// 当 `fx(...)%1000` 等表达式被路由至本域时，需支持 mod 分发。
+/// `mod(a, b)`：取模；parser 将 `a%b` 转为 `mod(a,b)`，算术包围时需要。
 fn eval_mod(
     args: &[AstNode],
     ctx: &EvalContext,
@@ -229,9 +200,7 @@ fn eval_mod(
     apply_binary(BinaryOp::Mod, a, b).map(EvalResult::Scalar)
 }
 
-/// `abs(x)`：绝对值函数（parser 将 `abs(x)` 保留为函数调用形式）。
-///
-/// 当 `abs(-fx(...))` 等表达式被路由至本域时，需支持 abs 分发。
+/// `abs(x)`：绝对值；算术包围 `abs(-fx(...))` 时需要。
 fn eval_abs(
     args: &[AstNode],
     ctx: &EvalContext,
@@ -255,10 +224,7 @@ fn eval_abs(
     Ok(EvalResult::Scalar(v.abs()))
 }
 
-/// `fx(value, "FROM", "TO")`：换算金额。
-///
-/// 经 base 三角计算：`value / rate[FROM] * rate[TO]`。
-/// 未知币种 → CalcError::domain（含支持币种数量提示）。
+/// `fx(value, "FROM", "TO")`：换算金额，经 base 三角计算，未知币种报错。
 fn eval_fx(
     args: &[AstNode],
     ctx: &EvalContext,

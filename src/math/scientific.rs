@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 //! 科学函数核心：三角/对数/指数/双曲/gamma/erf。
-//!
-//! 从 `domains/scientific.rs` 提取的纯数学逻辑。
 
 use crate::core::CalcError;
 
@@ -136,10 +134,7 @@ pub fn log2(x: f64) -> Result<f64, CalcError> {
     check_finite(x.log2())
 }
 
-/// 任意底对数：`log(value, base)`。
-///
-/// - `value <= 0.0` → Domain
-/// - `base <= 0.0 || base == 1.0` → Domain
+/// 任意底对数 `log(value, base)`：value 或 base 非正、base==1 返回 Domain。
 pub fn log(value: f64, base: f64) -> Result<f64, CalcError> {
     if value <= 0.0 {
         return Err(
@@ -186,10 +181,7 @@ pub fn tanh(x: f64) -> Result<f64, CalcError> {
 
 // ===== 特殊函数 =====
 
-/// Lanczos 逼近计算 gamma 函数。
-///
-/// 对 x > 0.5 使用 Lanczos 逼近；对 x < 0.5 使用反射公式 Γ(z)Γ(1-z) = π/sin(πz)。
-/// 非正整数是 gamma 函数的极点，显式拒绝为 Domain 错误。
+/// gamma 函数：Lanczos 逼近 + 反射公式；非正整数极点返回 Domain。
 pub fn gamma(x: f64) -> Result<f64, CalcError> {
     // 非正整数（0, -1, -2, …）是 gamma 函数的极点
     if x <= 0.0 && x == x.floor() && x.is_finite() {

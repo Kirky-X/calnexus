@@ -2,9 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 //! 算术核心函数：四则运算、幂、阶乘、取模、绝对值。
-//!
-//! 从 `domains/arithmetic.rs` 提取的纯数学逻辑，
-//! 供 `domains/`（AST 求值路径）和 `api/`（直接 API 路径）共用。
 
 use crate::core::{CalcError, MAX_FACTORIAL_INPUT};
 
@@ -35,12 +32,7 @@ pub fn mul(a: f64, b: f64) -> Result<f64, CalcError> {
     Ok(r)
 }
 
-/// 除法：`a / b`。
-///
-/// - NaN 输入 → `NaNOrInf`
-/// - `b == 0.0 && a == 0.0` → `NaNOrInf`（0/0 = NaN）
-/// - `b == 0.0 && a != 0.0` → `DivisionByZero`
-/// - 结果溢出 → `NaNOrInf`
+/// 除法 `a/b`：NaN 或 0/0→NaNOrInf，非零除零→DivisionByZero，溢出→NaNOrInf。
 pub fn div(a: f64, b: f64) -> Result<f64, CalcError> {
     // NaN 输入优先检查，避免 NaN/0.0 被误报为 DivisionByZero
     if a.is_nan() || b.is_nan() {
@@ -59,11 +51,7 @@ pub fn div(a: f64, b: f64) -> Result<f64, CalcError> {
     Ok(r)
 }
 
-/// 幂运算：`a ^ b`。
-///
-/// - `0.0^0.0 = 1.0`（组合数学约定）
-/// - 负底数 + 非整数指数 → `Domain`
-/// - 结果溢出 → `NaNOrInf`
+/// 幂运算 `a^b`：0^0=1；负底数配非整数指数→Domain；溢出→NaNOrInf。
 pub fn pow(a: f64, b: f64) -> Result<f64, CalcError> {
     // 0^0 = 1（组合数学约定）
     if a == 0.0 && b == 0.0 {
@@ -107,11 +95,7 @@ pub fn rem(a: f64, b: f64) -> Result<f64, CalcError> {
     Ok(r)
 }
 
-/// 阶乘：`n!`。
-///
-/// - `n < 0` 或 `n` 非整数 → `Domain`
-/// - `n > MAX_FACTORIAL_INPUT` → `Overflow`
-/// - 超过 `f64::MAX` → `Overflow`
+/// 阶乘 `n!`：n<0 或非整数→Domain；n>MAX_FACTORIAL_INPUT 或超 f64 上限→Overflow。
 pub fn factorial(n: f64) -> Result<f64, CalcError> {
     if n < 0.0 || n.fract() != 0.0 {
         return Err(CalcError::domain(format!(

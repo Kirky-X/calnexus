@@ -1,12 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S4 fx 域离线全链路 —— mock 域 + `math::fx` + `math::fx_scenario`。
-//!
-//! 真实 `FxDomain::new` 为 `pub(crate)`，无法注入 mock provider；本模块
-//! 经公开 `CalculationDomain`/`RateProvider`/`math::fx` 构建同构 mock，
-//! 驱动 `evaluate_with_router` 完整管线，全程零出网。真实 FxDomain 的
-//! 网络容忍冒烟见 `error_paths::error_fx_real_domain_offline_tolerant`。
+//! S4 fx 域离线全链路：公开 API 构建同构 mock 驱动 router 管线，全程零出网。
 
 #![cfg(feature = "fx")]
 
@@ -31,7 +26,6 @@ fn scalar_of(r: &EvalResult) -> f64 {
 
 #[test]
 fn fx_pipeline_expression_conversion() {
-    // fx(110, "USD", "CNY") = 110 / 1.1 * 7.8 = 780
     let (r, domain) = eval_via_router_ok("fx(110, \"USD\", \"CNY\")", &MockFxDomain::router());
     assert_scalar(&r, 780.0);
     assert_eq!(domain, "fx");
@@ -39,7 +33,7 @@ fn fx_pipeline_expression_conversion() {
 
 #[test]
 fn fx_pipeline_rate_expression() {
-    // fx_rate 等价 fx(1,…)：USD→EUR = 1 / 1.1 = 0.9090…
+    // fx_rate 等价 fx(1, …)
     let (r, _) = eval_via_router_ok("fx_rate(\"USD\", \"EUR\")", &MockFxDomain::router());
     assert!(approx_eq(scalar_of(&r), 1.0 / 1.1));
     // 同币种汇率恒为 1
@@ -56,7 +50,7 @@ fn fx_pipeline_arithmetic_wrapping() {
     assert_eq!(domain, "fx");
     let (r, _) = eval_via_router_ok("-fx_rate(\"EUR\", \"JPY\")", &MockFxDomain::router());
     assert!(approx_eq(scalar_of(&r), -160.0));
-    // abs 函数包装（fx 白名单包装函数）
+    // abs 为 fx 白名单包装函数
     let (r, _) = eval_via_router_ok("abs(fx_rate(\"EUR\", \"USD\"))", &MockFxDomain::router());
     assert!(approx_eq(scalar_of(&r), 1.1));
 }
@@ -80,7 +74,7 @@ fn fx_pipeline_variables_in_amount() {
 #[test]
 fn fx_pipeline_errors() {
     let router = MockFxDomain::router();
-    // 未知币种 → Domain + 支持币种数提示（base EUR + 4 报价 = 5）
+    // 未知币种 → Domain，消息含支持币种数提示
     let err = eval_via_router("fx(1, \"USD\", \"XXX\")", &router).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Domain);
     assert!(err.message.contains("unknown currency: XXX"), "got {err}");
@@ -109,7 +103,7 @@ fn fx_pipeline_errors() {
 #[test]
 fn fx_pipeline_nondeterministic_bypasses_cache() {
     use calnexus::{CacheManager, EvalContext, evaluate_with_router};
-    // fx/fx_rate 声明为非确定性：同一表达式两次求值均 cache miss
+    // fx 非确定性：两次求值均 cache miss
     let router = MockFxDomain::router();
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
@@ -171,7 +165,7 @@ fn fx_math_layer_unknown_currency() {
 
 #[test]
 fn fx_rate_provider_trait_objects() {
-    // 公开 RateProvider trait 可被下游实现与分发（Semver 面验证）
+    // 公开 RateProvider trait 可被下游实现与分发（Semver 面）
     let p: Box<dyn RateProvider> = Box::new(StaticProvider::new(mock_rate_table()));
     let table = p.rates().unwrap();
     assert_eq!(table.base, "EUR");
@@ -187,7 +181,7 @@ fn fx_rate_provider_trait_objects() {
 #[test]
 fn fx_scenario_budget_happy() {
     let table = mock_rate_table();
-    // 留学预算：11000 USD 学费 + 1000/月生活费 × 4 年 → CNY
+    // 留学预算：学费 + 月生活费 × 年数 → CNY
     let b = budget_calculation(11000.0, "USD", Some(1000.0), 4, "CNY", &table).unwrap();
     assert!(approx_eq(b.rate, 7.8 / 1.1));
     assert!(approx_eq(b.tuition_home, 78_000.0));
@@ -234,27 +228,24 @@ fn fx_scenario_budget_validation() {
 #[test]
 fn fx_scenario_pricing_happy() {
     let table = mock_rate_table();
-    // 定价：成本 100 CNY、目标利润率 20%、平台费 5%、无缓冲
+    // 定价场景：成本 + 目标利润率 + 平台费 + 缓冲
     let p = pricing_calculation(100.0, 0.2, &["USD", "JPY"], 0.05, 0.0, &table).unwrap();
     assert!(approx_eq(p.cost_cny, 100.0));
     assert_eq!(p.pricing.len(), 2);
-    // 语义钉住：target_profit_rate 是对营收的利润率（目标收入 =
-    // cost/(1-0.2) = 125），actual_profit_rate 是对成本的利润率
-    // （(125-100)/100 = 25%）——两口径并存且都由回算字段体现
+    // 两种利润口径并存：target 对营收，actual 对成本
     let usd_rate = 7.8 / 1.1;
     let usd = &p.pricing[0];
-    // 售价/平台费字段四舍五入到 2 位小数（展示语义）：
-    // raw = 125 / 7.0909… / 0.95 = 18.5574… → 18.56
+    // 售价/平台费字段四舍五入到 2 位小数（展示语义）
     assert!(approx_eq(usd.recommended_price, 18.56));
     assert!(approx_eq(
         usd.recommended_price,
         ((125.0 / usd_rate / 0.95) * 100.0_f64).round() / 100.0_f64
     ));
-    // 回算使用未舍入售价：净收入恰为目标收入 125 → 利润 25（成本口径 25%）
+    // 回算用未舍入售价，利润按成本口径
     assert!(approx_eq(usd.actual_profit_rate, 0.25));
     assert!(approx_eq(usd.profit_cny, 25.0));
     assert!(approx_eq(usd.platform_fee_cny, 6.58));
-    // 平台费为 0 时回算不变：实际利润率仍为成本口径 25%
+    // 平台费为 0 时回算口径不变
     let p2 = pricing_calculation(100.0, 0.2, &["USD"], 0.0, 0.0, &table).unwrap();
     assert!(approx_eq(p2.pricing[0].actual_profit_rate, 0.25));
     assert!(approx_eq(p2.pricing[0].profit_cny, 25.0));
@@ -305,7 +296,7 @@ fn fx_scenario_pricing_validation() {
 
 #[test]
 fn fx_rate_table_public_fields() {
-    // RateTable 字段公开可构造——下游/测试注入汇率表的合法通道
+    // RateTable 字段公开可构造，是注入汇率表的合法通道
     let table = RateTable {
         base: "USD".to_string(),
         date: "2026-09-15".to_string(),

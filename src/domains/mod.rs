@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! CalNexus 计算域集合。
-//!
-//! 模块分层约定：本 mod.rs 仅包含模块声明与 re-export，零实现函数。
-//! 工厂函数（build_default_router / build_precision_domain）位于 `factory.rs`。
+//! CalNexus 计算域集合：仅含模块声明与 re-export，无实现函数。
 
 mod arithmetic;
 mod combinatorics;

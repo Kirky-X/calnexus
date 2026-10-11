@@ -1,17 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 函数目录：按域分组的全量函数名静态表。
-//!
-//! 单一事实源：REPL Tab 补全、CLI `--list-functions`、MCP `list_functions` tool
-//! 共用本表。feature 门控域（time/unit/fx/numerical）由消费方按 cfg 过滤。
-//!
-//! 此前 REPL KNOWN_FUNCTIONS 曾缺失 feature 门控函数（convert/fx/now 等），
-//! 统一目录后此类漂移不再发生。
+//! 全量函数名表（单一事实源）：供 REPL 补全、CLI `--list-functions`、MCP `list_functions` 共用。
 
-/// 各域函数目录：`(域名, 函数名列表)`。
-///
-/// 域名与 `DomainRouter` 的 `domain_name()` 一致；可选域以 cfg 惯例标注注释。
+/// 各域函数目录：`(域名, 函数名列表)`；域名与 `DomainRouter::domain_name()` 一致。
 pub const DOMAIN_FUNCTIONS: &[(&str, &[&str])] = &[
     ("arithmetic", &["abs", "mod", "factorial"]),
     (

@@ -1,10 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 计算域工厂函数：构建默认路由器与 precision 域实例。
+//! 计算域工厂：构建默认路由器与 precision 域实例。
 //!
-//! 注册职责归 domains 层（知道自己有哪些实现），避免 src/core 反向依赖
-//! src/domains 的具体域类型（DIP 依赖倒置原则）。
+//! 注册职责留在 domains 层，避免 src/core 反向依赖具体域类型（DIP）。
 
 use std::sync::OnceLock;
 
@@ -22,10 +21,7 @@ use super::{
     VectorDomain,
 };
 
-/// 构建默认路由器：注册全部 14 个计算域（11 核心 + 3 可选，含 SymbolicDomain）。
-///
-/// 供 `crate::core::evaluate` 与 REPL 共用。进程级缓存（OnceLock），只构建一次，
-/// 避免每次请求重复分配 14 个 Box。
+/// 构建默认路由器：注册全部 14 个域（11 核心 + 3 可选），进程级 OnceLock 缓存。
 pub(crate) fn build_default_router() -> &'static DomainRouter {
     static DEFAULT_ROUTER: OnceLock<DomainRouter> = OnceLock::new();
     DEFAULT_ROUTER.get_or_init(|| {
@@ -51,10 +47,7 @@ pub(crate) fn build_default_router() -> &'static DomainRouter {
     })
 }
 
-/// 构建 PrecisionDomain 实例（供 precision 模式直接求值，绕过路由器）。
-///
-/// 通过 trait object 工厂函数，使 src/core/evaluator.rs 无需导入具体域类型，
-/// 彻底消除 src/core → src/domains 的类型依赖。
+/// 构建 PrecisionDomain 实例（precision 模式绕过路由器直接求值）。
 pub(crate) fn build_precision_domain() -> Box<dyn CalculationDomain> {
     Box::new(PrecisionDomain)
 }
@@ -63,10 +56,7 @@ pub(crate) fn build_precision_domain() -> Box<dyn CalculationDomain> {
 mod tests {
     use super::*;
 
-    // ===== 域优先级测试 =====
-    //
-    // priority 是 domains 层的属性，测试应在 domains 层进行（模块分层约定 + DIP，
-    // 见 ARCHITECTURE.md §2.3 "core → domains 类型依赖 = 0" 声明）。
+    // ===== 域优先级测试（priority 属 domains 层，按分层约定在此测试） =====
 
     #[test]
     fn test_priority_number_theory_equals_combinatorics() {

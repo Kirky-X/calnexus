@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 任意 UTF-8 输入 → `parse()`，不应 panic。
-//!
-//! 运行：`cargo +nightly fuzz run parser_fuzz`
+//! 解析器 fuzz：任意 UTF-8 输入不得 panic。
+//! 运行：`cargo +nightly fuzz run parser_fuzz`。
 
 #![no_main]
 

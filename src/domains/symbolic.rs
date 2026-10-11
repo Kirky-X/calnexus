@@ -2,37 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 //! Symbolic 计算域：符号微分、积分、化简、极限、泰勒级数。
-//!
-//! 设计依据：
-//! - SymbolicExpr 枚举 + AST 变换 + 字符串输出
-//! - symbolic-domain spec
-//!
-//! 路由策略：AST 含 diff/integrate/simplify/limit/taylor 函数调用时路由至本域。
-//! priority=30，与 Complex/Matrix/Vector 同级。
-//!
-//! 核心数据结构 [`SymbolicExpr`] 与 [`AstNode`] 双向转换，符号变换后格式化为
-//! 字符串返回 [`EvalResult::Symbolic`]。
-//!
-//! 纯数学逻辑委托给 `math::symbolic`，本模块仅保留 AST 转换和域路由。
+//! priority=30；AST 与 [`SymbolicExpr`] 双向转换，数学逻辑委托 `math::symbolic`。
 
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, CalcError, EvalContext, EvalResult, UnaryOp};
 use crate::math::symbolic as math_sym;
 
-// Re-export ast_to_symbolic for tests and other modules.
+// re-export ast_to_symbolic 供测试与其他模块使用。
 pub use crate::math::symbolic::ast_to_symbolic;
 
 /// 符号函数白名单。
 const SYMBOLIC_FUNCTIONS: &[&str] = &["diff", "integrate", "simplify", "limit", "taylor"];
 
 // ============================ AstNode ↔ SymbolicExpr 转换 ============================
-// ast_to_symbolic 实现在 math::symbolic，此处 re-export 供向后兼容。
+// ast_to_symbolic 实现在 math::symbolic，此处 re-export 兼容旧路径。
 
 // ============================ SymbolicDomain ============================
 
-/// Symbolic 计算域。
-///
-/// priority=30，路由触发词：diff/integrate/simplify/limit/taylor。
+/// Symbolic 计算域，priority=30，路由触发词 diff/integrate/simplify/limit/taylor。
 pub struct SymbolicDomain;
 
 impl CalculationDomain for SymbolicDomain {

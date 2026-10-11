@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Security tests (TEST.md §10).
-//!
-//! 使用 `assert_cmd` + `predicates`（已有 dev-deps）。
-//! 通过 CLI 二进制 + 库 API 双重验证安全边界。
+//! 安全测试（TEST.md §10）：经 CLI 二进制与库 API 验证安全边界。
 
 mod common;
 use common::calnexus_cli;
@@ -12,8 +9,7 @@ use common::calnexus_cli;
 use calnexus::{CacheManager, EvalContext, parse};
 use std::time::Instant;
 
-/// 表达式注入 — shell 元字符被词法白名单拒绝。
-/// `"; rm -rf /"` 应在词法阶段被拒绝（退出码 1），不进入 shell。
+/// 表达式注入：shell 元字符须在词法阶段被拒绝（退出码 1）。
 #[test]
 fn sec_001_expression_injection_rejected() {
     let output = calnexus_cli()
@@ -32,11 +28,7 @@ fn sec_001_expression_injection_rejected() {
     );
 }
 
-/// 257 层括号嵌套应返回 DepthExceeded，而非栈溢出。
-///
-/// 注：当前 canonicalizer 未在递归中强制深度上限；257 层嵌套会触发栈溢出。
-/// 此测试用 100 层嵌套验证合理深度不会崩溃，并标记 `#[ignore]` 的 257 层用例
-/// 等待深度强制实现。
+/// 100 层括号嵌套：合理深度不得崩溃（257 层拒绝由 sec_002b 覆盖）。
 #[test]
 fn sec_002_deep_nesting_no_overflow() {
     // 100 层嵌套：合理深度，不应崩溃
@@ -61,8 +53,7 @@ fn sec_002_deep_nesting_no_overflow() {
     );
 }
 
-/// 257 层嵌套括号 — 深度强制已实现（`parser.rs::convert_with_depth` 校验
-/// `MAX_AST_DEPTH=256`），超过即返回 `CalcError::depth_exceeded()`，无栈溢出。默认运行。
+/// 257 层嵌套括号：超 MAX_AST_DEPTH=256 须返回 DepthExceeded，无栈溢出。
 #[test]
 fn sec_002b_257_level_nesting_depth_exceeded() {
     let depth = 257;
@@ -99,9 +90,7 @@ fn sec_003_factorial_dos_rejected() {
     );
 }
 
-/// 1001×1001 矩阵应被维度上限拒绝。
-/// 由于 1001×1001 矩阵表达式远超 4096 字符上限（且无法作为 CLI 参数传递），
-/// 此测试通过 stdin 传递超大矩阵表达式，验证长度检查拒绝。
+/// 超大矩阵表达式经 stdin 传递，须被长度上限拒绝。
 #[test]
 fn sec_004_matrix_dimension_dos_rejected() {
     // 构造一个 60×60 矩阵（约 20KB，远超 MAX_EXPR_LEN=4096，但可通过 stdin 传递）
@@ -143,8 +132,7 @@ fn sec_004_matrix_dimension_dos_rejected() {
     );
 }
 
-/// 大参数 stirling/catalan/P/C 应被 DoS 上界拒绝（返回错误，不 OOM）。
-/// `stirling(100000, 50000)` 和 `catalan(100000)` 应触发上界检查返回 Overflow。
+/// 大参数 stirling/catalan/P 须被 DoS 上界拒绝（返回错误，不 OOM）。
 #[test]
 fn sec_004b_combinatorics_dos_rejected() {
     // stirling(100000, 50000) — 超过 MAX_STIRLING_N=5000
@@ -248,14 +236,10 @@ fn sec_006_nan_inf_explicit_errors() {
     );
 }
 
-/// 超时应触发 `CalcError::Timeout`（退出码 3），且复杂符号计算不会无限阻塞。
-///
-/// 不实现基于 elapsed 的自动超时，
-/// 但通过 `EvalContext { timeout: Duration::ZERO }` 显式触发 Timeout 错误路径。
-/// 同时验证 `integrate(exp(x^2),x)` 不会无限阻塞（有界运行）。
+/// Timeout 错误路径（退出码 3）与复杂符号计算的有界运行。
 #[test]
 fn sec_007_symbolic_timeout_bounded() {
-    // 1. 显式触发 Timeout：ctx.timeout == 0 → 立即返回 CalcError::timeout()
+    // timeout=0 立即返回 CalcError::Timeout。
     use calnexus::CalcError;
     use calnexus::evaluate;
     use std::time::Duration;
@@ -272,7 +256,7 @@ fn sec_007_symbolic_timeout_bounded() {
         result
     );
 
-    // 2. Timeout 错误退出码契约：exit_code == 3
+    // Timeout 退出码契约：exit_code == 3。
     let err = CalcError::timeout();
     assert_eq!(err.kind, calnexus::ErrorKind::Timeout);
     assert_eq!(
@@ -281,7 +265,7 @@ fn sec_007_symbolic_timeout_bounded() {
         "Timeout exit code must be 3"
     );
 
-    // 3. 有界运行：复杂符号计算不会无限阻塞（<10s）
+    // 有界运行：不无限阻塞（<10s）。
     let start = Instant::now();
     let output = calnexus_cli()
         .arg("integrate(exp(x^2),x)")
@@ -299,12 +283,10 @@ fn sec_007_symbolic_timeout_bounded() {
     );
 }
 
-/// 无 CLI 标志可写入工作目录外文件。
-/// 当前未实现 `--output` 标志，此测试验证现有标志不接受路径参数。
+/// 无 CLI 标志可写入工作目录外文件（--output 未实现）。
 #[test]
 fn sec_008_no_path_traversal_via_cli() {
-    // --batch 接受路径但只读取（不写入），路径遍历读取不构成写入风险
-    // 验证：不存在的 --batch 路径应失败，但不创建任何文件
+    // --batch 只读：不存在的路径应失败且不创建任何文件。
     let output = calnexus_cli()
         .args(["--batch", "../../../etc/nonexistent_calnexus_test"])
         .output()
@@ -363,7 +345,7 @@ fn sec_009_control_chars_sanitized_or_rejected() {
 /// 4097 字符表达式应被长度上限拒绝。
 #[test]
 fn sec_010_overlong_input_rejected() {
-    // 构造 4097 字符的表达式：4090 个 "1+" 后跟 "1"
+    // 构造超过 4096 上限的表达式。
     let mut expr = String::new();
     for _ in 0..4090 {
         expr.push_str("1+");
@@ -400,14 +382,12 @@ fn sec_infrastructure_present() {
 }
 
 // ===== 深度防护补齐 =====
-// 审计发现：列表/矩阵字面量递归（parse_list_literal → parse → parse_bracket_literal）
-// 完全绕过 convert_with_depth 的 MAX_AST_DEPTH 检查；mathexpr 递归也先于深度检查执行。
+// 审计：列表/矩阵字面量与 mathexpr 递归曾绕过 MAX_AST_DEPTH 深度检查。
 
 /// 300 层嵌套列表字面量 → DepthExceeded（此前 panic/绕过）。
 #[test]
 fn sec_011_nested_list_depth_exceeded() {
-    // debug 构建下每层 parse 管线（含 regex）栈帧较肥，256 层递归接近 2MiB
-    // 默认测试线程栈；显式放大测试线程栈以承载断言（生产 release 构建帧远更小）。
+    // debug 构建栈帧较大：显式放大测试线程栈以承载 256 层递归。
     std::thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
         .spawn(sec_011_nested_list_depth_exceeded_inner)

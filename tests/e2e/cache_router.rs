@@ -1,12 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S6 缓存与路由 —— CacheManager 字节权重淘汰/统计、CacheKeyGen、
-//! DomainRouter 优先级/去重/不确定性、evaluate 缓存命中契约。
-//!
-//! 既有套件仅覆盖基础 get/insert/命中；本模块补齐
-//! `with_capacity_bytes` 淘汰语义、`stats()`、`MAX_CACHEABLE_BYTES`
-//! 大结果旁路与路由器结构契约（此前零覆盖）。
+//! S6 缓存与路由 e2e：CacheManager 淘汰/统计、CacheKeyGen、
+//! DomainRouter 优先级去重、evaluate 缓存命中契约。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -31,13 +27,13 @@ fn canonical(expr: &str) -> CanonicalForm {
 #[test]
 fn cache_insert_get_and_entry_count() {
     let cache = CacheManager::new();
-    // 规范化会常量折叠："1+2" 与 "3+0" 折叠为同一规范形式 "3"（缓存去重点）
+    // 常量折叠："1+2" 与 "3+0" 折叠为同一规范形式 "3"
     let cf = canonical("1+2");
     assert_eq!(cache.entry_count(), 0);
     cache.insert(&cf, &Ok(EvalResult::Scalar(3.0)));
     assert_eq!(cache.entry_count(), 1);
     assert_eq!(cache.get(&cf), Some(EvalResult::Scalar(3.0)));
-    // 折叠等价写法命中同一条目；不等价表达式（含变量，不折叠）缺失
+    // 折叠等价的写法命中同一条目；含变量表达式不折叠，缺失
     assert_eq!(cache.get(&canonical("3+0")), Some(EvalResult::Scalar(3.0)));
     assert_eq!(cache.get(&canonical("x+1")), None);
 }
@@ -45,8 +41,7 @@ fn cache_insert_get_and_entry_count() {
 #[test]
 fn cache_errors_never_stored() {
     let cache = CacheManager::new();
-    // 用变量表达式避开规范化期的常量折叠（"1/0" 在折叠期即报错，
-    // 根本到不了缓存写入点——该行为由 pipeline_canonical_folds_constants 钉住）
+    // 用变量表达式避开规范化期常量折叠（"1/0" 在折叠期即报错，到不了缓存写入点）
     let cf = canonical("1/x");
     cache.insert(&cf, &Err(calnexus::CalcError::division_by_zero()));
     assert_eq!(cache.entry_count(), 0, "error results must not be cached");
@@ -102,7 +97,7 @@ fn cache_get_or_compute_single_compute() {
 
 #[test]
 fn cache_capacity_eviction_bounds_entries() {
-    // Scalar 结果估算 16 字节：160 字节预算至多容纳 ~10 条
+    // 小预算必须发生淘汰：大量插入后条目数受限但不清空
     let cache = CacheManager::with_capacity_bytes(160);
     for i in 0..50 {
         let cf = canonical(&format!("{i}+0"));
@@ -122,18 +117,13 @@ fn cache_capacity_eviction_bounds_entries() {
 
 #[test]
 fn cache_oversized_results_bypass_storage() {
-    // MAX_CACHEABLE_BYTES = 256KB（weigher 口径=JSON 序列化字节，T009 起）：
-    // 100_000 个 f64 的 Vector 序列化约 400KB（"0.0," 4 字节/元素）超限
-    // → 返回但不存。旧内存估重口径（64+n*8）下 40_000 元素=320KB 亦可超限，
-    // 新口径下需 10 万元素——fixture 随口径迁移。
+    // 超大结果（10 万 f64，超 256KB 单条阈值）只返回不入缓存
     let cache = CacheManager::new();
     let big = EvalResult::Vector(vec![0.0; 100_000]);
     let cf = CanonicalForm::new("big-vector-fixture");
     cache.insert(&cf, &Ok(big.clone()));
     assert_eq!(cache.entry_count(), 0, "oversized result must bypass L1");
-    // get_or_compute 契约（oxcache 文档化行为）：单条准入阈值只约束
-    // insert；try_get_with 路径对成功结果总是入缓存（内存上界由总权重
-    // 预算的淘汰兜底），返回值不受阈值影响
+    // get_or_compute 契约：单条准入阈值只约束 insert，成功结果总是入缓存
     let calls = Arc::new(AtomicUsize::new(0));
     let c2 = Arc::clone(&calls);
     let v = cache
@@ -169,11 +159,11 @@ fn cache_key_gen_stable_and_discriminating() {
     let h4 = CacheKeyGen::hash(&canonical("1+3"));
     // 同一规范形式哈希稳定（BLAKE3 确定性）
     assert_eq!(h1, h2);
-    // 规范化等价（交换律）→ 同一缓存键
+    // 交换等价写法折叠为同一键
     assert_eq!(h1, h3);
     // 不同表达式 → 不同键
     assert_ne!(h1, h4);
-    // 哈希长度 = 32 字节（BLAKE3 摘要）
+    // BLAKE3 摘要 32 字节
     let raw: [u8; 32] = CacheKeyGen::hash(&canonical("7"));
     assert_eq!(raw.len(), 32);
 }
@@ -194,7 +184,7 @@ fn cache_evaluate_hit_on_repeat() {
 
 #[test]
 fn cache_canonical_dedup_across_spellings() {
-    // 规范形式等价的不同写法共享缓存条目
+    // 规范等价的写法共享缓存条目
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
     let (r1, _, hit1, _) = evaluate("1+2", &ctx, None, &cache).unwrap();
@@ -206,7 +196,7 @@ fn cache_canonical_dedup_across_spellings() {
 
 #[test]
 fn cache_vars_change_forces_miss() {
-    // 缓存键包含变量环境：同名表达式不同变量值不得串值
+    // 缓存键含变量环境：不同变量值不得串值
     let cache = CacheManager::new();
     let ctx_a = EvalContext::new().with_var("x", 1.0);
     let ctx_b = EvalContext::new().with_var("x", 2.0);
@@ -222,7 +212,7 @@ fn cache_vars_change_forces_miss() {
 
 #[test]
 fn cache_precision_mode_bypasses_router() {
-    // precision 模式走独立缓存键（precision 语义参与键构建）
+    // precision 模式走独立缓存键
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
     let (r1, _, hit1, p1) = evaluate("1/3", &ctx, Some(5), &cache).unwrap();
@@ -236,7 +226,7 @@ fn cache_precision_mode_bypasses_router() {
 
 #[test]
 fn cache_nonexistent_expr_not_cached() {
-    // 错误结果不入缓存：同一非法表达式两次求值均真实计算
+    // 错误结果不入缓存：两次求值均真实计算
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
     let e1 = evaluate("1/0", &ctx, None, &cache).unwrap_err();
@@ -247,8 +237,7 @@ fn cache_nonexistent_expr_not_cached() {
 
 #[test]
 fn pipeline_canonical_folds_constants() {
-    // 规范化期常量折叠："1/0" 在 canonicalize 阶段即 DivisionByZero
-    // （到不了求值/缓存层）；"3+0" 与 "3" 折叠等价
+    // 规范化期常量折叠："1/0" 在 canonicalize 即报错；"3+0" 与 "3" 等价
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
     let e = evaluate("1/0", &ctx, None, &cache).unwrap_err();
@@ -294,7 +283,7 @@ impl CalculationDomain for TagDomain {
 
 #[test]
 fn router_empty_rejects_everything() {
-    // 默认路由器总有算术域；空路由器的拒绝行为经 evaluate_with_router 验证
+    // 空路由器无任何域，evaluate_with_router 直接拒绝
     let router = DomainRouter::new();
     let cache = CacheManager::new();
     let ctx = EvalContext::new();
@@ -362,7 +351,7 @@ fn router_is_nondeterministic_respects_registration() {
         priority: 30,
     }));
     let nd = router.is_nondeterministic(&calnexus::parse("tick()").unwrap());
-    // TagDomain 未声明 nondeterministic_functions → false
+    // 未声明 nondeterministic_functions 的域视为确定性
     assert!(!nd);
 }
 

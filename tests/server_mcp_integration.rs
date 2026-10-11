@@ -2,28 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 //! MCP server 集成测试：`evaluate` tool（`#[forge]` 宏生成）。
-//!
-//! tool 由 `#[forge]` 声明式生成（sdforge-macros codegen）。
-//!
-//! **输入格式**：`{"req":{"expr":"2+3","vars":{...},"precision":N}}` —— `req` 是
-//! `#[forge]` 函数参数名，macros 生成 `struct Params { req: EvaluateRequest }`
-//! （macros lib.rs:1306-1317），故 tool args 必须包一层 `req`。
-//!
-//! **错误响应契约**（macros lib.rs:1381-1399）：`CallToolResult::error(...)`
-//! 设 `is_error=Some(true)`，`content[0].text` 为 ApiError 的 serde JSON
-//! （`#[serde(tag="type")]`，如 `{"type":"InvalidInput"|"ValidationError"|...}`），
-//! 与 HTTP 错误 body 同构——codegen 用 `serde_json::to_value(e)` 序列化 ApiError，
-//! 不经 `to_mcp_json`（该方法存在但 codegen 未调用）。
-//!
-//! 测试使用 `SdForgeMcpServer::call_tool_internal` 直接调用 tool，无需启动 stdio。
+//! tool args 须包一层 `req`；错误态与 HTTP 同构；测试直调 `call_tool_internal`。
 use calnexus::build_mcp_server;
 use sdforge::rmcp::model::{CallToolResult, ContentBlock};
 use serde_json::{Value, json};
 
-/// 从 `CallToolResult` 提取首个文本内容并解析为 JSON。
-///
-/// `#[forge]` codegen 将 EvaluateResponse/ApiError 序列化为 JSON 字符串
-/// 放入 `ContentBlock::Text`。此辅助函数提取并解析该 JSON。
+/// 提取 CallToolResult 首个文本内容并解析为 JSON。
 fn extract_result_json(result: &CallToolResult) -> Value {
     let text = result.content.iter().find_map(|c| match c {
         ContentBlock::Text(t) => Some(t.text.as_str()),
@@ -46,7 +30,7 @@ fn test_mcp_tool_list_contains_evaluate() {
     );
 }
 
-/// 标量求值：evaluate "2+3" → {"result":5,"domain":"arithmetic","cache":"miss"}
+/// 标量求值：evaluate "2+3" → result=5、cache=miss。
 #[test]
 fn test_mcp_tool_evaluate_scalar() {
     let server = build_mcp_server();
@@ -61,8 +45,7 @@ fn test_mcp_tool_evaluate_scalar() {
     assert_eq!(body["cache"], "miss");
 }
 
-/// 带变量求值：evaluate "x+1" vars {x:10} → result 11
-/// 参照 变量语义。
+/// 带变量求值：evaluate "x+1" vars{x:10} → result=11。
 #[test]
 fn test_mcp_tool_evaluate_with_vars() {
     let server = build_mcp_server();
@@ -79,8 +62,7 @@ fn test_mcp_tool_evaluate_with_vars() {
     assert_eq!(body["domain"], "arithmetic");
 }
 
-/// 精度模式：evaluate "1/3" precision 2 → result "0.33"
-/// precision 模式 result 是格式化字符串。
+/// 精度模式：precision=2 → result 为格式化字符串 "0.33"。
 #[test]
 fn test_mcp_tool_evaluate_precision() {
     let server = build_mcp_server();
@@ -98,10 +80,7 @@ fn test_mcp_tool_evaluate_precision() {
     assert_eq!(body["result"].as_str(), Some("0.33"));
 }
 
-/// 计算错误：evaluate "2++3" → ApiError::InvalidInput 契约。
-///
-/// `is_error=Some(true)` + content 为 `{"type":"InvalidInput","message":"Parse: ...",...}`
-/// （macros codegen 用 `serde_json::to_value(ApiError)` 序列化，与 HTTP 错误 body 同构）。
+/// 计算错误（2++3）→ is_error=true + InvalidInput，与 HTTP 错误体同构。
 #[test]
 fn test_mcp_tool_evaluate_calc_error_invalid_input() {
     let server = build_mcp_server();
@@ -126,10 +105,7 @@ fn test_mcp_tool_evaluate_calc_error_invalid_input() {
     );
 }
 
-/// validate precision 超限 → ApiError::ValidationError 契约。
-///
-/// `is_error=Some(true)` + content 为
-/// `{"type":"ValidationError","field":"precision","constraint":"10001 exceeds limit 10000"}`
+/// precision 超限 → is_error=true + ValidationError，field=precision。
 #[test]
 fn test_mcp_tool_evaluate_validation_error_oversized_precision() {
     let server = build_mcp_server();
@@ -146,10 +122,7 @@ fn test_mcp_tool_evaluate_validation_error_oversized_precision() {
     assert_eq!(body["field"], "precision");
 }
 
-/// validate vars 键数超限（>1024）→ ApiError::ValidationError 契约。
-///
-/// `is_error=Some(true)` + content 为
-/// `{"type":"ValidationError","field":"vars","constraint":"size 1025 exceeds limit 1024"}`
+/// vars 键数超限（>1024）→ is_error=true + ValidationError，field=vars。
 #[test]
 fn test_mcp_tool_evaluate_validation_error_oversized_vars() {
     let server = build_mcp_server();
@@ -171,11 +144,7 @@ fn test_mcp_tool_evaluate_validation_error_oversized_vars() {
     assert_eq!(body["field"], "vars");
 }
 
-/// 无效输入：evaluate null → Err(ErrorData)
-///
-/// `req` 字段缺失，macros codegen serde 解析
-/// `Params{req:EvaluateRequest}` 失败（macros lib.rs:1311-1316），返回
-/// `Err(ErrorData)`（协议层错误，非 CallToolResult）。
+/// evaluate null（req 缺失）→ Err(ErrorData) 协议层错误。
 #[test]
 fn test_mcp_tool_evaluate_invalid_input_null() {
     let server = build_mcp_server();
@@ -185,7 +154,7 @@ fn test_mcp_tool_evaluate_invalid_input_null() {
 
 // ===== MCP 增强 =====
 
-/// MCP-DESC-01: evaluate 工具 description 自包含（req 包装示例 + 上限 + 错误语义）。
+/// evaluate 工具 description 自包含（req 示例 + 上限 + 错误语义）。
 #[test]
 fn test_evaluate_tool_description_self_contained() {
     let server = build_mcp_server();
@@ -208,7 +177,7 @@ fn test_evaluate_tool_description_self_contained() {
     assert!(desc.contains("503"), "应含 503 错误语义: {}", desc);
 }
 
-/// MCP-CATALOG-01: list_functions tool 可调用并返回按域分组的目录。
+/// list_functions 可调用并返回按域分组的目录。
 #[test]
 fn test_list_functions_tool_callable() {
     let server = build_mcp_server();
@@ -225,7 +194,7 @@ fn test_list_functions_tool_callable() {
     assert!(text.contains("symbolic"), "目录应含 symbolic 域: {}", text);
 }
 
-/// MCP-CATALOG-02: fx feature 开启时目录含 fx 域（feature 门控可见性）。
+/// fx feature 开启时目录含 fx 域（feature 门控可见性）。
 #[test]
 fn test_list_functions_feature_gated_domains() {
     let server = build_mcp_server();
@@ -245,7 +214,7 @@ fn test_list_functions_feature_gated_domains() {
 
 // === 语言协商（lang 请求字段，MCP tool args 与 HTTP body 同构）===
 
-/// MCP-COLLANG-01: evaluate tool args 带 lang=zh → 错误消息本地化为中文。
+/// evaluate args 带 lang=zh → 错误消息本地化为中文。
 #[test]
 fn test_mcp_evaluate_zh_lang_localized_error() {
     let server = build_mcp_server();
@@ -264,8 +233,7 @@ fn test_mcp_evaluate_zh_lang_localized_error() {
     );
 }
 
-/// MCP-COLLANG-02: 缺省 lang 跟随系统语言检测链（契约变更）；
-/// 检测为 en 时保持英文契约。
+/// 缺省 lang 跟随系统语言检测链；检测为 en 时保持英文契约。
 #[test]
 fn test_mcp_evaluate_default_lang_follows_detection() {
     let expect_zh = calnexus::I18n::from_detected().lang() == calnexus::Lang::Zh;

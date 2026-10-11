@@ -1,18 +1,12 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 符号演算核心函数：微分/积分/化简/极限/泰勒展开。
-//!
-//! 包含 AST → SymbolicExpr 转换（`ast_to_symbolic`），
-//! 供 `domains/symbolic.rs`（AST 求值路径）和 `api/symbolic_api.rs`（直接 API 路径）共用。
+//! 符号演算核心函数：微分/积分/化简/极限/泰勒展开与 AST 转换。
 
 use crate::core::{AstNode, BinaryOp, CalcError, EvalResult, UnaryOp};
 use std::collections::HashMap;
 
-/// 符号表达式：符号变换的中间表示。
-///
-/// 与 [`AstNode`] 不同，`SymbolicExpr` 专用于符号运算（求导/积分/化简），
-/// 不含 Matrix/List/BigNumber 等非符号节点。
+/// 符号表达式：符号变换的中间表示，不含 Matrix/List/BigNumber 等非符号节点。
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolicExpr {
     /// 常数。
@@ -153,10 +147,7 @@ fn format_number(n: f64) -> String {
 
 // ============================ AST → SymbolicExpr 转换 ============================
 
-/// 将 [`AstNode`] 转换为 [`SymbolicExpr`]。
-///
-/// 支持 Number/Variable/BinaryOp/UnaryOp/FunctionCall(sin/cos/tan/ln/exp)。
-/// 不支持的节点返回 DomainError。
+/// 将 [`AstNode`] 转换为 [`SymbolicExpr`]，不支持的节点返回 DomainError。
 pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
     match ast {
         AstNode::Number(n) => Ok(SymbolicExpr::Const(*n)),
@@ -254,13 +245,7 @@ fn unary_symbolic_arg(name: &str, args: &[AstNode]) -> Result<Box<SymbolicExpr>,
 
 // ============================ 符号求导 diff ============================
 
-/// 符号求导 `diff(expr, var)`。
-///
-/// 递归应用求导规则：
-/// - 常数 → 0
-/// - 变量 → 1（若为目标变量）/ 0（其他变量）
-/// - 和差、积（乘积法则）、商（商法则）、幂（幂法则 + 链式）
-/// - sin→cos、cos→-sin、tan→sec²、exp→exp、ln→1/x
+/// 求导规则：按运算符分派，链式法则递归处理。
 pub fn diff(expr: &SymbolicExpr, var: &str) -> SymbolicExpr {
     match expr {
         SymbolicExpr::Const(_) => SymbolicExpr::Const(0.0),
@@ -329,8 +314,7 @@ fn diff_div(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> SymbolicExpr {
     )
 }
 
-/// 幂法则：f^n → n*f^(n-1)*f'（指数为常数）；
-/// 一般幂法则：f^g → f^g * (g'*ln(f) + g*f'/f)（指数非常数）。
+/// 幂法则：常数指数用 n*f^(n-1)*f'，否则用一般幂法则。
 fn diff_pow(f: &SymbolicExpr, g: &SymbolicExpr, var: &str) -> SymbolicExpr {
     if let SymbolicExpr::Const(n) = g {
         SymbolicExpr::Mul(
@@ -424,14 +408,7 @@ fn diff_ln(f: &SymbolicExpr, var: &str) -> SymbolicExpr {
 
 // ============================ 符号积分 integrate ============================
 
-/// 符号积分 `integrate(expr, var)`。
-///
-/// 支持范围：
-/// - 多项式积分：`x^n → x^(n+1)/(n+1)`（n ≠ -1）
-/// - 基本初等函数：sin→-cos、cos→sin、exp→exp、1/x→ln|x|
-/// - 线性性：∫(f±g) = ∫f ± ∫g
-///
-/// 不支持的积分返回 DomainError。
+/// 符号积分：支持多项式、基本初等函数与线性性，其余返回 DomainError。
 pub fn integrate(expr: &SymbolicExpr, var: &str) -> Result<SymbolicExpr, CalcError> {
     match expr {
         SymbolicExpr::Const(c) => integrate_const(*c, var),
@@ -600,12 +577,7 @@ fn is_var(expr: &SymbolicExpr, var: &str) -> bool {
 
 // ============================ 表达式化简 simplify ============================
 
-/// 表达式化简 `simplify(expr)`。
-///
-/// 应用规则：
-/// - 常量折叠：`Const(a) op Const(b) → Const(a op b)`
-/// - 代数恒等式：`0+x→x`、`x+0→x`、`0*x→0`、`1*x→x`、`x^0→1`、`x^1→x`
-/// - 递归化简子表达式
+/// 表达式化简：常量折叠、代数恒等式与递归化简。
 pub fn simplify(expr: &SymbolicExpr) -> SymbolicExpr {
     match expr {
         SymbolicExpr::Const(_) | SymbolicExpr::Var(_) => expr.clone(),
@@ -752,12 +724,7 @@ fn simplify_neg(e: &SymbolicExpr) -> SymbolicExpr {
 
 // ============================ 极限 limit ============================
 
-/// 符号极限 `limit(expr, var, point)`。
-///
-/// 策略：
-/// 1. 直接代入：将 var 替换为 point，数值求值。若得到有限值则返回。
-/// 2. 洛必达法则：若 expr 为 Div(num, den) 且代入得 0/0 或 ∞/∞，
-///    对分子分母求导后递归（深度限制 5 次）。
+/// 符号极限：先直接代入，0/0 或 ∞/∞ 时用洛必达法则（深度限 5 次）。
 pub fn limit(expr: &SymbolicExpr, var: &str, point: f64) -> Result<EvalResult, CalcError> {
     limit_recursive(expr, var, point, 0)
 }
@@ -895,9 +862,7 @@ fn eval_ln(e: &SymbolicExpr, env: &HashMap<String, f64>) -> Result<f64, CalcErro
 
 // ============================ 泰勒级数 taylor ============================
 
-/// 泰勒级数 `taylor(expr, var, order)`。
-///
-/// 在 point=0 处展开（Maclaurin 级数）。
+/// 泰勒级数：在 point=0 处展开（Maclaurin 级数）。
 pub fn taylor(expr: &SymbolicExpr, var: &str, order: u32) -> Result<EvalResult, CalcError> {
     if order > 20 {
         return Err(

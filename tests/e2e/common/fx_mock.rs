@@ -1,17 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! fx 域离线测试基础设施：手工汇率表 + MockFxDomain。
-//!
-//! `FxDomain::new` 为 `pub(crate)`，外部测试无法向真实 FxDomain 注入
-//! mock provider；但 `CalculationDomain` trait 与 `math::fx` 纯函数层
-//! 全部公开 —— MockFxDomain 以与真实 FxDomain 相同的公开语义
-//! （`fx(v,"FROM","TO")` = `v / rate[FROM] * rate[TO]`、`fx_rate` = `fx(1,…)`)
-//! 委托同一 math 层，经 `evaluate_with_router` 驱动完整
-//! parse → canonicalize → route → evaluate 管线，全程零出网。
-//!
-//! 跟进项：若 `RateProvider` 未来提供公开注入口，本模块应迁移至
-//! 真实 `FxDomain` + mock provider。
+//! fx 域离线测试夹具：手工汇率表 + MockFxDomain，语义对齐真实 FxDomain。
+//! 经 evaluate_with_router 驱动完整管线，全程零出网。
 
 #![cfg(feature = "fx")]
 
@@ -23,10 +14,7 @@ use calnexus::{
     AstNode, BinaryOp, CalcError, CalculationDomain, DomainRouter, EvalContext, EvalResult, UnaryOp,
 };
 
-/// 手工汇率夹具（base EUR，含 4 个报价币种；数值为易手算的整数倍）。
-///
-/// convert 语义：`value / rate[FROM] * rate[TO]`，故
-/// `fx(110, "USD", "CNY")` = 110 / 1.1 * 7.8 = 780.0。
+/// 手工汇率夹具（base EUR，4 个币种）；convert 语义为 value/rate[FROM]*rate[TO]。
 pub fn mock_rate_table() -> RateTable {
     RateTable {
         base: "EUR".to_string(),
@@ -72,8 +60,7 @@ impl RateProvider for FailingProvider {
     }
 }
 
-/// AST 是否包含 fx/fx_rate 调用（镜像真实 FxDomain 的 supports 语义：
-/// 直接调用与 BinaryOp/UnaryOp 包装均命中）。
+/// AST 是否包含 fx/fx_rate 调用（含 BinaryOp/UnaryOp 包装）。
 fn contains_fx_call(ast: &AstNode) -> bool {
     match ast {
         AstNode::FunctionCall(name, args) => {
@@ -94,11 +81,7 @@ fn expect_str<'a>(arg: &'a AstNode, param: &str) -> Result<&'a str, CalcError> {
     }
 }
 
-/// fx 域 mock：持有注入的汇率源，语义对齐真实 FxDomain（委托 `math::fx`）。
-///
-/// 与真实域同构地经 `RateProvider::rates()` 取表——成功源用
-/// [`StaticProvider`]，失败源（`FailingProvider`）可确定性复现
-/// `DependencyUnavailable` 传播路径。
+/// fx 域 mock：经注入的 RateProvider 取表，语义对齐真实 FxDomain。
 pub struct MockFxDomain {
     provider: Box<dyn RateProvider>,
 }
@@ -184,7 +167,7 @@ impl MockFxDomain {
                 }
             }
             AstNode::FunctionCall(name, args) => self.eval_call(name, args, ctx),
-            // Str 仅作为函数实参合法；操作数上下文拒绝（对齐真实域语义）。
+            // Str 仅作函数实参合法，操作数上下文拒绝
             AstNode::Str(_) => Err(CalcError::domain(
                 "string operand not supported in fx domain",
             )),
@@ -226,7 +209,7 @@ impl MockFxDomain {
                 let table = self.provider.rates()?;
                 fx::convert(1.0, from, to, &table).map(EvalResult::Scalar)
             }
-            // mod/abs 为 fx 域算术包装白名单（`fx(..)%1000`、`abs(-fx(..))`）
+            // mod/abs 为 fx 域白名单（如 fx(..)%1000）
             "mod" => {
                 let [a, b] = args else {
                     return Err(CalcError::domain(format!(

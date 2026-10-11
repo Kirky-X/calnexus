@@ -14,7 +14,6 @@ fuzz_target!(|data: &str| {
     // 任意输入解析 + 规范化 + 缓存键生成
     if let Ok(ast) = parse(data) {
         if let Ok((canonical_ast, cf)) = AstCanonicalizer::canonicalize(&ast) {
-            // 缓存键生成不应 panic
             let cache = CacheManager::new();
             cache.insert(&cf, &Ok(calnexus::EvalResult::Scalar(0.0)));
             let _ = cache.get(&cf);

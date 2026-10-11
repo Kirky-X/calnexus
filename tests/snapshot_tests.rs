@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Snapshot tests using `insta` (TEST.md §5).
-//!
-//! Run with `cargo insta test --review` to lock snapshots.
-//! Snapshots live in `tests/snapshots/`.
+//! insta 快照测试（TEST.md §5）：`cargo insta test --review` 锁定，快照存于 tests/snapshots/。
 
 mod common;
 
@@ -153,11 +150,7 @@ fn snap_insta_dependency_compiles() {
     assert!(Path::new("tests/snapshot_tests.rs").exists());
 }
 
-/// 多字节 UTF-8 字符的 Span 位置应为字符偏移
-///
-/// "你好+1" 是 4 个字符（你/好/+/1）= 8 字节（中文每字 3 字节 + ASCII 2 字节）。
-/// mathexpr 不支持中文变量名，会触发解析失败。
-/// Span 应为 (0, 4)（字符偏移）而非 (0, 8)（字节偏移）。
+/// 多字节 UTF-8 的 Span 应为字符偏移 (0:4)，而非字节偏移 (0:8)。
 #[test]
 fn test_span_multibyte_char_position() {
     let output = calnexus()

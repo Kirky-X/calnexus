@@ -3,20 +3,13 @@
 
 //! 跨域公共辅助函数。
 //!
-//! 消除 14 个计算域中重复的模式：
-//! - `ensure_math_constants`：pi/e 上下文注入（7 个域重复）
-//! - `resolve_variable`：变量解析 + 统一错误（14 个域重复）
-//! - `unsupported_node_error`：不支持节点类型错误（14 个域重复）
-//! - `unsupported_function_error`：不支持函数错误（13 个域重复）
+//! 消除各计算域重复的 pi/e 注入、变量解析与不支持错误构造。
 
 use std::borrow::Cow;
 
 use crate::core::{AstNode, CalcError, EvalContext};
 
-/// 确保上下文包含 pi/e 数学常量，缺失时注入。
-///
-/// 仅在缺失时 clone 上下文，常见路径（已含 pi/e）零分配。
-/// 返回 `Cow`： borrowed = 无需修改，owned = 已注入新值。
+/// 确保上下文包含 pi/e 常量；仅在缺失时 clone 上下文，返回 Cow。
 pub fn ensure_math_constants(ctx: &EvalContext) -> Cow<'_, EvalContext> {
     let needs_pi = ctx.get_var("pi").is_none();
     let needs_e = ctx.get_var("e").is_none();

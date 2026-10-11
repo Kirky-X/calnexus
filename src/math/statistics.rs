@@ -1,11 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 统计核心函数：基础统计 + 特殊函数 + 分布 + 检验 + 相关。
-//!
-//! 将 `domains/statistics.rs`、`domains/stats_special.rs`、
-//! `domains/stats_distributions.rs`、`domains/stats_tests.rs` 中的
-//! 纯数学逻辑统一提取到此模块，供域层和 API 层共用。
+//! 统计核心函数：基础统计、特殊函数、分布、检验与相关，供域层和 API 层共用。
 
 // ===== 常量 =====
 
@@ -91,8 +87,7 @@ pub fn count(values: &[f64]) -> f64 {
 
 // ===== 特殊函数 =====
 
-/// 计算 ln(Γ(z))，z > 0。Lanczos 近似（g=7, 9 系数）。
-/// z <= 0 时返回 f64::NAN 而非产生误导性结果。
+/// 计算 ln(Γ(z))（Lanczos g=7）；z ≤ 0 返回 NaN。
 pub fn ln_gamma(z: f64) -> f64 {
     if z <= 0.0 {
         return f64::NAN;
@@ -674,9 +669,7 @@ fn rank(data: &[f64]) -> Vec<f64> {
 
 // ===== 回归分析 =====
 
-/// 简单线性回归 y = slope*x + intercept，返回 (slope, intercept, r_squared)。
-///
-/// x.len() < 2 时返回 (0.0, 0.0, 0.0)。
+/// 简单线性回归 → (slope, intercept, R²)；x.len() < 2 时返回 (0.0, 0.0, 0.0)。
 pub fn linear_regression(x: &[f64], y: &[f64]) -> (f64, f64, f64) {
     let n = x.len();
     if n < 2 || n != y.len() {
@@ -707,9 +700,7 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> (f64, f64, f64) {
     (slope, intercept, r_squared)
 }
 
-/// 多项式回归：拟合 y = c0 + c1*x + c2*x^2 + ... + cd*x^d。
-///
-/// 返回 (coefficients升幂, r_squared)。构造 Vandermonde 矩阵 → (XᵀX)⁻¹Xᵀy。
+/// 多项式回归（Vandermonde 最小二乘）→（系数升幂, R²）。
 pub fn polynomial_regression(
     x: &[f64],
     y: &[f64],
@@ -770,9 +761,7 @@ pub fn polynomial_regression(
     Ok((coeffs, r_squared))
 }
 
-/// 多元回归：y = c0 + c1*x1 + c2*x2 + ...。x 为 `&[Vec<f64>]`，每个内向量是一个特征。
-///
-/// 返回 (coefficients含截距, r_squared)。
+/// 多元回归：x 的每个内向量是一个特征，返回（含截距系数, R²）。
 pub fn multiple_regression(x: &[Vec<f64>], y: &[f64]) -> Result<(Vec<f64>, f64), CalcError> {
     if x.is_empty() || y.is_empty() {
         return Err(

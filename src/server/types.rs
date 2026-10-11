@@ -3,19 +3,14 @@
 
 //! Server 接口层 DTO：请求/响应类型 + EvalResult→JSON 转换。
 //!
-//! 定义了 HTTP/MCP 的请求/响应契约：
-//! - Request: `{"expr":"2+3","vars":{"x":1.0},"precision":null}`
-//! - Response: `{"result":5,"domain":"arithmetic","cache":"miss"}`
-//! - Error: `ApiError`（InvalidInput→400 / ValidationError→422），映射见 `evaluate::calc_error_to_api_error`
+//! 错误契约：`ApiError`（InvalidInput→400 / ValidationError→422）。
 
 use crate::core::{EvalContext, EvalResult, MAX_PRECISION};
 use crate::domains::format_bigrational;
 use sdforge::error::ApiError;
 use std::collections::HashMap;
 
-/// HTTP/MCP 求值请求。
-///
-/// 反序列化 JSON：`{"expr":"2+3","vars":{"x":1.0},"precision":null,"lang":null}`
+/// HTTP/MCP 求值请求（反序列化 `{"expr","vars","precision","lang"}`）。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct EvaluateRequest {
     /// 表达式字符串（必填）。
@@ -26,15 +21,12 @@ pub struct EvaluateRequest {
     /// 任意精度位数（可选，None=常规模式）。
     #[serde(default)]
     pub precision: Option<usize>,
-    /// 响应语言（可选，语言协商：BCP-47 标签，如 "en"/"zh-CN"；缺省/未知值回退英文）。
-    /// 仅影响人可读文案（错误消息）；机器可读字段（kind 协议名等）保持英文契约。
+    /// 响应语言（BCP-47 标签，缺省/未知回退英文）；仅影响人可读文案，协议字段保持英文。
     #[serde(default)]
     pub lang: Option<String>,
 }
 
-/// HTTP/MCP 求值响应。
-///
-/// 序列化 JSON：`{"result":5,"domain":"arithmetic","cache":"miss"}`
+/// HTTP/MCP 求值响应（序列化 `{"result","domain","cache"}`）。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EvaluateResponse {
     /// 求值结果（JSON 值，类型取决于 EvalResult 变体）。
@@ -66,19 +58,8 @@ impl EvaluateRequest {
         }
     }
 
-    /// 校验请求安全约束。
-    ///
-    /// - `expr` 非空 / 长度 ≤ `MAX_EXPR_LEN`（4096）/ 不含 null 字节：防止 DoS 与注入
-    /// - `vars` 键数 ≤ `MAX_VARS`（1024）：防止内存耗尽攻击
-    /// - `vars` 键名长度 ≤ `MAX_VAR_NAME_LEN`（64）/ 不含 null 字节：防止键名注入与内存攻击
-    /// - `vars` 值必须有限（拒绝 NaN/Infinity）：输入值合法性
-    /// - `precision` ≤ `MAX_PRECISION`（10000）：防止计算资源耗尽
-    ///
-    /// 违反约束时返回 `Err(ApiError::validation(...))`（HTTP 422 / MCP VALIDATION_ERROR，
-    /// 契约）。`field` 标识违规字段（"expr"/"vars"/"precision"），
-    /// `constraint` 描述约束。
-    // ApiError（sdforge）含丰富错误上下文（type/message/details），168 bytes 为框架设计；
-    // 校验错误路径罕见，Box 化会令所有 `validate()?` 调用点被迫 `map_err` 解包，得不偿失。
+    /// 校验请求安全约束（expr≤4096 / vars≤1024 / 键名≤64 / 非有限值拒绝 / precision≤10000）；违规返回 HTTP 422 / MCP VALIDATION_ERROR。
+    // ApiError 体积为框架设计；校验错误路径罕见，Box 化会迫使所有 `validate()?` 调用点解包
     #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<(), ApiError> {
         // expr 字段校验（空串 / 超长 / null 字节均为 DoS / 注入向量）
@@ -100,8 +81,7 @@ impl EvaluateRequest {
                 format!("size {} exceeds limit {}", self.vars.len(), MAX_VARS),
             ));
         }
-        // vars 键名校验（长度 / null 字节）
-        // 单个键名超长或含 null 字节是内存攻击 / 注入向量，与 expr 校验对齐。
+        // vars 键名校验：超长/含 null 字节为内存攻击 / 注入向量（与 expr 校验对齐）
         for name in self.vars.keys() {
             if name.len() > MAX_VAR_NAME_LEN {
                 return Err(ApiError::validation(
@@ -120,9 +100,7 @@ impl EvaluateRequest {
                 ));
             }
         }
-        // NaN/Infinity 不被 JSON 标准支持，serde_json 默认在反序列化层拦截；
-        // 此处显式校验确保 validate() 自包含，不依赖反序列化层隐式行为
-        // （防御未来 JSON 库切换 / 测试直接构造 struct 的路径）。
+        // NaN/Infinity 显式校验：确保 validate() 自包含，不依赖反序列化层拦截
         if self.vars.values().any(|v| !v.is_finite()) {
             return Err(ApiError::validation(
                 "vars",
@@ -151,12 +129,7 @@ const MAX_VAR_NAME_LEN: usize = 64;
 const MAX_EXPR_LEN: usize = 4096;
 
 impl EvaluateResponse {
-    /// 从 evaluate 返回值构造响应。
-    ///
-    /// `fmt_prec` 为 evaluate 返回的格式化精度（precision 模式下是输入 precision；
-    /// 常规模式下是 `precision(N, expr)` 调用中的 N）。当结果为 `BigRational` 且
-    /// `fmt_prec.is_some()` 时，按 格式化为十进制字符串
-    /// （如 `1/3` 精度 5 → `"0.33333"`）；否则按 `eval_result_to_json` 默认映射。
+    /// 从 evaluate 返回值构造响应；BigRational + `fmt_prec` 时格式化为十进制字符串。
     pub fn from_eval(
         result: EvalResult,
         domain: String,
@@ -181,28 +154,13 @@ impl EvaluateResponse {
     }
 }
 
-/// 将 EvalResult 转换为 serde_json::Value。
-///
-/// 各变体映射规则：
-/// - `Scalar(f64)` → Number（NaN/Infinity → String "NaN"/"Infinity"）
-/// - `Complex(re, im)` → `{"re":..., "im":...}`
-/// - `Matrix(m)` → `[[...],[...]]`
-/// - `BigInt(b)` → String（JSON Number 无法表示任意精度整数）
-/// - `BigRational(r)` → `{"num":"...", "den":"..."}`
-/// - `Vector(v)` → `[...]`
-/// - `Polynomial(p)` → `[...]`
-/// - `ComplexList(l)` → `[{"re":..,"im":..},...]`
-/// - `Symbolic(s)` → String
-/// - `LaTeX(s)` → String
-/// - `Steps(v)` → `["...",...]`
-/// - `Json(v)` → v（直接透传 serde_json::Value）
+/// 将 EvalResult 转换为 JSON（NaN/Infinity 与 BigInt 用 String 表示）。
 fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
     use serde_json::{Value, json};
     match result {
         EvalResult::Scalar(v) => {
             if v.is_finite() {
-                // 整数值 f64 转 i64，使 `5.0` 序列化为 `5` 而非 `5.0`，
-                // 匹配 示例与 JSON 整数字面量断言（`body["result"] == 5`）。
+                // 整数值 f64 转 i64，使 `5.0` 序列化为 `5` 而非 `5.0`
                 if v.fract() == 0.0 && v.abs() < i64::MAX as f64 {
                     Value::from(*v as i64)
                 } else {
@@ -242,8 +200,7 @@ fn eval_result_to_json(result: &EvalResult) -> serde_json::Value {
         EvalResult::LaTeX(s) => Value::from(s.as_str()),
         EvalResult::Steps(v) => Value::Array(v.iter().map(|s| Value::from(s.as_str())).collect()),
         EvalResult::Json(v) => v.clone(),
-        // DateTime：序列化为 {"type":"datetime","value":"<RFC3339>"}
-        // 类型标签使客户端可区分 DateTime 与 Symbolic/LaTeX 等纯字符串结果。
+        // DateTime 带 "type" 标签，便于客户端与 Symbolic/LaTeX 纯字符串结果区分
         EvalResult::DateTime(s) => json!({"type": "datetime", "value": s}),
     }
 }
@@ -459,7 +416,6 @@ mod tests {
     }
 
     // === validate() 安全约束 ===
-    // validate() 是核心安全方法，必须有单元测试覆盖。
 
     #[test]
     fn test_validate_accepts_valid_request() {
@@ -513,8 +469,7 @@ mod tests {
         assert!(matches!(err, ApiError::ValidationError { .. }));
     }
 
-    // NaN/Infinity 不被 JSON 标准支持，serde_json 默认在反序列化层拦截；
-    // 此测试直接构造 struct 验证 validate() 自身的有限性校验（不依赖反序列化层）。
+    // 直接构造 struct 验证 validate() 自身有限性校验（不依赖反序列化层拦截）
     #[test]
     fn test_validate_rejects_non_finite_vars() {
         for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -536,7 +491,7 @@ mod tests {
     }
 
     // === expr 字段校验 ===
-    // 空串/超长/null 字节均为 DoS / 注入向量，回归覆盖入口拦截。
+    // 空串/超长/null 字节均为 DoS / 注入向量。
 
     #[test]
     fn test_validate_rejects_empty_expr() {
@@ -584,7 +539,7 @@ mod tests {
     }
 
     // === vars 键名长度 / 内容校验 ===
-    // 超长或含 null 字节的键名为内存攻击 / 注入向量，回归覆盖入口拦截。
+    // 超长或含 null 字节的键名为内存攻击 / 注入向量。
 
     #[test]
     fn test_validate_rejects_oversized_var_name() {

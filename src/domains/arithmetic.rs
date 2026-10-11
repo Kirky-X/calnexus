@@ -3,14 +3,7 @@
 
 //! Arithmetic 计算域：四则运算、幂、阶乘、取模、绝对值。
 //!
-//! 设计依据：
-//! - arithmetic-domain spec：10 个 requirements / 24 个 scenarios
-//! - 实现 `CalculationDomain` trait
-//!
-//! **Spec 冲突说明**：（`5/0`→`DivisionByZero`）与
-//! （`1/0`→`NaNOrInf`）对 x/0 (x≠0) 的错误类型存在矛盾。
-//! 本实现采用预检查策略：`0/0`→`NaNOrInf`（结果为 NaN），
-//! `x/0` (x≠0)→`DivisionByZero`（预检查除零，更安全且信息更明确）。
+//! priority=10；除零策略：0/0 → NaNOrInf，x/0 (x≠0) 预检查返回 DivisionByZero。
 
 use super::common::{resolve_variable, unsupported_node_error};
 use crate::core::CalculationDomain;
@@ -19,10 +12,7 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 /// 算术函数白名单（parser 预处理后的函数名）。
 const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
 
-/// Arithmetic 计算域。
-///
-/// 支持四则运算、幂运算、阶乘、取模、绝对值。
-/// 使用 `is_finite()` 检测溢出（f64 无 `checked_*` 方法，用 NaN/Inf 检测替代）。
+/// Arithmetic 计算域：priority=10，四则运算/幂/阶乘/取模/绝对值，溢出用 is_finite 检测。
 pub struct ArithmeticDomain;
 
 impl CalculationDomain for ArithmeticDomain {
@@ -198,7 +188,7 @@ mod tests {
             .map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
-    // ===== Requirement 1: Basic Arithmetic Operations =====
+    // ===== 基本四则运算 =====
 
     #[test]
     fn test_addition() {
@@ -220,7 +210,7 @@ mod tests {
         assert_eq!(eval("20/4").unwrap(), 5.0);
     }
 
-    // ===== Requirement 2: Power Operation =====
+    // ===== 幂运算 =====
 
     #[test]
     fn test_integer_power() {
@@ -229,7 +219,6 @@ mod tests {
 
     #[test]
     fn test_fractional_power() {
-        // 2^0.5 → √2 ≈ 1.4142135623730951
         let result = eval("2^0.5").unwrap();
         assert!((result - 1.4142135623730951).abs() < 1e-10);
     }
@@ -240,7 +229,7 @@ mod tests {
         assert_eq!(eval("0^0").unwrap(), 1.0);
     }
 
-    // ===== Requirement 3: Factorial Operation =====
+    // ===== 阶乘运算 =====
 
     #[test]
     fn test_factorial_positive() {
@@ -257,7 +246,7 @@ mod tests {
         assert_eq!(eval("factorial(10)").unwrap(), 3628800.0);
     }
 
-    // ===== Requirement 4: Modulo Operation =====
+    // ===== 取模运算 =====
 
     #[test]
     fn test_modulo_positive() {
@@ -270,7 +259,7 @@ mod tests {
         assert_eq!(eval("mod(-7,3)").unwrap(), -1.0);
     }
 
-    // ===== Requirement 5: Absolute Value Function =====
+    // ===== 绝对值函数 =====
 
     #[test]
     fn test_abs_negative() {
@@ -283,11 +272,10 @@ mod tests {
         assert!((result - 3.14).abs() < 1e-10);
     }
 
-    // ===== Requirement 6: Integer Overflow Protection =====
+    // ===== 整数溢出保护 =====
 
     #[test]
     fn test_factorial_exceeds_bound() {
-        // 10001! → Overflow
         let result = eval("factorial(10001)");
         assert!(result.is_err());
         assert!(
@@ -309,7 +297,7 @@ mod tests {
         );
     }
 
-    // ===== Requirement 7: Division by Zero Detection =====
+    // ===== 除零检测 =====
 
     #[test]
     fn test_division_by_zero() {
@@ -333,7 +321,7 @@ mod tests {
         );
     }
 
-    // ===== Requirement 8: Floating-Point NaN and Infinity Detection =====
+    // ===== 浮点 NaN 与无穷检测 =====
 
     #[test]
     fn test_zero_divided_by_zero() {
@@ -349,10 +337,7 @@ mod tests {
 
     #[test]
     fn test_one_divided_by_zero() {
-        // 1/0 → NaNOrInf
-        // Spec 冲突：一处规定 5/0 → DivisionByZero，另一处规定 1/0 → NaNOrInf。
-        // 本实现统一预检查除零：x/0 (x≠0) → DivisionByZero。
-        // 这是对后者的偏离：返回 DivisionByZero 而非 NaNOrInf。
+        // 1/0：spec 冲突，本实现预检查除零返回 DivisionByZero
         let result = eval("1/0");
         assert!(result.is_err());
         // 接受 DivisionByZero 或 NaNOrInf（取决于实现策略）
@@ -366,7 +351,7 @@ mod tests {
         );
     }
 
-    // ===== Requirement 9: Negative Base Power =====
+    // ===== 负底数幂 =====
 
     #[test]
     fn test_negative_base_integer_power() {
@@ -385,7 +370,7 @@ mod tests {
         );
     }
 
-    // ===== Requirement 10: Variable Substitution =====
+    // ===== 变量替换 =====
 
     #[test]
     fn test_bound_variable() {

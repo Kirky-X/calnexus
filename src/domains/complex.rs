@@ -3,12 +3,7 @@
 
 //! Complex 计算域：复数四则运算、模、幅角、共轭、复指数、复对数。
 //!
-//! 设计依据：
-//! - complex-domain spec：10 个 requirements / 24 个 scenarios
-//! - 基于 `num_complex::Complex64` 实现，priority=30
-//!
-//! 路由策略：AST 含 `Complex` 节点或 `complex()`/`conj()`/`arg()` 函数调用时路由至本域。
-//! `abs()`/`exp()`/`ln()` 仅当参数含 `Complex` 节点时路由至本域。
+//! 含 Complex 节点或复数专用函数时路由至本域；基于 num_complex，priority=30。
 
 use super::common::{
     ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
@@ -19,10 +14,7 @@ use num_complex::Complex64;
 
 use crate::math::complex as math_complex;
 
-/// Complex 计算域。
-///
-/// priority=30，高于 Scientific（20）与 Arithmetic（10）。
-/// 支持复数四则运算、模、幅角、共轭、复指数、复对数。
+/// Complex 计算域：priority=30，高于 Scientific（20）与 Arithmetic（10）。
 pub struct ComplexDomain;
 
 impl CalculationDomain for ComplexDomain {
@@ -60,13 +52,7 @@ impl CalculationDomain for ComplexDomain {
 }
 
 impl ComplexDomain {
-    /// 递归求值 AST 节点，返回标量或复数。
-    ///
-    /// 标量与复数的区分规则（spec 混合运算）：
-    /// - `abs()`/`arg()` 返回标量
-    /// - `conj()`/`exp()`/`ln()`/`complex()` 返回复数
-    /// - `Complex` 节点返回复数，`Number` 节点返回标量
-    /// - 二元运算：两个标量运算结果为标量；任一为复数则结果为复数
+    /// 递归求值 AST 节点：abs/arg 返回标量，conj/exp/ln/complex 返回复数。
     fn eval(&self, ast: &AstNode, ctx: &EvalContext) -> Result<ComplexValue, CalcError> {
         match ast {
             AstNode::Number(n) => Ok(ComplexValue::Scalar(*n)),
@@ -103,9 +89,7 @@ impl ComplexDomain {
         }
     }
 
-    /// 求值二元运算。
-    ///
-    /// 两个标量做标量运算；任一为复数则提升为复数运算。
+    /// 求值二元运算：两标量走标量路径，任一为复数则提升为复数运算。
     fn eval_binary(
         &self,
         op: BinaryOp,
@@ -265,9 +249,7 @@ impl ComplexDomain {
     }
 }
 
-/// 内部求值结果：标量或复数。
-///
-/// 用于区分 `abs()`/`arg()` 返回标量与其他运算返回复数。
+/// 内部求值结果：标量或复数，区分 abs/arg 的标量返回。
 enum ComplexValue {
     Scalar(f64),
     Complex(Complex64),
@@ -283,12 +265,7 @@ impl ComplexValue {
     }
 }
 
-/// 递归检查 AST 是否应路由至 ComplexDomain。
-///
-/// 路由条件：
-/// - 含 `Complex` 节点
-/// - 含 `complex()`/`conj()`/`arg()` 函数调用（复数专用函数）
-/// - `abs()`/`exp()`/`ln()` 的参数含 `Complex` 节点（共享函数，仅复数参数时路由）
+/// 递归检查 AST 是否路由至本域：含 Complex 节点或复数专用函数调用。
 fn contains_complex(ast: &AstNode) -> bool {
     match ast {
         AstNode::Complex(_, _) => true,
@@ -301,7 +278,6 @@ fn contains_complex(ast: &AstNode) -> bool {
             if matches!(name.as_str(), "abs" | "exp" | "ln") {
                 return args.iter().any(contains_complex);
             }
-            // 其他函数：检查参数
             args.iter().any(contains_complex)
         }
         AstNode::BinaryOp(_, l, r) => contains_complex(l) || contains_complex(r),
@@ -356,7 +332,7 @@ mod tests {
             .with_var("e", std::f64::consts::E)
     }
 
-    // ===== Requirement 1: 复数字面量解析 =====
+    // ===== 复数字面量解析 =====
 
     #[test]
     fn test_complex_literal_standard() {
@@ -372,14 +348,14 @@ mod tests {
 
     #[test]
     fn test_real_number_not_route_to_complex() {
-        // 5 → Number(5)，不路由到 ComplexDomain
+        // Number(5) 不路由到 ComplexDomain
         let ast = parse("5").unwrap();
         assert_eq!(ast, AstNode::Number(5.0));
         let domain = ComplexDomain;
         assert!(!domain.supports(&ast));
     }
 
-    // ===== Requirement 2: 复数四则运算 =====
+    // ===== 复数四则运算 =====
 
     #[test]
     fn test_complex_addition() {
@@ -413,7 +389,7 @@ mod tests {
         assert_complex_approx(&result, 0.44, 0.08);
     }
 
-    // ===== Requirement 3: 复数模 =====
+    // ===== 复数模 =====
 
     #[test]
     fn test_complex_abs_standard() {
@@ -431,7 +407,7 @@ mod tests {
         assert_scalar(&result, 3.0);
     }
 
-    // ===== Requirement 4: 复数幅角 =====
+    // ===== 复数幅角 =====
 
     #[test]
     fn test_complex_arg_first_quadrant() {
@@ -449,7 +425,7 @@ mod tests {
         assert_scalar(&result, 0.0);
     }
 
-    // ===== Requirement 5: 复数共轭 =====
+    // ===== 复数共轭 =====
 
     #[test]
     fn test_complex_conjugate_standard() {
@@ -467,12 +443,11 @@ mod tests {
         assert_complex_approx(&result, 5.0, 0.0);
     }
 
-    // ===== Requirement 6: 复指数 =====
+    // ===== 复指数 =====
 
     #[test]
     fn test_complex_exp_euler_identity() {
-        // exp(complex(0,1)*pi) → -1+0i（欧拉公式恒等式）
-        // 等价于数学上的 exp(i*pi) = -1
+        // 欧拉公式恒等式：exp(i*pi) = -1
         let ast = parse("exp(complex(0,1)*pi)").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
@@ -489,7 +464,7 @@ mod tests {
         assert_complex_approx(&result, expected_re, expected_im);
     }
 
-    // ===== Requirement 7: 复对数 =====
+    // ===== 复对数 =====
 
     #[test]
     fn test_complex_ln_one_plus_i() {
@@ -509,11 +484,11 @@ mod tests {
         assert_complex_approx(&result, std::f64::consts::LN_2, 0.0);
     }
 
-    // ===== Requirement 8: 域路由 =====
+    // ===== 域路由 =====
 
     #[test]
     fn test_route_complex_node() {
-        // 3+4i + 1 → 含 Complex 节点，路由到 ComplexDomain
+        // 含 Complex 节点，路由到 ComplexDomain
         let ast = parse("3+4i + 1").unwrap();
         let domain = ComplexDomain;
         assert!(domain.supports(&ast));
@@ -521,13 +496,13 @@ mod tests {
 
     #[test]
     fn test_route_complex_function() {
-        // conj(2+3i) → 含 conj() 函数，路由到 ComplexDomain
+        // 含 conj() 函数，路由到 ComplexDomain
         let ast = parse("conj(2+3i)").unwrap();
         let domain = ComplexDomain;
         assert!(domain.supports(&ast));
     }
 
-    // ===== Requirement 9: 混合运算 =====
+    // ===== 混合运算 =====
 
     #[test]
     fn test_mixed_abs_complex_plus_real() {
@@ -547,7 +522,7 @@ mod tests {
         assert_complex_approx(&result, 4.0, 2.0);
     }
 
-    // ===== Requirement 10: 错误处理 =====
+    // ===== 错误处理 =====
 
     #[test]
     fn test_unsupported_matrix_node() {
@@ -646,8 +621,7 @@ mod tests {
 
     #[test]
     fn test_complex_pow_zero_zero_returns_scalar_one() {
-        // 0+0i ^ 0+0i → 1.0（与所有域 0^0=1 约定一致）
-        // 契约：显式返回 Scalar(1.0) 而非 Complex(1,0)，与标量分支类型一致
+        // 契约：0^0 显式返回 Scalar(1.0)，与标量分支类型一致
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::Complex(0.0, 0.0)),
@@ -655,14 +629,12 @@ mod tests {
         );
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
-        // 期望 Scalar(1.0)，与标量分支 0^0=1 一致
         assert_scalar(&result, 1.0);
     }
 
     #[test]
     fn test_complex_pow_overflow_returns_nan_or_inf() {
-        // (1e308+1e308i) ^ (1e308+1e308i) → overflow → NaN/Inf
-        // 契约：复数 Pow 结果须经 is_finite 检查，溢出返回 NaNOrInf 而非含 Inf/NaN 的复数
+        // 契约：复数 Pow 结果须经 is_finite 检查，溢出返回 NaNOrInf。
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::Complex(1e308, 1e308)),
@@ -707,14 +679,14 @@ mod tests {
     fn test_complex_i_variable() {
         let ast = AstNode::Variable("i".to_string());
         let domain = ComplexDomain;
-        // Variable("i") alone doesn't route to complex, but if evaluated:
+        // 单独 Variable("i") 不触发路由，但直接求值返回 i
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
         assert_complex_approx(&result, 0.0, 1.0);
     }
 
     #[test]
     fn test_complex_nan_detection() {
-        // 0+0i / 0 → DivisionByZero (not NaN)
+        // 0+0i / 0 → DivisionByZero 而非 NaN
         let ast = parse("(0+0i) / 0").unwrap();
         let domain = ComplexDomain;
         let result = domain.evaluate(&ast, &default_ctx());
@@ -985,14 +957,14 @@ mod tests {
         assert_scalar(&EvalResult::Complex(1.0, 2.0), 1.0);
     }
 
-    // ===== proptest 属性测试（task 12.7） =====
+    // ===== proptest 属性测试 =====
 
     use proptest::prelude::*;
 
     proptest! {
         #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
 
-        /// 属性：共轭的共轭 = 原复数（spec 数学性质）
+        /// 属性：共轭的共轭等于原复数
         #[test]
         fn prop_double_conjugate_identity(re in -1e6f64..1e6, im in -1e6f64..1e6) {
             let ast = AstNode::FunctionCall(
@@ -1013,7 +985,7 @@ mod tests {
             }
         }
 
-        /// 属性：模非负（spec 数学性质）
+        /// 属性：模非负
         #[test]
         fn prop_abs_non_negative(re in -1e6f64..1e6, im in -1e6f64..1e6) {
             let ast = AstNode::FunctionCall(
@@ -1028,8 +1000,7 @@ mod tests {
             }
         }
 
-        /// 属性：欧拉公式 exp(i*theta) 模为 1
-        /// exp(complex(0, theta)) 的模 = 1（对任意实数 theta）
+        /// 属性：欧拉公式 exp(i*theta) 的模恒为 1
         #[test]
         fn prop_euler_formula_unit_modulus(theta in -10.0f64..10.0) {
             let ast = AstNode::FunctionCall(

@@ -1,10 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Direct API vs expression-path benchmark.
-//!
-//! 运行：`cargo bench --bench api_bench`
-//! 对比直接 API 调用与表达式解析路径的性能差异。
+//! 直接 API 与表达式路径的性能对比基准。
+//! 运行：`cargo bench --bench api_bench`。
 
 use calnexus::{CacheManager, CalNexus, EvalContext, Matrix, Vector};
 use criterion::{Criterion, criterion_group, criterion_main};

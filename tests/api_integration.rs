@@ -1,9 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 直接 API 端到端集成测试。
-//!
-//! 验证 CalNexus 门面 + 5 个分组 trait 访问器的正确性。
+//! 直接 API 集成测试：验证 CalNexus 门面与各分组 trait 访问器。
 
 use calnexus::{CalNexus, EvalResult, Matrix, Vector};
 
@@ -62,7 +60,6 @@ fn test_linalg_det_2x2() {
     let cn = CalNexus::new();
     let m = Matrix::from_rows(&[&[1.0, 2.0], &[3.0, 4.0]]);
     let result = cn.linalg().det(&m).unwrap();
-    // det = 1*4 - 2*3 = -2
     assert_eq!(result, EvalResult::Scalar(-2.0));
 }
 
@@ -71,7 +68,6 @@ fn test_linalg_det_3x3() {
     let cn = CalNexus::new();
     let m = Matrix::from_rows(&[&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0], &[7.0, 8.0, 10.0]]);
     let result = cn.linalg().det(&m).unwrap();
-    // det = 1*(50-48) - 2*(40-42) + 3*(32-35) = 2+4-9 = -3
     assert_eq!(result, EvalResult::Scalar(-3.0));
 }
 
@@ -81,7 +77,6 @@ fn test_linalg_dot() {
     let a = Vector::new(&[1.0, 2.0, 3.0]);
     let b = Vector::new(&[4.0, 5.0, 6.0]);
     let result = cn.linalg().dot(&a, &b).unwrap();
-    // 1*4 + 2*5 + 3*6 = 32
     assert_eq!(result, EvalResult::Scalar(32.0));
 }
 

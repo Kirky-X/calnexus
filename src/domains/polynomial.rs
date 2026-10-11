@@ -3,15 +3,7 @@
 
 //! Polynomial 计算域：多项式算术、求值、求根、微分、积分、因式分解。
 //!
-//! 设计依据：
-//! - polynomial-domain spec：9 个 requirements / 14+ scenarios
-//! - 系数向量升幂存储 + 直接表达式输入、priority=25
-//!
-//! 路由策略：AST 含多项式函数调用（poly_add/poly_sub/poly_mul/poly_div/poly_eval/
-//! poly_diff/poly_integrate/roots/factor）时路由至本域。
-//!
-//! 多项式表示：系数向量 `Vec<f64>`，升幂存储（`coef[i]` = `x^i` 的系数）。
-//! 输入语法：直接表达式 `poly_add(x^2+2x+1, x+1)`，域内 `expr_to_coeffs()` 转换。
+//! 系数升幂存储（`coef[i]` = `x^i`），AST 含多项式函数调用时路由至本域。
 
 use super::common::{
     ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
@@ -34,9 +26,7 @@ const POLYNOMIAL_FUNCTIONS: &[&str] = &[
     "factor",
 ];
 
-/// Polynomial 计算域。
-///
-/// priority=25，支持 poly_add/sub/mul/div/eval/diff/integrate/roots/factor。
+/// Polynomial 计算域：priority=25，支持多项式算术、求值、求根、微分、积分与因式分解。
 pub struct PolynomialDomain;
 
 impl CalculationDomain for PolynomialDomain {
@@ -53,7 +43,7 @@ impl CalculationDomain for PolynomialDomain {
     }
 
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        // 预绑定 pi/e（若上下文未提供），避免常量被当作多项式变量
+        // 预绑定 pi/e，避免常量被当作多项式变量
         let ctx = ensure_math_constants(ctx);
         self.eval_node(ast, &ctx)
     }
@@ -73,7 +63,6 @@ impl PolynomialDomain {
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
             AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
             AstNode::BinaryOp(_, _, _) => {
-                // 尝试作为多项式表达式求值
                 let (coeffs, _var) = expr_to_coeffs(ast, ctx)?;
                 Ok(EvalResult::Polynomial(coeffs))
             }
@@ -151,8 +140,7 @@ impl PolynomialDomain {
     /// poly_sub(a, b)：多项式减法（a + (-b)）。
     fn eval_poly_sub(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 2 {
-            // 必须带 i18n key，否则 locales/*.json 中
-            // `msg.polynomial.poly_sub_arg_count` 成为死键，中文用户看到英文错误。
+            // 必须带 i18n key，否则 locales 中该 key 成为死键，中文用户看到英文错误。
             return Err(CalcError::domain(format!(
                 "poly_sub() requires exactly 2 arguments, got {}",
                 args.len()
@@ -294,9 +282,7 @@ impl PolynomialDomain {
         Ok(EvalResult::Symbolic(result))
     }
 
-    /// 将参数转为系数向量。
-    /// 若参数为 FunctionCall（如 `poly_add(...)`），先求值再提取 Polynomial 系数；
-    /// 否则调用 `expr_to_coeffs` 直接转换表达式树。
+    /// 将参数转为系数向量：FunctionCall 先求值提取系数，其余走 expr_to_coeffs。
     fn arg_to_coeffs(
         &self,
         ast: &AstNode,
@@ -375,8 +361,7 @@ impl PolynomialDomain {
     }
 }
 
-/// 将表达式树转为升幂系数向量 (coeffs, variable_name)。
-/// coef[i] = x^i 的系数。
+/// 将表达式树转为升幂系数向量 (coeffs, variable_name)，coef[i] = x^i 的系数。
 fn expr_to_coeffs(ast: &AstNode, ctx: &EvalContext) -> Result<(Vec<f64>, String), CalcError> {
     match ast {
         AstNode::Number(n) => Ok((vec![*n], String::new())),
@@ -731,13 +716,10 @@ mod tests {
     #[test]
     fn test_poly_eval_with_pi_e_constants() {
         // pi/e 应被识别为常量而非多项式变量
-        // poly_eval(x^2+pi, 1) = 1 + π ≈ 4.14159
         let result = eval_scalar("poly_eval(x^2+pi, 1)").unwrap();
         assert_approx(result, 1.0 + std::f64::consts::PI);
-        // poly_eval(x^2+e, 0) = 0 + e ≈ 2.71828
         let result = eval_scalar("poly_eval(x^2+e, 0)").unwrap();
         assert_approx(result, std::f64::consts::E);
-        // poly_eval(pi*x+1, 2) = 2π + 1 ≈ 7.28318
         let result = eval_scalar("poly_eval(pi*x+1, 2)").unwrap();
         assert_approx(result, 2.0 * std::f64::consts::PI + 1.0);
     }
@@ -747,7 +729,6 @@ mod tests {
     #[test]
     fn test_poly_diff() {
         let result = eval_polynomial("poly_diff(x^3+2*x)").unwrap();
-        // d/dx(x^3+2x) = 3x^2+2 → [2, 0, 3]
         assert_vec_approx(&result, &[2.0, 0.0, 3.0]);
     }
 
@@ -756,7 +737,6 @@ mod tests {
     #[test]
     fn test_poly_integrate() {
         let result = eval_polynomial("poly_integrate(2*x)").unwrap();
-        // ∫2x dx = x^2 → [0, 0, 1]
         assert_vec_approx(&result, &[0.0, 0.0, 1.0]);
     }
 
@@ -767,7 +747,6 @@ mod tests {
         let result = eval("roots(x^2+1)").unwrap();
         let roots = result.as_complex_list().unwrap();
         assert_eq!(roots.len(), 2);
-        // roots should be (0, 1) and (0, -1) → ±i
         assert_approx(roots[0].0, 0.0);
         assert_approx(roots[0].1.abs(), 1.0);
         assert_approx(roots[1].0, 0.0);
@@ -826,7 +805,6 @@ mod tests {
     #[test]
     fn test_poly_integrate_x_squared() {
         let result = eval_polynomial("poly_integrate(x^2)").unwrap();
-        // ∫x^2 dx = x^3/3 → [0, 0, 0, 1/3]
         assert_vec_approx(&result, &[0.0, 0.0, 0.0, 1.0 / 3.0]);
     }
 
@@ -852,11 +830,9 @@ mod tests {
 
     #[test]
     fn test_roots_cubic_one_real_two_complex() {
-        // x^3+1 = 0 → roots: -1, (1±i√3)/2
         let result = eval("roots(x^3+1)").unwrap();
         let roots = result.as_complex_list().expect("expected ComplexList");
         assert_eq!(roots.len(), 3);
-        // 实根 -1
         let real_roots: Vec<f64> = roots
             .iter()
             .filter(|(_, im)| im.abs() < 1e-9)
@@ -864,7 +840,6 @@ mod tests {
             .collect();
         assert_eq!(real_roots.len(), 1);
         assert_approx(real_roots[0], -1.0);
-        // 复共轭对 (0.5, ±√3/2)
         let complex_roots: Vec<(f64, f64)> = roots
             .iter()
             .filter(|(_, im)| im.abs() >= 1e-9)
@@ -878,7 +853,6 @@ mod tests {
 
     #[test]
     fn test_roots_cubic_three_real() {
-        // x^3-6x^2+11x-6 = 0 → roots: 1, 2, 3
         let result = eval("roots(x^3-6*x^2+11*x-6)").unwrap();
         let roots = result
             .as_vector()
@@ -893,7 +867,6 @@ mod tests {
 
     #[test]
     fn test_roots_cubic_repeated() {
-        // x^3-3x^2+3x-1 = (x-1)^3 → triple root 1
         let result = eval("roots(x^3-3*x^2+3*x-1)").unwrap();
         let roots = result.as_vector().expect("expected Vector");
         assert_eq!(roots.len(), 3);
@@ -904,7 +877,6 @@ mod tests {
 
     #[test]
     fn test_roots_quartic_four_real() {
-        // x^4-5x^2+4 = (x^2-1)(x^2-4) → roots: ±1, ±2
         let result = eval("roots(x^4-5*x^2+4)").unwrap();
         let roots = result
             .as_vector()
@@ -920,11 +892,10 @@ mod tests {
 
     #[test]
     fn test_roots_quartic_two_real_two_complex() {
-        // x^4+1 = 0 → roots: (±√2/2)(1±i), 即 4 个复根
         let result = eval("roots(x^4+1)").unwrap();
         let roots = result.as_complex_list().expect("expected ComplexList");
         assert_eq!(roots.len(), 4);
-        // 所有根的模应为 1（因为 |x^4| = |-1| → |x| = 1）
+        // 所有根的模应为 1
         for &(re, im) in roots {
             let mag = (re * re + im * im).sqrt();
             assert!((mag - 1.0).abs() < 1e-6, "expected |root| = 1, got {}", mag);
@@ -933,11 +904,9 @@ mod tests {
 
     #[test]
     fn test_roots_quartic_with_cubic_term() {
-        // x^4-1 = 0 → roots: 1, -1, i, -i
         let result = eval("roots(x^4-1)").unwrap();
         let roots = result.as_complex_list().expect("expected ComplexList");
         assert_eq!(roots.len(), 4);
-        // 找实根 ±1
         let real_roots: Vec<f64> = roots
             .iter()
             .filter(|(_, im)| im.abs() < 1e-9)
@@ -948,7 +917,6 @@ mod tests {
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert_approx(sorted[0], -1.0);
         assert_approx(sorted[1], 1.0);
-        // 找复根 ±i
         let complex_roots: Vec<(f64, f64)> = roots
             .iter()
             .filter(|(_, im)| im.abs() >= 1e-9)
@@ -1076,7 +1044,6 @@ mod tests {
 
     #[test]
     fn test_multiple_variables_rejected() {
-        // x + y → 多变量多项式，应该报错
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Variable("x".to_string())),
@@ -1110,7 +1077,6 @@ mod tests {
 
     #[test]
     fn test_poly_mul_coeffs() {
-        // (x+1)(x+2) = x^2+3x+2
         assert_eq!(
             math_poly::mul(&[1.0, 1.0], &[2.0, 1.0]),
             vec![2.0, 3.0, 1.0]
@@ -1119,7 +1085,6 @@ mod tests {
 
     #[test]
     fn test_poly_div_coeffs() {
-        // (x^2-1) / (x-1) = x+1, rem 0
         let (q, r) = math_poly::div(&[-1.0, 0.0, 1.0], &[-1.0, 1.0]);
         assert_vec_approx(&q, &[1.0, 1.0]);
         assert!(r.iter().all(|x| x.abs() < 1e-9));
@@ -1133,13 +1098,11 @@ mod tests {
 
     #[test]
     fn test_poly_diff_coeffs() {
-        // d/dx(x^3+2x) = 3x^2+2 → [2, 0, 3]
         assert_vec_approx(&math_poly::diff(&[0.0, 2.0, 0.0, 1.0]), &[2.0, 0.0, 3.0]);
     }
 
     #[test]
     fn test_poly_integrate_coeffs() {
-        // ∫2x dx = x^2 → [0, 0, 1]
         assert_vec_approx(&math_poly::integrate(&[0.0, 2.0]), &[0.0, 0.0, 1.0]);
     }
 
@@ -1256,19 +1219,16 @@ mod tests {
 
     #[test]
     fn test_arg_to_coeffs_nested_function() {
-        // arg_to_coeffs with nested FunctionCall returning Polynomial
         let ast = parse("poly_add(poly_add(x+1, x+2), x+3)").unwrap();
         let result = PolynomialDomain
             .evaluate(&ast, &EvalContext::new())
             .unwrap();
         let coeffs = result.as_polynomial().unwrap();
-        // (2x+3) + (x+3) = 3x+6 → [6, 3]
         assert_vec_approx(coeffs, &[6.0, 3.0]);
     }
 
     #[test]
     fn test_arg_to_coeffs_nested_function_non_polynomial() {
-        // arg_to_coeffs with nested FunctionCall returning non-Polynomial (roots → Vector)
         let ast = AstNode::FunctionCall(
             "poly_add".to_string(),
             vec![
@@ -1340,7 +1300,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_binaryop() {
-        // eval_scalar BinaryOp via poly_eval: poly_eval(x+1, 2+3) = 6
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1360,7 +1319,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_div() {
-        // eval_scalar BinaryOp::Div via poly_eval: poly_eval(x+1, 10/2) = 6
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1397,7 +1355,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_pow() {
-        // eval_scalar BinaryOp::Pow via poly_eval: poly_eval(x+1, 2^2) = 5
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1417,7 +1374,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_mod() {
-        // eval_scalar BinaryOp::Mod via poly_eval: poly_eval(x+1, 10%3) = poly_eval(x+1, 1) = 2
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1464,7 +1420,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_bignumber() {
-        // expr_to_coeffs BigNumber
         let ast = AstNode::BigNumber("42".to_string());
         let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
         assert_eq!(var, "");
@@ -1480,7 +1435,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_variable_with_ctx_value() {
-        // Variable with value in ctx → constant
         let ctx = EvalContext::new().with_var("x", 5.0);
         let ast = AstNode::Variable("x".to_string());
         let (coeffs, var) = expr_to_coeffs(&ast, &ctx).unwrap();
@@ -1490,7 +1444,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_pow_variable_with_ctx_value() {
-        // x^2 where x has value 3 in ctx → [9]
         let ctx = EvalContext::new().with_var("x", 3.0);
         let ast = parse("x^2").unwrap();
         let (coeffs, var) = expr_to_coeffs(&ast, &ctx).unwrap();
@@ -1500,7 +1453,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_pow_number_number() {
-        // Number ^ Number → constant: 2^3 = 8
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::Number(2.0)),
@@ -1513,7 +1465,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_pow_unsupported() {
-        // (x+1)^2 → not a polynomial: unsupported power expression
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(parse("x+1").unwrap()),
@@ -1525,7 +1476,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_mul_poly_poly() {
-        // (x+1) * (x+2) = x^2+3x+2 → Poly*Poly path
         let ast = parse("(x+1)*(x+2)").unwrap();
         let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
         assert_eq!(var, "x");
@@ -1534,7 +1484,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_mul_number_left() {
-        // 3 * (x+1) → Number * Poly path
         let ast = parse("3*(x+1)").unwrap();
         let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
         assert_eq!(var, "x");
@@ -1543,7 +1492,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_number_number() {
-        // 6 / 2 → constant 3
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(6.0)),
@@ -1556,7 +1504,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_number_zero() {
-        // 6 / 0 → DivisionByZero
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(6.0)),
@@ -1568,7 +1515,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_unsupported() {
-        // (x+1) / (x+2) → non-zero remainder → DomainError
         let ast = parse("(x+1)/(x+2)").unwrap();
         let result = expr_to_coeffs(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
@@ -1576,7 +1522,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_poly_by_number() {
-        // (x^2-1)/2 → [-0.5, 0, 0.5]
         let ast = parse("(x^2-1)/2").unwrap();
         let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
         assert_eq!(var, "x");
@@ -1585,7 +1530,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_poly_by_number_zero() {
-        // (x+1)/0 → DivisionByZero
         let ast = parse("(x+1)/0").unwrap();
         let result = expr_to_coeffs(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::DivisionByZero));
@@ -1593,7 +1537,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_poly_by_poly_exact() {
-        // (x^2-1)/(x-1) → quotient x+1 = [1, 1]
         let ast = parse("(x^2-1)/(x-1)").unwrap();
         let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
         assert_eq!(var, "x");
@@ -1602,7 +1545,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_div_poly_by_poly_exact_higher() {
-        // (x^3-1)/(x-1) → quotient x^2+x+1 = [1, 1, 1]
         let ast = parse("(x^3-1)/(x-1)").unwrap();
         let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
         assert_eq!(var, "x");
@@ -1611,7 +1553,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_mod() {
-        // x % 2 → not supported
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::Variable("x".to_string())),
@@ -1623,7 +1564,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_unsupported_node() {
-        // Complex node → not a polynomial expression
         let ast = AstNode::Complex(1.0, 2.0);
         let result = expr_to_coeffs(&ast, &EvalContext::new());
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
@@ -1631,7 +1571,6 @@ mod tests {
 
     #[test]
     fn test_poly_div_coeffs_a_shorter_than_b() {
-        // a.len() < b.len() → ([0.0], a)
         let (q, r) = math_poly::div(&[1.0, 2.0], &[1.0, 2.0, 3.0]);
         assert_vec_approx(&q, &[0.0]);
         assert_vec_approx(&r, &[1.0, 2.0]);
@@ -1639,7 +1578,6 @@ mod tests {
 
     #[test]
     fn test_poly_div_coeffs_a_empty() {
-        // a empty → quotient=[0.0], remainder=[] (empty)
         let (q, r) = math_poly::div(&[], &[1.0, 2.0]);
         assert_vec_approx(&q, &[0.0]);
         assert!(r.is_empty(), "remainder should be empty, got {:?}", r);
@@ -1658,28 +1596,24 @@ mod tests {
 
     #[test]
     fn test_factor_constant() {
-        // factor(5) → "5"
         let result = eval_symbolic("factor(5)").unwrap();
         assert_eq!(result, "5");
     }
 
     #[test]
     fn test_factor_linear_zero_root() {
-        // factor(x) → "x"
         let result = eval_symbolic("factor(x)").unwrap();
         assert_eq!(result, "x");
     }
 
     #[test]
     fn test_factor_linear_negative_coeff() {
-        // factor(-x+3) → "-(x-3)"
         let result = eval_symbolic("factor(-x+3)").unwrap();
         assert!(result.contains("x-3") || result.contains("(x-3)"));
     }
 
     #[test]
     fn test_factor_quadratic_leading_one() {
-        // factor(x^2-4) → "(x-2)*(x+2)"
         let result = eval_symbolic("factor(x^2-4)").unwrap();
         assert!(result.contains("(x-2)"));
         assert!(result.contains("(x+2)"));
@@ -1687,7 +1621,6 @@ mod tests {
 
     #[test]
     fn test_factor_quadratic_negative_leading() {
-        // factor(4-x^2) → "-(x+2)*(x-2)" (leading coeff -1)
         let result = eval_symbolic("factor(4-x^2)").unwrap();
         assert!(result.starts_with("-"));
         assert!(result.contains("(x-2)"));
@@ -1696,7 +1629,6 @@ mod tests {
 
     #[test]
     fn test_factor_quadratic_other_leading() {
-        // factor(2*x^2-8) → "2*(x-2)*(x+2)"
         let result = eval_symbolic("factor(2*x^2-8)").unwrap();
         assert!(result.starts_with("2*"));
         assert!(result.contains("(x-2)"));
@@ -1705,14 +1637,12 @@ mod tests {
 
     #[test]
     fn test_factor_linear_positive_root_format() {
-        // factor(x-3) → root=3, format "(x-3)"
         let result = eval_symbolic("factor(x-3)").unwrap();
         assert!(result.contains("x-3") || result.contains("(x-3)"));
     }
 
     #[test]
     fn test_factor_linear_negative_root_format() {
-        // factor(x+3) → root=-3, format "(x+3)"
         let result = eval_symbolic("factor(x+3)").unwrap();
         assert!(result.contains("x+3") || result.contains("(x+3)"));
     }
@@ -1724,8 +1654,7 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Domain));
     }
 
-    /// poly_sub 参数数量错误必须带 i18n key，否则 locales/*.json 中
-    /// `msg.polynomial.poly_sub_arg_count` 成为死键，中文用户看到英文错误。
+    /// poly_sub 参数数量错误必须带 i18n key，否则 locales 中该 key 成为死键。
     #[test]
     fn test_poly_sub_wrong_args_has_i18n() {
         let ast = AstNode::FunctionCall("poly_sub".to_string(), vec![AstNode::Number(1.0)]);
@@ -1797,28 +1726,24 @@ mod tests {
 
     #[test]
     fn test_contains_polynomial_recursive() {
-        // contains_polynomial_function via BinaryOp
         let ast = parse("poly_add(x+1, x+2) + 5").unwrap();
         assert!(PolynomialDomain.supports(&ast));
     }
 
     #[test]
     fn test_contains_polynomial_unary() {
-        // contains_polynomial_function via UnaryOp
         let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(parse("poly_add(x+1, x+2)").unwrap()));
         assert!(PolynomialDomain.supports(&ast));
     }
 
     #[test]
     fn test_contains_polynomial_matrix() {
-        // contains_polynomial_function via Matrix
         let ast = AstNode::Matrix(vec![vec![parse("poly_add(x+1, x+2)").unwrap()]]);
         assert!(PolynomialDomain.supports(&ast));
     }
 
     #[test]
     fn test_contains_polynomial_list() {
-        // contains_polynomial_function via List
         let ast = AstNode::List(vec![parse("poly_add(x+1, x+2)").unwrap()]);
         assert!(PolynomialDomain.supports(&ast));
     }
@@ -1829,15 +1754,10 @@ mod tests {
         assert!(!PolynomialDomain.supports(&ast));
     }
 
-    // ===== 覆盖率补充测试（第二轮：覆盖剩余未覆盖路径） =====
-    // 注：eval_function 中 line 210 的 `_ => unreachable!("checked above")` 分支
-    // 在逻辑上不可达——name 已在 line 99 通过 POLYNOMIAL_FUNCTIONS 白名单校验，
-    // match 覆盖了全部 9 个白名单函数，故该分支无法被测试触发且不应被触发。
+    // ===== 覆盖率补充测试（第二轮） =====
 
     #[test]
     fn test_eval_node_number_bare() {
-        // 覆盖 eval_node 的 AstNode::Number 分支
-        // 直接对裸 Number AST 求值（不经过任何函数调用包装）
         let ast = AstNode::Number(7.0);
         let result = PolynomialDomain
             .evaluate(&ast, &EvalContext::new())
@@ -1847,16 +1767,12 @@ mod tests {
 
     #[test]
     fn test_eval_node_binaryop_polynomial_bare() {
-        // 覆盖 eval_node 的 BinaryOp 成功返回路径
-        // 对裸多项式表达式（非函数调用）求值，触发 expr_to_coeffs + 返回 Polynomial
         let result = eval_polynomial("x^2+2*x+1").unwrap();
         assert_vec_approx(&result, &[1.0, 2.0, 1.0]);
     }
 
     #[test]
     fn test_eval_scalar_sub() {
-        // 覆盖 eval_scalar 的 BinaryOp::Sub 分支
-        // poly_eval(x+1, 10-3) = poly_eval(x+1, 7) = 8
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1876,8 +1792,6 @@ mod tests {
 
     #[test]
     fn test_eval_scalar_mul() {
-        // 覆盖 eval_scalar 的 BinaryOp::Mul 分支
-        // poly_eval(x+1, 2*3) = poly_eval(x+1, 6) = 7
         let ast = AstNode::FunctionCall(
             "poly_eval".to_string(),
             vec![
@@ -1897,8 +1811,6 @@ mod tests {
 
     #[test]
     fn test_expr_to_coeffs_mul_number_right() {
-        // 覆盖 expr_to_coeffs 的 Mul 分支中 Number 在右侧的路径（Poly * Number，lines 332-336）
-        // 已有测试覆盖 Number 在左侧（3*(x+1)），本测试覆盖 (x+1)*3
         let ast = parse("(x+1)*3").unwrap();
         let (coeffs, var) = expr_to_coeffs(&ast, &EvalContext::new()).unwrap();
         assert_eq!(var, "x");
@@ -1907,9 +1819,7 @@ mod tests {
 
     #[test]
     fn test_solve_cubic_double_root() {
-        // 覆盖 solve_cubic 的 disc=0 且 p≠0 分支（双根情况，lines 655-659）
         // x^3-3x+2 = (x-1)^2*(x+2) → roots: 1(二重), -2
-        // 此处 q/2=1, p/3=-1, disc=1+(-1)=0 恰好为零（无浮点误差），且 p=-3≠0
         let result = eval("roots(x^3-3*x+2)").unwrap();
         let roots = result
             .as_vector()
@@ -1924,19 +1834,12 @@ mod tests {
 
     #[test]
     fn test_solve_quartic_ferrari_path() {
-        // 覆盖 solve_quartic 的 Ferrari 方法路径（q≠0，lines 716, 719-727, 732-739）
-        // 以及 solve_quadratic_complex 的两个分支（disc>=0 实根 lines 591-595，disc<0 复根 lines 597-600）
-        //
         // x^4+x = x(x+1)(x^2-x+1) → roots: 0, -1, (1±i√3)/2
-        // 此多项式 b=0 但 q=d-bc/2+b^3/8=1≠0，故走 Ferrari 路径（非双二次路径）。
-        // 预解三次方程 m^3-1=0 → m=1，分解出的两个二次方程分别产生实根与复根，
-        // 从而同时覆盖 solve_quadratic_complex 的 disc>=0 与 disc<0 两个分支。
         let result = eval("roots(x^4+x)").unwrap();
         let roots = result
             .as_complex_list()
             .expect("expected ComplexList (has complex roots)");
         assert_eq!(roots.len(), 4);
-        // 实根 0 和 -1
         let real_roots: Vec<f64> = roots
             .iter()
             .filter(|(_, im)| im.abs() < 1e-9)
@@ -1952,7 +1855,6 @@ mod tests {
         sorted_real.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert_approx(sorted_real[0], -1.0);
         assert_approx(sorted_real[1], 0.0);
-        // 复共轭对 (0.5, ±√3/2)
         let complex_roots: Vec<(f64, f64)> = roots
             .iter()
             .filter(|(_, im)| im.abs() >= 1e-9)
@@ -1993,8 +1895,7 @@ mod tests {
             let domain = PolynomialDomain;
             let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
             let coeffs = result.as_polynomial().unwrap();
-            // ∫(a1*x+a0)dx = a0*x + a1/2*x^2 → [0, a0, a1/2]
-            // diff([0, a0, a1/2]) = [a0, a1] → 常数项丢失（原 a0 → 现 a0 是 x 系数）
+            // 积分后常数项丢失，coeffs[1] 即原一次项系数 a1
             prop_assert!((coeffs[1] - a1 as f64).abs() < 1e-9);
         }
     }

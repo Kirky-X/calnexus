@@ -33,10 +33,7 @@ pub fn div(a: Complex64, b: Complex64) -> Result<Complex64, CalcError> {
     Ok(a / b)
 }
 
-/// 复数幂运算。
-///
-/// - `0^0 = 1`（与其他域约定一致）
-/// - 结果含 NaN/Inf 时返回 `NaNOrInf` 错误
+/// 复数幂运算：0^0=1；结果含 NaN/Inf 返回 NaNOrInf。
 pub fn pow(a: Complex64, b: Complex64) -> Result<Complex64, CalcError> {
     let zero = Complex64::new(0.0, 0.0);
     if a == zero && b == zero {

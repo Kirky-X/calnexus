@@ -2,25 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 //! Observability 初始化单例语义测试（`observability` feature）。
-//!
-//! 独立于 `mod.rs` 存放：测试体含 `thread::spawn` / `mem::forget` /
-//! 临时 runtime，驻留 mod.rs 会使 R-server-logging-003 的
-//! `grep -n "mem::forget\|thread::spawn" src/server/mod.rs` 零命中验收
-//! 无法成立，亦违背 mod.rs 只放声明与 re-export 的纪律。
+//! 独立于 mod.rs 存放：测试体含 thread::spawn / mem::forget，不驻留 mod.rs。
 
-/// init_observability 单例语义：首调用 Ok，二次调用返回
-/// `Err(InklogError::ConfigError)`（inklog 单例哨兵），调用方显式识别为
-/// "已初始化" 而非 panic 或吞错。
-///
-/// 结构说明：inklog init 构建的 LoggerManager 在 runtime 析构时会挂起
-/// （sink worker 通道握手等退出协同，实测 >5min 不返回），因此本测试在
-/// 独立线程内自建 multi_thread runtime（与生产 `HttpServer::run` 同
-/// 风味，http.rs），两次调用均带 10s 超时护栏，结果经 channel
-/// 回传后 `mem::forget(runtime)` 跳过析构——进程退出由测试二进制统一
-/// 回收。断言的是真实单例契约，不是"不报错"。
-///
-/// 进程内唯一初始化点：`start_inner` 的 bind 失败路径先于 init 返回，
-/// bind 测试不再抢占单例，故"首调用 Ok"与并行执行顺序解耦。
+/// 单例语义：首调用 Ok，二次 ConfigError；LoggerManager 析构会挂起，故 mem::forget 兜底。
 #[test]
 fn test_init_observability_singleton_semantics() {
     let (tx, rx) = std::sync::mpsc::channel();

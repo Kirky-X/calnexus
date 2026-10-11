@@ -1,16 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 单位换算表：静态系数量 + 温度仿射函数。
-//!
-//! 设计依据：8 量纲 SI 基准系数表 + 温度仿射特例
-//! Feature 门控：`unit = []`
-//!
-//! 量纲与 SI 基准：
-//! - Length(m)、Mass(kg)、Temperature(K)、Volume(m³)、Area(m²)、Speed(m/s)、Data(byte)、Time(s)
-//! - 温度走仿射路径（C/F/K/R），不入线性系数表
-//!
-//! 单位名大小写敏感（`mB` 与 `MB` 语义不同）。常见别名覆盖小写形式（如 `kilometer`→`km`）。
+//! 单位换算表：8 量纲 SI 基准系数表 + 温度仿射函数。
+//! 单位名大小写敏感（`mB` 与 `MB` 语义不同）。
 
 /// 量纲枚举：8 个物理量纲。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,10 +17,7 @@ pub enum Dimension {
     Time,
 }
 
-/// 静态线性系数量：单位名/别名 → (量纲, 到 SI 基准的系数)。
-///
-/// 温度（C/F/K/R）不在此表中，走 `to_kelvin`/`from_kelvin` 仿射路径。
-/// 单位名大小写敏感（如 `B`、`KB`、`MB` 与 `mB` 不同）。
+/// 线性单位表：单位名/别名 → (量纲, 到 SI 基准的系数)，温度单位不在其中。
 const LINEAR_UNITS: &[(&str, Dimension, f64)] = &[
     // ===== Length (基准: 1 m) =====
     ("m", Dimension::Length, 1.0),
@@ -164,9 +153,7 @@ const LINEAR_UNITS: &[(&str, Dimension, f64)] = &[
 /// 温度单位集合（仿射路径）。
 const TEMPERATURE_UNITS: &[&str] = &["C", "F", "K", "R"];
 
-/// 大小写敏感查表：返回线性单位的 (量纲, 到 SI 基准的系数)。
-///
-/// 温度单位不在表中，返回 None（调用方应用 `is_temperature_unit` 走仿射路径）。
+/// 大小写敏感查表：返回线性单位 (量纲, 系数)，温度单位返回 None 由调用方走仿射路径。
 pub fn lookup(name: &str) -> Option<(Dimension, f64)> {
     LINEAR_UNITS
         .iter()
@@ -176,16 +163,11 @@ pub fn lookup(name: &str) -> Option<(Dimension, f64)> {
 
 /// 判断单位名是否为温度单位（C/F/K/R）。
 pub fn is_temperature_unit(name: &str) -> Option<bool> {
-    // 显式返回 Option 以表达"匹配查询"语义：当 name 是温度单位时返回 Some(true)，
-    // 否则返回 Some(false)。调用方通常先用 lookup 判定线性，再用本函数判定温度。
-    // 注：保持返回 Option<bool> 便于将来扩展（如未知单位 None）。
+    // 当前总是返回 Some；保留 Option<bool> 便于将来支持未知单位返回 None。
     Some(TEMPERATURE_UNITS.contains(&name))
 }
 
-/// 将温度值从给定单位转换为开尔文。
-///
-/// 覆盖：C（摄氏）、F（华氏）、K（开尔文）、R（兰氏度）。
-/// 未知单位返回 NaN（调用方应先用 `is_temperature_unit` 校验）。
+/// 温度转开尔文（支持 C/F/K/R），未知单位返回 NaN。
 pub fn to_kelvin(value: f64, unit: &str) -> f64 {
     match unit {
         "C" => value + 273.15,
@@ -196,9 +178,7 @@ pub fn to_kelvin(value: f64, unit: &str) -> f64 {
     }
 }
 
-/// 将开尔文温度转换为给定单位的值。
-///
-/// 覆盖：C/F/K/R。未知单位返回 NaN。
+/// 开尔文转目标温度单位（支持 C/F/K/R），未知单位返回 NaN。
 pub fn from_kelvin(kelvin: f64, unit: &str) -> f64 {
     match unit {
         "C" => kelvin - 273.15,
@@ -209,9 +189,7 @@ pub fn from_kelvin(kelvin: f64, unit: &str) -> f64 {
     }
 }
 
-/// Levenshtein 编辑距离：两字符串间的最小单字符插入/删除/替换次数。
-///
-/// 用于未知单位的 "did you mean" 建议（距离 ≤2 视为相近）。
+/// Levenshtein 编辑距离，用于未知单位的 "did you mean" 建议（距离 ≤2 视为相近）。
 pub fn levenshtein(a: &str, b: &str) -> usize {
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();
@@ -245,9 +223,7 @@ pub fn levenshtein(a: &str, b: &str) -> usize {
     prev[b_len]
 }
 
-/// 收集所有已注册的线性单位名（用于 "did you mean" 建议候选集）。
-///
-/// 不含温度单位（温度单位数量固定，建议直接枚举）。
+/// 收集所有线性单位名（不含温度单位），用作建议候选集。
 pub fn all_unit_names() -> Vec<&'static str> {
     LINEAR_UNITS.iter().map(|(n, _, _)| *n).collect()
 }

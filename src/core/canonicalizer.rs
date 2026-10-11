@@ -1,19 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! AST 规范化器：将解析后的 `AstNode` 转换为规范形式，用于 L1 缓存去重。
-//!
-//! 三大变换：
-//! 1. **SortCommutative**：对 `+`/`*` 操作数按规范顺序排列（数值升序，变量字典序）
-//! 2. **ConstantFolder**：全常量子表达式预计算，检测溢出/NaN/Inf/除零
-//! 3. **UnaryNormalizer**：双重负号 `--x` 消除为 `x`
-//!
-//! 规范形式序列化为 S-表达式字符串（`CanonicalForm`）。
-//!
-//! **Spec 冲突说明**：展示形式期望 `3+2` → `(+ 2 3)`（仅排序），
-//! 但求值结果期望 `2+3` → `5`（折叠）。
-//! 由于等价表达式要求 `2*3+1` 与 `1+6` 同形式（必须折叠），
-//! 本实现以**常量折叠优先**解决冲突：全常量表达式折叠为单个 Number。
+//! AST 规范化器：常量折叠 + 交换律排序 + 一元归一化，生成 S-表达式规范形式。
+//! 不变式：规范化幂等；缓存键用折叠版 `canonicalize`，`canonicalize_no_fold` 仅供展示。
 
 use crate::core::parser::MAX_AST_DEPTH;
 use crate::core::types::{AstNode, BinaryOp, CalcError, CanonicalForm, UnaryOp};
@@ -21,8 +10,7 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 
 thread_local! {
-    /// 规范化递归深度计数（纵深防御：解析构造层已封顶，
-    /// 此守卫防御直接构造 AST 绕过解析器的路径，如嵌入方拼装 AST）。
+    /// 规范化递归深度计数（纵深防御，拦截绕过解析器直接构造的深层 AST）。
     static TRANSFORM_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
@@ -48,53 +36,30 @@ impl Drop for TransformDepthGuard {
     }
 }
 
-/// AST 规范化器。
-///
-/// 无状态，所有方法均为关联函数。
+/// AST 规范化器（无状态，全部方法为关联函数）。
 pub struct AstCanonicalizer;
 
 impl AstCanonicalizer {
-    /// 规范化 AST 并生成 `CanonicalForm`。
-    ///
-    /// 返回 `(canonical_ast, canonical_form)`：
-    /// - `canonical_ast`：规范化后的 AST（常量折叠、操作数排序、一元归一化）
-    /// - `canonical_form`：S-表达式字符串（用于缓存键生成）
+    /// 规范化 AST 并生成 CanonicalForm（含常量折叠，用于缓存键）。
     pub fn canonicalize(ast: &AstNode) -> Result<(AstNode, CanonicalForm), CalcError> {
         let canonical_ast = Self::transform(ast)?;
         let s_expr = Self::serialize(&canonical_ast);
         Ok((canonical_ast, CanonicalForm::new(s_expr)))
     }
 
-    /// 规范化 AST（**不折叠常量**）并生成 `CanonicalForm`。
-    ///
-    /// 与 `canonicalize` 的区别：仅做交换律排序与一元归一化，不做常量折叠。
-    /// 用于 `--canonical` 标志输出，满足 PRD §3.2.4 示例 `3+2` → `(+ 2 3)`。
-    /// 缓存键仍使用 `canonicalize`（折叠版本），此方法仅供展示。
+    /// 规范化 AST（仅排序 + 一元归一化，不折叠常量），仅供 `--canonical` 展示。
     pub fn canonicalize_no_fold(ast: &AstNode) -> Result<(AstNode, CanonicalForm), CalcError> {
         let canonical_ast = Self::transform_no_fold(ast)?;
         let s_expr = Self::serialize(&canonical_ast);
         Ok((canonical_ast, CanonicalForm::new(s_expr)))
     }
 
-    /// 递归变换 AST（排序 + 折叠 + 一元归一化）。
-    ///
-    /// 变换顺序（bottom-up）：先递归变换子节点，再对当前节点应用：
-    /// 1. 常量折叠（全常量子树 → 单个 Number，仅当 `fold_constants = true`）
-    /// 2. 交换律排序（Add/Mul 操作数按规范顺序）
-    /// 3. 一元归一化（双重负号消除始终执行；一元常量折叠仅当 `fold_unary = true`）
-    ///
-    /// `transform` 与 `transform_no_fold` 的全部差异通过两个布尔参数控制：
-    /// - `transform` = `transform_inner(ast, true, true)`
-    /// - `transform_no_fold` = `transform_inner(ast, false, false)`
-    ///
-    /// 双重负号消除（`--x → x`）属于结构性归一化，两个公开入口均执行，
-    /// 因此**不**由 `fold_unary` 控制。
+    /// 递归变换 AST：折叠常量、交换律排序、归一化一元运算；双重负号消除不受 fold 开关控制。
     fn transform_inner(
         ast: &AstNode,
         fold_constants: bool,
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
-        // 深度守卫：所有 transform_* 递归的漏斗点
         let _depth = TransformDepthGuard::enter()?;
         match ast {
             AstNode::Number(n) => {
@@ -129,11 +94,9 @@ impl AstCanonicalizer {
     ) -> Result<AstNode, CalcError> {
         let l = Self::transform_inner(l, fold_constants, fold_unary)?;
         let r = Self::transform_inner(r, fold_constants, fold_unary)?;
-        // 常量折叠：两操作数均为 Number（仅当 fold_constants = true）
         if fold_constants && let (AstNode::Number(a), AstNode::Number(b)) = (&l, &r) {
             return Self::eval_binary(op, *a, *b).map(AstNode::Number);
         }
-        // 交换律排序：仅 Add 和 Mul
         let (l, r) = match op {
             BinaryOp::Add | BinaryOp::Mul => {
                 if Self::compare_nodes(&l, &r) == Ordering::Greater {
@@ -155,13 +118,11 @@ impl AstCanonicalizer {
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
         let e = Self::transform_inner(e, fold_constants, fold_unary)?;
-        // 双重负号消除：--x → x（结构性归一化，始终执行）
         if op == UnaryOp::Neg
             && let AstNode::UnaryOp(UnaryOp::Neg, inner) = &e
         {
             return Ok((**inner).clone());
         }
-        // 一元常量折叠：Neg(Number(n)) → Number(-n)（仅当 fold_unary = true）
         if fold_unary
             && op == UnaryOp::Neg
             && let AstNode::Number(n) = &e
@@ -171,35 +132,18 @@ impl AstCanonicalizer {
         Ok(AstNode::UnaryOp(op, Box::new(e)))
     }
 
-    /// 变换 FunctionCall：递归变换所有参数。
-    ///
-    /// **precision 函数白名单**：
-    /// 当 `name == "precision"` 且 `args.len() == 2` 时，对 `args[1]`（expr）
-    /// 跳过常量折叠，保留 `BinaryOp` 结构交由 Precision 域内部 `BigRational` 求值。
-    ///
-    /// 否则 canonicalizer 会把 `precision(20, 1/3)` 中的 `1/3` 折叠为 f64 的
-    /// `0.333...`，Precision 域收到的是 f64 近似值而非精确分数 `1/3`，
-    /// 导致 `precision(20, 1/3)` 输出 20 位 `0.3333...` 中包含 f64 误差而非精确 `1/3`。
-    ///
-    /// `args[0]`（N）仍按常量折叠处理：N 应为字面量正整数，折叠不影响其语义
-    /// （`extract_precision_value` 接受 `Number`/`BigNumber`，折叠后 `2+3 → 5`
-    /// 仍可被识别为 N=5）。
-    ///
-    /// 仅在 `fold_constants = true` 时启用白名单（即 `transform` 入口生效）；
-    /// `transform_no_fold` 本就不折叠，无需特殊处理。
+    /// 变换 FunctionCall：递归变换所有参数；`precision` 的 expr 参数跳过折叠以保精度。
     fn transform_function(
         name: &str,
         args: &[AstNode],
         fold_constants: bool,
         fold_unary: bool,
     ) -> Result<AstNode, CalcError> {
-        // precision 函数白名单：args[1] 跳过常量折叠（保留精确分数结构）
         let precision_whitelist = fold_constants && name == "precision" && args.len() == 2;
 
         let mut transformed_args = Vec::with_capacity(args.len());
         for (i, arg) in args.iter().enumerate() {
             if precision_whitelist && i == 1 {
-                // args[1] 跳过常量折叠，但保留交换律排序与一元归一化
                 transformed_args.push(Self::transform_inner(arg, false, fold_unary)?);
             } else {
                 transformed_args.push(Self::transform_inner(arg, fold_constants, fold_unary)?);
@@ -243,10 +187,7 @@ impl AstCanonicalizer {
         Self::transform_inner(ast, true, true)
     }
 
-    /// 递归变换 AST（**仅排序 + 一元归一化，不折叠常量**）。
-    ///
-    /// 与 `transform` 的区别：跳过常量折叠步骤，保留 `2+3`、`3+2` 为
-    /// `(+ 2 3)`、`(+ 2 3)`（排序后相同），用于 `--canonical` 展示。
+    /// 递归变换 AST（仅排序 + 一元归一化，不折叠常量）。
     fn transform_no_fold(ast: &AstNode) -> Result<AstNode, CalcError> {
         Self::transform_inner(ast, false, false)
     }
@@ -263,11 +204,7 @@ impl AstCanonicalizer {
                 }
                 a / b
             }
-            // 显式处理 0^0 → 1.0（IEEE 754 约定）。
-            // 原代码 `a.powf(b)` 隐式依赖 f64 的 0^0=1.0 行为，意图不显式，
-            // 且与 scientific.rs/statistics.rs 的显式处理不一致。
-            // 此处显式 case 使意图清晰，与所有 domain 行为统一。
-            // 注意：负零 -0.0 ^ 0.0 也应返回 1.0（IEEE 754：0^0 与符号无关）。
+            // 0^0 → 1.0（IEEE 754 约定，与符号无关），显式 case 而非依赖 powf 隐式行为。
             BinaryOp::Pow if a == 0.0 && b == 0.0 => 1.0,
             BinaryOp::Pow => a.powf(b),
             BinaryOp::Mod => {
@@ -283,19 +220,10 @@ impl AstCanonicalizer {
         Ok(result)
     }
 
-    /// 比较两个 AST 节点的规范顺序。
-    ///
-    /// 排序规则：
-    /// - 两 Number：按数值升序（使用 `f64::total_cmp` 提供 IEEE 754 totalOrder 全序，
-    ///   保证 NaN 排序稳定）
-    /// - 两 Variable：按字典序
-    /// - Number 与非 Number：Number 优先（Less）
-    /// - 其他组合（如 Variable 与复合表达式）：保持原始顺序（Equal，不交换）
+    /// 比较两个 AST 节点的规范顺序（total_cmp 全序；Number 优先，其余组合不交换）。
     fn compare_nodes(a: &AstNode, b: &AstNode) -> Ordering {
         match (a, b) {
-            // 用 total_cmp 替代 partial_cmp + unwrap_or(Equal)。
-            // 原代码对 NaN 返回 Equal（因 partial_cmp 返回 None），违反全序的反对称性。
-            // total_cmp 遵循 IEEE 754 totalOrder：NaN 排在所有数值之前（负 NaN < 负 Inf < ... < 正 NaN）。
+            // total_cmp 提供 IEEE 754 totalOrder（NaN 也有稳定全序）。
             (AstNode::Number(x), AstNode::Number(y)) => x.total_cmp(y),
             (AstNode::Number(_), _) => Ordering::Less,
             (_, AstNode::Number(_)) => Ordering::Greater,
@@ -304,9 +232,7 @@ impl AstCanonicalizer {
         }
     }
 
-    /// 将 AST 序列化为 S-表达式字符串。
-    ///
-    /// 格式：`(op arg1 arg2 ...)`，常量直接输出数值，变量输出变量名。
+    /// 将 AST 序列化为 S-表达式字符串 `(op arg1 arg2 ...)`。
     fn serialize(ast: &AstNode) -> String {
         match ast {
             AstNode::Number(n) => Self::format_number(*n),
@@ -360,9 +286,7 @@ impl AstCanonicalizer {
                 let elems_str: Vec<String> = elements.iter().map(Self::serialize).collect();
                 format!("(list {})", elems_str.join(" "))
             }
-            // Str 节点：按字节序列参与 CanonicalForm 哈希。
-            // 用 (str ...) 包装使不同字符串产生不同规范形式，且与变量/函数名空间隔离，
-            // 避免被误识别为其他 AST 节点。
+            // (str ...) 包装隔离字符串与变量/函数命名空间，避免误识别。
             AstNode::Str(s) => format!("(str {})", s),
         }
     }
@@ -380,8 +304,7 @@ impl AstCanonicalizer {
 #[cfg(test)]
 mod tests {
 
-    /// 绕过解析器直接构造 258 层深 AST，
-    /// canonicalize 必须返回 DepthExceeded 且不 panic（TransformDepthGuard 纵深防御）。
+    /// 258 层直接构造的 AST 必须返回 DepthExceeded（深度守卫纵深防御）。
     #[test]
     fn test_deep_constructed_ast_returns_depth_exceeded() {
         let mut ast = AstNode::Number(1.0);
@@ -405,7 +328,7 @@ mod tests {
         Ok(cf.as_str().to_string())
     }
 
-    // ===== Requirement 1: 交换律排序 =====
+    // ===== 交换律排序 =====
 
     #[test]
     fn test_variable_sort_addition() {
@@ -433,7 +356,7 @@ mod tests {
         assert_eq!(canon("2+x").unwrap(), "(+ 2 x)");
     }
 
-    // ===== Requirement 2: 交换律适用运算符范围 =====
+    // ===== 交换律适用运算符范围 =====
 
     #[test]
     fn test_subtraction_not_commutative() {
@@ -459,7 +382,7 @@ mod tests {
         assert_ne!(canon("x-2").unwrap(), canon("2-x").unwrap());
     }
 
-    // ===== Requirement 3: 常量折叠 =====
+    // ===== 常量折叠 =====
 
     #[test]
     fn test_simple_constant_folding() {
@@ -485,7 +408,7 @@ mod tests {
         let result = canon("1/0");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        // 分别求值每个 matches! 分支，避免 || 短路导致 lines 312-313 未覆盖
+        // 分别求值每个 matches! 分支，避免 || 短路导致分支未覆盖
         let is_div_zero = err.kind == ErrorKind::DivisionByZero;
         let is_eval_err = err.kind == ErrorKind::Eval;
         let is_nan_inf = err.kind == ErrorKind::NaNOrInf;
@@ -496,7 +419,7 @@ mod tests {
         );
     }
 
-    // ===== Requirement 4: 一元运算归一化 =====
+    // ===== 一元运算归一化 =====
 
     #[test]
     fn test_double_negation_constant() {
@@ -522,7 +445,7 @@ mod tests {
         assert_eq!(canon("-(2+3)").unwrap(), "-5");
     }
 
-    // ===== Requirement 5: 等价表达式生成相同规范形式 =====
+    // ===== 等价表达式生成相同规范形式 =====
 
     #[test]
     fn test_commutative_equivalent() {
@@ -551,7 +474,7 @@ mod tests {
         assert_ne!(canon("2-3").unwrap(), canon("3-2").unwrap());
     }
 
-    // ===== Requirement 6: 规范形式幂等性 =====
+    // ===== 规范形式幂等性 =====
 
     #[test]
     fn test_idempotent_simple() {
@@ -580,7 +503,7 @@ mod tests {
         assert_eq!(cf1, cf2);
     }
 
-    // ===== Requirement 7: 规范形式序列化 =====
+    // ===== 规范形式序列化 =====
 
     #[test]
     fn test_serialize_folded_constant() {
@@ -591,8 +514,7 @@ mod tests {
     #[test]
     fn test_serialize_variable_with_folded() {
         // x*(1+2) → (* 3 x)（常量 1+2 折叠为 3，数值优先于变量）
-        // 注：spec 原写 `(* x 3)`，与本实现的"数值优先"规则矛盾，
-        // 本实现排序规则为数值优先于变量。
+        // 注：spec 原写 (* x 3)，本实现按"数值优先于变量"排序。
         assert_eq!(canon("x*(1+2)").unwrap(), "(* 3 x)");
     }
 
@@ -608,7 +530,7 @@ mod tests {
         assert_eq!(canon("(x+y)*z").unwrap(), "(* (+ x y) z)");
     }
 
-    // ===== Requirement 8: 规范化深度限制 =====
+    // ===== 规范化深度限制 =====
 
     #[test]
     fn test_folding_reduces_depth() {
@@ -887,9 +809,7 @@ mod tests {
 
     #[test]
     fn test_compare_nodes_number_vs_number() {
-        // 覆盖 compare_nodes 中 (Number, Number) 分支（lines 143-144）
-        // 该分支在常规规范化流程中不可达（常量折叠优先于排序），
-        // 通过直接调用 compare_nodes 验证其正确性
+        // (Number, Number) 分支在常规流程不可达（折叠优先于排序），直接调用验证
         use std::cmp::Ordering;
         let a = AstNode::Number(1.0);
         let b = AstNode::Number(2.0);
@@ -900,9 +820,7 @@ mod tests {
 
     // ===== 回归测试：NaN 比较必须稳定 =====
     //
-    // 原始 bug：`x.partial_cmp(y).unwrap_or(Ordering::Equal)` 对 NaN 返回 Equal，
-    // 导致 NaN 与任何数比较都"相等"，违反全序关系。
-    // 用 `x.total_cmp(y)` 替代，提供 IEEE 754 totalOrder 全序。
+    // NaN 全序由 total_cmp（IEEE 754 totalOrder）保证。
     #[test]
     fn test_compare_nodes_nan_is_consistent_total_order() {
         use std::cmp::Ordering;
@@ -931,12 +849,10 @@ mod tests {
 
     // ===== 回归测试：0^0 显式处理为 1.0 =====
     //
-    // 原始代码：`BinaryOp::Pow => a.powf(b)` 隐式依赖 f64::powf(0.0, 0.0) = 1.0。
-    // 虽然结果正确，但意图不显式，且与 scientific.rs/statistics.rs 的显式处理不一致。
-    // 显式 case 处理 0^0 → 1.0（IEEE 754 约定），与所有 domain 行为一致。
+    // 显式处理 0^0 → 1.0，不依赖 powf 隐式行为。
     #[test]
     fn test_canonicalize_zero_pow_zero_is_one() {
-        // 0^0 → 1.0（IEEE 754 约定，与 scientific.rs / statistics.rs 一致）
+        // 0^0 → 1.0（IEEE 754 约定）。
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::Number(0.0)),
@@ -963,7 +879,7 @@ mod tests {
 
     #[test]
     fn test_no_fold_double_negation_variable() {
-        // -(-x) → x（transform_no_fold 双重负号消除，lines 154-157）
+        // -(-x) → x（no_fold 下双重负号仍消除）
         let ast = parse("-(-x)").unwrap();
         let (canon_ast, _) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
         assert_eq!(canon_ast, AstNode::Variable("x".to_string()));
@@ -971,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_no_fold_matrix_literal() {
-        // 矩阵字面量：覆盖 transform_no_fold Matrix 分支（lines 168-177）
+        // 矩阵字面量：覆盖 no_fold Matrix 分支
         let ast = parse("[[1,2],[3,4]]").unwrap();
         let (canon_ast, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
         assert_eq!(cf.as_str(), "(matrix (1 2) (3 4))");
@@ -984,7 +900,7 @@ mod tests {
 
     #[test]
     fn test_no_fold_list_literal() {
-        // 列表字面量：覆盖 transform_no_fold List 分支（lines 179-184）
+        // 列表字面量：覆盖 no_fold List 分支
         let ast = parse("[1,2,3]").unwrap();
         let (canon_ast, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
         assert_eq!(cf.as_str(), "(list 1 2 3)");
@@ -1053,36 +969,31 @@ mod tests {
 
     // ===== transform_inner per-variant 回归测试 =====
     //
-    // 目的：重构 transform_inner 前后行为不变。
-    // 覆盖所有 AstNode variant：Leaf（Number/Variable/Complex/BigNumber）、
-    // BinaryOp（Add/Sub/Mul/Div/Pow/Mod + fold + sort）、
-    // UnaryOp（Neg 双重消除/Neg fold/Factorial/Abs）、
-    // FunctionCall（有参/空参）、Matrix（嵌套表达式）、List（嵌套表达式）。
-    // 同时覆盖 fold=true 和 fold=false 两条路径。
+    // 锁定重构前后行为不变：覆盖全部 AstNode variant 与 fold 两条路径。
     #[test]
     fn test_transform_inner_per_variant() {
-        // ----- 1. Leaf 节点（不变）-----
+        // ----- Leaf 节点（不变）-----
         assert_eq!(canon("42").unwrap(), "42");
         assert_eq!(canon("x").unwrap(), "x");
         assert_eq!(canon("3+4i").unwrap(), "(complex 3 4)");
         assert_eq!(canon("1234567890123456").unwrap(), "1234567890123456");
 
-        // ----- 2. BinaryOp -----
-        // 2a. Add: fold + sort（3+2 → 5）
+        // ----- BinaryOp -----
+        // Add: fold + sort（3+2 → 5）
         assert_eq!(canon("3+2").unwrap(), "5");
-        // 2b. Add: sort only（y+x → (+ x y)）
+        // Add: sort only（y+x → (+ x y)）
         assert_eq!(canon("y+x").unwrap(), "(+ x y)");
-        // 2c. Sub: no sort（x-2 → (- x 2)）
+        // Sub: no sort（x-2 → (- x 2)）
         assert_eq!(canon("x-2").unwrap(), "(- x 2)");
-        // 2d. Mul: fold + sort（2*3 → 6）
+        // Mul: fold + sort（2*3 → 6）
         assert_eq!(canon("2*3").unwrap(), "6");
-        // 2e. Mul: sort only（x*5 → (* 5 x)）
+        // Mul: sort only（x*5 → (* 5 x)）
         assert_eq!(canon("x*5").unwrap(), "(* 5 x)");
-        // 2f. Div: fold（6/3 → 2）
+        // Div: fold（6/3 → 2）
         assert_eq!(canon("6/3").unwrap(), "2");
-        // 2g. Pow: fold（2^3 → 8）
+        // Pow: fold（2^3 → 8）
         assert_eq!(canon("2^3").unwrap(), "8");
-        // 2h. Mod: fold（10%3 → 1）— 用手动 AST 避免 parser 限制
+        // Mod: fold（10%3 → 1）— 用手动 AST 避免 parser 限制
         {
             let ast = AstNode::BinaryOp(
                 BinaryOp::Mod,
@@ -1092,74 +1003,73 @@ mod tests {
             let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
             assert_eq!(cf.as_str(), "1");
         }
-        // 2i. BinaryOp div by zero → error
+        // BinaryOp div by zero → error
         assert!(canon("1/0").is_err());
 
-        // ----- 3. UnaryOp -----
-        // 3a. Neg: double neg elimination（--x → x）
+        // ----- UnaryOp -----
+        // Neg: double neg elimination（--x → x）
         assert_eq!(canon("-(-x)").unwrap(), "x");
-        // 3b. Neg: fold（-(5) → -5）
+        // Neg: fold（-(5) → -5）
         assert_eq!(canon("-(5)").unwrap(), "-5");
-        // 3c. Neg: double neg + fold（--5 → 5）
+        // Neg: double neg + fold（--5 → 5）
         assert_eq!(canon("--5").unwrap(), "5");
-        // 3d. Factorial: no fold（5! → (factorial 5)）
+        // Factorial: no fold（5! → (factorial 5)）
         {
             let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(5.0)));
             let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
             assert_eq!(cf.as_str(), "(factorial 5)");
         }
-        // 3e. Abs: no fold（abs(x) → (abs x)）— 通过 FunctionCall 而非 UnaryOp
-        //     UnaryOp::Abs 手动构造
+        // Abs: no fold（abs(x) → (abs x)）— 手动构造 UnaryOp::Abs
         {
             let ast = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Variable("x".to_string())));
             let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
             assert_eq!(cf.as_str(), "(abs x)");
         }
 
-        // ----- 4. FunctionCall -----
-        // 4a. 有参函数（sin(x) → (sin x)）
+        // ----- FunctionCall -----
+        // 有参函数（sin(x) → (sin x)）
         assert_eq!(canon("sin(x)").unwrap(), "(sin x)");
-        // 4b. 空参函数（foo() → (foo)）
+        // 空参函数（foo() → (foo)）
         {
             let ast = AstNode::FunctionCall("foo".to_string(), vec![]);
             let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
             assert_eq!(cf.as_str(), "(foo)");
         }
-        // 4c. 嵌套表达式参数（sin(2+3) → (sin 5)）
+        // 嵌套表达式参数（sin(2+3) → (sin 5)）
         assert_eq!(canon("sin(2+3)").unwrap(), "(sin 5)");
 
-        // ----- 5. Matrix -----
-        // 5a. 简单矩阵
+        // ----- Matrix -----
+        // 简单矩阵
         assert_eq!(canon("[[1,2],[3,4]]").unwrap(), "(matrix (1 2) (3 4))");
-        // 5b. 嵌套表达式矩阵
+        // 嵌套表达式矩阵
         assert_eq!(canon("[[2+3, x]]").unwrap(), "(matrix (5 x))");
 
-        // ----- 6. List -----
-        // 6a. 简单列表
+        // ----- List -----
+        // 简单列表
         assert_eq!(canon("[1,2,3]").unwrap(), "(list 1 2 3)");
-        // 6b. 嵌套表达式列表
+        // 嵌套表达式列表
         assert_eq!(canon("[2+3, x]").unwrap(), "(list 5 x)");
 
-        // ----- 7. fold=false 路径（canonicalize_no_fold）-----
-        // 7a. 不折叠常量：3+2 → (+ 2 3)（仅排序）
+        // ----- fold=false 路径（canonicalize_no_fold）-----
+        // 不折叠常量：3+2 → (+ 2 3)（仅排序）
         {
             let ast = parse("3+2").unwrap();
             let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
             assert_eq!(cf.as_str(), "(+ 2 3)");
         }
-        // 7b. 双重负号仍消除（--x → x，结构性归一化不受 fold 影响）
+        // 双重负号仍消除（--x → x，结构性归一化不受 fold 影响）
         {
             let ast = parse("-(-x)").unwrap();
             let (canon_ast, _) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
             assert_eq!(canon_ast, AstNode::Variable("x".to_string()));
         }
-        // 7c. 一元常量不折叠：-(5) → (- 5)（fold_unary=false）
+        // 一元常量不折叠：-(5) → (- 5)（fold_unary=false）
         {
             let ast = AstNode::UnaryOp(UnaryOp::Neg, Box::new(AstNode::Number(5.0)));
             let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
             assert_eq!(cf.as_str(), "(- 5)");
         }
-        // 7d. Matrix/List 在 no_fold 下仍递归变换
+        // Matrix/List 在 no_fold 下仍递归变换
         {
             let ast = parse("[[1,2],[3,4]]").unwrap();
             let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();

@@ -2,14 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! CalNexus CLI：命令行数学表达式求值器。
-//!
-//! 全链路：Parser → Canonicalizer → CacheManager → DomainRouter → Domain::evaluate
-//!
-//! 退出码：
-//! - 0：成功
-//! - 1：计算错误 / 解析错误
-//! - 2：用法错误
-//! - 3：超时
+//! 退出码：0=成功，1=计算/解析错误，2=用法错误，3=超时。
 use crate::core::evaluate;
 use crate::domains::format_bigrational;
 use crate::output::{format_canonical, format_latex, generate_steps};
@@ -36,7 +29,7 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["latex", "canonical", "steps"])]
     json: bool,
 
-    /// Output detailed error explanation (conflicts with --json)
+    /// Output detailed error explanation
     #[arg(long, conflicts_with_all = ["json"])]
     explain: bool,
 
@@ -98,15 +91,12 @@ struct Cli {
 
 /// CLI 入口：解析参数、分发到对应模式处理函数，返回退出码。
 pub fn run() -> i32 {
-    // --help 文案本地化：clap derive 的 `about`/doc help 属性只接受静态字符串，
-    // 因此在 get_matches 前预读 `--lang`（缺省走系统语言检测链）构造 I18n，
-    // 用 builder 覆盖 about 与全部参数 help（见 localized_command）。
-    // 运行时语言仍以 clap 解析出的 cli.lang 为准（合法输入下与预读结果一致）。
+    // --help 本地化：clap derive 只接受静态 help 字符串，故在解析前预读 --lang
+    // 构造 I18n 覆盖 about/help；运行时语言仍以解析出的 cli.lang 为准。
     let about_i18n = peek_lang_i18n();
     let matches = localized_command(&about_i18n).get_matches();
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-    // 语言优先级：--lang 显式指定 > 系统语言检测链（CALNEXUS_LANG → LC_ALL →
-    // LC_MESSAGES → LANG → sys-locale → en）。--lang 无默认值，缺省即检测。
+    // 语言优先级：--lang 显式指定 > 系统语言检测链；--lang 无默认值，缺省即检测。
     let i18n = match cli.lang.as_deref() {
         Some(lang) => crate::i18n::I18n::from_str(lang),
         None => crate::i18n::I18n::from_detected(),
@@ -174,11 +164,7 @@ pub fn run() -> i32 {
 
 /// 预读原始参数中的 `--lang`，构造用于 `--help` 文案的 I18n。
 ///
-/// clap derive 的 `about`/doc help 属性只接受静态字符串，无法在解析期本地化；
-/// 因此正式解析前扫描 `std::env::args_os()` 预读 `--lang <v>` / `--lang=<v>`。
-/// 无 `--lang` 时不固定英文，而是走系统语言检测链（与运行时语言选择一致）。
-/// 仅影响 help 覆盖文案，运行时语言仍以 clap 解析出的 `cli.lang` 为准
-/// （合法输入下二者一致）。
+/// 无 `--lang` 时走系统语言检测链（与运行时语言选择一致）。
 fn peek_lang_i18n() -> crate::i18n::I18n {
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -195,14 +181,7 @@ fn peek_lang_i18n() -> crate::i18n::I18n {
     crate::i18n::I18n::from_detected()
 }
 
-/// 构建 help 文案本地化的 clap `Command`（about + 全部参数 help 经 `I18n` 覆盖）。
-///
-/// clap derive 的 `about`/doc help 属性只接受静态字符串；参考 reference-pattern
-/// §4，在 `Cli::command()` 基础上按当前语言用 `Command::mut_arg` 动态覆盖。
-/// 参数 id 与 `Cli` 字段名一致；server 专属参数仅在 `server` feature 下覆盖。
-/// 覆盖范围：位置参数 expression、全局参数 vars/json/explain/lang/precision/
-/// repl/batch/latex/steps/canonical/timeout/cache_size/list_functions，以及
-/// server 组 bind/serve_http/serve_mcp（即全部用户可见参数）。
+/// 本地化 help 的 clap Command：derive 只收静态字符串，用 mut_arg 按语言覆盖各参数 help。
 fn localized_command(i18n: &crate::i18n::I18n) -> clap::Command {
     const ARG_HELP: &[(&str, &str)] = &[
         ("expression", "cli.help_expression"),
@@ -384,8 +363,7 @@ fn run_default_mode(
     }
 }
 
-/// 格式化 EvalResult 为 JSON 输出字符串。
-/// Scalar 直接输出数字；Steps 输出数组；其他变体输出字符串。
+/// 格式化 EvalResult 为 JSON 输出字符串（代码见 v1 契约 docs/schema/result-v1.json）。
 fn format_json_output(
     result: &EvalResult,
     domain: &str,
@@ -411,23 +389,14 @@ fn format_json_output(
     .to_string()
 }
 
-/// 根据 CLI 配置输出 CalcError 并返回退出码。
-///
-/// - `--json`：输出 JSON 错误对象到 stdout
-/// - `--explain`：输出详细解释到 stderr
-/// - 默认：输出友好提示到 stderr
-///
-/// 退出码由 `ErrorKind::exit_code()` 决定（0/1/2/3）。
+/// 根据 CLI 配置输出 CalcError 并返回退出码（JSON/解释/友好提示三态）。
 fn handle_error(e: &CalcError, cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
     // caret 渲染需要原始表达式：位置参数场景直接可得（stdin 场景为 None，无 caret）
     handle_error_with_expr(e, cli.expression.as_deref(), cli, i18n)
 }
 
-/// 错误渲染：
-/// - `--json`：结构化输出（无 caret）
-/// - `--explain`：教育模式
-/// - 文本模式：friendly + （有 span 时）表达式行 + `^` 位置指示
-/// - `undefined_symbol` 的 hint 按上下文分发：CLI 给 `--var`，REPL 给 `:let`
+/// 错误渲染：JSON / 教育模式 / 文本三态；`undefined_symbol` 的 hint 按上下文分发
+/// （CLI 给 `--var`，REPL 给 `:let`）。
 fn handle_error_with_expr(
     e: &CalcError,
     expr: Option<&str>,
@@ -497,9 +466,7 @@ fn handle_error_with_expr(
     e.kind.exit_code()
 }
 
-/// 从位置参数或 stdin 获取表达式。
-///
-/// i18n_key 通过 `with_i18n` 附加到 CalcError，渲染时由 `handle_error` 传入 i18n 实例。
+/// 从位置参数或 stdin 获取表达式；错误附加 i18n 键供调用方本地化渲染。
 fn get_expression(cli: &Cli, i18n: &crate::i18n::I18n) -> Result<String, CalcError> {
     if let Some(expr) = &cli.expression {
         return Ok(expr.clone());
@@ -528,9 +495,6 @@ fn get_expression(cli: &Cli, i18n: &crate::i18n::I18n) -> Result<String, CalcErr
 }
 
 /// 解析求值超时（秒），优先级 flag > env(`CALNEXUS_TIMEOUT`) > 默认 5.0。
-///
-/// 错误文案经 `i18n` 本地化（键 cli.invalid_timeout_env / cli.timeout_out_of_range），
-/// 英文渲染与历史硬编码文案逐字节一致。
 fn resolve_timeout(i18n: &crate::i18n::I18n, cli_value: Option<f64>) -> Result<f64, String> {
     const DEFAULT_TIMEOUT_SECS: f64 = 5.0;
     const MIN: f64 = 0.1;
@@ -560,9 +524,6 @@ fn resolve_timeout(i18n: &crate::i18n::I18n, cli_value: Option<f64>) -> Result<f
 }
 
 /// 解析缓存条目预算并换算为字节权重上限（条目 × 4KB，近似语义）。
-///
-/// 错误文案经 `i18n` 本地化（键 cli.invalid_cache_size_env / cli.cache_size_invalid），
-/// 英文渲染与历史硬编码文案逐字节一致。
 fn cache_budget_bytes(i18n: &crate::i18n::I18n, cli_value: Option<u64>) -> Result<u64, String> {
     const DEFAULT_CACHE_SIZE: u64 = 10_000;
     const BYTES_PER_ENTRY: u64 = 4096;
@@ -583,11 +544,7 @@ fn cache_budget_bytes(i18n: &crate::i18n::I18n, cli_value: Option<u64>) -> Resul
     Ok(entries.saturating_mul(BYTES_PER_ENTRY).max(BYTES_PER_ENTRY))
 }
 
-/// 解析 HTTP 绑定地址，优先级 flag > env(`CALNEXUS_BIND_ADDR`) > 默认 127.0.0.1:3000
-/// （仅 server feature）。
-///
-/// 错误文案经 `i18n` 本地化（键 cli.invalid_bind_addr），
-/// 英文渲染与历史硬编码文案逐字节一致。
+/// 解析 HTTP 绑定地址，优先级 flag > env(`CALNEXUS_BIND_ADDR`) > 默认 127.0.0.1:3000。
 #[cfg(feature = "server")]
 fn resolve_bind(i18n: &crate::i18n::I18n, cli_value: Option<String>) -> Result<String, String> {
     const DEFAULT_BIND: &str = "127.0.0.1:3000";
@@ -625,8 +582,7 @@ fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
     Ok(ctx)
 }
 
-/// 格式化 EvalResult 为人类可读字符串（非 JSON 模式）。
-/// 供 CLI 与 REPL 共用。
+/// 格式化 EvalResult 为人类可读字符串（非 JSON 模式），CLI 与 REPL 共用。
 pub(crate) fn format_result(result: &EvalResult, fmt_prec: Option<usize>) -> String {
     match result {
         EvalResult::Scalar(v) => v.to_string(),
@@ -673,8 +629,7 @@ fn format_vector(v: &[f64]) -> String {
     format!("[{}]", elems.join(","))
 }
 
-/// 格式化多项式系数向量（升幂存储）为降幂字符串形式 `a+bx+cx^2`。
-/// 例如 `[1,2,1]` → `x^2+2x+1`，`[2,3,1]` → `x^2+3x+2`，`[5]` → `5`。
+/// 格式化多项式系数向量（升幂存储）为降幂字符串形式（如 `[1,2,1]` → `x^2+2x+1`）。
 fn format_polynomial(p: &[f64]) -> String {
     if p.is_empty() {
         return "0".to_string();
@@ -691,11 +646,7 @@ fn format_polynomial(p: &[f64]) -> String {
     join_polynomial_terms(&terms)
 }
 
-/// 格式化多项式单项：零系数返回 None（跳过），其他返回 `Some(term)`。
-///
-/// - i=0：纯常数项 `c`
-/// - i=1：一次项 `x` / `-x` / `cx`
-/// - i≥2：高次项 `x^i` / `-x^i` / `cx^i`
+/// 格式化多项式单项：零系数返回 None，i=0 常数项 / i=1 一次项 / i≥2 高次项。
 fn format_polynomial_term(coef: f64, i: usize) -> Option<String> {
     if coef == 0.0 {
         return None;
@@ -724,7 +675,7 @@ fn format_polynomial_term(coef: f64, i: usize) -> Option<String> {
     Some(term)
 }
 
-/// 合并多项式单项列表为字符串：第一项不加正号前缀，后续正项加 `+`，负项直接拼接（已含 `-`）。
+/// 合并多项式单项为字符串：首项不加正号，后续正项加 `+`，负项直接拼接。
 fn join_polynomial_terms(terms: &[String]) -> String {
     let mut result = terms[0].clone();
     for term in &terms[1..] {
@@ -748,8 +699,7 @@ fn format_complex_list(c: &[(f64, f64)]) -> String {
 mod tests {
     use super::*;
     use crate::{AstNode, BinaryOp};
-    /// locales 文案中引用的每个 `--flag` 必须真实存在于
-    /// clap 定义——防止错误提示再次指向不存在的旗标（`--timeout` 事故回归门）。
+    /// locales 文案引用的每个 `--flag` 必须在 clap 定义中存在（防 hint 指向不存在旗标）。
     #[test]
     fn locale_hint_flags_exist_in_clap_definition() {
         use clap::CommandFactory;
@@ -767,7 +717,7 @@ mod tests {
         }
 
         let flag_re = regex::Regex::new(r"--[a-z][a-z0-9_-]*").unwrap();
-        // `--features` 属于 cargo 构建旗标（非 calnexus CLI 旗标），合法出现于特性提示
+        // `--features` 是 cargo 构建旗标（非 CLI 旗标），合法出现于特性提示
         let external_flags = ["features"];
         let mut violations: Vec<String> = Vec::new();
         for text in &seen {
@@ -785,8 +735,7 @@ mod tests {
         );
     }
 
-    /// CLI 不可达变体（Steps/LaTeX/Json/DateTime）
-    /// 经 format_json_output 输出合法 JSON 且含 v=1。
+    /// CLI 不可达变体（Steps/LaTeX/Json/DateTime）经 format_json_output 输出合法 JSON。
     #[test]
     fn test_json_contract_non_cli_reachable_variants() {
         let variants: Vec<(EvalResult, &str)> = vec![
@@ -869,8 +818,7 @@ mod tests {
         );
     }
 
-    /// localized_command 覆盖 about + 全部参数 help：EN/ZH 下每个参数 help
-    /// 非空且与目录渲染一致（clap help 本地化覆盖面回归门）。
+    /// localized_command 覆盖 about + 全部参数 help（clap help 本地化回归门）。
     #[test]
     fn localized_command_localizes_about_and_all_arg_helps() {
         let cases: [(&str, &str); 2] = [
@@ -945,8 +893,7 @@ mod tests {
         }
     }
 
-    /// peek_lang_i18n 缺省路径：测试进程参数中无 `--lang` 时，
-    /// 预读结果必须与系统语言检测链一致（同源契约）。
+    /// peek_lang_i18n 缺省路径：无 `--lang` 时须与系统检测链结果一致。
     #[test]
     fn peek_lang_i18n_without_flag_matches_detection() {
         assert_eq!(peek_lang_i18n().lang(), crate::i18n::detect_locale());
@@ -956,7 +903,7 @@ mod tests {
 
     #[test]
     fn test_canonicalize_no_fold_basic_addition() {
-        // PRD §3.2.4: --canonical "3+2" → "(+ 2 3)"
+        // --canonical "3+2" → "(+ 2 3)"
         let ast = parse("3+2").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
         assert_eq!(cf.as_str(), "(+ 2 3)");
@@ -981,7 +928,7 @@ mod tests {
 
     #[test]
     fn test_canonicalize_no_fold_does_not_constant_fold() {
-        // 与 canonicalize（折叠版本）对比：canonicalize_no_fold 保留 (+ 2 3)
+        // 对比折叠版本：canonicalize_no_fold 保留 (+ 2 3)
         let ast = parse("2+3").unwrap();
         let (_, cf_fold) = AstCanonicalizer::canonicalize(&ast).unwrap();
         let (_, cf_no_fold) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
@@ -991,7 +938,6 @@ mod tests {
 
     #[test]
     fn test_canonicalize_no_fold_preserves_double_neg_elimination() {
-        // 2-(-x) → 2+x after double-neg elimination. Use 2--3 syntax (parser-dependent).
         // 使用 -(2+3) 形式：保留外层 neg，内部 (+ 2 3) 排序
         let ast = parse("-(2+3)").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
@@ -1000,8 +946,7 @@ mod tests {
 
     #[test]
     fn test_canonicalize_no_fold_does_not_fold_neg_number() {
-        // -5 保留为 (- 5)，不折叠为 -5
-        // 由于 parser 可能将 -5 直接解析为 Number(-5)，需构造 -(5) 形式
+        // -5 保留为 (- 5)，不折叠；构造 -(5) 形式绕开 parser 对负数字面量的处理
         let ast = parse("0-5").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
         assert_eq!(cf.as_str(), "(- 0 5)");
@@ -1067,7 +1012,7 @@ mod tests {
         let ast = parse("(2+9)*7-6").unwrap();
         let ctx = EvalContext::new();
         let steps = generate_steps(&ast, &ctx).unwrap();
-        // PRD §4.1.1: 2+9=11 → 11*7=77 → 77-6=71
+        // 2+9=11 → 11*7=77 → 77-6=71
         assert_eq!(steps, vec!["2+9=11", "11*7=77", "77-6=71"]);
     }
 

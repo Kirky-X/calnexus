@@ -1,14 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Statistics 计算域：均值、方差、标准差、中位数、最值、求和、计数。
-//!
-//! 设计依据：
-//! - statistics-domain spec：10 个 requirements / 21 个 scenarios
-//! - 自研实现，无外部依赖，priority=20
-//!
-//! 路由策略：AST 含统计函数调用（mean/variance/std/median/min/max/sum/count）时路由至本域。
-//! 输入为 List 节点；空列表与非数值元素（含嵌套 List/Matrix/Complex）返回 DomainError。
+//! Statistics 计算域：基础统计、分布、假设检验与相关系数。
+//! priority=20；输入为 List 节点，空列表与非数值元素返回 DomainError。
 
 use super::common::{
     ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
@@ -18,7 +12,7 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 
 use crate::math::statistics as math_stats;
 
-/// 扩展统计函数白名单：基础 8 + 分布 16 + 检验 3 + 相关 2 = 29。
+/// 统计函数白名单：基础统计、分布、假设检验、相关系数。
 const STATISTICS_FUNCTIONS: &[&str] = &[
     // 基础统计
     "mean",
@@ -55,10 +49,7 @@ const STATISTICS_FUNCTIONS: &[&str] = &[
     "spearman",
 ];
 
-/// Statistics 计算域。
-///
-/// priority=20，支持 mean/variance/std/median/min/max/sum/count。
-/// 输入为 List 节点，空列表与非数值元素返回 DomainError。
+/// Statistics 计算域，priority=20，输入为 List 节点。
 pub struct StatisticsDomain;
 
 impl CalculationDomain for StatisticsDomain {
@@ -248,7 +239,7 @@ impl StatisticsDomain {
         })
     }
 
-    /// 求值标量参数（从 AST 参数列表提取第 idx 个标量）。
+    /// 求值单个标量参数。
     fn eval_scalar_arg(&self, arg: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         self.eval_node(arg, ctx)?.as_scalar().ok_or_else(|| {
             CalcError::domain("expected scalar argument".to_string())
@@ -658,7 +649,7 @@ mod tests {
             .map(|r| r.as_scalar().expect("expected scalar result"))
     }
 
-    // ===== Requirement 1: 列表字面量解析（通过 count 间接验证） =====
+    // ===== 列表字面量解析（通过 count 间接验证） =====
 
     #[test]
     fn test_standard_list_parse() {
@@ -670,7 +661,7 @@ mod tests {
         assert_eq!(eval("count([42])").unwrap(), 1.0);
     }
 
-    // ===== Requirement 2: 均值 =====
+    // ===== 均值 =====
 
     #[test]
     fn test_mean_standard() {
@@ -682,11 +673,10 @@ mod tests {
         assert_eq!(eval("mean([5])").unwrap(), 5.0);
     }
 
-    // ===== Requirement 3: 方差（总体方差，除以 N） =====
+    // ===== 方差（总体方差，除以 N） =====
 
     #[test]
     fn test_variance_standard() {
-        // variance([1,2,3,4,5]) → 2.0（总体方差）
         assert_eq!(eval("variance([1,2,3,4,5])").unwrap(), 2.0);
     }
 
@@ -695,11 +685,10 @@ mod tests {
         assert_eq!(eval("variance([3,3,3,3])").unwrap(), 0.0);
     }
 
-    // ===== Requirement 4: 标准差 =====
+    // ===== 标准差 =====
 
     #[test]
     fn test_std_standard() {
-        // std([1,2,3,4,5]) → √2 ≈ 1.4142135623730951
         assert_approx(eval("std([1,2,3,4,5])").unwrap(), 1.4142135623730951);
     }
 
@@ -708,7 +697,7 @@ mod tests {
         assert_eq!(eval("std([5,5,5])").unwrap(), 0.0);
     }
 
-    // ===== Requirement 5: 中位数 =====
+    // ===== 中位数 =====
 
     #[test]
     fn test_median_odd_length() {
@@ -722,11 +711,11 @@ mod tests {
 
     #[test]
     fn test_median_unsorted() {
-        // median([3,1,4,1,5]) → 3.0（排序后取中位数）
+        // 内部先排序再取中位数。
         assert_eq!(eval("median([3,1,4,1,5])").unwrap(), 3.0);
     }
 
-    // ===== Requirement 6: 最值 =====
+    // ===== 最值 =====
 
     #[test]
     fn test_min() {
@@ -738,7 +727,7 @@ mod tests {
         assert_eq!(eval("max([3,1,4,1,5,9,2,6])").unwrap(), 9.0);
     }
 
-    // ===== Requirement 7: 求和与计数 =====
+    // ===== 求和与计数 =====
 
     #[test]
     fn test_sum() {
@@ -750,7 +739,7 @@ mod tests {
         assert_eq!(eval("count([1,2,3,4,5])").unwrap(), 5.0);
     }
 
-    // ===== Requirement 8: 空列表处理 =====
+    // ===== 空列表处理 =====
 
     #[test]
     fn test_empty_list_mean() {
@@ -774,11 +763,10 @@ mod tests {
         );
     }
 
-    // ===== Requirement 9: 非数值列表 =====
+    // ===== 非数值列表 =====
 
     #[test]
     fn test_nested_list_rejected() {
-        // mean([1, [2,3], 4]) → DomainError（含嵌套列表）
         let result = eval("mean([1, [2,3], 4])");
         assert!(result.is_err());
         assert!(
@@ -790,7 +778,6 @@ mod tests {
 
     #[test]
     fn test_matrix_in_list_rejected() {
-        // max([1, [[2,3],[4,5]], 6]) → DomainError（含矩阵）
         let result = eval("max([1, [[2,3],[4,5]], 6])");
         assert!(result.is_err());
         assert!(
@@ -800,11 +787,10 @@ mod tests {
         );
     }
 
-    // ===== Requirement 10: 域路由 =====
+    // ===== 域路由 =====
 
     #[test]
     fn test_route_statistics_function() {
-        // mean([1,2,3,4,5]) → 含统计函数，路由到 StatisticsDomain
         let ast = parse("mean([1,2,3,4,5])").unwrap();
         let domain = StatisticsDomain;
         assert!(domain.supports(&ast));
@@ -812,7 +798,6 @@ mod tests {
 
     #[test]
     fn test_route_nested_statistics() {
-        // max([1,2,3]) + min([4,5,6]) → 含统计函数，路由到 StatisticsDomain
         let ast = parse("max([1,2,3]) + min([4,5,6])").unwrap();
         let domain = StatisticsDomain;
         assert!(domain.supports(&ast));
@@ -829,26 +814,22 @@ mod tests {
 
     #[test]
     fn test_combined_statistics_expression() {
-        // max([1,2,3]) + min([4,5,6]) → 3 + 4 = 7
         assert_eq!(eval("max([1,2,3]) + min([4,5,6])").unwrap(), 7.0);
     }
 
     #[test]
     fn test_mean_minus_mean() {
-        // mean([1,2,3]) - mean([4,5,6]) → 2 - 5 = -3
         assert_eq!(eval("mean([1,2,3]) - mean([4,5,6])").unwrap(), -3.0);
     }
 
     #[test]
     fn test_list_with_arithmetic_expressions() {
-        // mean([1+1, 2*2, 3-1]) → mean([2, 4, 2]) → 8/3
         let result = eval("mean([1+1, 2*2, 3-1])").unwrap();
         assert_approx(result, 8.0 / 3.0);
     }
 
     #[test]
     fn test_wrong_arg_count() {
-        // mean([1,2], [3,4]) → DomainError（参数数量错误）
         let ast = AstNode::FunctionCall(
             "mean".to_string(),
             vec![
@@ -864,7 +845,6 @@ mod tests {
 
     #[test]
     fn test_non_list_argument() {
-        // mean(5) → DomainError（参数非 List）
         let ast = AstNode::FunctionCall("mean".to_string(), vec![AstNode::Number(5.0)]);
         let domain = StatisticsDomain;
         let ctx = EvalContext::new();
@@ -874,7 +854,6 @@ mod tests {
 
     #[test]
     fn test_unsupported_function() {
-        // sin([1,2,3]) → DomainError（sin 不是统计函数）
         let ast = AstNode::FunctionCall(
             "sin".to_string(),
             vec![AstNode::List(vec![
@@ -890,7 +869,6 @@ mod tests {
 
     #[test]
     fn test_negative_numbers_in_list() {
-        // mean([-1, -2, 3, 4]) → 4/4 = 1.0
         assert_eq!(eval("mean([-1, -2, 3, 4])").unwrap(), 1.0);
     }
 
@@ -914,8 +892,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_result_not_finite() {
-        // evaluate() 结果非有限 → NaNOrInf
-        // sum([1e308, 1e308]) = inf
+        // 结果非有限 → NaNOrInf。
         let ast = AstNode::FunctionCall(
             "sum".to_string(),
             vec![AstNode::List(vec![
@@ -986,7 +963,6 @@ mod tests {
 
     #[test]
     fn test_scalar_div_normal() {
-        // 正常除法 a / b
         let ast = AstNode::BinaryOp(
             BinaryOp::Div,
             Box::new(AstNode::Number(10.0)),
@@ -1012,7 +988,6 @@ mod tests {
 
     #[test]
     fn test_scalar_pow_normal() {
-        // a.powf(b) 正常路径
         let ast = AstNode::BinaryOp(
             BinaryOp::Pow,
             Box::new(AstNode::Number(2.0)),
@@ -1038,7 +1013,6 @@ mod tests {
 
     #[test]
     fn test_scalar_mod_normal() {
-        // a % b 正常路径
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::Number(10.0)),
@@ -1064,7 +1038,6 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        // Default impl
         let domain = StatisticsDomain;
         assert_eq!(domain.domain_name(), "statistics");
         assert_eq!(domain.priority(), 20);

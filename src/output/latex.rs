@@ -3,33 +3,12 @@
 
 //! LaTeX 输出格式化器。
 //!
-//! 将 `EvalResult` 渲染为 LaTeX 字符串，覆盖所有变体：
-//! - 标量 → `42` 或 `3.14`
-//! - 复数 → `3 + 4i`
-//! - 矩阵 → `\begin{pmatrix}1 & 2 \\ 3 & 4\end{pmatrix}`
-//! - 向量 → `\left[1, 2, 3\right]`
-//! - 多项式 → `x^{2} + 2x + 1`
-//! - BigInt → 数字字符串
-//! - BigRational → `\frac{p}{q}`
-//! - 复根列表 → `\left[1 + 2i, 3 + 4i\right]`
-//! - 符号运算 → `\frac{d}{dx}\left(...\right) = result` 等
-//!
-//! 设计依据：
-//! - PRD §3.2.4 / §4.1.1：`--latex "diff(x^2,x)"` → `\frac{d}{dx}\left(x^{2}\right) = 2x`
-//! - ADD §3.4：`CalcResult::LaTeX(String)` 变体
-//! - LaTeX 由 SymbolicDomain 直接产出（domain 拥有 AST 上下文）
+//! 将 `EvalResult` 各变体（标量/复数/矩阵/向量/多项式/符号运算等）渲染为 LaTeX 字符串。
 
 use crate::core::{AstNode, EvalResult};
 use num_traits::Signed;
 
-/// 格式化标量为 LaTeX。
-///
-/// - NaN/Inf 渲染为 `\text{NaN}` / `\infty` / `-\infty`
-/// - 整数值（在 i64 安全范围内）渲染为整数（`42`）
-/// - 大整数（超出 i64 范围）渲染为不带小数点的数字串（`100000000000000000000`），
-///   避免触发科学计数法
-/// - 浮点数渲染为最简小数（`3.14`），并消除浮点精度噪声
-///   （如 `0.1+0.2=0.30000000000000004` → `0.3`）
+/// 格式化标量为 LaTeX：NaN/Inf 用 `\text{NaN}`/`\infty`，整数避免科学计数法，小数抑制浮点噪声。
 pub fn format_latex_scalar(v: f64) -> String {
     if v.is_nan() {
         return "\\text{NaN}".to_string();
@@ -45,7 +24,7 @@ pub fn format_latex_scalar(v: f64) -> String {
         if v.abs() < 9e15 {
             return format!("{}", v as i64);
         }
-        // Large integer outside i64 safe range: {:.0} avoids scientific notation
+        // 超出 i64 安全范围的大整数：{:.0} 避免科学计数法
         return format!("{:.0}", v);
     }
     let default = format!("{}", v);
@@ -64,12 +43,7 @@ fn has_floating_point_noise(s: &str) -> bool {
     s.contains("0000000") || s.contains("9999999")
 }
 
-/// 格式化复数为 LaTeX。
-///
-/// 简化规则（避免冗余的 `0 + 0i` 或 `1i` 形式）：
-/// - 虚部为 0 → 仅实部（`3`）
-/// - 实部为 0 → 仅虚部（`4i`），虚部为 ±1 时进一步简化为 `i` / `-i`
-/// - 一般形式 → `re + im i` 或 `re - im i`（虚部为 ±1 时简化为 `re + i` / `re - i`）
+/// 格式化复数为 LaTeX：虚部为 0 只留实部，实部为 0 只留虚部，±1 虚部省略系数。
 pub fn format_latex_complex(re: f64, im: f64) -> String {
     if im == 0.0 {
         return format_latex_scalar(re);
@@ -95,9 +69,7 @@ pub fn format_latex_complex(re: f64, im: f64) -> String {
     }
 }
 
-/// 格式化矩阵为 LaTeX `\begin{pmatrix}...\end{pmatrix}`。
-///
-/// 行内元素以 ` & ` 分隔，行间以 ` \\ ` 分隔。
+/// 格式化矩阵为 LaTeX `\begin{pmatrix}...\end{pmatrix}`，行内以 ` & `、行间以 ` \\ ` 分隔。
 pub fn format_latex_matrix(m: &[Vec<f64>]) -> String {
     let rows: Vec<String> = m
         .iter()
@@ -161,11 +133,7 @@ fn format_latex_polynomial_term(coef: f64, i: usize) -> Option<String> {
     Some(term)
 }
 
-/// 合并 LaTeX 多项式单项列表。
-///
-/// 第一项原样输出（即使以 `-` 开头），后续项：
-/// - 正项用 ` + ` 分隔
-/// - 负项用 ` - ` 分隔并去除其前导 `-`（与正项对称，避免 `x^{2}-2x` 的紧凑形式）
+/// 合并多项式项：首项原样输出，正项用 ` + `、负项用 ` - ` 分隔（去掉前导 `-`）。
 fn join_latex_polynomial_terms(terms: &[String]) -> String {
     let mut result = terms[0].clone();
     for term in &terms[1..] {
@@ -185,9 +153,7 @@ pub fn format_latex_bigint(b: &num_bigint::BigInt) -> String {
     b.to_string()
 }
 
-/// 格式化 BigRational 为 LaTeX `\frac{p}{q}`。
-///
-/// `fmt_prec` 为 `Some(n)` 时格式化为 `n` 位小数（`p.q...`）。
+/// 格式化 BigRational：`fmt_prec` 为 `Some(n)` 时输出 n 位小数，否则输出 `\frac{p}{q}`。
 pub fn format_latex_bigrational(r: &num_rational::BigRational, fmt_prec: Option<usize>) -> String {
     if let Some(prec) = fmt_prec {
         let neg = r.is_negative();
@@ -227,16 +193,7 @@ pub fn format_latex_complex_list(c: &[(f64, f64)]) -> String {
     format!("\\left[{}\\right]", elems.join(", "))
 }
 
-/// 格式化符号运算结果为 LaTeX。
-///
-/// 根据 `op_name` 选择合适的 LaTeX 包装：
-/// - `diff(f, x)` → `\frac{d}{dx}\left(f\right) = result`
-/// - `integrate(f, x)` → `\int f \, dx = result`
-/// - `limit(f, x, a)` → `\lim_{x \to a} f = result`
-/// - `series(f, x, a, n)` → `\sum_{k=0}^{n} \frac{f^{(k)}(a)}{k!}(x-a)^k`
-/// - `taylor(f, x, a, n)` → 同 series
-///
-/// `result_str` 为已求值的符号结果字符串（如 `2*x`）。在 LaTeX 中乘号需转义为 `\cdot`。
+/// 符号运算结果转 LaTeX：按 op_name 选择包装，乘号转 `\cdot`。
 pub fn format_latex_symbolic(op_name: &str, ast: &AstNode, result_str: &str) -> String {
     let result_latex = symbolic_str_to_latex(result_str);
     let args = match ast {
@@ -347,12 +304,7 @@ fn ast_to_latex_expr(node: &AstNode) -> Option<String> {
     }
 }
 
-/// 将符号结果字符串（如 `2*x` 或 `x^2`）转换为 LaTeX（`2 \cdot x`、`x^{2}`）。
-///
-/// 替换规则：
-/// - `*` → ` \cdot `（LaTeX 乘号）
-/// - `^N` → `^{N}`（N 为整数指数，可能带前导 `-`；LaTeX 要求指数用花括号包裹）
-/// - 其他字符原样保留
+/// 符号结果串转 LaTeX：`*` → ` \cdot `，`^N` → `^{N}`（指数可带前导负号），其余原样。
 fn symbolic_str_to_latex(s: &str) -> String {
     let chars: Vec<char> = s.chars().collect();
     let mut result = String::with_capacity(s.len() * 2);
@@ -367,12 +319,12 @@ fn symbolic_str_to_latex(s: &str) -> String {
             '^' => {
                 result.push_str("^{");
                 i += 1;
-                // Capture optional negative sign for exponent
+                // 捕获可选的负指数符号
                 if i < chars.len() && chars[i] == '-' {
                     result.push('-');
                     i += 1;
                 }
-                // Capture digit sequence as exponent
+                // 捕获指数数字序列
                 while i < chars.len() && chars[i].is_ascii_digit() {
                     result.push(chars[i]);
                     i += 1;
@@ -388,11 +340,7 @@ fn symbolic_str_to_latex(s: &str) -> String {
     result
 }
 
-/// 顶层 LaTeX 格式化器：根据 `EvalResult` 变体分发到具体格式化函数。
-///
-/// `ast` 用于符号运算的包装（`\frac{d}{dx}\left(...\right)`）。
-/// `expr` 为原始表达式字符串，用于回退显示。
-/// `fmt_prec` 为 `Some(n)` 时用于 BigRational 的 `n` 位小数格式化。
+/// 顶层格式化器：按 `EvalResult` 变体分发；`ast` 供符号包装，`fmt_prec` 供 BigRational 位数。
 pub fn format_latex(
     result: &EvalResult,
     ast: &AstNode,
@@ -422,11 +370,9 @@ pub fn format_latex(
         }
         EvalResult::LaTeX(s) => s.clone(),
         EvalResult::Steps(v) => v.join(" \\to "),
-        // Json 是结构化复合结果（lu/qr/eig/svd 分解），LaTeX 无标准矩阵分解表示形式；
-        // 主要走 --json 输出，此处 fallback 输出 JSON 字符串。
+        // Json 复合结果（lu/qr/eig/svd 分解）无标准 LaTeX 形式，直接输出 JSON 字符串
         EvalResult::Json(v) => v.to_string(),
-        // DateTime：RFC3339 字符串用 \text{} 包装，
-        // 避免 LaTeX 数学模式将日期/时间中的 `-`、`:` 解释为减法/除法。
+        // DateTime：RFC3339 串用 \text{} 包装，避免 `-`/`:` 被解释为减法和除法
         EvalResult::DateTime(s) => format!("\\text{{{}}}", s),
     }
 }
@@ -666,26 +612,25 @@ mod tests {
 
     #[test]
     fn latex_polynomial_leading_coef_one_x() {
-        // i==1, coef==1.0 → "x"（line 89）
+        // i==1, coef==1.0 → "x"
         assert_eq!(format_latex_polynomial(&[5.0, 1.0]), "x + 5");
     }
 
     #[test]
     fn latex_polynomial_high_degree_neg_one_coef() {
-        // i>1, coef==-1.0 → "-x^{i}"（lines 99-100）
+        // i>1, coef==-1.0 → "-x^{i}"
         assert_eq!(format_latex_polynomial(&[0.0, 0.0, -1.0]), "-x^{2}");
     }
 
     #[test]
     fn latex_polynomial_high_degree_general_coef() {
-        // i>1, coef 非 ±1.0 → "cx^{i}"（line 102）
+        // i>1, coef 非 ±1.0 → "cx^{i}"
         assert_eq!(format_latex_polynomial(&[0.0, 0.0, 3.0]), "3x^{2}");
     }
 
     #[test]
     fn latex_polynomial_negative_term_concatenation() {
         // 非首项以 '-' 开头时用 " - " 分隔（与 " + " 对称）
-        // [1, -2, 1] → "x^{2} - 2x + 1"
         assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2} - 2x + 1");
     }
 
@@ -693,7 +638,7 @@ mod tests {
 
     #[test]
     fn latex_bigrational_zero_precision() {
-        // prec==0 → 仅整数部分（line 152）
+        // prec==0 → 仅整数部分
         let r = num_rational::BigRational::new(
             num_bigint::BigInt::from(7),
             num_bigint::BigInt::from(2),
@@ -705,7 +650,7 @@ mod tests {
 
     #[test]
     fn latex_symbolic_non_functioncall_ast() {
-        // ast 非 FunctionCall → 直接返回 result_latex（line 184）
+        // ast 非 FunctionCall → 直接返回 result_latex
         let ast = AstNode::Number(0.0);
         let s = format_latex_symbolic("diff", &ast, "2*x");
         assert_eq!(s, "2 \\cdot x");
@@ -713,7 +658,7 @@ mod tests {
 
     #[test]
     fn latex_symbolic_series_branch() {
-        // series/taylor 分支（lines 240-245）
+        // series/taylor 分支
         let ast = AstNode::FunctionCall(
             "series".to_string(),
             vec![AstNode::Variable("x".to_string())],
@@ -725,7 +670,7 @@ mod tests {
 
     #[test]
     fn latex_symbolic_taylor_branch() {
-        // taylor 分支（lines 240-245）
+        // taylor 分支
         let ast = AstNode::FunctionCall(
             "taylor".to_string(),
             vec![AstNode::Variable("x".to_string())],
@@ -736,7 +681,7 @@ mod tests {
 
     #[test]
     fn latex_symbolic_unknown_op() {
-        // 未知 op_name → 返回 result_latex（line 251）
+        // 未知 op_name → 返回 result_latex
         let ast = AstNode::FunctionCall(
             "unknown".to_string(),
             vec![AstNode::Variable("x".to_string())],
@@ -749,7 +694,7 @@ mod tests {
 
     #[test]
     fn latex_ast_to_latex_expr_bignumber() {
-        // BigNumber → 原始字符串（line 259）
+        // BigNumber → 原始字符串
         let node = AstNode::BigNumber("1234567890123456".to_string());
         assert_eq!(
             ast_to_latex_expr(&node),
@@ -759,7 +704,7 @@ mod tests {
 
     #[test]
     fn latex_ast_to_latex_expr_add_sub_mul_mod() {
-        // Add/Sub/Mul/Mod 分支（lines 265-267, 270）
+        // Add/Sub/Mul/Mod 分支
         let add = AstNode::BinaryOp(
             BinaryOp::Add,
             Box::new(AstNode::Variable("a".to_string())),
@@ -791,7 +736,7 @@ mod tests {
 
     #[test]
     fn latex_ast_to_latex_expr_abs() {
-        // UnaryOp::Abs → \left|...\right|（line 279）
+        // UnaryOp::Abs → \left|...\right|
         let node = AstNode::UnaryOp(UnaryOp::Abs, Box::new(AstNode::Variable("x".to_string())));
         assert_eq!(
             ast_to_latex_expr(&node),
@@ -801,7 +746,7 @@ mod tests {
 
     #[test]
     fn latex_ast_to_latex_expr_function_call() {
-        // FunctionCall → name(args)（lines 282-284）
+        // FunctionCall → name(args)
         let node = AstNode::FunctionCall(
             "sin".to_string(),
             vec![AstNode::Number(0.0), AstNode::Variable("x".to_string())],
@@ -811,7 +756,7 @@ mod tests {
 
     #[test]
     fn latex_ast_to_latex_expr_unsupported_returns_none() {
-        // 不支持的节点类型 → None（line 286）
+        // 不支持的节点类型 → None
         let node = AstNode::Complex(1.0, 2.0);
         assert_eq!(ast_to_latex_expr(&node), None);
 
@@ -826,7 +771,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_complex() {
-        // Complex 变体（line 310）
+        // Complex 变体
         let r = EvalResult::Complex(3.0, 4.0);
         let ast = AstNode::Number(0.0);
         assert_eq!(format_latex(&r, &ast, "", None), "3 + 4i");
@@ -834,7 +779,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_bigint() {
-        // BigInt 变体（line 312）
+        // BigInt 变体
         let r = EvalResult::BigInt(num_bigint::BigInt::from(42));
         let ast = AstNode::Number(0.0);
         assert_eq!(format_latex(&r, &ast, "", None), "42");
@@ -842,7 +787,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_bigrational() {
-        // BigRational 变体（line 313）
+        // BigRational 变体
         let r = EvalResult::BigRational(num_rational::BigRational::new(
             num_bigint::BigInt::from(1),
             num_bigint::BigInt::from(3),
@@ -853,7 +798,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_vector() {
-        // Vector 变体（line 314）
+        // Vector 变体
         let r = EvalResult::Vector(vec![1.0, 2.0, 3.0]);
         let ast = AstNode::Number(0.0);
         assert_eq!(format_latex(&r, &ast, "", None), "\\left[1, 2, 3\\right]");
@@ -861,7 +806,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_polynomial() {
-        // Polynomial 变体（line 315）
+        // Polynomial 变体
         let r = EvalResult::Polynomial(vec![1.0, 2.0, 1.0]);
         let ast = AstNode::Number(0.0);
         assert_eq!(format_latex(&r, &ast, "", None), "x^{2} + 2x + 1");
@@ -869,7 +814,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_complex_list() {
-        // ComplexList 变体（line 316）
+        // ComplexList 变体
         let r = EvalResult::ComplexList(vec![(1.0, 2.0), (3.0, -4.0)]);
         let ast = AstNode::Number(0.0);
         assert_eq!(
@@ -882,7 +827,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_symbolic_non_matching_function() {
-        // Symbolic 变体，ast 为 FunctionCall 但 name 不在白名单（lines 325-327）
+        // Symbolic 变体：FunctionCall 名不在包装白名单
         let r = EvalResult::Symbolic("2*x".to_string());
         let ast = AstNode::FunctionCall("foo".to_string(), vec![]);
         assert_eq!(format_latex(&r, &ast, "", None), "2 \\cdot x");
@@ -890,7 +835,7 @@ mod tests {
 
     #[test]
     fn latex_top_level_symbolic_non_function() {
-        // Symbolic 变体，ast 非 FunctionCall（line 327）
+        // Symbolic 变体，ast 非 FunctionCall
         let r = EvalResult::Symbolic("2*x".to_string());
         let ast = AstNode::Number(0.0);
         assert_eq!(format_latex(&r, &ast, "", None), "2 \\cdot x");
@@ -966,8 +911,7 @@ mod tests {
 
     #[test]
     fn latex_polynomial_negative_terms_with_spaces() {
-        // 负项应统一用 " - " 分隔（与正项 " + " 对称）
-        // [1, -2, 1] → "x^{2} - 2x + 1"（不是 "x^{2}-2x + 1"）
+        // 负项统一用 " - " 分隔（与正项 " + " 对称）
         assert_eq!(format_latex_polynomial(&[1.0, -2.0, 1.0]), "x^{2} - 2x + 1");
         // [-1, 2] → "2x - 1"
         assert_eq!(format_latex_polynomial(&[-1.0, 2.0]), "2x - 1");

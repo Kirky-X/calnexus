@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 测试共享 helper：消除 4 个测试文件中 calnexus_cli() / default_router() 的复制粘贴。
-// 不同测试文件只用部分 helper，允许 dead_code。
+//! 测试共享 helper：calnexus_cli() 与 default_router()；部分文件只用其一，允许 dead_code。
 #![allow(dead_code)]
 
 use assert_cmd::Command;
@@ -17,8 +16,7 @@ pub fn calnexus_cli() -> Command {
     Command::cargo_bin("calnexus").expect("calnexus binary not found")
 }
 
-/// 构建默认路由器：注册全部 11 个域。
-/// 优先级降序：Complex/Matrix/Vector (30+) > Symbolic (30) > Precision/NumberTheory/Combinatorics/Polynomial (25) > Statistics/Scientific (20) > Arithmetic (10)。
+/// 构建默认路由器：注册全部 11 个域（按优先级降序注册）。
 pub fn default_router() -> DomainRouter {
     let mut router = DomainRouter::new();
     router.register(Box::new(PrecisionDomain));

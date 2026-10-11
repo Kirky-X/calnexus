@@ -1,15 +1,11 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 方程数值求解器：Newton-Raphson / 二分法 / Brent 方法。
-//!
-//! 纯数学函数，供 `api/` 层直接调用。
+//! 方程数值求解器：Newton-Raphson / 二分法 / Brent，纯函数供 `api/` 调用。
 
 use crate::core::CalcError;
 
-/// Newton-Raphson 迭代求根。
-///
-/// 导数为零 → `DomainError`；超 `max_iter` → `DomainError`。
+/// Newton-Raphson 迭代求根；导数为零或超 `max_iter` 返回 `DomainError`。
 pub fn newton_raphson<F, G>(
     f: F,
     df: G,
@@ -40,7 +36,6 @@ where
         }
         x -= fx / dfx;
     }
-    // 最终检查
     if f(x).abs() < tol {
         return Ok(x);
     }
@@ -54,9 +49,7 @@ where
     ))
 }
 
-/// 二分法求根。
-///
-/// 要求 `f(a) · f(b) ≤ 0`，否则返回 `DomainError`。
+/// 二分法求根；要求 `f(a) · f(b) ≤ 0`，否则返回 `DomainError`。
 pub fn bisection<F>(f: F, a: f64, b: f64, tol: f64, max_iter: usize) -> Result<f64, CalcError>
 where
     F: Fn(f64) -> f64,
@@ -94,9 +87,7 @@ where
     Ok(mid)
 }
 
-/// Brent 方法求根（逆二次插值 + 二分回退）。
-///
-/// 要求 `f(a) · f(b) ≤ 0`。
+/// Brent 求根（逆二次插值 + 二分回退）；要求 `f(a) · f(b) ≤ 0`。
 pub fn brent<F>(f: F, a: f64, b: f64, tol: f64, max_iter: usize) -> Result<f64, CalcError>
 where
     F: Fn(f64) -> f64,

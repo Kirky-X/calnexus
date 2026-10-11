@@ -1,22 +1,19 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! MCP server 启动：`evaluate` tool 由 `#[forge]` 宏声明（evaluate.rs），
-//! 本模块仅负责构建/启动 SdForgeMcpServer（stdio 传输）。
+//! MCP server 启动：构建/启动 SdForgeMcpServer（stdio 传输）；
+//! `evaluate` tool 由 `#[forge]` 宏声明（evaluate.rs）。
 
 use super::ServerError;
 use sdforge::mcp::SdForgeMcpServer;
 
-/// 构建 CalNexus MCP server：`init_all_plugins()` + `sdforge::mcp::build()`。
-///
-/// `init_all_plugins()` 替代 `preserve_mcp_inventory()` 链接器 hack，
-/// 确保 `#[forge]` 注册的 evaluate tool 被 `mcp::build()` 收集。
+/// 构建 MCP server：`init_all_plugins()` 确保 `#[forge]` 注册的 tool 被 `mcp::build()` 收集。
 pub fn build_mcp_server() -> SdForgeMcpServer {
     sdforge::init_all_plugins();
     sdforge::mcp::build()
 }
 
-/// MCP server 配置（stdio 传输，无 host/port 概念，仅 server_name）。
+/// MCP server 配置（stdio 传输，仅 server_name）。
 #[derive(Debug, Clone)]
 pub struct McpServer {
     /// server 名称（默认 "calnexus-mcp"）。
@@ -48,9 +45,7 @@ impl McpServer {
         &self.server_name
     }
 
-    /// 同步入口：创建 multi-thread tokio runtime 阻塞运行 `start()`。
-    /// 供 CLI `--serve-mcp` flag 调用。multi-thread 是 `#[forge]` MCP `call()`
-    /// 内部 `block_in_place` 的要求（约束）。
+    /// 同步入口（CLI `--serve-mcp` 调用）；multi-thread runtime 为 MCP `call()` 内 `block_in_place` 要求。
     pub fn run(&self) -> Result<(), ServerError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -95,21 +90,11 @@ mod tests {
         assert_eq!(server.server_name(), "custom-mcp");
     }
 
-    /// 验证 `#[forge]` 宏生成的 evaluate tool 经
-    /// `init_all_plugins()` + inventory 收集后注册成功，且调用无 runtime panic。
-    ///
-    /// `call_tool_internal` → `tool().call()` 内部 `Handle::try_current()` 为 Err
-    /// 分支会自创 multi-thread runtime（macros line 1354-1359），故本同步测试
-    /// 无需外层 tokio runtime。
-    ///
-    /// 失败条件（→ 触发 design A2 MCP 回退）：
-    /// - `tool_count` 不符预期：inventory submit 丢失（链接器未收集 #[forge] 注册）
-    /// - panic：`block_in_place` / `spawn_blocking` / evaluate 调用链 runtime 错误
+    /// 验证 `#[forge]` evaluate tool 注册与调用：tool_count 不符=inventory 丢失，panic=runtime 错误。
     #[test]
     fn test_forge_evaluate_registers_and_calls() {
         let server = build_mcp_server();
-        // fx feature 启用时注册 4 个 tool（evaluate + list_functions + fx_budget + fx_pricing）
-        // 否则 2 个（evaluate + list_functions）
+        // fx feature 下 4 个 tool（evaluate/list_functions/fx_budget/fx_pricing），否则 2 个
         let expected_count = if cfg!(feature = "fx") { 4 } else { 2 };
         assert_eq!(
             server.tool_count(),

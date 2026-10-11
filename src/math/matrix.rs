@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 矩阵核心函数：行列式/逆/转置/单位矩阵/加减乘/标量运算。
-//!
-//! 将 `domains/matrix.rs` 中的矩阵数学逻辑提取为独立 `pub fn`，
-//! 接收 `&DMatrix<f64>` 参数，供域层和 API 层共用。
+//! 矩阵核心函数：行列式/逆/转置/单位矩阵/加减乘/标量运算，供域层和 API 层共用。
 
 use nalgebra::DMatrix;
 

@@ -4,16 +4,10 @@
 //! 规范形式输出格式化器。
 //!
 //! 暴露 `CanonicalForm` 的字符串形式，作为 `--canonical` 标志的输出。
-//!
-//! 示例：`calnexus --canonical "3+2"` → `(+ 2 3)`
-//!
-//! 设计依据：薄包装，复用 `AstCanonicalizer::canonicalize`。
 
 use crate::core::CanonicalForm;
 
 /// 格式化 `CanonicalForm` 为字符串。
-///
-/// 直接返回 `cf.as_str()` 的克隆，作为 `format_canonical` API 的统一入口。
 pub fn format_canonical(cf: &CanonicalForm) -> String {
     cf.as_str().to_string()
 }

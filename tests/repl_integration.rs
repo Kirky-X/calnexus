@@ -1,17 +1,14 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! REPL integration tests using `expectrl` (TEST.md §8.3).
-//!
-//! 通过 pty 驱动 `calnexus --repl`，验证交互式行编辑、变量绑定、历史等。
-//! 每个 30s 超时（CI 防挂起）。易 flaky 的测试标记 `#[ignore]`。
+//! 通过 pty 驱动 `calnexus --repl` 的集成测试（30s 超时，flaky 用例标记 `#[ignore]`）。
 
 use expectrl::process::Healthcheck;
 use expectrl::session::OsSession;
 use expectrl::{Expect, spawn};
 use std::time::{Duration, Instant};
 
-/// REPL 提示符（src/repl.rs: `calnexus> `）
+/// REPL 提示符 `calnexus> `
 const PROMPT: &str = "calnexus> ";
 
 /// 每测试 30s 超时
@@ -24,7 +21,7 @@ fn spawn_repl() -> OsSession {
     spawn(&cmd_str).expect("failed to spawn calnexus --repl")
 }
 
-/// 等待 REPL 出现提示符或指定内容，超时则 panic
+/// 等待指定内容出现，超时则 panic
 fn expect(session: &mut OsSession, pattern: &str, test_name: &str) {
     let start = Instant::now();
     loop {
@@ -62,7 +59,7 @@ fn it_cli_017_basic_eval() {
     let _ = session.send_line(":quit");
 }
 
-/// `:let x = 3.14` 后 `sin(x)` ≈ 0.00159...
+/// `:let` 绑定变量后可在表达式中引用
 #[test]
 fn it_cli_018_variable_binding() {
     let mut session = spawn_repl();
@@ -70,12 +67,12 @@ fn it_cli_018_variable_binding() {
     send_line(&mut session, ":let x = 3.14");
     expect(&mut session, PROMPT, "IT-CLI-018 after let");
     send_line(&mut session, "sin(x)");
-    // sin(3.14) ≈ 0.0015926529164069226（3.14 接近 π）
+    // 3.14 接近 π，故 sin(x) 结果约 0.00159
     expect(&mut session, "0.001", "IT-CLI-018 sin(3.14)");
     let _ = session.send_line(":quit");
 }
 
-/// `:vars` 列出已绑定变量 `x = 3.14`
+/// `:vars` 列出已绑定变量
 #[test]
 fn it_cli_019_view_vars() {
     let mut session = spawn_repl();
@@ -88,8 +85,7 @@ fn it_cli_019_view_vars() {
     let _ = session.send_line(":quit");
 }
 
-/// 上箭头召回历史输入。
-/// 标记 `#[ignore]` 因 pty 上箭头键码易在 CI flaky。
+/// 上箭头召回历史输入（pty 下 flaky，标记 `#[ignore]`）
 #[test]
 #[ignore = "history recall via pty is flaky on CI; run with --ignored"]
 fn it_cli_020_history_recall() {
@@ -98,7 +94,7 @@ fn it_cli_020_history_recall() {
     send_line(&mut session, "2+3");
     expect(&mut session, "5", "IT-CLI-020 first eval");
     expect(&mut session, PROMPT, "IT-CLI-020 second prompt");
-    // 上箭头：ESC [ A（Unix 终端序列）
+    // 上箭头键序列：ESC [ A
     session.send(b"\x1b[A").expect("send up arrow");
     expect(&mut session, "2+3", "IT-CLI-020 history recall");
     let _ = session.send_line("");
@@ -126,8 +122,7 @@ fn it_cli_021_quit_exit_zero() {
     }
 }
 
-/// Tab 补全 `si` → `sin(`。
-/// 标记 `#[ignore]` 因 rustyline Tab 补全在 pty 下易 flaky。
+/// Tab 补全 `si` → `sin(`（pty 下 flaky，标记 `#[ignore]`）
 #[test]
 #[ignore = "tab completion via pty is flaky on CI; run with --ignored"]
 fn it_cli_022_tab_completion() {
@@ -140,7 +135,7 @@ fn it_cli_022_tab_completion() {
     let _ = session.send_line(":quit");
 }
 
-/// 无效 `2+` 显示错误但无崩溃，后续 `2+3` 正常求值
+/// 无效输入报错后会话仍可继续求值
 #[test]
 fn it_cli_023_error_recovery() {
     let mut session = spawn_repl();
@@ -153,7 +148,7 @@ fn it_cli_023_error_recovery() {
     let _ = session.send_line(":quit");
 }
 
-// 验证 REPL 测试基础设施完整（expectrl 已在 dev-dependencies）
+// 验证 REPL 测试基础设施完整
 #[test]
 fn repl_infrastructure_present() {
     let _session = spawn_repl();

@@ -1,10 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! E2E 共享夹具：求值助手、断言助手、fx mock 基础设施。
-//!
-//! 求值助手均为「全新 CacheManager + 默认 EvalContext」的无状态封装，
-//! 保证用例间零缓存串扰（`now`/`fx` 等非确定性函数本就旁路 L1 缓存）。
+//! E2E 共享夹具：求值/断言助手与 fx mock 基础设施。
+//! 助手均为无状态封装（全新 CacheManager），保证用例间零缓存串扰。
 
 #![allow(dead_code)]
 

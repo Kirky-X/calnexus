@@ -1,67 +1,35 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 计算域接口与路由器。
-//!
-//! 设计依据：
-//! - trait-kit 作为域接口（fallback：自研 trait + 手动注册表）
-//! - domain-routing spec：6 个 requirements / 21 个 scenarios
-//!
-//! 核心类型：
-//! - [`CalculationDomain`]：所有计算域必须实现的 trait
-//! - [`DomainRouter`]：按优先级降序遍历域，选择第一个 `supports()` 返回 true 的域
-//!
-//! **设计偏差**：原计划使用 trait-kit `ModuleInterface`，
-//! 但 trait-kit API 不明确且 crates.io 下载量为 0。采用设计文档中预批准的 fallback
-//! 方案（"自研 trait + 手动注册表"），功能等价且更可控。
+//! 计算域接口与路由器：CalculationDomain trait + 按优先级降序路由的 DomainRouter。
 
 use crate::core::types::{AstNode, CalcError, EvalContext, EvalResult};
 use std::collections::HashSet;
 
-/// 计算域接口：所有计算域必须实现此 trait。
-///
-/// 每个域需声明：
-/// - 域名称（用于路由结果标识）
-/// - `supports()` 判断是否能处理某 AST
-/// - `evaluate()` 执行实际计算
-/// - 优先级（数值越大越优先）
-/// - `nondeterministic_functions()` 申报非确定性函数
+/// 计算域接口：声明域名称、supports()、evaluate()、优先级与非确定性函数列表。
 pub trait CalculationDomain: Send + Sync {
     /// 域名称（如 `"arithmetic"`、`"scientific"`）。
     fn domain_name(&self) -> &str;
 
-    /// 是否支持处理该 AST。
-    ///
-    /// 路由器按优先级降序遍历，首个返回 `true` 的域胜出。
+    /// 是否支持处理该 AST（路由器按优先级降序遍历，首个 true 胜出）。
     fn supports(&self, ast: &AstNode) -> bool;
 
-    /// 求值 AST。
-    ///
-    /// 调用前应先通过 `supports()` 确认该域支持此 AST。
+    /// 求值 AST（调用前应先用 `supports()` 确认支持）。
     fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError>;
 
     /// 优先级（数值越大优先级越高，同优先级按注册顺序）。
     fn priority(&self) -> u8;
 
-    /// 申报本域的非确定性函数名列表。
-    ///
-    /// 默认返回空表（既有 11 个域不覆写，行为零变化）。
-    /// TimeDomain 申报 `["now","today"]`；FxDomain 申报 `["fx","fx_rate"]`。
-    /// core 层不出现任何具体函数名硬编码（DIP：core → domains 零依赖保持）。
+    /// 申报本域的非确定性函数名列表（默认空）。
     fn nondeterministic_functions(&self) -> &'static [&'static str] {
         &[]
     }
 }
 
-/// 域路由器：按优先级降序遍历已注册域，选择第一个 `supports()` 返回 `true` 的域。
-///
-/// 线程安全（`Send + Sync`），支持并发路由查询。
-///
-/// 在 register() 时增量聚合各域申报的非确定性函数名，
-/// 提供 `is_nondeterministic(ast)` 检测 AST 是否含非确定性函数调用。
+/// 域路由器：按优先级降序选首个 `supports()` 为真的域（Send+Sync，注册时聚合非确定性函数名）。
 pub struct DomainRouter {
     domains: Vec<Box<dyn CalculationDomain>>,
-    /// 聚合的非确定性函数名集合（register 时增量构建，查询路径无重复构建开销）
+    /// 聚合的非确定性函数名（register 时增量构建）
     nondeterministic_functions: HashSet<String>,
 }
 
@@ -76,8 +44,7 @@ impl DomainRouter {
 
     /// 注册计算域。
     ///
-    /// 注册后按 `priority()` 降序稳定排序（同优先级保持注册顺序）。
-    /// 同时聚合该域申报的非确定性函数名到内部 HashSet。
+    /// 注册后按 `priority()` 降序稳定排序，并聚合其非确定性函数名；同名域重复注册时忽略。
     pub fn register(&mut self, domain: Box<dyn CalculationDomain>) {
         let name = domain.domain_name().to_string();
         if self.domains.iter().any(|d| d.domain_name() == name) {
@@ -92,10 +59,7 @@ impl DomainRouter {
             .sort_by_key(|d| std::cmp::Reverse(d.priority()));
     }
 
-    /// 路由 AST 到第一个支持的域。
-    ///
-    /// 按 `priority()` 降序遍历，返回第一个 `supports()` 返回 `true` 的域引用。
-    /// 若无域支持，返回 `CalcError::DomainError`，错误信息包含 AST 中的函数名。
+    /// 路由 AST 到第一个支持的域；无域支持时返回 DomainError。
     pub fn route(&self, ast: &AstNode) -> Result<&dyn CalculationDomain, CalcError> {
         for domain in &self.domains {
             if domain.supports(ast) {
@@ -106,10 +70,7 @@ impl DomainRouter {
         let detail = if functions.is_empty() {
             "no functions".to_string()
         } else {
-            // 限制 functions 列表显示数量，防止无界长度错误消息。
-            // 原代码 `format!("functions: {:?}", functions)` 对含大量函数的 AST
-            // 产生超长错误消息（50 个函数 ~1KB），污染日志、影响 UI。
-            // 截断策略：显示前 MAX_DISPLAY_FUNCTIONS 个，超过则追加 "... and N more"。
+            // 限制函数名显示数量，防止无界长度错误消息污染日志与 UI。
             format_functions_list(&functions)
         };
         Err(CalcError::domain(format!(
@@ -132,15 +93,7 @@ impl DomainRouter {
         self.domains.iter().map(|d| d.domain_name()).collect()
     }
 
-    /// 检测 AST 是否包含非确定性函数调用。
-    ///
-    /// 递归扫描 AST 中全部 FunctionCall 名，任一命中已注册域的申报表即返回 true。
-    /// 用于 evaluator 在常规模式下旁路缓存读写。
-    ///
-    /// 行为约定：
-    /// - 申报 `["now"]` 的域注册后：`now()` → true、`now()+1` → true、`sin(now())` → true
-    /// - 无任何申报时恒 false
-    /// - 检测开销为 O(AST 节点数) 的 HashSet 查询
+    /// 检测 AST 是否含非确定性函数调用，供 evaluator 旁路缓存读写（如 now()/fx()）。
     pub fn is_nondeterministic(&self, ast: &AstNode) -> bool {
         let functions = collect_function_names(ast);
         functions
@@ -171,21 +124,10 @@ fn collect_function_names(ast: &AstNode) -> Vec<String> {
     names
 }
 
-/// 错误消息中最多显示的函数名数量。
-///
-/// 超过此数量时截断并追加 `... and N more` 提示。
-/// 阈值 5 兼顾信息量与简洁性：用户能识别主要函数，又不会被超长列表淹没。
+/// 错误消息中最多显示的函数名数量，超出截断并追加 `... and N more`。
 const MAX_DISPLAY_FUNCTIONS: usize = 5;
 
 /// 格式化函数名列表用于错误消息，超长时截断。
-///
-/// 输出示例：
-/// - 0 个函数：调用方应使用 "no functions" 分支，不会调用此函数
-/// - 1-5 个函数：`functions: ["foo", "bar"]`（与原 `{:?}` 格式一致）
-/// - 6+ 个函数：`functions: ["foo", "bar", "baz", "qux", "quux", ... and 45 more]`
-///
-/// 原 `format!("functions: {:?}", functions)` 对含大量函数的
-/// AST 产生无界长度错误消息，污染日志、影响 UI 显示。
 fn format_functions_list(functions: &[String]) -> String {
     if functions.len() <= MAX_DISPLAY_FUNCTIONS {
         return format!("functions: {:?}", functions);
@@ -332,7 +274,7 @@ mod tests {
         router
     }
 
-    // ===== Requirement 1: 路由至 Arithmetic 计算域 =====
+    // ===== 1: 路由至 Arithmetic 计算域 =====
 
     #[test]
     fn test_route_arithmetic_basic() {
@@ -370,7 +312,7 @@ mod tests {
         assert_eq!(domain.domain_name(), "arithmetic");
     }
 
-    // ===== Requirement 2: 路由至 Scientific 计算域 =====
+    // ===== 2: 路由至 Scientific 计算域 =====
 
     #[test]
     fn test_route_scientific_trig() {
@@ -408,7 +350,7 @@ mod tests {
         assert_eq!(domain.domain_name(), "scientific");
     }
 
-    // ===== Requirement 3: 混合表达式路由优先级 =====
+    // ===== 3: 混合表达式路由优先级 =====
 
     #[test]
     fn test_mixed_expression_routes_to_scientific() {
@@ -438,7 +380,7 @@ mod tests {
         assert_eq!(domain.domain_name(), "arithmetic");
     }
 
-    // ===== Requirement 4: 多域优先级匹配 =====
+    // ===== 4: 多域优先级匹配 =====
 
     #[test]
     fn test_higher_priority_wins() {
@@ -500,7 +442,7 @@ mod tests {
         assert_eq!(domain.domain_name(), "low_supporting");
     }
 
-    // ===== Requirement 5: 无匹配域返回错误 =====
+    // ===== 5: 无匹配域返回错误 =====
 
     #[test]
     fn test_unknown_function_no_match() {
@@ -550,7 +492,7 @@ mod tests {
         );
     }
 
-    // ===== Requirement 6: 计算域注册机制 =====
+    // ===== 6: 计算域注册机制 =====
 
     #[test]
     fn test_router_loads_registered_domains() {
@@ -590,9 +532,7 @@ mod tests {
 
     #[test]
     fn test_unimplemented_trait_cannot_register() {
-        // Types not implementing CalculationDomain cannot register
-        // 编译期检查：register 只接受 Box<dyn CalculationDomain>
-        // 以下代码若取消注释将无法编译：
+        // 编译期检查：register 只接受 Box<dyn CalculationDomain>（取消注释下方代码将编译失败）
         // router.register(Box::new(42_i32));
         let mut router = DomainRouter::new();
         router.register(Box::new(MockArithmeticDomain));
@@ -653,7 +593,7 @@ mod tests {
 
     #[test]
     fn test_is_arithmetic_only_non_arithmetic_nodes() {
-        // 覆盖 is_arithmetic_only 中 Complex/Matrix/List/BigNumber → false 分支（line 177）
+        // 覆盖 is_arithmetic_only 中 Complex/Matrix/List/BigNumber → false 分支
         assert!(!is_arithmetic_only(&AstNode::Complex(1.0, 2.0)));
         assert!(!is_arithmetic_only(&AstNode::Matrix(vec![vec![
             AstNode::Number(1.0)
@@ -685,11 +625,7 @@ mod tests {
     }
 
     // ===== 回归测试：长函数列表必须截断 =====
-    //
-    // 原始 bug：`format!("functions: {:?}", functions)` 对包含大量函数的 AST
-    // 产生无界长度的错误消息。如 `foo1(x) + foo2(x) + ... + foo1000(x)` 会产生
-    // ~10KB 的错误消息，污染日志、可能导致 UI 显示问题。
-    // 限制 functions 列表显示数量（默认 5 个），超过时显示 "... and N more"。
+    // 错误消息仅显示前 5 个函数名，超出显示 "... and N more"（防无界长度消息）。
     #[test]
     fn test_route_error_truncates_long_function_list() {
         // 构造含 50 个未知函数的 AST，错误消息应截断而非全量展示
@@ -785,12 +721,7 @@ mod tests {
     }
 
     // ===== 新增域路由测试 =====
-    //
-    // 删除原 v08_full_router() 本地构造函数，改用
-    // crate::domains::build_default_router()，消除 src/core 测试代码对 11 个
-    // 具体域类型的硬编码引用（霰弹手术风险：新增域需同步改两份注册清单）。
-    // priority 测试迁移至 domains/factory.rs 测试模块，
-    // 彻底消除 src/core 测试代码对 crate::domains::XxxDomain 的类型依赖。
+    // 统一用 build_default_router()，core 测试不引用具体域类型（priority 测试在 domains/factory.rs）。
 
     // ----- 6.1 验证 collect_function_names_recursive 已支持 FunctionCall 递归 -----
     // 已在 test_collect_function_names_unary_op_branch 和既有测试中覆盖，此处不再重复。
@@ -830,11 +761,7 @@ mod tests {
     }
 
     // ----- 6.3 优先级测试 -----
-    //
-    // priority 测试已迁移至 src/domains/factory.rs 测试模块。
-    // 原因：priority 是 domains 层属性，core 层测试直接构造具体域类型违反
-    // ARCHITECTURE.md §2.3 "core → domains 类型依赖 = 0" 声明。
-    // 迁移后 core/domain.rs 测试模块不再引用任何 crate::domains::XxxDomain 类型。
+    // priority 测试在 src/domains/factory.rs（core → domains 类型依赖 = 0）。
 
     // ----- 6.4 消歧测试 -----
 

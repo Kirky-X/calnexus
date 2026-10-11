@@ -1,13 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 单位换算核心数学函数。
-//!
-//! 设计依据：8 量纲 SI 基准系数表 + 温度仿射特例
-//! Feature 门控：`unit = []`
-//!
-//! 从 `domains/unit.rs` 提取的纯函数：单位换算逻辑 + 错误构造。
-//! 依赖 `math::unit_table` 提供查表/温度仿射/编辑距离。
+//! 单位换算核心函数：线性系数换算 + 温度仿射换算，查表依赖 math::unit_table。
 
 use crate::core::CalcError;
 
@@ -18,11 +12,7 @@ use super::unit_table::{
 /// 温度单位候选集（用于 "did you mean" 建议）。
 const TEMPERATURE_UNIT_NAMES: &[&str] = &["C", "F", "K", "R"];
 
-/// 单位换算核心逻辑：分流线性路径与温度仿射路径。
-///
-/// 返回换算后的 f64 值。错误类型：
-/// - 未知单位（含 Levenshtein ≤2 的相近建议）
-/// - 量纲不匹配（消息含双方量纲名）
+/// 单位换算：分流线性与温度仿射路径；未知单位/量纲不匹配返回 Domain。
 pub fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError> {
     // 拒绝 NaN/Inf 输入，防止静默传播
     if !value.is_finite() {
@@ -38,13 +28,13 @@ pub fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError>
     let from_is_temp = is_temperature_unit(from).unwrap_or(false);
     let to_is_temp = is_temperature_unit(to).unwrap_or(false);
 
-    // 路径 1：from 和 to 均为温度 → 仿射换算
+    // 均为温度：仿射换算
     if from_is_temp && to_is_temp {
         let kelvin = to_kelvin(value, from);
         return Ok(from_kelvin(kelvin, to));
     }
 
-    // 路径 2：仅一个为温度 → 量纲不匹配
+    // 仅一方为温度：量纲不匹配
     if from_is_temp || to_is_temp {
         let from_dim = if from_is_temp {
             Dimension::Temperature
@@ -65,7 +55,7 @@ pub fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError>
         return Err(dimension_mismatch_error(from, from_dim, to, to_dim));
     }
 
-    // 路径 3：均为线性单位 → 系数换算
+    // 均为线性单位：系数换算
     let (from_dim, from_coeff) = match lookup(from) {
         Some(x) => x,
         None => return Err(unknown_unit_error(from)),
@@ -83,8 +73,6 @@ pub fn convert_value(value: f64, from: &str, to: &str) -> Result<f64, CalcError>
 }
 
 /// 构造"未知单位"错误，附带 Levenshtein 距离 ≤2 的相近单位建议。
-///
-/// 候选集 = 全部线性单位名 + 温度单位名（C/F/K/R）。
 pub fn unknown_unit_error(unit: &str) -> CalcError {
     let linear = all_unit_names();
     let mut suggestions: Vec<&str> = linear

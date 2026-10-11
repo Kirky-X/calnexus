@@ -3,7 +3,7 @@
 
 //! 多项式核心函数：加减乘除、求值、求根、微分、积分、因式分解。
 //!
-//! 多项式表示：系数向量 `Vec<f64>`，升幂存储（`coef[i]` = x^i 的系数）。
+//! 表示：系数向量升幂存储（`coef[i]` = x^i 的系数）。
 
 use crate::core::{CalcError, EvalResult};
 
@@ -40,8 +40,7 @@ pub fn mul(a: &[f64], b: &[f64]) -> Vec<f64> {
     result
 }
 
-/// 多项式长除法，返回 `(quotient, remainder)`。
-/// 检查零多项式除数，返回 Inf/NaN 而非静默错误结果
+/// 多项式长除法 → (quotient, remainder)；零多项式除数返回 NaN 而非静默错误。
 pub fn div(a: &[f64], b: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let a = trim(a);
     let b = trim(b);

@@ -2,9 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 //! 组合数学核心函数：排列/组合/Catalan 数/Stirling 数。
-//!
-//! 从 `domains/combinatorics.rs` 提取的纯数学逻辑，
-//! 供 `domains/`（AST 求值路径）和 `api/`（直接 API 路径）共用。
 
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive, Zero};
@@ -13,11 +10,7 @@ use crate::core::CalcError;
 
 // ===== 公开 API =====
 
-/// 排列数 P(n, k) = n!/(n-k)! = n*(n-1)*...*(n-k+1)。
-///
-/// - k=0 → 1
-/// - k>n → 0
-/// - k > 10000 → `Overflow`（DoS 防护）
+/// 排列数 P(n,k)=n!/(n-k)!；k=0→1，k>n→0，k>10000→Overflow（DoS 防护）。
 pub fn perm(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     if k.is_zero() {
         return Ok(BigInt::one());
@@ -39,11 +32,7 @@ pub fn perm(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     Ok(result)
 }
 
-/// 组合数 C(n, k) = n!/(k!(n-k)!) = P(n,k)/k!。
-///
-/// - k=0 或 k=n → 1
-/// - k>n → 0
-/// - k > 10000（优化后） → `Overflow`（DoS 防护）
+/// 组合数 C(n,k)=n!/(k!(n-k)!)；k=0 或 k=n→1，k>n→0，k>10000→Overflow。
 pub fn comb(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     if k.is_zero() || k == n {
         return Ok(BigInt::one());
@@ -68,10 +57,7 @@ pub fn comb(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     Ok(result)
 }
 
-/// Catalan 数 C(n) = C(2n,n)/(n+1)。
-///
-/// - n=0 → 1
-/// - n > 5000 → `Overflow`（DoS 防护）
+/// Catalan 数 C(n)=C(2n,n)/(n+1)；n=0→1，n>5000→Overflow（DoS 防护）。
 pub fn catalan(n: &BigInt) -> Result<BigInt, CalcError> {
     if n.is_zero() {
         return Ok(BigInt::one());
@@ -86,12 +72,7 @@ pub fn catalan(n: &BigInt) -> Result<BigInt, CalcError> {
     Ok(c_2n_n / (n + 1))
 }
 
-/// 第一类 Stirling 数（无符号）$\\left\\[{n \\atop k}\\right]$：
-/// n 个元素形成 k 个轮换的排列数。
-///
-/// 递推：$\\left\\[{n \\atop k}\\right] = (n-1)\\left\\[{n-1 \\atop k}\\right] + \\left\\[{n-1 \\atop k-1}\\right]$
-/// 边界：$\\left\\[{0 \\atop 0}\\right]=1$, $\\left\\[{n \\atop 0}\\right]=0$ (n>0), $\\left\\[{0 \\atop k}\\right]=0$ (k>0), $\\left\\[{n \\atop k}\\right]=0$ (k>n)
-/// n/k > 5000 → `Overflow`（DoS 防护）
+/// 第一类 Stirling 数（无符号）：n 个元素形成 k 个轮换的排列数；n/k>5000→Overflow。
 pub fn stirling_first(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     if n.is_zero() && k.is_zero() {
         return Ok(BigInt::one());
@@ -123,11 +104,7 @@ pub fn stirling_first(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     Ok(dp[n_u64 as usize][k_u64 as usize].clone())
 }
 
-/// 第二类 Stirling 数 S(n, k)：将 n 个元素划分为 k 个非空子集的方式数。
-///
-/// 递推：S(n,k) = k*S(n-1,k) + S(n-1,k-1)
-/// 边界：S(0,0)=1, S(n,0)=0 (n>0), S(0,k)=0 (k>0), S(n,k)=0 (k>n)
-/// n/k > 5000 → `Overflow`（DoS 防护）
+/// 第二类 Stirling 数：n 个元素划分为 k 个非空子集的方式数；n/k>5000→Overflow。
 pub fn stirling_second(n: &BigInt, k: &BigInt) -> Result<BigInt, CalcError> {
     if n.is_zero() && k.is_zero() {
         return Ok(BigInt::one());

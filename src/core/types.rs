@@ -2,12 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 //! CalNexus 共享类型：所有计算域、解析器、缓存、CLI 共用。
-//!
-//! 设计依据：
-//! - proposal.md §Capabilities：AstNode 只含 Number/Variable/BinaryOp/UnaryOp/FunctionCall
-//! - 三 crate 拆分，共享类型放 calnexus-core
-//! - 原 ADD.md §3.4 代码图（文档已归档，ADR 并入 docs/ARCHITECTURE.md）：
-//!   完整 AstNode 含 BigInt/Matrix/Vector，暂不实现
 
 use crate::core::parser::MAX_AST_DEPTH;
 use std::collections::HashMap;
@@ -15,54 +9,18 @@ use std::fmt;
 use std::time::Duration;
 
 /// 精度位数上限（防止 `precision(N, expr)` 表达式语法绕过 server 层校验导致 DoS）。
-///
-/// 此常量是全项目共享的安全阈值：
-/// - `server/types.rs::validate()` 校验请求级 `precision` 字段 ≤ 此值
-/// - `evaluator.rs::extract_format_precision()` 校验表达式级 `precision(N, expr)` 的 N ≤ 此值
-/// - `domains/precision.rs::extract_precision_value()` 同上，拒绝超大 N 的求值
-///
-/// 三处校验形成纵深防御：即使绕过 server 层（如直接调用 evaluator），core 层仍拒绝。
 pub const MAX_PRECISION: usize = 10_000;
 
-/// 阶乘输入上限（防止 `factorial(N)` / `N!` 循环 DoS）。
-///
-/// `factorial(1000000000)` 可在 24 字节请求内永久挂死服务器。
-/// 此常量限制阶乘输入，`factorial(10000)` 产生 ~35660 位数字（~35KB 字符串），
-/// 兼顾合法重计算场景与 DoS 防护。
+/// 阶乘输入上限（防止 `factorial(N)` / `N!` 以超大 N 循环 DoS）。
 pub const MAX_FACTORIAL_INPUT: u64 = 10_000;
 
-/// 幂运算指数上限（防止 `a^b` 产生超大输出 DoS）。
-///
-/// `2^2000000000` 可在 17 字节请求内产生 ~6 亿位数字。
-/// 此常量限制指数绝对值，`2^100000` 产生 ~30103 位数字（~30KB 字符串）。
-///
-/// 负指数同样受限。`BigRational::pow(neg_i32)` 内部实现为
-/// `Pow::pow(self, (-exp) as u64).reciprocal()`，即先计算 `a^|exp|`（巨大中间值）
-/// 再取倒数。`2^(-2000000000)` 会计算 `2^2000000000`（~6 亿位数字）导致内存爆炸。
+/// 幂运算指数上限（正负同限，防超大输出 DoS；负指数先算 a^|exp| 再取倒数）。
 pub const MAX_POW_EXPONENT: u64 = 100_000;
 
-/// 幂运算输出上限（bits），防止大底数 × 大指数产生超大输出 DoS。
-///
-/// `(10^10000) ^ 99999` 可产生 ~1GB 输出。
-/// 指数已受 `MAX_POW_EXPONENT` 约束，但底数 `a` 可为任意大小 BigInt。
-/// 此常量限制 `底数bits × |指数|`，对应 ~1_000_000 位十进制数字（~1MB 输出）。
-/// `2^100000` 的底数 2 的 bits=2（二进制 `10`），2×100000=200000 ≤ 3320000，通过。
-/// `(10^10000)^99999` 的底数 bits≈33219，33219×99999≈3.3e9 > 3320000，拒绝。
+/// 幂运算输出上限（bits）：限制「底数 bits × 指数绝对值」，防大底数 × 大指数 DoS。
 pub const MAX_POW_OUTPUT_BITS: u64 = 3_320_000;
 
-/// 检查幂运算输出大小是否在安全范围内（底数复合限制）。
-///
-/// 复合限制公式：`底数bits × |指数| ≤ MAX_POW_OUTPUT_BITS`。
-///
-/// `(10^10000) ^ 99999` 可产生 ~1GB 输出。
-/// 指数已受 `MAX_POW_EXPONENT` 约束（≤ 100_000），但底数 `a` 可为任意大小 BigInt，
-/// 故需对"底数位数 × 指数绝对值"做复合限制。
-///
-/// - `2^100000`：底数 bits=2，2×100000=200000 ≤ 3_320_000，通过。
-/// - `(10^10000)^99999`：底数 bits≈33219，33219×99999≈3.3e9 > 3_320_000，拒绝。
-///
-/// 此函数是全项目共享的安全检查（precision/number_theory/combinatorics 三域共用），
-/// 避免每个域重复实现。提取到 core 层符合 DRY 原则。
+/// 检查幂运算输出大小：底数 bits × |指数| ≤ MAX_POW_OUTPUT_BITS（三域共用安全阈值）。
 pub fn check_pow_output_size(base_bits: u64, abs_exp: u64) -> Result<(), CalcError> {
     // 估算输出 bits：底数bits × |指数|（saturating 防止溢出）
     let estimated_output_bits = base_bits.saturating_mul(abs_exp);
@@ -85,9 +43,6 @@ pub fn check_pow_output_size(base_bits: u64, abs_exp: u64) -> Result<(), CalcErr
 }
 
 /// 表达式抽象语法树节点。
-///
-/// 支持 5 种节点；扩展 Complex/Matrix/List；
-/// 新增 Str（字符串字面量，仅作为 FunctionCall 实参合法）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstNode {
     /// 数字字面量（浮点）。
@@ -108,8 +63,7 @@ pub enum AstNode {
     Matrix(Vec<Vec<AstNode>>),
     /// 列表字面量：统计域用，如 `[1,2,3,4,5]`。
     List(Vec<AstNode>),
-    /// 字符串字面量：双引号包裹的文本，支持 `\"` 转义。
-    /// 仅合法作为 FunctionCall 实参；出现在 BinaryOp/UnaryOp 中由各域 evaluate 拒绝。
+    /// 字符串字面量：仅合法作为 FunctionCall 实参；出现在 BinaryOp/UnaryOp 中由各域 evaluate 拒绝。
     Str(String),
 }
 
@@ -136,12 +90,6 @@ pub enum UnaryOp {
 }
 
 /// 求值结果。
-///
-/// 仅支持标量；扩展 Complex 与 Matrix。
-/// 派生 Serialize/Deserialize 以支持 JSON 输出与缓存层调试序列化（ADD ADR-001）。
-///
-/// 新增 DateTime（RFC3339 字符串），
-/// 用于 TimeDomain/FxDomain 的 now()/today()/fx() 等返回时间或汇率字符串的结果。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EvalResult {
     /// 标量浮点结果。
@@ -154,24 +102,22 @@ pub enum EvalResult {
     BigInt(num_bigint::BigInt),
     /// 精确分数结果。
     BigRational(num_rational::BigRational),
-    /// 向量结果（新增）：向量域 cross/normalize 输出、素数筛、实根列表。
+    /// 向量结果：向量域 cross/normalize 输出、素数筛、实根列表。
     Vector(Vec<f64>),
-    /// 多项式结果（新增）：系数向量，升幂存储（`coef[i]` 为 `x^i` 的系数）。
+    /// 多项式结果：系数向量，升幂存储（`coef[i]` 为 `x^i` 的系数）。
     Polynomial(Vec<f64>),
-    /// 复数列表结果（新增）：复根列表，元素为 (实部, 虚部)。
+    /// 复数列表结果：复根列表，元素为 (实部, 虚部)。
     ComplexList(Vec<(f64, f64)>),
-    /// 符号字符串结果（新增）：因式分解等符号输出。
+    /// 符号字符串结果：因式分解等符号输出。
     Symbolic(String),
-    /// LaTeX 渲染结果（ADD §3.4）：已格式化的 LaTeX 字符串。
+    /// LaTeX 渲染结果。
     LaTeX(String),
-    /// 求值步骤列表（ADD §3.4）：每行一步 `lhs op rhs = result`。
+    /// 求值步骤列表：每行一步 `lhs op rhs = result`。
     Steps(Vec<String>),
     /// JSON 复合结果：lu/qr/eig/svd 分解的多矩阵结构化返回。
     /// 持有 serde_json::Value；eval_result_to_json 直接透传，typed 访问器返回 None。
     Json(serde_json::Value),
-    /// DateTime 结果（新增）：RFC3339 字符串。
-    /// 用于 TimeDomain（now()/today()）与 FxDomain（fx()）等返回时间或汇率字符串。
-    /// 非确定性函数的结果通过此变体返回，不参与 L1 缓存（evaluator 旁路）。
+    /// DateTime 结果：RFC3339 字符串；TimeDomain/FxDomain 等非确定性返回，不参与 L1 缓存。
     DateTime(String),
 }
 
@@ -386,11 +332,7 @@ impl EvalResult {
     }
 }
 
-/// 源代码跨度（字符偏移）。
-///
-/// 用于精确定位错误在输入表达式中的位置。（字符偏移语义）。
-/// 注意：`str::len()` 返回字节长度，`str::chars().count()` 返回字符数量；
-/// 多字节 UTF-8 字符（如中文）的 Span 必须用字符偏移，否则位置错误。
+/// 源代码跨度（字符偏移，含 start 不含 end；多字节 UTF-8 用字符偏移而非字节）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Span {
     /// 起始字符偏移（含）。
@@ -434,8 +376,7 @@ pub enum ErrorKind {
     UndefinedSymbol,
     Timeout,
     Usage,
-    /// 上游依赖不可用：fx 汇率源等外部服务故障。
-    /// 与客户端输入错误（400）严格区分，服务化部署下映射 503。
+    /// 上游依赖不可用：fx 汇率源等外部服务故障，与客户端输入错误区分。
     DependencyUnavailable,
 }
 
@@ -473,31 +414,17 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-/// 计算错误。结构化设计：kind + message + span + hint + i18n。
-///
-/// 覆盖解析、求值、溢出、除零、定义域、深度、NaN/Inf 等所有错误路径。
-/// 要求错误必须显性化（Fail Loud）。
-///
-/// i18n 字段（新增，方案 B 最小侵入）：
-/// - `i18n_key`: 参数化消息键（如 `"msg.unbound_variable"`），指向 `locales/{en,zh}.json`
-/// - `i18n_args`: 占位符参数（如 `[("name", "x")]`），用于 `I18n::tf()` 替换 `{name}`
-///
-/// 当 `i18n_key` 为 `None` 时，`friendly()` 回退到 `message`（英文硬编码）。
-/// `Display` impl 和 `to_json()` 始终用 `message`，保证机器可读契约不变（DP-1/DP-4）。
+/// 计算错误：kind + message + span + hint + i18n；Display/to_json 始终用 message 保持机器契约。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub struct CalcError {
     pub kind: ErrorKind,
     pub message: String,
     pub span: Option<Span>,
     pub hint: Option<String>,
-    /// hint 的国际化消息键 + 参数。存在时 `friendly()`/`to_explain()` 用
-    /// `I18n::tf(hint_i18n_key, hint_i18n_args)` 替换原始 `hint` 文本（与 `message`/`i18n_key`
-    /// 的双重模式一致：`to_json()` 始终输出原始 `hint`，机器契约不变）。
+    /// hint 的 i18n 键+参数：friendly()/to_explain() 用其替换 hint，to_json() 用原始 hint。
     pub hint_i18n_key: Option<&'static str>,
     pub hint_i18n_args: Vec<(String, String)>,
-    /// 底层错误链：保留 ureq/io/serde_json 等原始错误摘要，
-    /// Display 呈现为 "{message}: {source}"；Clone 随值复制。
-    /// （字段名避开 `source`：thiserror derive 会将其绑定为 Error::source trait 方法。）
+    /// 底层错误链：Display 呈现 "{message}: {source}"；字段名避开 source（thiserror 占用）。
     pub source_detail: Option<String>,
     pub i18n_key: Option<&'static str>,
     pub i18n_args: Vec<(String, String)>,
@@ -562,11 +489,7 @@ impl CalcError {
         self
     }
 
-    /// 附加 hint 的国际化消息键 + 参数（链式）。
-    ///
-    /// 设置后，`friendly()`/`to_explain()` 优先用 `I18n::tf(hint_i18n_key, hint_i18n_args)`
-    /// 渲染 hint；`to_json()` 与 `Display` 不受影响（机器契约）。与 `with_hint` 组合使用：
-    /// `with_hint` 提供英文原文（机器可读），`with_hint_i18n` 提供目录键（人可读本地化）。
+    /// 附加 hint 的 i18n 键+参数（链式）：to_json() 与 Display 不受影响。
     pub fn with_hint_i18n(mut self, key: &'static str, args: Vec<(String, String)>) -> Self {
         self.hint_i18n_key = Some(key);
         self.hint_i18n_args = args;
@@ -589,17 +512,7 @@ impl CalcError {
         })
     }
 
-    /// 附加国际化消息键 + 参数（链式）。
-    ///
-    /// 设置后，`friendly()` 和 `to_explain()` 会用 `I18n::tf(key, args)` 替换 `message`
-    /// 部分（kind 前缀保留）。`Display` impl 和 `to_json()` 始终用 `message`，保证
-    /// 机器可读契约不变（DP-1/DP-4）。
-    ///
-    /// # 示例
-    /// ```ignore
-    /// CalcError::eval(format!("unbound variable: {}", name))
-    ///     .with_i18n("msg.unbound_variable", vec![("name".to_string(), name.to_string())])
-    /// ```
+    /// 附加国际化消息键+参数（链式）：`friendly()`/`to_explain()` 用其替换 `message`。
     pub fn with_i18n(mut self, key: &'static str, args: Vec<(String, String)>) -> Self {
         self.i18n_key = Some(key);
         self.i18n_args = args;
@@ -672,11 +585,7 @@ impl CalcError {
         Self::new(ErrorKind::Usage, msg)
     }
 
-    /// 中文友好文本（终端默认）。
-    ///
-    /// 当 `i18n_key` 存在时，detail 部分用 `I18n::tf(key, args)` 替换
-    /// `message`，实现参数化消息国际化。kind 前缀始终用 `ErrorKind::i18n_key()`。
-    /// `Display` impl 和 `to_json()` 不受影响（始终用 `message`，机器可读契约不变）。
+    /// 按 `i18n` 本地化的友好文本（终端展示）：detail 优先走 `i18n_key`+`i18n_args`，缺省英文。
     pub fn friendly(&self, i18n: &crate::i18n::I18n) -> String {
         let mut s = i18n.t(self.kind.i18n_key()).to_string();
         if let Some(span) = self.span {
@@ -768,10 +677,7 @@ impl CalcError {
     }
 }
 
-/// AST 规范形式（S-表达式字符串）。
-///
-/// 用于 L1 缓存的键生成：等价表达式（如 `2+3` 与 `3+2`）规范化后生成相同的 `CanonicalForm`，
-/// 再经 BLAKE3 哈希得到缓存键。
+/// AST 规范形式（S-表达式字符串）：等价表达式规范化后生成相同形式，供 L1 缓存键生成。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CanonicalForm(pub String);
 
@@ -793,9 +699,7 @@ impl fmt::Display for CanonicalForm {
     }
 }
 
-/// 求值上下文：变量绑定、精度、超时。
-///
-/// 传递给计算域的 `evaluate` 方法，提供求值所需的环境信息。
+/// 求值上下文：变量绑定、精度、超时；传给计算域的 `evaluate` 方法。
 #[derive(Debug, Clone)]
 pub struct EvalContext {
     /// 变量名到值的映射。

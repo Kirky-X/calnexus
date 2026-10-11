@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! CalNexus 求值编排层：parse → canonicalize → cache → route → domain::evaluate。
-//!
-//! 本模块为顶层模块（不受 feature gate），CLI、REPL、batch、HTTP/MCP server 共用。
-//! 从 `src/cli.rs` 移出，使 `http`/`mcp` feature 在不启用 `cli` 时也能调用 `evaluate`。
+//! 本模块不受 feature gate，CLI、REPL、batch 与 HTTP/MCP server 共用。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -17,25 +15,7 @@ use crate::domains::{build_default_router, build_precision_domain};
 
 /// 全链路求值：parse → canonicalize → cache → route → evaluate。
 ///
-/// 当 `precision` 为 `Some(N)` 时，绕过路由器直接使用 PrecisionDomain
-/// 进行 BigRational 求值，输出格式化为 N 位小数。
-/// 返回 (result, domain_name, cache_hit, format_precision)。
-/// format_precision 用于 BigRational 输出格式化（--precision N 或 precision(N, expr)）。
-///
-/// `cache` 参数允许调用方注入预填充的缓存（测试用），生产代码传入空缓存。
-///
-/// 超时策略：
-/// - `ctx.timeout == 0`：立即超时（显式触发）
-/// - `ctx.timeout > 0`：记录起始时间，在关键节点（parse/canonicalize/domain::evaluate 前后）
-///   检查 `elapsed > timeout`，超时返回 `CalcError::timeout()`。
-///   这是第二道防线，已知 DoS 向量（factorial/pow/precision）已有专门常量约束，
-///   elapsed 追踪用于捕获未知的累积慢操作。
-///
-/// 重构：拆分为 4 个职责单一的函数：
-/// - `validate_inputs`：timeout=0 + precision 上界校验
-/// - `build_cache_key`：精度感知缓存键构建
-/// - `eval_precision_mode`：precision 模式（绕过路由器）
-/// - `eval_regular_mode`：常规模式（路由器分发）
+/// `cache` 允许调用方注入预填充缓存（测试用），生产代码传空缓存。
 pub fn evaluate(
     expr: &str,
     ctx: &EvalContext,
@@ -45,9 +25,7 @@ pub fn evaluate(
     evaluate_with_router(expr, ctx, precision, cache, build_default_router())
 }
 
-/// 路由器可注入求值：与 [`evaluate`] 语义一致，
-/// 但路由器由调用方提供——下游/测试可注入自定义 `CalculationDomain`
-/// （默认 [`evaluate`] 绑定进程级 OnceLock 单例路由器）。
+/// 路由器可注入求值：与 [`evaluate`] 语义一致，路由器由调用方提供。
 ///
 /// # 示例
 ///
@@ -89,8 +67,7 @@ pub fn evaluate_with_router(
 
 /// 输入校验：timeout=0 立即超时 + precision 参数上界检查。
 ///
-/// evaluate 是公共入口，CLI/REPL 直接调用时不经过 server validate()，
-/// 必须在此处拦截超大 precision 防止 format_decimal 循环 DoS。
+/// evaluate 是公共入口，不经 server validate()，须拦截超大 precision 防 DoS。
 fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), CalcError> {
     if ctx.timeout.is_zero() {
         return Err(CalcError::timeout());
@@ -112,23 +89,7 @@ fn validate_inputs(ctx: &EvalContext, precision: Option<usize>) -> Result<(), Ca
     Ok(())
 }
 
-/// 构建精度感知 + 上下文感知缓存键。
-///
-/// 缓存键组成部分：
-/// 1. **CanonicalForm**：表达式规范化形式（S-表达式）
-/// 2. **precision 模式前缀**：`precision:` 前缀避免 BigRational 与 Scalar 污染
-/// 3. **EvalContext.vars 哈希**：按 key 字典序排序后 BLAKE3 哈希
-///    （原实现仅基于 CanonicalForm + precision，
-///    未包含 vars，导致 REPL 中 `:let x=1; x` → 1.0 后再 `:let x=2; x`
-///    仍错误命中缓存返回 1.0）
-/// 4. **EvalContext.timeout**：不同 timeout 应产生不同 cache 键
-///
-/// # 排序与序列化策略
-///
-/// vars 按 key 字典序排序后逐项序列化，每项格式为 `key\0value_bits\0`。
-/// - 用 `\0` 分隔符防止 `("a", 12)` 与 `("a1", 2.0)` 产生相同序列化结果
-/// - 用 `f64::to_bits()` 而非 `to_string()`，避免 `-0.0` 与 `0.0` 在
-///   `to_string()` 中都为 `"0"` 但 bits 不同导致语义不一致
+/// 缓存键 = CanonicalForm + precision + vars 哈希 + timeout；不混 vars 会导致 REPL 换值仍命中旧缓存。
 fn build_cache_key(
     cf: &CanonicalForm,
     ctx: &EvalContext,
@@ -147,12 +108,13 @@ fn build_cache_key(
     for (k, v) in sorted_vars {
         vars_input.extend_from_slice(k.as_bytes());
         vars_input.push(0); // key/value 分隔符，防止边界混淆
+        // to_bits 区分 -0.0 与 0.0（to_string 二者同为 "0"，换用会误命中缓存）
         vars_input.extend_from_slice(&v.to_bits().to_le_bytes());
         vars_input.push(0); // 项分隔符，防止相邻项边界混淆
     }
     let vars_hash_hex = blake3::hash(&vars_input).to_hex();
 
-    // 混入 timeout（as_nanos 返回 u128，覆盖所有实际 timeout 范围）
+    // 混入 timeout：已知 DoS 向量由常量约束，elapsed 检查捕获未知累积慢操作（第二道防线）
     let timeout_nanos = ctx.timeout.as_nanos();
 
     CanonicalForm::new(format!(
@@ -161,10 +123,7 @@ fn build_cache_key(
     ))
 }
 
-/// precision 模式：直接使用 PrecisionDomain，绕过路由器。
-///
-/// 缓存重构：get+insert 两段式改为 `get_or_compute`（moka try_get_with
-/// single-flight），并发相同键仅一次真实求值；compute 错误原样传播且不缓存。
+/// precision 模式：直接用 PrecisionDomain 绕过路由器，`get_or_compute` 保证并发同键仅求值一次。
 fn eval_precision_mode(
     canonical_ast: &AstNode,
     ctx: &EvalContext,
@@ -192,9 +151,7 @@ fn eval_precision_mode(
 
 /// 常规模式：路由器分发 + 缓存查询 + 格式化精度提取。
 ///
-/// 对非确定性表达式（含 now()/today()/fx() 等）
-/// **同时跳过**缓存读取与缓存写入，避免时间/汇率结果被缓存污染。
-/// 检测通过 `DomainRouter::is_nondeterministic` 完成，O(AST 节点数) HashSet 查询。
+/// 非确定性表达式（now()/today()/fx() 等）同时跳过缓存读写，避免时间/汇率结果被污染。
 fn eval_regular_mode(
     canonical_ast: &AstNode,
     ctx: &EvalContext,
@@ -237,8 +194,7 @@ fn eval_regular_mode(
 
 /// 检查是否已超时，超时则返回 `CalcError::timeout()`。
 ///
-/// 辅助函数，避免在 `evaluate` 中重复 `if start.elapsed() > timeout` 模板。
-/// `Instant::elapsed()` 开销 ~20ns，关键节点检查对性能无显著影响。
+/// 避免在 `evaluate` 中重复超时判断模板；`elapsed()` 开销约 20ns，可逐节点检查。
 fn check_elapsed(start: Instant, timeout: Duration) -> Result<(), CalcError> {
     if start.elapsed() > timeout {
         return Err(CalcError::timeout());
@@ -248,8 +204,7 @@ fn check_elapsed(start: Instant, timeout: Duration) -> Result<(), CalcError> {
 
 /// 从 AST 顶层提取 precision(N, expr) 调用中的 N，用于输出格式化。
 ///
-/// 安全约束：N > MAX_PRECISION 时返回 `None`（降级为分数格式化），
-/// 防止 `format_bigrational` 循环 N 次导致 DoS。
+/// 安全约束：N > MAX_PRECISION 时返回 `None`（降级为分数格式化），防 format 循环 DoS。
 fn extract_format_precision(ast: &AstNode) -> Option<usize> {
     if let AstNode::FunctionCall(name, args) = ast
         && name == "precision"
@@ -272,8 +227,7 @@ mod tests {
     use super::*;
     use crate::core::{BinaryOp, ErrorKind, EvalContext};
 
-    /// evaluate_with_router 注入自定义路由器。
-    /// 空路由器无内置域 → 任意表达式路由失败，证明 router 参数被真实消费。
+    /// evaluate_with_router 注入自定义路由器：空路由器下任意表达式路由失败。
     #[test]
     fn test_evaluate_with_router_injection() {
         let router = DomainRouter::new();
@@ -283,8 +237,7 @@ mod tests {
         assert!(r.is_err(), "空路由器应无法路由 1+1");
     }
 
-    // 覆盖 extract_format_precision：当 precision(N, expr) 中 N 为 Number 但非正整数（如浮点数）时，
-    // 内层 if 条件为 false，返回 None。
+    // N 为 Number 但非正整数（浮点数）时，内层 if 不成立，返回 None。
     #[test]
     fn test_extract_format_precision_float_n() {
         let ast = AstNode::FunctionCall(
@@ -301,8 +254,7 @@ mod tests {
         assert_eq!(extract_format_precision(&ast), None);
     }
 
-    // 覆盖 extract_format_precision：当 precision(N, expr) 中 N 非 Number（如 Variable）时，
-    // if let 不匹配，返回 None。
+    // N 非 Number（如 Variable）时，if let 不匹配，返回 None。
     #[test]
     fn test_extract_format_precision_non_number_n() {
         let ast = AstNode::FunctionCall(
@@ -312,7 +264,7 @@ mod tests {
         assert_eq!(extract_format_precision(&ast), None);
     }
 
-    // 覆盖 extract_format_precision：当 precision(N, expr) 中 N 为 BigNumber 时，if let Number 不匹配。
+    // N 为 BigNumber 时，if let Number 不匹配，返回 None。
     #[test]
     fn test_extract_format_precision_bignumber_n() {
         let ast = AstNode::FunctionCall(
@@ -346,9 +298,7 @@ mod tests {
         assert_eq!(extract_format_precision(&ast), None);
     }
 
-    // precision 模式缓存命中路径：首次调用 miss→计算并缓存，第二次调用 hit→返回缓存值。
-    // 验证修复后的行为：precision 模式使用 `precision:` 前缀键，与常规模式隔离，
-    // 避免 BigRational 结果与 Scalar 结果相互污染。
+    // precision 模式 miss→hit 缓存路径，`precision:` 前缀键与常规模式隔离。
     #[test]
     fn test_evaluate_precision_mode_cache_hit() {
         let cache = CacheManager::new();
@@ -371,9 +321,7 @@ mod tests {
         assert_eq!(fmt_prec2, Some(5));
     }
 
-    // 缓存键隔离验证：常规模式预填充 Scalar 后，precision 模式不应命中该缓存。
-    // 防止 `evaluate("2+3", None)` 缓存 Scalar(5.0) 后，
-    // `evaluate("2+3", Some(5))` 错误返回 Scalar 而非 BigRational（回归测试）。
+    // 缓存键隔离：常规模式预填 Scalar 后，precision 模式不得命中该缓存。
     #[test]
     fn test_evaluate_precision_mode_does_not_pollute_regular_cache() {
         let cache = CacheManager::new();
@@ -393,9 +341,7 @@ mod tests {
         assert_eq!(fmt_prec, Some(5));
     }
 
-    // precision(N, expr) 表达式语法 DoS 防护回归测试。
-    // 当 N 超过 MAX_PRECISION 时，extract_format_precision 返回 None（降级），
-    // extract_precision_value 返回 Err（拒绝求值），防止 format_decimal 循环 DoS。
+    // N 超过 MAX_PRECISION 时，extract_format_precision 降级且求值被拒。
     #[test]
     fn test_evaluate_precision_bypass_dos_rejected() {
         let cache = CacheManager::new();
@@ -410,9 +356,7 @@ mod tests {
         );
     }
 
-    // precision 参数本身 DoS 防护回归测试。
-    // evaluate 是公共入口，CLI/REPL 直接调用时不经过 server validate()，
-    // 必须在 evaluate 入口拦截 precision > MAX_PRECISION，防止 format_decimal 循环 DoS。
+    // precision 参数本身 DoS 防护：入口处须拦截 precision > MAX_PRECISION。
     #[test]
     fn test_evaluate_precision_param_exceeds_limit_rejected() {
         let cache = CacheManager::new();
@@ -424,10 +368,7 @@ mod tests {
         );
     }
 
-    // 常规模式缓存命中路径：预填充缓存后，evaluate 应直接返回缓存值
-    //
-    // 缓存键需经 build_cache_key 混入 ctx.vars 哈希与 timeout，
-    // 故预填充时也必须用 build_cache_key 构造正确键。
+    // 常规模式缓存命中：预填充键须经 build_cache_key 混入 vars 与 timeout 构造。
     #[test]
     fn test_evaluate_regular_mode_cache_hit() {
         let cache = CacheManager::new();
@@ -521,7 +462,7 @@ mod tests {
 
     // ===== timeout elapsed 追踪测试 =====
 
-    /// timeout=0 应立即超时（显式触发，已有逻辑，回归测试）。
+    /// timeout=0 应立即超时（回归测试）。
     #[test]
     fn test_evaluate_timeout_zero_immediate() {
         let cache = CacheManager::new();
@@ -535,13 +476,7 @@ mod tests {
         );
     }
 
-    /// timeout elapsed 追踪：设置极小 timeout（非 zero），关键节点应检测到超时。
-    ///
-    /// 原 `evaluator.rs:36-38` 仅入口检查 `is_zero()`，
-    /// 计算期间不强制超时。本测试验证 elapsed 追踪已实现。
-    ///
-    /// 策略：设置 timeout=1ns，sleep 1ms 确保时间过期，然后调用 evaluate。
-    /// 入口检查 `is_zero()` 不触发（1ns != 0），但关键节点检查 `elapsed > 1ns` 应触发。
+    /// timeout elapsed 追踪：极小 timeout（非零）应在关键节点触发超时。
     #[test]
     fn test_evaluate_timeout_elapsed_triggers() {
         let cache = CacheManager::new();
@@ -558,8 +493,6 @@ mod tests {
     }
 
     /// 正常 timeout 不应误触发：默认 5s 超时下，简单表达式应成功。
-    ///
-    /// 验证 elapsed 检查不会误拦合法计算。
     #[test]
     fn test_evaluate_timeout_normal_succeeds() {
         let cache = CacheManager::new();
@@ -572,9 +505,7 @@ mod tests {
         );
     }
 
-    /// precision 模式下的 timeout elapsed 追踪。
-    ///
-    /// 验证 precision 模式也受 elapsed 检查保护。
+    /// precision 模式下的 timeout elapsed 追踪：同样受 elapsed 检查保护。
     #[test]
     fn test_evaluate_timeout_elapsed_precision_mode() {
         let cache = CacheManager::new();
@@ -611,17 +542,10 @@ mod tests {
         );
     }
 
-    // ===== evaluate 三阶段分发回归测试 =====
-    //
-    // 目的：重构 evaluate 前后行为不变。
-    // 覆盖三阶段：
-    //   1. 输入校验（timeout=0 / precision > MAX / parse 错误）
-    //   2. 执行分发（precision 模式 miss+hit / 常规模式 miss+hit / 多域路由）
-    //   3. 输出格式化（format_precision 提取 / cache 写入）
+    // ===== evaluate 三阶段分发回归测试：重构前后行为不变 =====
     #[test]
     fn test_evaluate_three_phases() {
-        // ----- 阶段 1: 输入校验 -----
-        // 1a. timeout=0 → 立即超时
+        // ----- 阶段 1: 输入校验（timeout=0 / precision 越界 / parse 错误）-----
         {
             let cache = CacheManager::new();
             let mut ctx = EvalContext::new();
@@ -644,8 +568,7 @@ mod tests {
             assert!(r.is_err());
         }
 
-        // ----- 阶段 2: 执行分发 -----
-        // 2a. precision 模式 miss → 计算并缓存
+        // ----- 阶段 2: 执行分发（precision/常规模式 miss+hit、多域路由）-----
         {
             let cache = CacheManager::new();
             let ctx = EvalContext::new();
@@ -732,13 +655,7 @@ mod tests {
         }
     }
 
-    // ===== 回归测试：cache 键必须包含 EvalContext.vars 与 timeout =====
-    //
-    // 背景：原 build_cache_key 仅基于 CanonicalForm + precision，未包含 EvalContext.vars。
-    // REPL 中 `:let x=1; x` → 1.0，再 `:let x=2; x` 仍返回 1.0（cache 命中错误结果）。
-    // 修复后 build_cache_key 混入 vars 的 BLAKE3 哈希（按 key 字典序排序）和 timeout。
-    //
-    // 测试 1：相同表达式、不同 vars 值必须产生不同 cache 键，不应互相命中。
+    // ===== 回归测试：cache 键必须包含 vars 与 timeout =====
     #[test]
     fn test_cache_key_includes_vars_different_values_do_not_collide() {
         let cache = CacheManager::new();
@@ -819,15 +736,7 @@ mod tests {
     }
 
     // ===== 回归测试：precision(N, 1/3) 必须返回 N 位精确的 1/3 =====
-    //
-    // 背景：canonicalizer.transform_function 对所有函数参数做常量折叠，
-    // 导致 precision(20, 1/3) 的 args[1]=1/3 被折叠为 f64 的 0.333...，
-    // Precision 域收到的是 f64 近似值而非精确分数 1/3。
-    // 修复后 transform_function 对 name=="precision" 的 args[1] 跳过常量折叠，
-    // 保留 BinaryOp 结构交由 Precision 域内部 BigRational 求值。
-    //
-    // 验证：precision(20, 1/3) 应返回 BigRational(1/3)，
-    // 经 format_bigrational(r, Some(20)) 格式化后应输出 20 位精确的 1/3。
+    // transform_function 对 precision 的 args[1] 跳过常量折叠，保留 BinaryOp 交由域内求值。
     #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
     #[test]
     fn test_precision_function_preserves_exact_rational() {
@@ -864,10 +773,7 @@ mod tests {
         );
     }
 
-    // precision 函数嵌套调用时仍需保留精确分数语义。
-    //
-    // 验证：precision(10, 1/6) 应返回 BigRational(1/6)，
-    // 经 10 位格式化为 0.1666666667（10 位小数）。
+    // precision 函数嵌套调用时仍需保留精确分数语义：precision(10, 1/6) → BigRational(1/6)。
     #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
     #[test]
     fn test_precision_function_preserves_exact_rational_other_fraction() {

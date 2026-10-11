@@ -1,24 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! HTTP 限流（`ratelimit` feature）：limiteron 同步固定窗口 + sdforge 契约适配。
-//!
-//! 策略与标识提取均复用自研库，本模块只保留配置解析与 trait 桥接：
-//!
-//! - 策略：[`limiteron::sync::SyncFixedWindowLimiter`]（per-identifier 固定
-//!   窗口，拒绝不消耗预算，时间注入可测）；
-//! - 标识提取：`sdforge::security::extract_client_ip`（信任代理 + 防伪造：
-//!   `ConnectInfo` 直连地址优先，仅可信反向代理场景信任 `X-Forwarded-For` /
-//!   `X-Real-IP`，否则回退 `"unknown"` 共享桶）；
-//! - 阈值经 `CALNEXUS_RATELIMIT_LIMIT`（默认 120）与
-//!   `CALNEXUS_RATELIMIT_WINDOW_SECS`（默认 60）配置。
-//!
-//! server 经 `sdforge::http::serve_with_graceful_shutdown_connect_info` 启动，
-//! 请求携带 `ConnectInfo`，限流按真实对端 IP 生效（此前手写提取器无条件信任
-//! header，本地监听场景 header 即对端自报）。
-//!
-//! `Router::layer` 要求 `Layer + Clone`，直用 `RateLimitLayer::new`
-//! （依赖上游已派生 Clone）。
+//! HTTP 限流（`ratelimit` feature）：limiteron 同步固定窗口 + sdforge 契约适配层。
+//! 标识提取复用 sdforge::security::extract_client_ip（仅可信代理场景信任转发头）。
+//! 阈值经 CALNEXUS_RATELIMIT_LIMIT（默认 120）与 CALNEXUS_RATELIMIT_WINDOW_SECS（默认 60）配置。
 
 use std::future::Future;
 use std::pin::Pin;
@@ -43,7 +28,7 @@ impl FixedWindowLimiter {
         }
     }
 
-    /// 从环境变量构建（非法/缺省回退默认值，见模块文档）。
+    /// 从环境变量构建（非法/缺省回退默认值）。
     pub(crate) fn from_env() -> Self {
         let limit = std::env::var("CALNEXUS_RATELIMIT_LIMIT")
             .ok()
@@ -92,8 +77,7 @@ impl HttpRequestRateLimiter for FixedWindowLimiter {
 mod tests {
     use super::*;
 
-    /// 阈值内放行、超阈值拒绝并携带窗口配置、独立标识互不影响
-    ///（sdforge `RateLimiter` trait 为 async 契约，经 current-thread runtime 驱动）。
+    /// 阈值内放行、超阈值拒绝并携带窗口配置、独立标识互不影响。
     #[test]
     fn test_check_admits_rejects_and_maps_error() {
         let limiter = FixedWindowLimiter::with_config(2, 60);

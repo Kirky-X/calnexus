@@ -1,13 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 汇率换算核心数学函数。
-//!
-//! 设计依据：base 三角换算
-//! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
-//!
-//! 汇率表结构 + 三角换算逻辑 + 错误构造。
-//! 不依赖任何 I/O（网络/文件），仅包含纯数据运算。
+//! 汇率换算核心函数：base 三角换算，纯数据运算不依赖 I/O。
 
 use std::collections::HashMap;
 
@@ -24,11 +18,7 @@ pub struct RateTable {
     pub rates: HashMap<String, f64>,
 }
 
-/// 汇率换算核心逻辑：经 base 三角计算。
-///
-/// - 同币种（from == to）→ 恒等返回 value（不查表）
-/// - base 币种汇率视为 1.0（如 EUR 在 EUR-base 表中不出现）
-/// - 未知币种 → DomainError（含支持币种数量提示，i18n msg.fx.unknown_currency）
+/// 汇率换算：经 base 三角计算；同币种原样返回，base 汇率视为 1.0，未知币种报 Domain。
 pub fn convert(value: f64, from: &str, to: &str, table: &RateTable) -> Result<f64, CalcError> {
     if from == to {
         return Ok(value);
@@ -53,7 +43,6 @@ pub fn get_rate(code: &str, table: &RateTable) -> Result<f64, CalcError> {
 }
 
 /// 构造“未知币种”错误，消息含支持币种数量。
-/// rates.len() + 1 以包含 base 币种本身。
 pub fn unknown_currency_error(code: &str, table: &RateTable) -> CalcError {
     CalcError::domain(format!(
         "unknown currency: {}, {} currencies supported (base: {})",

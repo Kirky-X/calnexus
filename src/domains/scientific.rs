@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! Scientific 计算域：三角函数、反三角函数、对数、指数、双曲函数、特殊函数。
-//!
-//! 设计依据：
-//! - scientific-domain spec：10 个 requirements / 31 个 scenarios
-//! - 实现 `CalculationDomain` trait
-//!
-//! priority = 20（高于 Arithmetic 的 10），含科学函数或 pi/e 常量的表达式
-//! 路由至本域。本域内含完整算术求值能力，以处理混合表达式如 `sin(x)+2*3`。
+//! priority=20（高于 Arithmetic），含科学函数或 pi/e 常量的表达式路由至本域。
 
 use super::common::{ensure_math_constants, resolve_variable, unsupported_node_error};
 use crate::core::CalculationDomain;
@@ -20,10 +14,7 @@ const SCIENTIFIC_FUNCTIONS: &[&str] = &[
     "cosh", "tanh", "gamma", "erf",
 ];
 
-/// Scientific 计算域。
-///
-/// 支持三角/反三角/对数/指数/双曲/特殊函数，内置 pi/e 常量。
-/// priority=20，高于 ArithmeticDomain，含科学函数的表达式路由至本域。
+/// Scientific 计算域，priority=20，内置 pi/e 常量。
 pub struct ScientificDomain;
 
 impl CalculationDomain for ScientificDomain {
@@ -239,7 +230,7 @@ mod tests {
         (a - b).abs() < 1e-10
     }
 
-    // ===== Requirement 1: Trigonometric Functions in Radians =====
+    // ===== Trigonometric Functions in Radians =====
 
     #[test]
     fn test_sin_zero() {
@@ -261,7 +252,7 @@ mod tests {
         assert!(approx(eval("tan(pi/4)").unwrap(), 1.0));
     }
 
-    // ===== Requirement 2: Inverse Trigonometric Functions =====
+    // ===== Inverse Trigonometric Functions =====
 
     #[test]
     fn test_asin_one() {
@@ -287,7 +278,7 @@ mod tests {
         ));
     }
 
-    // ===== Requirement 3: Inverse Trigonometric Domain Validation =====
+    // ===== Inverse Trigonometric Domain Validation =====
 
     #[test]
     fn test_asin_out_of_range() {
@@ -307,7 +298,7 @@ mod tests {
         assert_eq!(err.hint.as_deref(), Some("acos domain is [-1, 1]"));
     }
 
-    // ===== Requirement 4: Logarithmic Functions =====
+    // ===== Logarithmic Functions =====
 
     #[test]
     fn test_ln_e() {
@@ -334,7 +325,7 @@ mod tests {
         assert!(approx(eval("log(100, 10)").unwrap(), 2.0));
     }
 
-    // ===== Requirement 5: Logarithmic Domain Validation =====
+    // ===== Logarithmic Domain Validation =====
 
     #[test]
     fn test_ln_negative() {
@@ -369,7 +360,7 @@ mod tests {
         );
     }
 
-    // ===== Requirement 6: Exponential Function =====
+    // ===== Exponential Function =====
 
     #[test]
     fn test_exp_zero() {
@@ -383,11 +374,10 @@ mod tests {
 
     #[test]
     fn test_exp_ten() {
-        // exp(10) → ≈22026.465794806718
         assert!(approx(eval("exp(10)").unwrap(), 22026.465794806718));
     }
 
-    // ===== Requirement 7: Hyperbolic Functions =====
+    // ===== Hyperbolic Functions =====
 
     #[test]
     fn test_sinh_zero() {
@@ -404,11 +394,10 @@ mod tests {
         assert!(approx(eval("tanh(0)").unwrap(), 0.0));
     }
 
-    // ===== Requirement 8: Special Mathematical Functions =====
+    // ===== Special Mathematical Functions =====
 
     #[test]
     fn test_gamma_five() {
-        // gamma(5) → 24.0（Γ(5) = 4! = 24）
         assert!(approx(eval("gamma(5)").unwrap(), 24.0));
     }
 
@@ -427,7 +416,7 @@ mod tests {
         assert!(approx(eval("erf(100)").unwrap(), 1.0));
     }
 
-    // ===== Requirement 9: Mathematical Constants pi and e =====
+    // ===== Mathematical Constants pi and e =====
 
     #[test]
     fn test_constant_pi() {
@@ -439,7 +428,7 @@ mod tests {
         assert!(approx(eval("e").unwrap(), std::f64::consts::E));
     }
 
-    // ===== Requirement 10: Mixed Scientific Computation =====
+    // ===== Mixed Scientific Computation =====
 
     #[test]
     fn test_sin_pi_over_two_plus_cos_zero() {
@@ -552,7 +541,6 @@ mod tests {
 
     #[test]
     fn test_scalar_mul_finite() {
-        // BinaryOp::Mul 正常路径
         let ast = AstNode::BinaryOp(
             BinaryOp::Mul,
             Box::new(AstNode::Number(3.0)),
@@ -617,7 +605,6 @@ mod tests {
 
     #[test]
     fn test_scalar_mod_normal() {
-        // mod 正常路径
         let ast = AstNode::BinaryOp(
             BinaryOp::Mod,
             Box::new(AstNode::Number(10.0)),
@@ -679,7 +666,6 @@ mod tests {
 
     #[test]
     fn test_factorial_normal_computation() {
-        // factorial 正常计算路径
         let ast = AstNode::UnaryOp(UnaryOp::Factorial, Box::new(AstNode::Number(6.0)));
         let domain = ScientificDomain;
         let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
@@ -768,7 +754,6 @@ mod tests {
 
     #[test]
     fn test_default_impl() {
-        // Default impl
         let domain = ScientificDomain;
         assert_eq!(domain.domain_name(), "scientific");
         assert_eq!(domain.priority(), 20);
@@ -798,8 +783,7 @@ mod tests {
 
     #[test]
     fn test_lanczos_gamma_reflection() {
-        // lanczos_gamma 反射公式（x < 0.5）
-        // gamma(-0.5) = -2*sqrt(pi) ≈ -3.5449077018
+        // lanczos_gamma 反射公式（x < 0.5）。
         let result = eval("gamma(-0.5)").unwrap();
         assert!(approx(result, -2.0 * std::f64::consts::PI.sqrt()));
     }
@@ -825,9 +809,7 @@ mod tests {
             prop_assert!((r - x).abs() < 1e-9 * x.abs().max(1.0), "exp(ln(x)) should be {}, got {}", x, r);
         }
 
-        // 双曲恒等式：cosh(x)^2 - sinh(x)^2 == 1
-        // 范围限制在 [-5, 5]：cosh(5)^2 ≈ 5500，f64 精度足以恢复差值 1。
-        // 更大范围时 cosh²/sinh² 超出 f64 有效位数，差值退化为 0。
+        // 双曲恒等式：cosh(x)^2 - sinh(x)^2 == 1（限 [-5,5]，大范围超出 f64 精度）。
         #[test]
         fn prop_cosh_sinh_identity(x in -5.0f64..5.0) {
             let r = eval(&format!("cosh({})^2 - sinh({})^2", x, x)).unwrap();

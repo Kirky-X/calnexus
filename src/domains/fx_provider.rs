@@ -2,24 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! 汇率数据提供者：RateProvider trait + FrankfurterProvider 实现。
-//!
-//! 设计依据：ureq + dirs 本地缓存 + stale 策略
-//! Feature 门控：`fx = ["dep:ureq", "dep:dirs"]`
-//!
-//! 三级缓存读取链：
-//! 1. L1 字节缓存（oxcache ByteWeightCache，get_or_compute 单飞，进程级）
-//! 2. 文件缓存 `dirs::cache_dir()/calnexus/fx_rates.json`（TTL 内有效）
-//! 3. 网络 GET `https://api.frankfurter.dev/v1/latest?base=EUR`（成功后写回文件）
-//!
-//! 网络抓取经 limiteron 同步熔断器（`SyncCircuitBreaker`，tokio-free）包装：
-//! 连续失败达阈值后 Open 快速失败（`CALNEXUS_FX_BREAKER_THRESHOLD` /
-//! `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`），避免 server 长驻模式下源站故障期间
-//! 每笔请求白付 HTTP 超时；Open 拒绝与网络失败同等进入 stale 策略。
-//!
-//! 失败显性化：
-//! - 网络失败 + 文件过期 + 未设 `CALNEXUS_FX_ALLOW_STALE` → CalcError::domain
-//! - 网络失败 + 文件过期 + `CALNEXUS_FX_ALLOW_STALE=1` → 使用过期缓存
-//! - 缓存目录不可写 → 静默降级为仅内存缓存（不报错）
+//! 三级缓存（L1 内存 → L2 文件 → 网络）经熔断包装，失败按 stale 策略显性返回。
 
 use std::collections::HashMap;
 use std::fmt;
@@ -44,11 +27,10 @@ const DEFAULT_TTL_SECONDS: u64 = 24 * 3600;
 /// HTTP 请求超时：5 秒。
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// 熔断默认阈值：连续 3 次网络失败后打开（每次失败已付 5s 超时，取比 limiteron
-/// 默认 5 更小的值；server 长驻模式下 3 次 × 5s ≈ 15s 即进入快速失败）。
+/// 熔断默认阈值：连续 3 次网络失败后打开（小于 limiteron 默认 5：每次失败已付 5s 超时）。
 const DEFAULT_BREAKER_THRESHOLD: u32 = 3;
 
-/// 熔断默认冷却：30 秒（与 limiteron circuit 默认一致）。
+/// 熔断默认冷却：30 秒。
 const DEFAULT_BREAKER_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// 响应体读取上限：1 MB（防源站异常导致内存膨胀）。
@@ -116,33 +98,25 @@ impl From<CachedRateTable> for RateTable {
     }
 }
 
-/// FrankfurterProvider：生产环境汇率数据提供者。
-///
-/// oxcache ByteWeightCache 承载 L1（moka 原生同步内核：真实容量逐出 +
-/// get_or_compute 单飞）+ 文件 L2 + stale 策略 + 网络熔断。线程安全（Send + Sync）。
+/// FrankfurterProvider：生产环境汇率数据提供者（L1 内存 + L2 文件 + stale 策略 + 网络熔断）。
 pub struct FrankfurterProvider {
     /// 缓存文件路径（None 时降级为仅内存缓存）。
     cache_path: Option<PathBuf>,
-    /// L1 内存缓存（oxcache ByteWeightCache：单 key `"fx:rates"`，1 MiB
-    /// 字节预算、单条 256 KiB 准入）；`get_or_compute` 内建同 key 单飞，
-    /// 取代原 Mutex double-check 防惊群，compute 失败不落缓存。
+    /// L1 内存缓存（单 key `"fx:rates"`，get_or_compute 单飞，失败不落缓存）。
     cache: ByteWeightCache<&'static str, RateTable, fn(&RateTable) -> u64>,
-    /// 网络熔断器（limiteron 同步版 `SyncCircuitBreaker`）：连续失败达阈值后 Open
-    /// 快速失败；调用点在 get_or_compute 闭包内，天然串行化。
+    /// 网络熔断器：连续失败达阈值后 Open 快速失败（调用点在单飞闭包内）。
     breaker: SyncCircuitBreaker,
     /// 测试专用网络注入点（生产恒为 None → fetch_from_network）。
     #[cfg(test)]
     fetcher: Option<TestFetcher>,
 }
 
-/// fx 表常量估重（weigher）：缓存仅持有单 key 的汇率表，字节预算不构成
-/// 实际约束，取固定估值即够——真实上限由 `with_max_entry_bytes` 把关。
+/// fx 表常量估重（单 key 固定估值；单条上限由 `with_max_entry_bytes` 准入把关）。
 fn rate_table_weight(_table: &RateTable) -> u64 {
     FX_RATES_ENTRY_WEIGHT
 }
 
-/// 手动 Debug：`ByteWeightCache` 未实现 Debug（moka 内部无 derive），
-/// 输出缓存路径与条目数即可诊断（与 TestFetcher 同款处理）。
+/// 手动 Debug：`ByteWeightCache` 未实现 Debug，仅输出路径与条目数。
 impl fmt::Debug for FrankfurterProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FrankfurterProvider")
@@ -200,12 +174,7 @@ impl FrankfurterProvider {
         }
     }
 
-    /// 测试专用构造函数：缓存文件路径 + 注入抓取闭包。
-    ///
-    /// 并发一致性测试需要同时覆盖「L2 过期文件」与「确定性抓取结局」：
-    /// `with_cache_path` 走真实 ureq（结局依赖环境网络可达性），而
-    /// `with_fetcher` 强制无缓存文件——此构造器补上两者的组合，
-    /// 使并发场景与真实网络完全解耦（负载/有网环境下可复现）。
+    /// 测试专用构造函数：缓存文件路径 + 注入抓取闭包（并发测试与真实网络解耦）。
     #[cfg(test)]
     fn with_cache_path_and_fetcher(
         path: PathBuf,
@@ -239,10 +208,7 @@ impl Default for FrankfurterProvider {
 
 impl RateProvider for FrankfurterProvider {
     fn rates(&self) -> Result<RateTable, CalcError> {
-        // L1 命中直接返回；未命中时 get_or_compute 保证同 key 仅 leader
-        // 执行 compute（L2 读 → TTL 判定 → 熔断拉取 → 写回 → stale 策略），
-        // follower 共享 leader 结果——TTL 过期瞬间的惊群由库内单飞消除。
-        // compute 返回 Err 时错误传播且不写缓存，下次调用重新 compute。
+        // 未命中时 get_or_compute 单飞执行 compute；失败不写缓存，下次调用重试。
         self.cache.get_or_compute(FX_RATES_KEY, || {
             // L2: 文件缓存（TTL 内有效；损坏自愈为 miss）
             let cache_read = self
@@ -261,9 +227,7 @@ impl RateProvider for FrankfurterProvider {
                 _ => None,
             };
 
-            // 真正的网络抓取（此时为库内单飞 leader，全进程仅一次在途请求），
-            // 经熔断器包装：连续失败达阈值后 Open 快速失败，源站故障期间
-            // 不再每笔白付 HTTP 超时
+            // 网络抓取经熔断器包装：连续失败达阈值后 Open 快速失败。
             #[cfg(test)]
             let fetched = self.breaker.call(|| self.fetch());
             #[cfg(not(test))]
@@ -278,9 +242,7 @@ impl RateProvider for FrankfurterProvider {
                     Ok(table)
                 }
                 Err(breaker_err) => {
-                    // 熔断拒绝与网络失败同等进入 stale 策略：Open 期间仍可用
-                    // ALLOW_STALE=1 服务过期快照；缓存文件损坏时错误分类为
-                    // cache_unreadable（三分类）
+                    // 熔断拒绝与网络失败同等进入 stale 策略；缓存损坏分类为 cache_unreadable。
                     let net_err = match breaker_err {
                         CircuitCallError::Inner(err) => err,
                         CircuitCallError::Open => CalcError::dependency_unavailable(
@@ -297,9 +259,7 @@ impl RateProvider for FrankfurterProvider {
     }
 }
 
-/// 默认缓存文件路径：`dirs::cache_dir()/calnexus/fx_rates.json`。
-///
-/// 返回 None 时表示平台无缓存目录（如 HOME 未设置），降级为仅内存缓存。
+/// 默认缓存文件路径；平台无缓存目录时返回 None，降级为仅内存缓存。
 fn default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join(CACHE_DIR_NAME).join(CACHE_FILE_NAME))
 }
@@ -312,12 +272,7 @@ fn current_unix_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
-/// fx 环境配置（confers derive 单点加载，替代五个散读函数）。
-///
-/// 字段为原始 `Option<String>`：env 层不解析类型，非法值/缺省由访问器
-/// （default_on_error 语义）回退默认——保持 CALNEXUS_FX_* 三态契约
-/// （合法值 / 非法回退默认 / 缺省默认）。from_env 构建失败（极端场景）
-/// 时整体回退全默认：fx 是可选域，不因环境变量拖垮 CLI。
+/// fx 环境配置：字段为原始字符串，非法或缺省由访问器回退默认；构建失败整体回退默认。
 #[derive(confers::Config, serde::Deserialize, Debug, Clone)]
 #[config(env_prefix = "CALNEXUS_FX_")]
 pub struct FxProviderConfig {
@@ -335,14 +290,7 @@ pub struct FxProviderConfig {
     pub allow_stale: Option<String>,
 }
 
-/// env 层推断值统一按原始字符串收编。
-///
-/// confers EnvSource 的 `infer_config_value` 把 `"48"` 推断为整数、`"0.5"`
-/// 为浮点、`"true"` 为布尔——直接进 `Option<String>` 会反序列化失败，令整个
-/// `build()` 报错（再被 `from_env` 的 `unwrap_or_default` 吞成全默认，env
-/// 静默失效）。本助手把标量一律转回字符串，三态契约（合法值/非法回退默认/
-/// 缺省默认）仍由既有纯解析函数承载；`ALLOW_STALE` 的"仅 1 为 true"语义
-/// 依赖此处保留原始字符串而非推断出的布尔/整数。
+/// 把 confers 推断的标量 env 值转回字符串：否则 "48" 被推断为整数、反序列化失败会被 `unwrap_or_default` 静默吞成默认值（env 失效）。
 fn de_env_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -396,12 +344,7 @@ where
 }
 
 impl FxProviderConfig {
-    /// 从环境变量单点加载（env_prefix `CALNEXUS_FX_`）。
-    ///
-    /// `env_separator("__")`：confers 默认以单 `_` 作嵌套分隔符，会把 strip
-    /// 前缀后的 `TTL_HOURS` 转成嵌套路径 `ttl.hours`，与平铺字段 `ttl_hours`
-    /// 不匹配导致 env 静默失效；`__` 下 `CALNEXUS_FX_TTL_HOURS` → `ttl_hours`
-    /// 逐字命中，变量名与契约不变（`__` 保留给未来的嵌套字段）。
+    /// 从环境变量单点加载（env_prefix `CALNEXUS_FX_`，`__` 作嵌套分隔符）。
     pub fn from_env() -> Self {
         confers::config::<Self>()
             .env_separator("__")
@@ -441,10 +384,7 @@ fn read_allow_stale() -> bool {
     FxProviderConfig::from_env().allow_stale()
 }
 
-/// 解析 TTL 字符串为秒数。
-///
-/// 输入为小时数的字符串表示（如 "24"、"48"、"0.5"），解析失败时返回默认 24h。
-/// 纯函数，便于单元测试。
+/// 解析 TTL 小时字符串为秒数，解析失败回退默认 24h。
 fn parse_ttl_hours(hours_str: Option<&str>) -> u64 {
     hours_str
         .and_then(|s| s.parse::<f64>().ok())
@@ -452,38 +392,31 @@ fn parse_ttl_hours(hours_str: Option<&str>) -> u64 {
         .unwrap_or(DEFAULT_TTL_SECONDS)
 }
 
-/// 解析熔断阈值（`CALNEXUS_FX_BREAKER_THRESHOLD`），非法或 <1 时回退默认值。
-/// 纯函数，便于单元测试。
+/// 解析熔断阈值，非法或 <1 时回退默认值。
 fn parse_breaker_threshold(raw: Option<&str>) -> u32 {
     raw.and_then(|s| s.parse::<u32>().ok())
         .filter(|&t| t >= 1)
         .unwrap_or(DEFAULT_BREAKER_THRESHOLD)
 }
 
-/// 解析熔断冷却秒数（`CALNEXUS_FX_BREAKER_COOLDOWN_SECS`），非法时回退默认；
-/// 0 表示关闭快速失败（冷却到期即刻放行探针）。纯函数，便于单元测试。
+/// 解析熔断冷却秒数，非法回退默认；0 表示关闭快速失败。
 fn parse_breaker_cooldown(raw: Option<&str>) -> Duration {
     raw.and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(DEFAULT_BREAKER_COOLDOWN)
 }
 
-/// 解析 ALLOW_STALE 原始字符串：仅 `"1"` 为 true，其余（None/"0"/任意）为 false。
-/// 纯函数，便于单元测试。
+/// 解析 ALLOW_STALE：仅 `"1"` 为 true，其余为 false。
 fn parse_allow_stale(raw: Option<&str>) -> bool {
     matches!(raw, Some("1"))
 }
 
-/// 纯函数：基于显式参数判断过期。便于单元测试（不依赖系统时钟/环境变量）。
+/// 基于显式参数判断是否过期（不依赖系统时钟/环境变量）。
 fn is_expired_at(fetched_at: u64, now: u64, ttl_secs: u64) -> bool {
     now.saturating_sub(fetched_at) > ttl_secs
 }
 
-/// Stale 策略：网络失败时决定是否使用过期缓存。
-///
-/// - `cached` + `allow_stale=true` → 使用过期缓存
-/// - `cached` + `allow_stale=false` → CalcError::domain（含本地快照日期 + ALLOW_STALE 提示）
-/// - 无缓存 → CalcError::domain（无可用数据）
+/// Stale 策略：网络失败时按 allow_stale 决定返回过期缓存或 domain 错误。
 fn apply_stale_policy(
     cached: Option<&CachedRateTable>,
     allow_stale: bool,
@@ -551,8 +484,7 @@ fn write_cache_file(path: &Path, table: &RateTable, fetched_at: u64) -> std::io:
         let _ = std::fs::create_dir_all(parent);
     }
 
-    // 原子写：同目录 temp 文件 + rename 替换，
-    // 并发读取方只会看到完整旧文件或完整新文件（杜绝 torn write）。
+    // 原子写：temp 文件 + rename 替换，杜绝并发读到 torn write。
     let file_name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -578,9 +510,7 @@ fn write_cache_file(path: &Path, table: &RateTable, fetched_at: u64) -> std::io:
     }
 }
 
-/// 从 Frankfurter API 抓取最新汇率。
-///
-/// URL 编译期固定，HTTP 超时 5s，rustls 证书校验保持默认开启。
+/// 从 Frankfurter API 抓取最新汇率（URL 编译期固定，超时 5s）。
 fn fetch_from_network() -> Result<RateTable, CalcError> {
     let response = ureq::get(FRANKFURTER_URL)
         .config()
@@ -923,15 +853,7 @@ mod tests {
 
     #[test]
     fn test_fetch_lock_concurrent_consistency() {
-        // 过期缓存 + 注入式恒失败 fetcher 下 8 线程并发 rates()：
-        // 持锁序列化保证不死锁，全部线程得到同 kind 的
-        // DependencyUnavailable（fetch 失败与熔断 Open 同 kind），无 panic。
-        //
-        // 加固说明：本测试原实现走真实 ureq（with_cache_path），依赖
-        // 「环境网络不可达」假设——在有网机器的重负载并行下，上游首次
-        // 瞬断、后续恢复会令各线程出现合法的混合 Ok/Err，一致性断言
-        // 误报（CI 全量跑时观察到一次）。注入 fetcher 后场景与真实
-        // 网络完全解耦，任何环境确定性复现。
+        // 过期缓存 + 恒失败 fetcher 下 8 线程并发 rates()：全部得到 DependencyUnavailable，无 panic。
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let table = RateTable {
             base: "EUR".to_string(),
@@ -958,8 +880,7 @@ mod tests {
             }));
         }
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        // 全部失败且同 kind：fetch 失败（前 threshold 次）与熔断 Open
-        // （其后）映射到同一 DependencyUnavailable kind
+        // fetch 失败与熔断 Open 映射到同一 DependencyUnavailable kind
         for r in &results {
             match r {
                 Err(e) => assert_eq!(
@@ -974,9 +895,7 @@ mod tests {
 
     #[test]
     fn test_fetch_lock_concurrent_success_consistency() {
-        // 成功侧镜像：过期缓存 + 注入式恒成功 fetcher。并发下部分线程
-        // 真实抓取并写回 L1/L2，其余经 double-check 命中——所有线程
-        // 必须看到同一张表（同 base/date/rates）。
+        // 成功侧镜像：并发下所有线程必须看到同一张表（同 base/date/rates）。
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let table = RateTable {
             base: "EUR".to_string(),
@@ -1013,7 +932,7 @@ mod tests {
         }
     }
 
-    // ===== 网络熔断器集成（吸收 limiteron circuit 设计；注入 fetcher，不出网） =====
+    // ===== 网络熔断器集成（注入 fetcher，不出网） =====
 
     #[test]
     fn test_breaker_opens_after_consecutive_fetch_failures() {
@@ -1074,8 +993,7 @@ mod tests {
 
     #[test]
     fn test_default_cache_path_returns_some_on_normal_platform() {
-        // 在正常 Linux/macOS/Windows 测试环境下 dirs::cache_dir() 应返回 Some
-        // （CI 环境可能为 None，此处仅做非 panic 验证）
+        // 正常环境下 dirs::cache_dir() 应返回 Some（CI 可能为 None），仅做非 panic 验证。
         let _ = default_cache_path();
     }
 
@@ -1142,13 +1060,7 @@ mod tests {
         assert!(parse_allow_stale(Some("1")));
     }
 
-    /// confers env 接线契约（串行化）：未设 → 访问器默认；逐一设值 → 映射生效；
-    /// remove 后回默认。env 为进程全局资源，静态互斥防止并行 #[test] 互相
-    /// 踩踏；edition 2024 下 set_var/remove_var 为 unsafe fn。
-    ///
-    /// 本测试是 confers `env_prefix` 接线的唯一直接保护：映射失效（前缀错误、
-    /// 字段名拼写错误）将使 CALNEXUS_FX_* 设置被静默忽略，只测纯解析函数
-    /// 无法暴露该故障。
+    /// confers env 接线契约：未设取默认、设值生效、remove 回默认；env_prefix 接线的唯一直接保护，纯解析测试无法暴露该故障。
     #[test]
     fn test_fx_config_env_mapping_contract() {
         static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1161,7 +1073,7 @@ mod tests {
             "CALNEXUS_FX_ALLOW_STALE",
         ];
 
-        // 未设任何 env：四字段访问器等于默认（R-fx-config-001 首条验收）
+        // 未设任何 env：四字段访问器等于默认
         unsafe {
             for key in KEYS {
                 std::env::remove_var(key);
@@ -1233,8 +1145,7 @@ mod tests {
 
     #[test]
     fn rates_concurrent_calls_fetch_exactly_once() {
-        // 8 线程并发 rates()：库内同 key 单飞，fetcher 恰执行一次，
-        // 且 8 个调用方全部拿到一致结果（防惊群 + 结果共享）。
+        // 8 线程并发 rates()：fetcher 恰执行一次，全部调用方拿到一致结果（单飞）。
         let calls = Arc::new(AtomicUsize::new(0));
         let calls_in_fetcher = Arc::clone(&calls);
         let tmp = tempfile::NamedTempFile::new().unwrap();

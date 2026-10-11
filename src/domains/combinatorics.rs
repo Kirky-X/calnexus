@@ -3,12 +3,7 @@
 
 //! Combinatorics 计算域：排列 P、组合 C、Catalan 数、Stirling 数。
 //!
-//! 设计依据：
-//! - combinatorics-domain spec：5 个 requirements / 13+ scenarios
-//! - u128→BigInt 自动升级、priority=25
-//!
-//! 路由策略：AST 含组合函数调用（P/C/catalan/stirling）时路由至本域。
-//! 内部用 u128 累积，溢出时自动升级为 BigInt，返回 Scalar（fit i64）或 BigInt。
+//! 含组合函数调用时路由至本域；u128 累积，溢出自动升级 BigInt，priority=25。
 
 use super::common::{unsupported_function_error, unsupported_node_error};
 use crate::core::CalculationDomain;
@@ -22,9 +17,7 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// 组合函数白名单。
 const COMBINATORICS_FUNCTIONS: &[&str] = &["P", "C", "catalan", "stirling"];
 
-/// Combinatorics 计算域。
-///
-/// priority=25，支持 P/C/catalan/stirling。
+/// Combinatorics 计算域：priority=25，支持 P/C/catalan/stirling。
 pub struct CombinatoricsDomain;
 
 impl CalculationDomain for CombinatoricsDomain {
@@ -212,9 +205,7 @@ impl CombinatoricsDomain {
                     )
                     .with_i18n("msg.core.negative_exponent", vec![]));
                 }
-                // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
-                // 攻击者可通过 `C(1,1) + 2^4000000000` 绕过 precision.rs 的防护
-                // （24 字节请求触发 ~1.2GB 输出导致 OOM）。
+                // 安全约束：拒绝超大指数，防止绕过 precision.rs 防护触发 OOM。
                 let exp_u64 = b.to_u64().ok_or(CalcError::overflow())?;
                 if exp_u64 > MAX_POW_EXPONENT {
                     return Err(CalcError::domain(format!(
@@ -229,8 +220,7 @@ impl CombinatoricsDomain {
                         ],
                     ));
                 }
-                // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
-                // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
+                // 安全约束：限制大底数 × 大指数输出，复用 core 层 check_pow_output_size。
                 let base_bits = a.bits();
                 check_pow_output_size(base_bits, exp_u64)?;
                 let exp: u32 = exp_u64.try_into().map_err(|_| CalcError::overflow())?;
@@ -245,11 +235,7 @@ impl CombinatoricsDomain {
         }
     }
 
-    /// 求值组合函数调用（dispatch table）。
-    ///
-    /// 主函数仅做白名单检查 + match 分发，具体逻辑下沉到
-    /// `eval_permutation`/`eval_combination`/`eval_catalan`/`eval_stirling` 4 个方法，
-    /// 共用参数验证提取为 `eval_two_non_negative_args`/`eval_one_non_negative_arg`。
+    /// 求值组合函数调用：白名单检查后按函数名分发。
     fn eval_function(
         &self,
         name: &str,
@@ -273,10 +259,7 @@ impl CombinatoricsDomain {
         }
     }
 
-    /// 求值两参数非负整数参数（P/C/stirling 共用 helper）。
-    ///
-    /// 校验：参数数量 == 2，n/k 均非负。
-    /// 错误消息含函数名（通过 `name` 参数注入）。
+    /// 求值两个非负整数参数（P/C/stirling 共用）：数量为 2，n/k 非负。
     fn eval_two_non_negative_args(
         &self,
         args: &[AstNode],
@@ -310,9 +293,7 @@ impl CombinatoricsDomain {
         Ok((n, k))
     }
 
-    /// 求值单参数非负整数参数（catalan 用 helper）。
-    ///
-    /// 校验：参数数量 == 1，n 非负。
+    /// 求值单个非负整数参数（catalan 共用）：数量为 1，n 非负。
     fn eval_one_non_negative_arg(
         &self,
         args: &[AstNode],
@@ -518,9 +499,7 @@ mod tests {
 
     #[test]
     fn test_permutation_large() {
-        // P(20,10) = 20*19*...*11
         let result = eval_scalar("P(20,10)").unwrap();
-        // P(20,10) = 670442572800
         assert_eq!(result, 670442572800.0);
     }
 
@@ -535,7 +514,6 @@ mod tests {
 
     #[test]
     fn test_catalan_large() {
-        // catalan(30) = 3814986502092304
         let result = eval("catalan(30)").unwrap();
         match result {
             EvalResult::BigInt(b) => {
@@ -580,7 +558,6 @@ mod tests {
 
     #[test]
     fn test_permutation_n_equals_k() {
-        // P(5,5) = 120 = 5!
         assert_eq!(eval_scalar("P(5,5)").unwrap(), 120.0);
     }
 
@@ -596,7 +573,6 @@ mod tests {
 
     #[test]
     fn test_combination_symmetry() {
-        // C(10,3) == C(10,7)
         assert_eq!(
             eval_scalar("C(10,3)").unwrap(),
             eval_scalar("C(10,7)").unwrap()
@@ -605,7 +581,6 @@ mod tests {
 
     #[test]
     fn test_catalan_sequence() {
-        // Catalan 数列：1, 1, 2, 5, 14, 42, 132, 429...
         assert_eq!(eval_scalar("catalan(1)").unwrap(), 1.0);
         assert_eq!(eval_scalar("catalan(2)").unwrap(), 2.0);
         assert_eq!(eval_scalar("catalan(3)").unwrap(), 5.0);
@@ -623,11 +598,8 @@ mod tests {
 
     #[test]
     fn test_stirling_known_values() {
-        // S(3,2) = 3
         assert_eq!(eval_scalar("stirling(3,2)").unwrap(), 3.0);
-        // S(4,2) = 7
         assert_eq!(eval_scalar("stirling(4,2)").unwrap(), 7.0);
-        // S(4,3) = 6
         assert_eq!(eval_scalar("stirling(4,3)").unwrap(), 6.0);
     }
 
@@ -909,13 +881,13 @@ mod tests {
 
     #[test]
     fn test_eval_int_binaryop() {
-        // eval_int BinaryOp: P(3+2, 2) = P(5,2) = 20
+        // 覆盖 eval_int 的 BinaryOp 路径
         assert_eq!(eval_scalar("P(3+2, 2)").unwrap(), 20.0);
     }
 
     #[test]
     fn test_eval_int_unary_abs() {
-        // eval_int UnaryOp::Abs: P(abs(-5), 2) = P(5,2) = 20
+        // 覆盖 eval_int 的 UnaryOp::Abs 路径
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![
@@ -954,19 +926,19 @@ mod tests {
 
     #[test]
     fn test_eval_int_binary_sub_mul() {
-        // eval_int_binary Sub and Mul: P(6-1, 2*1) = P(5,2) = 20
+        // 覆盖 eval_int_binary 的 Sub/Mul 路径
         assert_eq!(eval_scalar("P(6-1, 2*1)").unwrap(), 20.0);
     }
 
     #[test]
     fn test_eval_int_binary_div_success() {
-        // eval_int_binary Div success: P(10/2, 2) = P(5,2) = 20
+        // 覆盖 eval_int_binary 的 Div 路径
         assert_eq!(eval_scalar("P(10/2, 2)").unwrap(), 20.0);
     }
 
     #[test]
     fn test_eval_int_binary_mod_success() {
-        // eval_int_binary Mod success via direct AST: P(Mod(7,2), 2) = P(1,2) = 0
+        // 覆盖 eval_int_binary 的 Mod 路径（直接构造 AST）
         let ast = AstNode::FunctionCall(
             "P".to_string(),
             vec![
@@ -1011,7 +983,7 @@ mod tests {
 
     #[test]
     fn test_eval_int_binary_pow_success() {
-        // eval_int_binary Pow success: P(2^3, 2) = P(8,2) = 56
+        // 覆盖 eval_int_binary 的 Pow 路径
         assert_eq!(eval_scalar("P(2^3, 2)").unwrap(), 56.0);
     }
 
@@ -1049,78 +1021,67 @@ mod tests {
         assert!(matches!(result, Err(e) if e.kind == ErrorKind::Overflow));
     }
 
-    // ===== eval_function dispatch table 行为锁定测试 =====
-    //
-    // 目的：锁定 eval_function 在 P/C/catalan/stirling 各 case 的行为，
-    // 确保 重构（提取 eval_permutation/eval_combination/eval_catalan/eval_stirling
-    // + eval_two_non_negative_args/eval_one_non_negative_arg helper）后行为不变。
-    //
-    // 覆盖维度：
-    // 1. 正常计算（各函数的 happy path）
-    // 2. 参数数量错误（少参数/多参数）
-    // 3. 负参数错误（n<0, k<0）
-    // 4. 边界条件（k>n 返回 0）
-    // 5. 不支持的函数名
+    // ===== eval_function 分发行为锁定测试（正常/参数错误/边界/未知函数） =====
 
     #[test]
     fn test_eval_function_dispatch_table() {
         // ===== P(n,k) 排列 =====
-        // 正常计算：P(5,2) = 5!/(5-2)! = 20
+        // 正常计算
         assert_eq!(eval_scalar("P(5,2)").unwrap(), 20.0);
-        // 边界 k>n：P(2,5) = 0
+        // 边界 k>n
         assert_eq!(eval_scalar("P(2,5)").unwrap(), 0.0);
-        // 边界 k=0：P(5,0) = 1
+        // 边界 k=0
         assert_eq!(eval_scalar("P(5,0)").unwrap(), 1.0);
-        // 边界 k=n：P(5,5) = 120
+        // 边界 k=n
         assert_eq!(eval_scalar("P(5,5)").unwrap(), 120.0);
-        // 参数数量错误：P(5) → Err Domain
+        // 参数数量错误
         assert!(matches!(eval("P(5)"), Err(e) if e.kind == ErrorKind::Domain));
-        // 参数数量错误：P(5,2,1) → Err Domain
+        // 参数数量过多
         assert!(matches!(eval("P(5,2,1)"), Err(e) if e.kind == ErrorKind::Domain));
-        // 负参数 n：P(-1,2) → Err Domain
+        // 负参数 n
         assert!(matches!(eval("P(-1,2)"), Err(e) if e.kind == ErrorKind::Domain));
-        // 负参数 k：P(5,-1) → Err Domain
+        // 负参数 k
         assert!(matches!(eval("P(5,-1)"), Err(e) if e.kind == ErrorKind::Domain));
 
         // ===== C(n,k) 组合 =====
-        // 正常计算：C(10,3) = 120
+        // 正常计算
         assert_eq!(eval_scalar("C(10,3)").unwrap(), 120.0);
-        // 边界 k>n：C(3,5) = 0
+        // 边界 k>n
         assert_eq!(eval_scalar("C(3,5)").unwrap(), 0.0);
-        // 边界 k=0：C(5,0) = 1
+        // 边界 k=0
         assert_eq!(eval_scalar("C(5,0)").unwrap(), 1.0);
-        // 边界 k=n：C(5,5) = 1
+        // 边界 k=n
         assert_eq!(eval_scalar("C(5,5)").unwrap(), 1.0);
         // 对称性：C(n,k) == C(n,n-k)
         assert_eq!(
             eval_scalar("C(10,3)").unwrap(),
             eval_scalar("C(10,7)").unwrap()
         );
-        // 参数数量错误：C(5) → Err Domain
+        // 参数数量错误
         assert!(matches!(eval("C(5)"), Err(e) if e.kind == ErrorKind::Domain));
-        // 负参数：C(-1,2) → Err Domain
+        // 负参数
         assert!(matches!(eval("C(-1,2)"), Err(e) if e.kind == ErrorKind::Domain));
 
         // ===== catalan(n) =====
-        // 正常计算：catalan(5) = 42
+        // 正常计算
         assert_eq!(eval_scalar("catalan(5)").unwrap(), 42.0);
-        // 边界 n=0：catalan(0) = 1
+        // 边界 n=0
         assert_eq!(eval_scalar("catalan(0)").unwrap(), 1.0);
-        // 边界 n=1：catalan(1) = 1
+        // 边界 n=1
         assert_eq!(eval_scalar("catalan(1)").unwrap(), 1.0);
-        // 参数数量错误：catalan(5,2) → Err Domain
+        // 参数数量错误
         assert!(matches!(eval("catalan(5,2)"), Err(e) if e.kind == ErrorKind::Domain));
-        // 负参数：catalan(-1) → Err Domain
+        // 负参数
         assert!(matches!(eval("catalan(-1)"), Err(e) if e.kind == ErrorKind::Domain));
 
         // ===== stirling(n,k) 第二类 Stirling 数 =====
-        // 正常计算：stirling(5,2) = 15
+        // 正常计算
         assert_eq!(eval_scalar("stirling(5,2)").unwrap(), 15.0);
-        // 边界 k=0：stirling(0,0) = 1
+        // 边界 k=0
         assert_eq!(eval_scalar("stirling(0,0)").unwrap(), 1.0);
-        // 参数数量错误：stirling(5) → Err Domain
+        // 参数数量错误
         assert!(matches!(eval("stirling(5)"), Err(e) if e.kind == ErrorKind::Domain));
-        // 负参数：stirling(-1,2) → Err Domain
+        // 负参数
         assert!(matches!(eval("stirling(-1,2)"), Err(e) if e.kind == ErrorKind::Domain));
     }
 

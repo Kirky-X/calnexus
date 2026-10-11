@@ -3,9 +3,7 @@
 
 #![allow(clippy::approx_constant, non_snake_case)]
 
-//! Property-based tests using `proptest` (TEST.md §4).
-//!
-//! 每个 property 测试默认 256 cases；CI 可通过 `PROPTEST_CASES=1024` 提升。
+//! 基于 proptest 的性质测试：默认 256 cases，CI 可用 PROPTEST_CASES 提升。
 
 use calnexus::{AstCanonicalizer, CacheManager, EvalContext, EvalResult, parse};
 use proptest::prelude::*;
@@ -16,7 +14,7 @@ proptest! {
         ..ProptestConfig::default()
     })]
 
-    /// `a+b == b+a`（交换律，对 i32 范围内整数成立）
+    /// `a+b == b+a`（加法交换律）
     #[test]
     fn prop_001_addition_commutative(a in -1000i32..1000, b in -1000i32..1000) {
         let cache = CacheManager::new();
@@ -87,7 +85,7 @@ proptest! {
         prop_assert_eq!(r, EvalResult::Scalar(expected));
     }
 
-    /// `canonicalize(a+b)` 与 `canonicalize(b+a)` 字符串相等（缓存键去重）
+    /// `canonicalize(a+b)` 与 `canonicalize(b+a)` 结果相等（缓存键去重）
     #[test]
     fn prop_007_canonical_form_equivalence_for_commutative(a in 0i32..100, b in 0i32..100) {
         let ast1 = parse(&format!("{}+{}", a, b)).unwrap();
@@ -97,7 +95,7 @@ proptest! {
         prop_assert_eq!(cf1.as_str(), cf2.as_str());
     }
 
-    /// `canonicalize(canonicalize(x)) == canonicalize(x)`（幂等性）
+    /// `canonicalize` 幂等：重复规范化结果不变
     #[test]
     fn prop_008_canonicalize_idempotent(a in 0i32..50, b in 0i32..50) {
         let ast = parse(&format!("{}+{}", a, b)).unwrap();
@@ -115,7 +113,7 @@ proptest! {
         let right = format!("{}+(-{})", a, b);
         let (r1, _, _, _) = calnexus::evaluate(&left, &ctx, None, &cache).unwrap();
         let (r2, _, _, _) = calnexus::evaluate(&right, &ctx, None, &cache).unwrap();
-        // f64 比较使用近似相等（避免 -0 vs 0）
+        // 近似比较以避免 -0 与 0 的差异
         if let (EvalResult::Scalar(v1), EvalResult::Scalar(v2)) = (r1, r2) {
             prop_assert!((v1 - v2).abs() < 1e-10, "v1={}, v2={}", v1, v2);
         } else {
@@ -148,7 +146,7 @@ proptest! {
         prop_assert!(cache_hit, "second eval should hit cache");
     }
 
-    /// `|sin(x)^2 + cos(x)^2 - 1| < 1e-10`（毕达哥拉斯恒等式）
+    /// 毕达哥拉斯恒等式 `sin(x)^2+cos(x)^2 == 1`（误差 <1e-10）
     #[test]
     fn prop_012_pythagorean_trig_identity(x in 0.0f64..6.283185307179586) {
         let cache = CacheManager::new();

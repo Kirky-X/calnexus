@@ -29,9 +29,7 @@ fn resolve_tz(tz: Option<&str>) -> Result<jiff::tz::TimeZone, CalcError> {
 }
 
 impl<'a> AppliedMathImpl<'a> {
-    // ═══════════════════════════════════════════════════════════════
-    //  时间：构造
-    // ═══════════════════════════════════════════════════════════════
+    // ── 时间：构造 ──
 
     #[cfg(feature = "time")]
     pub fn date(&self, date_str: &str) -> Result<EvalResult, CalcError> {
@@ -77,9 +75,7 @@ impl<'a> AppliedMathImpl<'a> {
         )))
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  时间：算术
-    // ═══════════════════════════════════════════════════════════════
+    // ── 时间：算术 ──
 
     #[cfg(feature = "time")]
     pub fn now(&self, tz: Option<&str>) -> Result<EvalResult, CalcError> {
@@ -123,9 +119,7 @@ impl<'a> AppliedMathImpl<'a> {
         Ok(EvalResult::Scalar(result))
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  时间：格式与日历
-    // ═══════════════════════════════════════════════════════════════
+    // ── 时间：格式与日历 ──
 
     #[cfg(feature = "time")]
     pub fn format_date(
@@ -164,7 +158,6 @@ impl<'a> AppliedMathImpl<'a> {
                 Err(_) => return Err(crate::math::time::format_mismatch_error(from_fmt)),
             },
         };
-        // 格式化阶段
         let formatted = jiff::fmt::strtime::format(to_fmt, &zoned)
             .map_err(|_| crate::math::time::format_mismatch_error(to_fmt))?;
         Ok(EvalResult::Symbolic(formatted))
@@ -193,18 +186,14 @@ impl<'a> AppliedMathImpl<'a> {
         ))
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  单位换算
-    // ═══════════════════════════════════════════════════════════════
+    // ── 单位换算 ──
 
     #[cfg(feature = "unit")]
     pub fn convert(&self, value: f64, from: &str, to: &str) -> Result<EvalResult, CalcError> {
         crate::math::unit::convert_value(value, from, to).map(EvalResult::Scalar)
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    //  汇率换算
-    // ═══════════════════════════════════════════════════════════════
+    // ── 汇率换算 ──
 
     #[cfg(feature = "fx")]
     pub fn fx(&self, amount: f64, from: &str, to: &str) -> Result<EvalResult, CalcError> {

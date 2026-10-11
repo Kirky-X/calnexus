@@ -1,15 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! ICU4X 国际化模块：中英双语消息目录。
+//! ICU4X 国际化模块：中英双语 Fluent 消息目录。
 //!
-//! 设计依据：(ICU4X 设计)
-//! - `I18n` 结构体始终可用（不受 feature gate 限制）
-//! - `icu` feature 仅控制是否使用 `icu::locale` 解析 BCP-47 语言标签
-//! - 无 `icu` feature 时，`from_str` 使用简单字符串匹配
-//! - 消息目录外部化到 `locales/{en,zh}.json`，编译时通过 `include_str!` 嵌入
-//! - 简单消息用 `t(key)`，参数化消息用 `tf(key, args)`（`{name}` 占位符）
-//! - 未知键返回键本身（fail-loud）
+//! `icu` feature 仅控制 BCP-47 语言标签的解析实现；未知键返回键名本身（fail-loud）。
 use std::sync::OnceLock;
 
 use fluent_bundle::concurrent::FluentBundle;
@@ -27,9 +21,6 @@ pub enum Lang {
 }
 
 /// 国际化上下文：持有当前语言，提供消息目录查询。
-///
-/// `Clone` 派生：`cli::run_repl_mode` 需要 `I18n::clone()` 传入 ReplSession（REPL 持有
-/// 自己的实例以便长期运行），而 `Lang` 是 `Copy` 类型，clone 成本为零。
 #[derive(Clone)]
 pub struct I18n {
     lang: Lang,
@@ -41,25 +32,16 @@ impl I18n {
         Self { lang }
     }
 
-    /// 从 BCP-47 语言标签字符串解析语言（用户显式输入路径）。
+    /// 从 BCP-47 语言标签字符串解析语言（用户显式输入路径），未知语言回退 En。
     ///
-    /// - "en"/"en-US"/"en-GB" → `Lang::En`
-    /// - "zh"/"zh-CN"/"zh-TW" → `Lang::Zh`
-    /// - 未知语言 → 回退 `Lang::En`
-    ///
-    /// 注意：不实现 `std::str::FromStr`，因为此方法不会失败（总是回退到 En），
-    /// 而 `FromStr` 要求返回 `Result`。
+    /// 不实现 `FromStr`：此方法不会失败，而 trait 要求返回 `Result`。
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         let lang = parse_lang(s);
         Self::new(lang)
     }
 
-    /// 从系统语言检测链构造（`CALNEXUS_LANG` → `LC_ALL` → `LC_MESSAGES` →
-    /// `LANG` → sys-locale → en；检测结果进程内 `OnceLock` 缓存）。
-    ///
-    /// 用于无显式语言输入的入口：无 `--lang` 的 CLI、缺省 `lang` 字段的
-    /// HTTP/MCP 请求、panic hook 等全局文案。
+    /// 从系统语言检测链构造（检测结果进程内 `OnceLock` 缓存）；用于无显式语言的入口。
     pub fn from_detected() -> Self {
         Self::new(detect_locale())
     }
@@ -69,20 +51,14 @@ impl I18n {
         self.lang
     }
 
-    /// 查询简单消息目录（无参数占位符）。
-    ///
-    /// 已知键返回对应语言的 Fluent 渲染文本；未知键返回键本身（fail-loud）。
-    /// 当前束缺失时回退英文束，仍缺失时回退键名；不 panic。
+    /// 查询简单消息目录（无参数占位符）；未知键返回键本身。
     pub fn t(&self, key: &str) -> String {
         self.tf(key, &[])
     }
 
-    /// 查询参数化消息目录（`{ $name }` Fluent 占位符）。
+    /// 查询参数化消息目录（`{ $name }` 占位符）。
     ///
-    /// - 已知键：由 Fluent 引擎用 `args` 渲染后返回 `String`
-    /// - 未知键：返回键本身（fail-loud，不渲染）
-    /// - 占位符未提供值：按 Fluent 语义原样回显 `{$name}`（便于定位缺失参数）
-    /// - 查找顺序：当前语言束 → 英文束 → 键名本身；不 panic
+    /// 查找顺序：当前语言束 → 英文束 → 键名本身；缺参按 Fluent 语义回显 `{$name}`。
     pub fn tf(&self, key: &str, args: &[(&str, &str)]) -> String {
         format_from_bundle(self.lang, key, args)
             .or_else(|| format_from_bundle(Lang::En, key, args))
@@ -97,20 +73,19 @@ impl Default for I18n {
 }
 
 // ============================================================================
-// 系统语言检测链（reference-pattern §2）
+// 系统语言检测链
 // ============================================================================
 
 /// 检测结果进程内缓存（首调用确定，此后不变；并行测试安全）。
 static DETECTED_LANG: OnceLock<Lang> = OnceLock::new();
 
 /// 系统语言检测（强制顺序）：`CALNEXUS_LANG` → `LC_ALL` → `LC_MESSAGES` →
-/// `LANG` → sys-locale → en。结果域仅 `{En, Zh}`，任何失败/未知语言继续走链，
-/// 链尾必为 En。进程内缓存一次。
+/// `LANG` → sys-locale → en；任何失败/未知语言继续走链，链尾必为 En。
 pub(crate) fn detect_locale() -> Lang {
     *DETECTED_LANG.get_or_init(|| detect_from(|key| std::env::var(key).ok()))
 }
 
-/// 检测链纯函数：env 读取经 `lookup` 抽象注入，便于无环境副作用的测试（§5）。
+/// 检测链纯函数：env 读取经 `lookup` 注入，便于无环境副作用的测试。
 fn detect_from(lookup: impl Fn(&str) -> Option<String>) -> Lang {
     // 1. 项目覆盖变量（大写项目名）
     if let Some(value) = lookup("CALNEXUS_LANG")
@@ -118,8 +93,7 @@ fn detect_from(lookup: impl Fn(&str) -> Option<String>) -> Lang {
     {
         return lang;
     }
-    // 2. 显式 POSIX 环境链（Unix 上 sys-locale 内部也读这些，显式读是为
-    //    Windows/边缘环境确定性）
+    // 2. 显式 POSIX 环境链（显式读以在 Windows/边缘环境获得确定性）
     for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
         if let Some(value) = lookup(key)
             && let Some(lang) = normalize_env_value(&value)
@@ -137,13 +111,8 @@ fn detect_from(lookup: impl Fn(&str) -> Option<String>) -> Lang {
     Lang::En
 }
 
-/// 归一化单个环境变量值（reference-pattern §2 normalize）：
-/// 去 `@modifier` 与 `.UTF-8` codeset、`_` → `-`；`C`/`POSIX`/空值 → `None`
-/// （回退链继续）；primary subtag 为 `zh` → `Zh`、`en` → `En`、其他语言 →
-/// `None`（不支持 → 回退链继续，链尾终结 en）。
-///
-/// 与用户显式输入的 BCP-47 解析（[`parse_lang`]）解耦：检测链行为在
-/// `icu` feature 两种组合下完全一致。
+/// 归一化单个环境变量值：剥离 `@modifier` 与 `.codeset`、`_` 换 `-`，取 primary
+/// subtag 映射 Zh/En；`C`/`POSIX`/空值/不支持语言返回 `None`（回退链继续）。
 fn normalize_env_value(raw: &str) -> Option<Lang> {
     let trimmed = raw.trim();
     let no_modifier = trimmed.split('@').next().unwrap_or("");
@@ -152,8 +121,7 @@ fn normalize_env_value(raw: &str) -> Option<Lang> {
     if matches!(tag.as_str(), "" | "C" | "POSIX") {
         return None;
     }
-    // BCP-47 标签结构：language [-script] [-region] [-variant]，取 primary subtag。
-    // split('-') 而非 starts_with("zh")，避免误匹配 "zhongwen" 等字符串。
+    // 取 primary subtag；用 split('-') 而非 starts_with("zh")，避免误匹配 "zhongwen"
     let primary = tag.split('-').next().unwrap_or("").to_ascii_lowercase();
     match primary.as_str() {
         "zh" => Some(Lang::Zh),
@@ -163,20 +131,19 @@ fn normalize_env_value(raw: &str) -> Option<Lang> {
 }
 
 // ============================================================================
-// Fluent 双束（dbnexus catalog.rs 模式，reference-pattern §3）
+// Fluent 双束
 // ============================================================================
 
-/// 英文目录（编译期内嵌磁盘文件，二者不可能失同步）。
+/// 英文目录（编译期内嵌磁盘文件，不可能失同步）。
 const EN_FTL: &str = include_str!("../locales/en/messages.ftl");
-/// 中文目录（编译期内嵌磁盘文件，二者不可能失同步）。
+/// 中文目录（编译期内嵌磁盘文件，不可能失同步）。
 const ZH_FTL: &str = include_str!("../locales/zh/messages.ftl");
 
 /// 缓存并发 Fluent 束（线程安全，首访问构建一次）。
 static EN_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
 static ZH_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
 
-/// 目录键归一化：对外键为点分形式（`"msg.unbound_variable"`），FTL 标识符
-/// 不允许 `.`，查表前映射为 `-`（`"msg-unbound_variable"`）。
+/// 目录键归一化：对外键为点分形式，FTL 标识符不允许 `.`，查表前映射为 `-`。
 fn fluent_id(key: &str) -> String {
     key.replace('.', "-")
 }
@@ -201,8 +168,7 @@ fn format_from_bundle(lang: Lang, key: &str, args: &[(&str, &str)]) -> Option<St
     )
 }
 
-/// 构建 concurrent 束：FTL 解析失败降级保留未解析资源（开发期错误显性化），
-/// `set_use_isolating(false)` 避免输出含 Unicode 隔离符。
+/// 构建 concurrent 束：FTL 解析失败降级保留未解析资源；关闭 Unicode 隔离符输出。
 fn build_bundle(ftl: &'static str, langid: &'static str) -> FluentBundle<FluentResource> {
     let resource = FluentResource::try_new(ftl.to_string()).unwrap_or_else(|e| e.0);
     let langid: LanguageIdentifier = langid
@@ -218,8 +184,7 @@ fn build_bundle(ftl: &'static str, langid: &'static str) -> FluentBundle<FluentR
 
 /// 全局 `t()`：供无法持有 `I18n` 实例的位置使用（语言经检测链缓存）。
 ///
-/// 当前 crate 内无生产调用点（panic hook 走 `I18n::from_detected()`），
-/// 仅供测试模块断言 panic 文案键存在；非测试构建 `#[cfg(test)]` 门控避免死代码。
+/// 仅供测试调用，故以 `#[cfg(test)]` 门控避免死代码。
 #[cfg(test)]
 pub(crate) fn global_t(key: &str) -> String {
     static GLOBAL_I18N: OnceLock<I18n> = OnceLock::new();
@@ -264,17 +229,10 @@ fn parse_lang_icu(s: &str) -> Lang {
 
 /// 使用简单字符串匹配解析语言标签（无 `icu` feature 时的回退）。
 ///
-/// 按 BCP-47 标准以 `-` 分割子标签，取第一段作为 language primary subtag。
-/// 此前仅精确匹配 `zh`/`zh-CN`/`zh-TW`，不识别 `zh-Hans`/`zh-Hant`/`zh-Hans-CN` 等
-/// 带脚本子标签的标准标签。现按 primary subtag 识别，覆盖所有 `zh-*` 变体
-/// （包括 `zh-Hans`/`zh-Hant`/`zh-Hans-CN`/`zh-Latn-pinyin`/`zh-x-*` 私有用标签）。
-///
-/// 通过 split('-') 而非 starts_with("zh") 避免误匹配 `zhongwen` 等字符串
-/// （`zhongwen` 的 primary subtag 是 `zhongwen` 而非 `zh`）。
+/// 按 `-` 分割取 primary subtag，识别所有 `zh-*` 变体（zh-Hans/zh-Hant/私有标签等）。
 #[cfg(not(feature = "icu"))]
 fn parse_lang_simple(s: &str) -> Lang {
     let lower = s.to_ascii_lowercase();
-    // BCP-47 标签结构：language [-script] [-region] [-variant]
     // 取第一段作为 language primary subtag（如 "zh-Hans-CN" → "zh"）
     let primary = lower.split('-').next().unwrap_or("");
     match primary {
@@ -367,7 +325,7 @@ mod tests {
         assert_eq!(I18n::from_str("!!!").lang(), Lang::En);
     }
 
-    /// "zhongwen" 以 "zh" 开头但不是有效的中文语言代码，应回退到 En
+    /// "zhongwen" 以 "zh" 开头但不是有效的中文语言代码，应回退到 En。
     #[test]
     fn test_from_str_zhongwen_falls_back_to_en() {
         let i18n = I18n::from_str("zhongwen");
@@ -379,8 +337,6 @@ mod tests {
     }
 
     // ===== BCP-47 脚本子标签解析 =====
-    // parse_lang_simple 此前仅精确匹配 "zh"/"zh-CN"/"zh-TW"，
-    // 不识别 "zh-Hans"/"zh-Hant"/"zh-Hans-CN" 等带脚本的标准 BCP-47 标签。
 
     #[test]
     fn test_from_str_zh_hans() {
@@ -544,7 +500,7 @@ mod tests {
         assert_eq!(en.t(""), "");
     }
 
-    /// 缺失键在英文束回退后仍缺失 → 返回键名本身，不 panic（§5.3）。
+    /// 缺失键英文束回退后仍缺失时返回键名本身，不 panic。
     #[test]
     fn test_missing_key_falls_back_through_en_bundle_without_panic() {
         for lang in [Lang::En, Lang::Zh] {
@@ -629,26 +585,25 @@ mod tests {
     #[test]
     fn test_tf_unknown_key_returns_key_itself() {
         let en = I18n::new(Lang::En);
-        // 未知键：返回键本身，不进行替换
+        // 未知键返回键本身，不做替换
         assert_eq!(
             en.tf("nonexistent.key", &[("name", "x")]),
             "nonexistent.key"
         );
     }
 
-    /// 占位符缺参：Fluent 语义原样回显 `{$name}`（原 JSON 目录为 `{name}`）。
+    /// 占位符缺参：Fluent 语义原样回显 `{$name}`。
     #[test]
     fn test_tf_missing_placeholder_preserved() {
         let i18n = I18n::new(Lang::En);
-        // 模板 "Function { $name } expects { $expected } args, got { $actual }"
-        // 只提供 name，缺失 expected 和 actual —— Fluent 回显 {$expected}/{$actual}
+        // 只提供 name，缺失 expected/actual —— Fluent 回显 {$expected}/{$actual}
         assert_eq!(
             i18n.tf("msg.function_arg_count", &[("name", "sin")]),
             "Function sin expects {$expected} args, got {$actual}"
         );
     }
 
-    /// 空参数：tf 与 t 等价（同一 Fluent 渲染路径，缺参占位符回显）。
+    /// 空参数时 tf 与 t 等价（同一渲染路径，缺参占位符回显）。
     #[test]
     fn test_tf_empty_args_equivalent_to_t() {
         let en = I18n::new(Lang::En);
@@ -663,7 +618,7 @@ mod tests {
         assert_eq!(zh.tf("error.parse", &[]), zh.t("error.parse"));
     }
 
-    /// 未知语言（"ar"）解析为 En，取 en 束（§5.3）。
+    /// 未知语言（"ar"）解析为 En，取 en 束。
     #[test]
     fn test_unknown_language_uses_en_bundle() {
         let i18n = I18n::from_str("ar");
@@ -684,7 +639,7 @@ mod tests {
         assert_eq!(zh.t("label.cached_suffix"), " （已缓存）");
     }
 
-    // ===== 守卫测试（reference-pattern §5）=====
+    // ===== 守卫测试 =====
 
     /// 从 FTL 文本提取消息键集合（`id = value` 行，跳过注释/空行）。
     fn ftl_keys(ftl: &str) -> Vec<String> {
@@ -694,7 +649,7 @@ mod tests {
             .collect()
     }
 
-    /// §5.1 键齐性：EN/ZH 两束 FTL 键集合必须一致（迁移不漏译）。
+    /// 键齐性：EN/ZH 两束 FTL 键集合必须一致。
     #[test]
     fn test_en_zh_ftl_key_parity() {
         let en_keys = ftl_keys(EN_FTL);
@@ -738,8 +693,7 @@ mod tests {
         );
     }
 
-    /// §5.4 磁盘/内嵌同步守卫：include_str! 的常量与磁盘文件逐字节一致，
-    /// 且 locales/ 目录不存在未内嵌的落单资源文件。
+    /// 磁盘/内嵌同步守卫：include_str! 常量与磁盘文件逐字节一致。
     #[test]
     fn test_embedded_ftl_matches_locales_dir() {
         assert_eq!(
@@ -770,7 +724,7 @@ mod tests {
         assert_eq!(disk, vec!["en".to_string(), "zh".to_string()]);
     }
 
-    // ===== 检测链（§5.2）：env 读取抽纯函数 detect_from =====
+    // ===== 检测链：env 读取抽纯函数 detect_from =====
 
     /// 构造合成 env 查表闭包（不触碰进程环境，并行测试安全）。
     fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
@@ -854,7 +808,7 @@ mod tests {
         );
     }
 
-    /// 结果域收敛：任何输入链结果只能是 En 或 Zh（§0.4/§0.5）。
+    /// 结果域收敛：任何输入链的结果只能是 En 或 Zh。
     #[test]
     fn test_detect_result_domain_is_en_or_zh() {
         let samples = [
@@ -896,7 +850,7 @@ mod tests {
         assert_eq!(normalize_env_value("zh_CN@pinyin"), Some(Lang::Zh));
     }
 
-    // ===== Fluent 束直测（不触碰全局 locale 状态，并行安全）=====
+    // ===== Fluent 束直测（不触碰全局 locale 状态）=====
 
     #[test]
     fn test_bundle_direct_en_simple() {

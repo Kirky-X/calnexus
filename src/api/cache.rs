@@ -5,9 +5,7 @@
 
 use crate::core::EvalContext;
 
-/// 构建 API 缓存键。
-///
-/// 格式：`api:<func_name>|<args>\0分隔|vars=<hash>|timeout=<nanos>`
+/// 构建 API 缓存键：格式 `api:<func_name>|<args>`。
 #[allow(dead_code)]
 pub fn build_api_cache_key(func_name: &str, args: &[String], _ctx: &EvalContext) -> String {
     let args_str = args.join("\0");

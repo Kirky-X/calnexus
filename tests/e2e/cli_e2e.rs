@@ -1,12 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S9 CLI E2E —— 批处理退出码契约、逐行错误结构、env 子进程隔离。
-//!
-//! 既有 cli_integration 覆盖批处理基本路径/注释跳过/文件不存在；
-//! 本模块补齐**部分失败退出码 1**、JSON 数组逐行 error 结构、
-//! 1000 行上限与 4096 字符行上限拒绝、`--var` 与批处理/JSON 组合、
-//! `CALNEXUS_CACHE_SIZE` env 注入（全部经子进程，零环境污染）。
+//! S9 CLI E2E：批处理退出码契约、JSON 逐行错误结构、行数/行长上限、env 注入。
+//! 全部经子进程验证，零环境污染。
 
 #![cfg(feature = "cli")]
 
@@ -43,7 +39,7 @@ fn cli_batch_all_success_exit_0() {
 
 #[test]
 fn cli_batch_partial_failure_exit_1() {
-    // 既有套件未覆盖的退出码 1：混合成败
+    // 部分失败退出码 1
     let f = batch_file("2+2\n1/0\n(2+3\n4*5\n");
     cmd()
         .arg("--batch")
@@ -57,7 +53,7 @@ fn cli_batch_partial_failure_exit_1() {
 
 #[test]
 fn cli_batch_json_mixed_success_and_error_entries() {
-    // JSON 模式逐行结构：成功行 result/domain/cache，失败行 error
+    // JSON 逐行结构：成功行 result/domain/cache，失败行 error
     let f = batch_file("2+2\n1/0\n");
     let output = cmd()
         .arg("--json")
@@ -74,7 +70,7 @@ fn cli_batch_json_mixed_success_and_error_entries() {
     assert_eq!(arr.len(), 2);
     let ok = &arr[0];
     assert_eq!(ok["line"], 1);
-    // result 为格式化字符串（batch JSON 契约）
+    // result 为格式化字符串
     assert_eq!(ok["result"], "4");
     assert_eq!(ok["domain"], "arithmetic");
     assert_eq!(ok["cache"], "miss");
@@ -131,7 +127,7 @@ fn cli_batch_var_binding_applies() {
 
 #[test]
 fn cli_env_cache_size_accepted() {
-    // CALNEXUS_CACHE_SIZE=1：合法预算被接受，求值不受影响
+    // 合法缓存预算被接受，求值不受影响
     cmd()
         .env("CALNEXUS_CACHE_SIZE", "1")
         .arg("--json")
@@ -165,7 +161,7 @@ fn cli_precision_flag_contracts() {
         .arg("1/3")
         .assert()
         .code(2);
-    // 超过 MAX_PRECISION(10000) → evaluate 域校验拒绝，退出码 1
+    // 超过 MAX_PRECISION(10000) → 退出码 1
     cmd()
         .arg("--precision")
         .arg("10001")
@@ -173,7 +169,7 @@ fn cli_precision_flag_contracts() {
         .assert()
         .code(1)
         .stderr(predicates::str::contains("10000").or(predicates::str::contains("10001")));
-    // 合法 precision：0 视为默认（退出 0）
+    // precision=0 视为默认
     cmd()
         .arg("--precision")
         .arg("0")

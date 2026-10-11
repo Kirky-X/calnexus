@@ -2,17 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! Precision 计算域：大整数运算、精确分数、高精度小数。
-//!
-//! 设计依据：
-//! - precision-domain spec：10 个 requirements / 21 个 scenarios
-//! - 基于 `num_bigint::BigInt` + `num_rational::BigRational`，priority=25
-//!
-//! 路由策略：
-//! - AST 含 `BigNumber` 节点（16+ 位整数字面量）→ 路由至本域
-//! - AST 含 `precision()` 函数调用 → 路由至本域
-//! - `--precision N` CLI 参数 → CLI 层直接使用本域（绕过路由器）
-//!
-//! 内部求值统一使用 `BigRational`，结果根据分母是否为 1 转换为 `BigInt` 或 `BigRational`。
+//! 含 BigNumber 或 precision() 的表达式路由至本域；内部统一用 BigRational 求值。
 
 use super::common::{
     ensure_math_constants, resolve_variable, unsupported_function_error, unsupported_node_error,
@@ -27,14 +17,11 @@ use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{Signed, Zero};
 
-// Re-export format_bigrational（供 domains/mod.rs 在 cli/http/mcp 组合下对外暴露）
+// Re-export format_bigrational（供 domains/mod.rs 对外暴露）
 #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
 pub use crate::math::precision::format_bigrational;
 
-/// Precision 计算域。
-///
-/// priority=25，低于 Complex/Matrix（30）但高于 Statistics（20）和 Arithmetic（10）。
-/// 支持大整数运算、精确分数、大数阶乘、大整数幂。
+/// Precision 计算域（priority=25）：大整数运算、精确分数、大数阶乘、大整数幂。
 pub struct PrecisionDomain;
 
 impl CalculationDomain for PrecisionDomain {
@@ -47,8 +34,7 @@ impl CalculationDomain for PrecisionDomain {
     }
 
     fn supports(&self, ast: &AstNode) -> bool {
-        // 含 BigNumber 或 precision() 时认领，但排除其他域的专用函数
-        // （如 is_prime(BigNumber) 应路由至 NumberTheoryDomain，而非本域）
+        // 含 BigNumber 或 precision() 时认领，但排除其他域的专用函数（让位更具体的域）。
         contains_precision(ast) && !contains_other_domain_function(ast)
     }
 
@@ -148,10 +134,7 @@ impl PrecisionDomain {
             }
             BinaryOp::Pow => {
                 let exp = math_prec::rational_to_int(&b, "power exponent")?;
-                // 安全约束1：拒绝超大指数（绝对值），防止 DoS。
-                // `BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
-                // 即先计算 `a^|exp|`（巨大中间值）再取倒数。故负指数绝对值超限同样会 DoS
-                // （`2^(-2000000000)` 计算 `2^2000000000` ~6 亿位数字）。必须用 `abs()` 检查。
+                // 安全约束：指数按绝对值限幅，负指数同样受限（pow 内部先算 a^|exp| 再取倒数，防 DoS）。
                 if exp.abs() > BigInt::from(MAX_POW_EXPONENT) {
                     return Err(CalcError::domain(format!(
                         "power exponent absolute value must not exceed {} (got {})",
@@ -165,10 +148,7 @@ impl PrecisionDomain {
                         ],
                     ));
                 }
-                // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
-                // `(10^10000)^99999` 可产生 ~1GB 输出。
-                // 指数已受约束1限制，但底数 `a` 可为任意大小 BigInt，故需复合限制。
-                // 复用 core 层 `check_pow_output_size`，number_theory/combinatorics 域共用同一检查。
+                // 安全约束：底数 × 指数复合限制，复用 core 层 check_pow_output_size 防超大输出 DoS。
                 let abs_exp_u64 = u64::try_from(&exp.abs()).map_err(|_| {
                     CalcError::domain(format!("power exponent too large: {}", exp)).with_i18n(
                         "msg.precision.power_exponent_too_large",
@@ -294,11 +274,7 @@ impl PrecisionDomain {
     }
 }
 
-/// 递归检查 AST 是否应路由至 PrecisionDomain。
-///
-/// 路由条件：
-/// - 含 `BigNumber` 节点（大整数字面量）
-/// - 含 `precision()` 函数调用
+/// 递归检查 AST 是否应路由至 PrecisionDomain（含 BigNumber 或 precision()）。
 fn contains_precision(ast: &AstNode) -> bool {
     match ast {
         AstNode::BigNumber(_) => true,
@@ -318,8 +294,7 @@ fn contains_precision(ast: &AstNode) -> bool {
     }
 }
 
-/// 其他域的专用函数列表（NumberTheory + Combinatorics）。
-/// 当 AST 含这些函数调用时，PrecisionDomain 不应认领，让位给更具体的域。
+/// 其他域的专用函数列表：AST 含这些调用时 PrecisionDomain 让位给更具体的域。
 const OTHER_DOMAIN_FUNCTIONS: &[&str] = &[
     "gcd",
     "lcm",
@@ -399,8 +374,7 @@ fn extract_precision_value(ast: &AstNode) -> Result<usize, CalcError> {
                 .with_i18n("msg.precision.precision_must_be_positive", vec![]),
         );
     }
-    // 安全约束：拒绝超大精度值，防止 format_decimal 循环 DoS
-    // （precision(N, expr) 表达式语法绕过 server 层校验）
+    // 安全约束：拒绝超大精度值（MAX_PRECISION 上限），防 format_decimal 循环 DoS。
     if v > MAX_PRECISION {
         return Err(CalcError::domain(format!(
             "precision N must not exceed {} (got {})",
@@ -469,7 +443,7 @@ mod tests {
         }
     }
 
-    // ===== Requirement 1: 大整数运算 =====
+    // ===== 大整数运算 =====
 
     #[test]
     fn test_big_integer_addition() {
@@ -489,7 +463,7 @@ mod tests {
         assert_bigint(&result, "999999999998000000000001");
     }
 
-    // ===== Requirement 2: 精确分数 =====
+    // ===== 精确分数 =====
 
     #[test]
     fn test_fraction_addition() {
@@ -508,7 +482,7 @@ mod tests {
         assert_bigrational(&result, "1", "2");
     }
 
-    // ===== Requirement 3: 高精度小数 =====
+    // ===== 高精度小数 =====
 
     #[test]
     fn test_precision_50_decimal() {
@@ -531,7 +505,7 @@ mod tests {
         assert_bigrational(&result, "1", "3");
     }
 
-    // ===== Requirement 4: 大数阶乘 =====
+    // ===== 大数阶乘 =====
 
     #[test]
     fn test_factorial_100() {
@@ -539,7 +513,7 @@ mod tests {
         let ast = parse("factorial(100)").unwrap();
         let domain = PrecisionDomain;
         let result = domain.evaluate(&ast, &default_ctx()).unwrap();
-        // 100! = 93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000
+        // 100! 共 158 位
         let EvalResult::BigInt(b) = &result else {
             panic!("expected BigInt, got {:?}", result)
         };
@@ -555,7 +529,7 @@ mod tests {
         assert_bigint(&result, "120");
     }
 
-    // ===== Requirement 5: 精度触发 =====
+    // ===== 精度触发 =====
 
     #[test]
     fn test_precision_flag_triggers_routing() {
@@ -579,7 +553,7 @@ mod tests {
         assert!(!domain.supports(&ast));
     }
 
-    // ===== Requirement 6: 大整数幂运算 =====
+    // ===== 大整数幂运算 =====
 
     #[test]
     fn test_power_2_100() {
@@ -601,7 +575,7 @@ mod tests {
         assert_bigint(&result, &expected);
     }
 
-    // ===== Requirement 7: 分数运算 =====
+    // ===== 分数运算 =====
 
     #[test]
     fn test_fraction_times_integer() {
@@ -619,7 +593,7 @@ mod tests {
         assert_bigint(&result, "2");
     }
 
-    // ===== Requirement 8: 混合运算 =====
+    // ===== 混合运算 =====
 
     #[test]
     fn test_bigint_plus_fraction() {
@@ -640,7 +614,7 @@ mod tests {
         assert_bigrational(&result, "7", "3");
     }
 
-    // ===== Requirement 9: 域路由 =====
+    // ===== 域路由 =====
 
     #[test]
     fn test_precision_function_routes() {
@@ -670,7 +644,7 @@ mod tests {
         assert_bigint(&result, "3");
     }
 
-    // ===== Requirement 10: 输出格式 =====
+    // ===== 输出格式 =====
 
     #[test]
     fn test_bigint_output_no_scientific() {
@@ -1211,9 +1185,7 @@ mod tests {
 
     #[test]
     fn test_precision_bignumber_zero() {
-        // extract_precision_value BigNumber("0") → v == 0 → DomainError
-        // Number(0.0) 走 line 242 的 *n > 0.0 检查，不会到达 lines 265-268。
-        // 只有 BigNumber("0") 经过 BigInt 解析后 v == 0 才能到达此分支。
+        // 仅 BigNumber("0") 经 BigInt 解析后 v == 0 才到达此分支（Number(0.0) 提前拒绝）。
         let ast = AstNode::FunctionCall(
             "precision".to_string(),
             vec![AstNode::BigNumber("0".to_string()), AstNode::Number(1.0)],
@@ -1331,11 +1303,7 @@ mod tests {
         );
     }
 
-    /// 小负指数应成功（产生有理数，如 2^-1 = 1/2）。
-    ///
-    /// 注意：大负指数仍有 DoS 风险（见 `test_pow_oversized_negative_exponent_returns_error`），
-    /// 因为 `BigRational::pow(neg_i32)` 内部计算 `a^|exp|` 再取倒数，
-    /// 中间值 `a^|exp|` 可能巨大。故负指数也受 `MAX_POW_EXPONENT` 的 `abs()` 检查约束。
+    /// 小负指数应成功（产生有理数）；负指数绝对值同样受 MAX_POW_EXPONENT 约束防 DoS。
     #[test]
     fn test_pow_negative_exponent_unbounded() {
         let ast = AstNode::BinaryOp(
@@ -1348,13 +1316,7 @@ mod tests {
         assert_bigrational(&result, "1", "2");
     }
 
-    /// `a^(-(MAX_POW_EXPONENT+1))` 应返回 Domain 错误。
-    ///
-    /// 漏洞：`BigRational::pow(neg_i32)` 内部实现为 `Pow::pow(self, (-exp) as u64).reciprocal()`，
-    /// 即先计算 `a^|exp|`（巨大中间值），再取倒数。`2^(-100001)` 会计算 `2^100001`（~30104 位数字），
-    /// 而 `2^(-2000000000)` 会计算 `2^2000000000`（~6 亿位数字，~600MB）导致内存爆炸 + CPU 挂死。
-    ///
-    /// 对指数取 `abs()` 后与 `MAX_POW_EXPONENT` 比较，负指数绝对值超限同样拒绝。
+    /// `a^(-(MAX_POW_EXPONENT+1))` 应返回 Domain 错误：负指数超限同样可致 DoS，按 abs() 拒绝。
     #[test]
     fn test_pow_oversized_negative_exponent_returns_error() {
         let oversized_neg = -(MAX_POW_EXPONENT as i64 + 1); // -100001
@@ -1375,9 +1337,7 @@ mod tests {
 
     // ===== 底数复合限制测试 =====
 
-    /// `check_pow_output_size` 单元测试：小底数 × 大指数应通过。
-    ///
-    /// `2^100000`：底数 2 的 bits=2（二进制 `10`），2×100000=200000 ≤ 3_320_000，通过。
+    /// `check_pow_output_size`：小底数 × 大指数应通过（2^100000）。
     #[test]
     fn test_check_pow_output_size_small_base_passes() {
         // 2 的 bits = 2（二进制 `10` 需 2 位）
@@ -1385,13 +1345,10 @@ mod tests {
         assert!(check_pow_output_size(2, 100_000).is_ok());
     }
 
-    /// `check_pow_output_size` 单元测试：大底数 × 大指数应拒绝。
-    ///
-    /// `(10^10000)^99999`：底数 bits≈33219，33219×99999≈3.3e9 > 3_320_000，拒绝。
+    /// `check_pow_output_size`：大底数 × 大指数应拒绝（(10^10000)^99999）。
     #[test]
     fn test_check_pow_output_size_large_base_rejects() {
-        // 10^10000 的 bits ≈ 33219（log2(10^10000) = 10000 × log2(10) ≈ 33219）
-        // 33219 × 99999 ≈ 3.3e9 > 3_320_000，应拒绝
+        // 底数 bits≈33219，×99999 超上限，应拒绝
         let result = check_pow_output_size(33_219, 99_999);
         assert!(
             matches!(result, Err(ref e) if e.kind == ErrorKind::Domain),
@@ -1400,18 +1357,14 @@ mod tests {
         );
     }
 
-    /// `check_pow_output_size` 边界测试：恰好等于上限应通过。
-    ///
-    /// 构造 base_bits=33，exp=100000：33×100000=3_300_000 ≤ 3_320_000，通过。
+    /// `check_pow_output_size` 边界：恰好等于上限应通过（base_bits=33, exp=100000）。
     #[test]
     fn test_check_pow_output_size_boundary_at_limit_passes() {
         // 33 × 100000 = 3_300_000 ≤ 3_320_000，通过
         assert!(check_pow_output_size(33, 100_000).is_ok());
     }
 
-    /// `check_pow_output_size` 边界测试：刚超过上限应拒绝。
-    ///
-    /// 构造 base_bits=34，exp=100000：34×100000=3_400_000 > 3_320_000，拒绝。
+    /// `check_pow_output_size` 边界：刚超过上限应拒绝（base_bits=34, exp=100000）。
     #[test]
     fn test_check_pow_output_size_boundary_over_limit_rejects() {
         // 34 × 100000 = 3_400_000 > 3_320_000，拒绝
@@ -1423,10 +1376,7 @@ mod tests {
         );
     }
 
-    /// 端到端测试：安全大小的幂运算应正常通过复合限制检查。
-    ///
-    /// `(2^200)^10`：底数 bits=201，201×10=2010 ≤ 3_320_000，通过。
-    /// 验证复合限制不会误拦合法计算。
+    /// 端到端：安全大小的幂运算应通过复合限制（(2^200)^10），不误拦合法计算。
     #[test]
     fn test_pow_compound_limit_allows_safe_computation() {
         // 2^200 作为底数（bits=201），指数 10
@@ -1446,10 +1396,7 @@ mod tests {
         );
     }
 
-    /// 端到端测试：大底数 × 大指数应被复合限制拦截。
-    ///
-    /// `(2^33)^100000`：底数 bits=34，34×100000=3_400_000 > 3_320_000，拒绝。
-    /// 使用 2^33 作为底数（构造简单），避免实际 DoS。
+    /// 端到端：大底数 × 大指数应被复合限制拦截（(2^33)^100000）。
     #[test]
     fn test_pow_compound_limit_rejects_large_base_large_exp() {
         // 2^33 = 8589934592 作为底数（bits=34），指数 100000

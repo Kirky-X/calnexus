@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Performance regression tests (TEST.md §9).
-//!
-//! 使用 `assert_cmd` + `std::time::Instant`（无新 dev-deps）。
-//! PRD §5.1 性能目标 + 2x CI headroom。
+//! 性能回归测试：基于 assert_cmd + Instant 验证 PRD §5.1 性能目标（2x headroom）。
 
 mod common;
 use common::calnexus_cli;
@@ -12,8 +9,7 @@ use common::calnexus_cli;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-/// criterion 基线比较。
-/// 若 `target/criterion/main.baseline` 不存在，跳过测试。
+/// criterion 基线比较；无基线时跳过测试。
 #[test]
 fn perf_001_criterion_baseline_comparison() {
     let baseline = Path::new("target/criterion/main.baseline");
@@ -21,8 +17,7 @@ fn perf_001_criterion_baseline_comparison() {
         eprintln!("skipped: no criterion baseline at target/criterion/main.baseline");
         return;
     }
-    // 基线存在时，验证当前 benchmark 输出存在即可（详细比较由后续用例完成）
-    // 注：不强制断言 current 存在——bench 可能尚未运行，仅作为基线存在的提示。
+    // 不强制断言 current 存在：bench 可能尚未运行，仅作提示。
     let current = Path::new("target/criterion/main");
     if !current.exists() {
         eprintln!(
@@ -31,8 +26,7 @@ fn perf_001_criterion_baseline_comparison() {
     }
 }
 
-/// 若任一 benchmark 相对基线回归 >10%，则失败。
-/// 若无基线，跳过。
+/// benchmark 回归 >10% 视为失败；无基线时跳过。
 #[test]
 fn perf_002_regression_threshold_10pct() {
     let baseline = Path::new("target/criterion/main.baseline");
@@ -40,7 +34,7 @@ fn perf_002_regression_threshold_10pct() {
         eprintln!("skipped: no criterion baseline for regression check");
         return;
     }
-    // 简化：仅验证基线目录结构存在（实际回归比较需 cargo bench 输出解析）
+    // 简化：仅验证基线目录非空（实际比较需解析 cargo bench 输出）。
     let entries = std::fs::read_dir(baseline).expect("baseline dir readable");
     let count = entries.count();
     assert!(count > 0, "baseline should contain at least one entry");
@@ -109,8 +103,7 @@ fn perf_004_batch_1000_under_1s() {
     );
 }
 
-/// valgrind DHAT 内存泄漏检查。
-/// 若 valgrind 未安装，跳过。
+/// valgrind DHAT 内存泄漏检查；valgrind 未安装时跳过。
 #[test]
 fn perf_005_valgrind_dhat_memory_check() {
     let valgrind_check = std::process::Command::new("valgrind")

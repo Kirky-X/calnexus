@@ -1,16 +1,14 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! Cache benchmarks (TEST.md §7).
-//!
-//! 运行：`cargo bench --bench cache_bench`
-//! 基线：`target/criterion/` 目录。
+//! 缓存命中/未命中基准，基线存于 `target/criterion/`。
+//! 运行：`cargo bench --bench cache_bench`。
 
 use calnexus::{AstCanonicalizer, CacheManager, EvalContext, parse};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-/// cache hit < 100μs（第二次求值命中缓存）
+/// 缓存命中（二次求值）：目标 <100μs。
 fn bench_cache_hit(c: &mut Criterion) {
     let expressions = vec!["2+3", "sin(1.5)+cos(0.5)", "(2+9)*7-6", "100!"];
     let mut group = c.benchmark_group("cache_hit");
@@ -18,7 +16,7 @@ fn bench_cache_hit(c: &mut Criterion) {
     for expr in &expressions {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
-        // 预填充缓存：第一次求值写入
+        // 预填充：第一次求值写入缓存
         let ast = parse(expr).expect("parse failed");
         let (_canonical_ast, _) = AstCanonicalizer::canonicalize(&ast).expect("canon failed");
         let _ = calnexus::evaluate(expr, &ctx, None, &cache);
@@ -33,7 +31,7 @@ fn bench_cache_hit(c: &mut Criterion) {
     group.finish();
 }
 
-/// cache miss < 1ms（第一次求值，冷启动）
+/// 缓存未命中（冷启动首次求值）：目标 <1ms。
 fn bench_cache_miss(c: &mut Criterion) {
     let expressions = vec![
         "2+3",

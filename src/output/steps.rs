@@ -3,32 +3,14 @@
 
 //! 求值步骤生成器。
 //!
-//! 遍历 AST 以求值顺序生成步骤列表，每行格式 `lhs op rhs = partial_result`。
-//!
-//! PRD §4.1.1 示例：
-//! - `--steps "(2+9)*7-6"` 输出 `2+9=11 → 11*7=77 → 77-6=71`
-//!
-//! 设计依据：
-//! - 步骤是 CLI 侧展示关注点，纯 AST walker
-//! - 复用 256 深度限制防止栈溢出
-//! - post-order 遍历 + 256 深度上限
+//! 后序遍历 AST 生成步骤行 `lhs op rhs = partial_result`，深度上限与 parser 一致（256）。
 
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, UnaryOp};
 
 /// 最大 AST 深度（与 parser 保持一致）。
 const MAX_DEPTH: usize = 256;
 
-/// 生成求值步骤列表。
-///
-/// 遍历 AST 后序（先子节点，后父节点），每个非叶节点输出一行
-/// `lhs op rhs = partial_result`。叶节点（Number/Variable/Matrix）不输出步骤，
-/// 但返回其值用于父节点的步骤。
-///
-/// 顶层 List（如 `calnexus --steps '[1+1, 2+2]'`）特殊处理：递归 walk 每个元素
-/// 以输出子节点步骤，但 List 本身不输出步骤。List 作为子树（如 `[1,2]+1`）会
-/// 返回 Err（steps 模式不支持列表参与运算）。
-///
-/// `ctx` 提供变量绑定；未绑定的变量返回 Err（与 ArithmeticDomain 行为一致）。
+/// 生成求值步骤；叶节点无步骤，顶层 List 只输出子元素，未绑定变量报 Err。
 pub fn generate_steps(ast: &AstNode, ctx: &EvalContext) -> Result<Vec<String>, CalcError> {
     let mut steps = Vec::new();
     // 顶层 List 特殊处理：仅 walk 子元素以输出步骤，List 本身不求值
@@ -42,9 +24,7 @@ pub fn generate_steps(ast: &AstNode, ctx: &EvalContext) -> Result<Vec<String>, C
     Ok(steps)
 }
 
-/// 递归遍历 AST，返回当前节点的数值结果（用于父节点的步骤格式化）。
-///
-/// `depth` 为当前递归深度，超过 `MAX_DEPTH` 返回 `DepthExceeded`。
+/// 递归遍历 AST，返回当前节点数值（供父节点格式化步骤）；depth 超过 MAX_DEPTH 报错。
 fn walk(
     node: &AstNode,
     ctx: &EvalContext,
@@ -62,12 +42,11 @@ fn walk(
         )
         .with_i18n("msg.output.steps_no_complex", vec![])),
         AstNode::Variable(name) => {
-            // 用户绑定的变量优先（与 scientific/statistics/matrix domain 预绑定 pi/e 一致）
+            // 用户绑定的变量优先于内置常量 pi/e
             if let Some(v) = ctx.get_var(name) {
                 return Ok(v);
             }
-            // 数学常量 pi/e：parser.rs line 708 将 0-arity FunctionCall("pi"/"e") 转为 Variable，
-            // 此处识别为数学常量，而非未绑定变量（否则 pi/e 被错误求值为 0.0）
+            // parser 将 pi/e 转为 Variable，此处识别为数学常量，避免误判为未绑定变量
             match name.as_str() {
                 "pi" => Ok(std::f64::consts::PI),
                 "e" => Ok(std::f64::consts::E),
@@ -120,8 +99,7 @@ fn walk(
             "steps mode does not support lists as sub-expressions",
         )
         .with_i18n("msg.output.steps_no_list", vec![])),
-        // Str 节点仅合法作为 FunctionCall 实参；出现在 walk 中表示它被直接求值
-        // （如 BinaryOp 操作数），steps 模式不支持字符串参与算术运算。
+        // Str 仅合法作为 FunctionCall 实参，被直接求值（如作为操作数）时报错
         AstNode::Str(_) => Err(CalcError::domain(
             "steps mode does not support string literals in arithmetic",
         )
@@ -129,13 +107,7 @@ fn walk(
     }
 }
 
-/// 解析 BigNumber 字符串为 f64（steps 模式专用）。
-///
-/// BigNumber 设计用于高精度整数，但 steps 模式只支持 f64 计算。
-/// 当 BigNumber 超过 f64 安全整数范围（2^53 ≈ 9e15）时，parse::<f64>()
-/// 会丢失精度，应显式报错（失败显性化）而非静默丢失。
-///
-/// 安全范围内的小 BigNumber（如 "42"、"1234567890123456"）正常解析。
+/// 解析 BigNumber 为 f64（steps 模式专用）；超出 f64 安全整数范围（2^53）时报错而非丢精度。
 fn parse_bignumber_for_steps(s: &str) -> Result<f64, CalcError> {
     // 先尝试 f64 解析（捕获非数字字符串）
     let v: f64 = s.parse().map_err(|_| {
@@ -153,8 +125,7 @@ fn parse_bignumber_for_steps(s: &str) -> Result<f64, CalcError> {
             ),
         );
     }
-    // 检查是否在 f64 安全整数范围内（2^53 ≈ 9.007e15）
-    // 超过此范围，f64 无法精确表示所有整数，会丢失精度
+    // 超出 f64 安全整数范围（2^53）会丢失整数精度，显式报错
     if v.abs() > 9_007_199_254_740_992.0 {
         return Err(CalcError::domain(format!(
             "BigNumber '{}' exceeds f64 safe integer range in steps mode",
@@ -361,10 +332,7 @@ fn check_positive(name: &str, x: f64) -> Result<(), CalcError> {
     Ok(())
 }
 
-/// 验证参数为 i64 范围内的整数（gcd/lcm 域约束）。
-///
-/// 拒绝非整数（如 3.5）和超出 i64 范围的值（如 1e20），
-/// 避免 `as i64` cast 静默丢失小数部分或饱和到边界值。
+/// 验证参数为 i64 范围内整数（gcd/lcm）；避免 `as i64` cast 静默丢小数或饱和。
 fn check_integer_arg(name: &str, x: f64) -> Result<i64, CalcError> {
     // 拒绝非整数（fract != 0 表示有小数部分）
     if x.fract() != 0.0 {
@@ -445,13 +413,7 @@ fn binary_op_str(op: BinaryOp) -> &'static str {
     }
 }
 
-/// 格式化数值为步骤中的字符串。
-///
-/// - NaN/Inf：可读字符串（`NaN` / `inf` / `-inf`）
-/// - 零：保留负号（`0` / `-0`），与 `f64::Display` 一致
-/// - 整数：避免科学计数法（`42` / `1000000000000000000000`）
-/// - 小数：默认 `f64::Display` 最短可逆表示；检测浮点精度噪声（如 `0.1+0.2` 的
-///   `0.30000000000000004`）并舍入到 10 位小数去尾零
+/// 格式化数值为步骤字符串：整数避免科学计数法，小数抑制浮点噪声（如 0.1+0.2 → 0.3）。
 fn format_value(v: f64) -> String {
     if v.is_nan() {
         return "NaN".to_string();
@@ -476,12 +438,12 @@ fn format_value(v: f64) -> String {
         if v.abs() <= i64::MAX as f64 {
             return format!("{}", v as i64);
         }
-        // 大整数：用 {:.0} 避免科学计数法（f64::Display 在大数时可能输出 "1e21"）
+        // 大整数：用 {:.0} 避免科学计数法
         return format!("{:.0}", v);
     }
     // 小数：默认最短可逆表示
     let default = format!("{}", v);
-    // 检测浮点精度噪声：连续 7 个 0 或 9（如 0.30000000000000004 中的 00000000）
+    // 检测浮点精度噪声：连续 7 个 0 或 9
     if has_floating_point_noise(&default) {
         // 舍入到 10 位小数，去尾零
         let rounded = format!("{:.10}", v);
@@ -493,10 +455,7 @@ fn format_value(v: f64) -> String {
     default
 }
 
-/// 检测浮点精度噪声模式。
-///
-/// 当 `f64::Display` 输出包含连续 7 个 `0` 或 `9` 时，通常是浮点运算的精度噪声
-/// （如 `0.1+0.2 = 0.30000000000000004`、`1-0.9 = 0.09999999999999998`）。
+/// 检测浮点精度噪声：`f64::Display` 输出含连续 7 个 0 或 9。
 fn has_floating_point_noise(s: &str) -> bool {
     s.contains("0000000") || s.contains("9999999")
 }
@@ -798,10 +757,7 @@ mod tests {
         assert!(steps[0].starts_with("pi()="));
     }
 
-    // ===== 回归测试：Variable("pi")/Variable("e") 应返回数学常量，而非 0.0 =====
-    // 用户报告 bug：`calnexus --steps 'sin(pi/2)'` 输出 `0/2=0 → sin(0)=0`
-    // 根因：parser 将 `pi`/`e` 转为 Variable（parser.rs line 708），但 steps.rs walk() 的
-    // Variable 分支用 `ctx.get_var(name).unwrap_or(0.0)`，未绑定变量被错误求值为 0.0。
+    // ===== 回归：Variable("pi")/Variable("e") 应返回数学常量，而非 0.0 =====
 
     #[test]
     fn steps_variable_pi_returns_math_constant() {
@@ -833,7 +789,7 @@ mod tests {
 
     #[test]
     fn steps_sin_pi_over_2_equals_one() {
-        // sin(pi/2) = 1（用户报告的 bug 回归测试）
+        // sin(pi/2) = 1（回归）
         let ast = AstNode::FunctionCall(
             "sin".to_string(),
             vec![AstNode::BinaryOp(
@@ -868,8 +824,7 @@ mod tests {
 
     #[test]
     fn steps_user_var_pi_overrides_constant() {
-        // 用户显式绑定 pi 时，覆盖数学常量（与 scientific/statistics/matrix domain 一致）
-        // 叶节点不输出步骤，通过父节点验证
+        // 用户显式绑定的 pi 覆盖数学常量；叶节点不输出步骤，用父节点验证
         let ctx = EvalContext::new().with_var("pi", 100.0);
         let ast = AstNode::BinaryOp(
             BinaryOp::Add,
@@ -964,9 +919,7 @@ mod tests {
 
     #[test]
     fn steps_depth_exceeded_returns_error() {
-        // 构造 258 层嵌套加法，超过 MAX_DEPTH=256（line 43）。
-        // 递归深度 258 在 2MiB 默认测试线程栈上处于边缘（debug 帧 + feature 组合
-        // 代码gen 差异会导致临界溢出），显式 8MiB 线程承载断言。
+        // 258 层嵌套超过 MAX_DEPTH；递归深度接近默认测试线程栈上限，用 8MiB 线程承载
         std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)
             .spawn(steps_depth_exceeded_inner)
@@ -988,7 +941,7 @@ mod tests {
 
     #[test]
     fn steps_bignumber_leaf_valid() {
-        // BigNumber 解析成功（lines 47-48）
+        // BigNumber 解析成功
         let ast = AstNode::BigNumber("42".to_string());
         let steps = generate_steps(&ast, &EvalContext::new()).unwrap();
         assert!(steps.is_empty()); // 叶节点不输出步骤
@@ -996,7 +949,7 @@ mod tests {
 
     #[test]
     fn steps_bignumber_leaf_invalid() {
-        // BigNumber 解析失败（line 49）
+        // BigNumber 解析失败
         let ast = AstNode::BigNumber("not_a_number".to_string());
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
         assert!(err.kind == ErrorKind::Eval);
@@ -1006,14 +959,14 @@ mod tests {
 
     #[test]
     fn steps_zero_pow_negative_returns_error() {
-        // 0^(-1) → DivisionByZero（line 118）
+        // 0^(-1) → DivisionByZero
         let err = eval_binary(BinaryOp::Pow, 0.0, -1.0).unwrap_err();
         assert_eq!(err, CalcError::division_by_zero());
     }
 
     #[test]
     fn steps_mod_by_zero_returns_error() {
-        // 10 % 0 → DivisionByZero（line 124）
+        // 10 % 0 → DivisionByZero
         let err = eval_binary(BinaryOp::Mod, 10.0, 0.0).unwrap_err();
         assert_eq!(err, CalcError::division_by_zero());
     }
@@ -1022,54 +975,54 @@ mod tests {
 
     #[test]
     fn steps_asin_domain_error_and_success() {
-        // asin 越界 → DomainError（lines 175-179）
+        // asin 越界 → DomainError
         let err = eval_function("asin", &[2.0]).unwrap_err();
         assert!(err.kind == ErrorKind::Domain);
-        // asin 合法 → 返回值（line 181）
+        // asin 合法 → 返回值
         let result = eval_function("asin", &[0.5]).unwrap();
         assert!((result - 0.5f64.asin()).abs() < 1e-10);
     }
 
     #[test]
     fn steps_acos_domain_error_and_success() {
-        // acos 越界 → DomainError（lines 184-188）
+        // acos 越界 → DomainError
         let err = eval_function("acos", &[2.0]).unwrap_err();
         assert!(err.kind == ErrorKind::Domain);
-        // acos 合法 → 返回值（line 190）
+        // acos 合法 → 返回值
         let result = eval_function("acos", &[0.5]).unwrap();
         assert!((result - 0.5f64.acos()).abs() < 1e-10);
     }
 
     #[test]
     fn steps_sqrt_success() {
-        // sqrt(4) = 2（line 201，错误路径已覆盖）
+        // sqrt(4) = 2
         let result = eval_function("sqrt", &[4.0]).unwrap();
         assert!((result - 2.0).abs() < 1e-10);
     }
 
     #[test]
     fn steps_ln_success() {
-        // ln(1) = 0（line 211，错误路径已覆盖）
+        // ln(1) = 0
         let result = eval_function("ln", &[1.0]).unwrap();
         assert!((result - 0.0).abs() < 1e-10);
     }
 
     #[test]
     fn steps_log10_error_and_success() {
-        // log10(0) → DomainError（lines 214-218）
+        // log10(0) → DomainError
         let err = eval_function("log10", &[0.0]).unwrap_err();
         assert!(err.kind == ErrorKind::Domain);
-        // log10(100) = 2（line 220）
+        // log10(100) = 2
         let result = eval_function("log10", &[100.0]).unwrap();
         assert!((result - 2.0).abs() < 1e-10);
     }
 
     #[test]
     fn steps_log2_error_and_success() {
-        // log2(0) → DomainError（lines 223-227）
+        // log2(0) → DomainError
         let err = eval_function("log2", &[0.0]).unwrap_err();
         assert!(err.kind == ErrorKind::Domain);
-        // log2(8) = 3（line 229）
+        // log2(8) = 3
         let result = eval_function("log2", &[8.0]).unwrap();
         assert!((result - 3.0).abs() < 1e-10);
     }
@@ -1078,7 +1031,7 @@ mod tests {
 
     #[test]
     fn steps_function_returns_nan_or_inf_error() {
-        // exp(1000) → Inf → NaNOrInf 错误（line 259）
+        // exp(1000) → Inf → NaNOrInf 错误
         let err = eval_function("exp", &[1000.0]).unwrap_err();
         assert_eq!(err, CalcError::nan_or_inf());
     }
@@ -1087,7 +1040,7 @@ mod tests {
 
     #[test]
     fn steps_lcm_with_zero() {
-        // lcm(0, 5) = 0（line 277）
+        // lcm(0, 5) = 0
         let result = eval_function("lcm", &[0.0, 5.0]).unwrap();
         assert_eq!(result, 0.0);
     }
@@ -1122,8 +1075,7 @@ mod tests {
 
     #[test]
     fn steps_bignumber_exceeds_f64_precision_returns_error() {
-        // BigNumber("12345678901234567890") 超过 f64 安全整数范围（2^53 ≈ 9e15），
-        // parse::<f64>() 会丢失精度，应返回 Err 而非静默丢失精度
+        // 超过 f64 安全整数范围（2^53）时 parse 会丢精度，应返回 Err 而非静默丢失
         let ast = AstNode::BigNumber("12345678901234567890".to_string());
         let err = generate_steps(&ast, &EvalContext::new()).unwrap_err();
         assert!(

@@ -2,12 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! 时间核心函数：日期/时间解析、格式化、算术、日历计算。
-//!
-//! 从 `domains/time.rs` 提取的纯数学/时间逻辑，
-//! 供 `domains/time.rs`（AST 求值路径）和 `api/`（直接 API 路径）共用。
-//!
-//! 依赖：`jiff` 库类型（Date, DateTime, Zoned, Timestamp, Span, Unit）。
-//! Feature 门控：`time = ["dep:jiff"]`。
+//! 依赖 jiff 库类型；Feature 门控：`time = ["dep:jiff"]`。
 
 use crate::core::CalcError;
 use jiff::civil::{Date, DateTime};
@@ -26,8 +21,6 @@ pub fn is_leap_year(year: i64) -> bool {
 // ============================ 解析 ============================
 
 /// date() 候选格式表（无歧义，年在前或月份为单词）。
-///
-/// 顺序：ISO 8601 → YYYY/MM/DD → YYYY.MM.DD → YYYYMMDD → 英文月份名 → 中文
 const DATE_FORMATS: &[&str] = &[
     "%Y-%m-%d",  // ISO 8601: 2026-07-25
     "%Y/%m/%d",  // 2026/07/25
@@ -53,9 +46,7 @@ const DATETIME_FORMATS: &[&str] = &[
     "%B %d, %Y %H:%M:%S", // July 25, 2026 12:30:00
 ];
 
-/// 解析日期字符串为 Date（多格式自动识别）。
-///
-/// 歧义拒绝：纯数字 X/Y/YYYY 或 X-Y-YYYY 形式一律拒绝。
+/// 解析日期为 Date（多格式识别；纯数字 X/Y/YYYY、X-Y-YYYY 等歧义形式拒绝）。
 pub fn parse_date_multi_format(input: &str) -> Result<Date, CalcError> {
     // 0. 先尝试 jiff 原生 Date::from_str（ISO 8601 日期）
     if let Ok(d) = input.parse::<Date>() {
@@ -123,12 +114,7 @@ pub fn parse_timestamp_strptime(input: &str) -> Result<Timestamp, ()> {
     Err(())
 }
 
-/// 解析字符串为 Zoned（多策略回退）。
-///
-/// 1. Zoned::from_str：标准 RFC 3339
-/// 2. Z 后缀归一化
-/// 3. Zoned::strptime：多种常见格式
-/// 4. parse_datetime_multi_format + UTC
+/// 解析字符串为 Zoned：依次尝试 RFC 3339、Z 后缀归一化、常见格式、datetime 回退 + UTC。
 pub fn parse_str_to_zoned(s: &str) -> Result<Zoned, CalcError> {
     // 1. 标准 RFC 3339
     if let Ok(z) = s.parse::<Zoned>() {
@@ -212,11 +198,7 @@ pub fn build_span_for_unit(unit: Unit, n: i64) -> Result<Span, CalcError> {
 
 /// 计算 Span 在指定单位下的总数值（带符号）。
 pub fn span_total_in_unit(span: &Span, unit: Unit, a: &Zoned) -> Result<f64, CalcError> {
-    // 零跨度短路：时间戳相同则任意单位下差值恒为 0。
-    // jiff 0.2.x 对「零跨度 × 日历单位」（Day/Week/Month/Year）的 total
-    // 计算会在内部断言 `unit_start_and_end` 处 panic（断言要求两个不同
-    // 跨度产生不同时间戳，零跨度时退化为同一时间戳），故必须在进入
-    // total 前拦截，date_diff(a, a) 才能返回 0 而非打崩调用线程。
+    // 零跨度必须提前拦截：jiff 对零跨度 × 日历单位（Day/Week/Month/Year）的 total 会 panic。
     if span.is_zero() {
         return Ok(0.0);
     }
@@ -278,8 +260,6 @@ pub fn compute_date_add(zoned: &Zoned, n: i64, unit: Unit) -> Result<Zoned, Calc
 // ============================ 格式化 ============================
 
 /// 将 Zoned 转换为 RFC 3339 字符串（用于 EvalResult::DateTime）。
-///
-/// 使用 strtime %Y-%m-%dT%H:%M:%S%:z 格式。
 pub fn zoned_to_rfc3339(zoned: &Zoned) -> String {
     strtime::format("%Y-%m-%dT%H:%M:%S%:z", zoned).unwrap_or_else(|_| zoned.to_string())
 }
@@ -577,8 +557,7 @@ mod tests {
         assert_eq!(diff, 205.0);
     }
 
-    // 回归：零跨度 × 日历单位曾触发 jiff 内部断言 panic（见
-    // span_total_in_unit 零跨度短路注释），date_diff(a, a) 必须返回 0。
+    // 回归：零跨度 × 日历单位曾触发 jiff 断言 panic，date_diff(a, a) 必须返回 0。
     #[test]
     fn test_compute_date_diff_identical_dates() {
         let a = parse_str_to_zoned("2026-01-01").unwrap();

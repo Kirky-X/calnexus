@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 规范化器幂等性 — `canonicalize(canonicalize(x)) == canonicalize(x)`，不 panic。
-//!
-//! 运行：`cargo +nightly fuzz run canonicalizer_fuzz`
+//! 规范化器 fuzz：二次规范化结果必须与首次一致，不 panic。
+//! 运行：`cargo +nightly fuzz run canonicalizer_fuzz`。
 
 #![no_main]
 

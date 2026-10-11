@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 矩阵维度验证 — 任意维度矩阵不应导致 OOM，应被合理拒绝或处理。
-//!
-//! 运行：`cargo +nightly fuzz run matrix_dim_fuzz`
+//! 矩阵维度 fuzz：任意维度输入不得 OOM，应被拒绝或合理处理。
+//! 运行：`cargo +nightly fuzz run matrix_dim_fuzz`。
 
 #![no_main]
 
@@ -14,7 +13,7 @@ fuzz_target!(|data: &[u8]| {
     if data.len() < 2 {
         return;
     }
-    // 用前两个字节决定矩阵维度（限制在合理范围避免 OOM）
+    // 前两个字节决定矩阵维度，限 1..=10 避免 OOM
     let rows = (data[0] as usize % 10) + 1; // 1..=10
     let cols = (data[1] as usize % 10) + 1; // 1..=10
 

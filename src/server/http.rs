@@ -1,28 +1,9 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! HTTP server 启动：API 路由（显式注册）+ sdforge 健康探针 + /metrics + 优雅关闭。
+//! HTTP server 启动：显式注册 API 路由 + sdforge 探针/metrics + 优雅关闭（含限流）。
 //!
-//! 路由注册策略（缓存重构期间发现的关键修复）：`#[forge]` 宏生成的 HTTP
-//! inventory 注册在 rlib/测试二进制场景下会被链接器 GC 静默丢弃（`#[forge]`
-//! 注解对象文件若无其他符号引用即整体剔除，404 且无任何告警）。因此 HTTP 路由
-//! 在本模块**显式挂载**（单一事实源），复用与 `#[forge]` 注解函数相同的内部实现
-//! 与 `ApiError` 契约，行为等价；`#[forge]` 保留 MCP tool 注册与 schema 推导职责。
-//!
-//! sdforge 能力吸收（基座迁移，替代手写实现）：
-//! - 优雅关闭：`sdforge::http::serve_with_graceful_shutdown_connect_info` +
-//!   `default_shutdown_signal`（`graceful` feature），替代手写信号 select 与
-//!   drain 超时包装；SIGTERM 在 select 前注册（早期信号缓冲，消除竞态）。
-//!   ConnectInfo 变体使每笔请求携带真实对端地址（限流按对端 IP 生效）。
-//! - 健康探针：`sdforge::health::{healthz_handler, readyz_handler}`（`health`
-//!   feature）挂载 `/live` 与 `/health`、`/ready`，缓存状态经
-//!   `register_readiness_check_fn` 注册为 readiness check。
-//! - 请求标识：`sdforge::context::context_middleware`（`context` feature），
-//!   request_id 透传/生成 + W3C traceparent 提取 trace_id + task-local 上下文，
-//!   替代手写 request_id 中间件。
-//! - 限流（`ratelimit` feature）：`sdforge::security::RateLimitLayer` +
-//!   `HttpRequestRateLimiter` 契约，仅作用于 API 业务路由（探针/metrics 豁免）；
-//!   策略为 limiteron 同步固定窗口（`super::ratelimit`）。
+//! 路由必须显式挂载：`#[forge]` HTTP inventory 在 rlib/测试二进制下会被链接器 GC 丢弃。
 
 use std::time::Duration;
 
@@ -40,15 +21,12 @@ use sdforge::security::HttpRequestRateLimiter;
 #[cfg(feature = "ratelimit")]
 use std::sync::Arc;
 
-/// 请求体大小上限（64KB，安全前置任务：防止超大请求体耗尽内存）。
+/// 请求体大小上限 64KB（防止超大请求体耗尽内存）。
 const MAX_BODY_SIZE: usize = 64 * 1024;
 
 const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// 构建 CalNexus HTTP Router：显式 API 路由 + sdforge 探针 + body limit +
-/// 请求计数 + 请求上下文。默认限流配置（ratelimit feature）。
-///
-/// 路由为显式注册（见模块文档：inventory 链接器 GC 脆弱性）。
+/// 构建 Router：API 路由 + 探针 + body limit + 请求计数/上下文（ratelimit feature 下含限流）。
 pub fn build_router() -> Router {
     #[cfg(feature = "ratelimit")]
     {
@@ -63,9 +41,6 @@ pub fn build_router() -> Router {
 }
 
 /// 以指定限流器构建 Router（限流回归测试注入小阈值用）。
-///
-/// 与 [`build_router`] 共享 `api_router`/`finish_router`，保证测试路径与
-/// 生产路径一致（单一事实源）。
 #[cfg(all(test, feature = "ratelimit"))]
 pub(crate) fn build_router_with_limiter(limiter: Arc<dyn HttpRequestRateLimiter>) -> Router {
     finish_router(api_router().layer(sdforge::security::RateLimitLayer::new(limiter)))
@@ -88,10 +63,7 @@ fn api_router() -> Router {
     api
 }
 
-/// 挂载探针/metrics/swagger 与全局中间件层（body limit → 请求计数 → 上下文）。
-///
-/// 层序（axum 后加者在外层先执行）：context 中间件最外层（为全链路安装
-/// task-local 请求上下文），请求计数其次，body limit 最内。
+/// 挂载探针/metrics/swagger 与中间件层；层序（后加者在外）：context → 请求计数 → body limit。
 fn finish_router(api: Router) -> Router {
     register_cache_readiness_check();
 
@@ -103,8 +75,7 @@ fn finish_router(api: Router) -> Router {
 
     router = router
         .merge(api)
-        // 健康探针（sdforge health）：/live 存活（进程语义），/health 与 /ready
-        // 就绪（含注册的 cache readiness check），探针豁免限流。
+        // 健康探针：/live 存活，/health /ready 就绪（含 cache 检查），豁免限流
         .route("/health", get(sdforge::health::readyz_handler))
         .route("/ready", get(sdforge::health::readyz_handler))
         .route("/live", get(sdforge::health::healthz_handler))
@@ -112,8 +83,7 @@ fn finish_router(api: Router) -> Router {
         .layer(DefaultBodyLimit::max(MAX_BODY_SIZE))
         // 请求计数 → /metrics
         .layer(axum::middleware::from_fn(request_count_middleware))
-        // 请求标识传播（sdforge context）：X-Request-ID 透传/生成 +
-        // W3C traceparent 提取 trace_id + 响应回写 X-Request-ID/X-Trace-ID
+        // 请求标识：X-Request-ID 透传/生成 + W3C traceparent 提取 trace_id，均回写响应头
         .layer(axum::middleware::from_fn(
             sdforge::context::context_middleware,
         ));
@@ -136,8 +106,7 @@ fn register_cache_readiness_check() {
     });
 }
 
-/// 与 `#[forge]` 宏生成的 HTTP 外壳行为等价（Json 提取 + `.0` 解包 +
-/// `ApiError::into_response` 错误路径）。
+/// 与 `#[forge]` 生成的 HTTP 外壳等价：Json 提取 + `ApiError::into_response` 错误路径。
 async fn evaluate_http_handler(
     axum::extract::Json(req): axum::extract::Json<EvaluateRequest>,
 ) -> axum::response::Response {
@@ -180,9 +149,7 @@ async fn fx_pricing_http_handler(
     }
 }
 
-/// 请求计数中间件：RED 指标采集委托 sdforge `metrics`
-/// （global_registry().record_request 按 (route,method,status) 三元组
-/// 计数+时延；`?format=json` 的读回走 route_count）。
+/// 请求计数中间件：按 (route,method,status) 记录 RED 指标（sdforge metrics）。
 async fn request_count_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -207,15 +174,7 @@ struct MetricsQuery {
     format: Option<String>,
 }
 
-/// GET /metrics：返回缓存统计数据（CacheManager::stats）+ HTTP RED 指标
-/// （sdforge metrics 的 global_registry）。
-///
-/// - 默认返回 Prometheus 文本格式（`Content-Type: text/plain; version=0.0.4`，
-///   含 `# HELP`/`# TYPE` 注释行，指标族 `calnexus_cache_*` 与
-///   `sdforge_http_*`；路由基数注意：route 标签取 path，高基数路径
-///   （含 id 的 REST 路径）会放大序列——按 sdforge 指标模型如实呈现）
-/// - `?format=json` 返回 JSON 格式（调试友好，`http_route_count` 为
-///   registry 路由序列数，替代原全局计数）
+/// GET /metrics：缓存统计 + HTTP RED 指标；默认 Prometheus 文本，`?format=json` 返回 JSON。
 async fn metrics_handler(query: axum::extract::Query<MetricsQuery>) -> axum::response::Response {
     use axum::response::IntoResponse;
     let stats = super::cache::shared_cache().stats();
@@ -291,42 +250,25 @@ impl HttpServer {
         &self.addr
     }
 
-    /// 同步入口：创建 tokio runtime 阻塞运行 `start()`。
-    /// 供 CLI `--serve-http` flag 调用。
+    /// 同步入口：创建 tokio runtime 阻塞运行 `start_inner()`（供 CLI `--serve-http` 调用）。
     pub fn run(&self) -> Result<(), ServerError> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .map_err(|e| ServerError::Http(format!("failed to create tokio runtime: {}", e)))?;
         let result = runtime.block_on(self.start_inner());
-        // inklog 的 LoggerManager（init_observability 经 init_inklog_logger_with_config
-        // 构建，库内部 mem::forget(manager)）的 sink worker 寄生在本 runtime 上；
-        // 库侧无 shutdown API，runtime 析构与 worker 退出握手死等（实测 >5min
-        // 不返回）——SIGTERM 优雅关闭后进程将永不退出。服务已停、进程即将退出，
-        // 跳过析构；每次调用泄漏一个有界 runtime（CLI 每进程调一次）。
+        // inklog sink worker 寄生本 runtime 且库无 shutdown API，runtime 析构会死等；跳过析构
         std::mem::forget(runtime);
         result
     }
 
-    /// 内部 async 启动逻辑：bind TcpListener + sdforge 优雅关闭序列。
-    ///
-    /// `serve_with_graceful_shutdown_connect_info`（sdforge `graceful` feature）
-    /// 执行生产关闭序列：停止 accept → drain 最长 [`DRAIN_TIMEOUT`]（超时强退，
-    /// k8s terminationGracePeriod 语义）→ stop hooks；`default_shutdown_signal`
-    /// 在 select 前注册 SIGTERM handler（早期信号缓冲，无竞态窗口）。
-    /// ConnectInfo 变体使请求携带真实对端地址（`super::ratelimit` 标识提取消费）。
+    /// 内部 async 启动：bind TcpListener + sdforge 优雅关闭（drain 上限 [`DRAIN_TIMEOUT`]）。
     async fn start_inner(&self) -> Result<(), ServerError> {
-        // bind 先于日志初始化：bind 失败路径（含其测试）完全不触碰日志单例，
-        // 避免 inklog worker 寄生到会快速析构的 runtime 上导致退出死等，
-        // 并消除单例测试的顺序依赖（spec 未规定 init/bind 顺序，只约束
-        // 失败显性上抛）。
+        // bind 先于日志初始化：bind 失败不触碰日志单例（避免 worker 寄生致退出死等）
         let listener = tokio::net::TcpListener::bind(&self.addr)
             .await
             .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
-        // 日志初始化（observability feature）：async 上下文直接 await，无桥。
-        // 失败显性化：ConfigError（单例哨兵已占）视为"已初始化"幂等成功
-        // （重复调用不重试），其余错误上抛 ServerError::Http——不静默降级为
-        // 无日志运行。
+        // 日志初始化：ConfigError 视为已初始化幂等成功，其余错误上抛不静默降级
         #[cfg(feature = "observability")]
         match crate::server::init_observability().await {
             Ok(()) => {}
@@ -394,9 +336,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), ServerError::Http(_)));
     }
 
-    /// 编译期验证 sdforge 优雅关闭触发器 future 为 `Send`。
-    /// axum `with_graceful_shutdown`（serve_with_graceful_shutdown 内部）要求
-    /// signal future 为 `Send`；若上游违约此处编译失败。
+    /// 编译期验证 shutdown signal future 为 `Send`（axum `with_graceful_shutdown` 要求）。
     #[test]
     fn test_default_shutdown_signal_is_send() {
         fn assert_send<T: Send + ?Sized>(_: &T) {}
@@ -404,8 +344,7 @@ mod tests {
         assert_send(&fut);
     }
 
-    /// DRAIN_TIMEOUT 与 sdforge `GracefulShutdownConfig::default()` 语义对齐
-    /// （30s，k8s terminationGracePeriod 常见基线）。
+    /// DRAIN_TIMEOUT 与 sdforge GracefulShutdownConfig 默认值（30s）对齐。
     #[test]
     fn test_drain_timeout_matches_sdforge_default() {
         assert_eq!(
@@ -470,8 +409,7 @@ mod tests {
         assert!(json.get("checks").is_none(), "/live 不应含检查器");
     }
 
-    /// 请求计数与 sdforge context 标识回写回归：请求后 /metrics 计数增长，
-    /// 响应携带 X-Request-ID（入站透传）与 X-Trace-ID（从 W3C traceparent 提取）。
+    /// 计数与标识回写回归：请求后计数增长，响应含 X-Request-ID 与 X-Trace-ID。
     #[tokio::test]
     async fn test_context_middleware_and_request_count() {
         use axum::body::Body;
@@ -510,7 +448,7 @@ mod tests {
             "应从 W3C traceparent 提取 trace_id 回写 X-Trace-ID"
         );
 
-        // T011 后计数走 sdforge metrics RED：请求后 registry 应记录 /live 序列
+        // 请求后 sdforge registry 应记录 /live 路由序列（RED 计数）
         let registry = sdforge::metrics::global_registry();
         registry.reset();
         let _ = router
@@ -536,8 +474,7 @@ mod tests {
         use std::sync::Arc;
         use tower::ServiceExt;
 
-        /// 限流挂载回归：小阈值限流器下第 3 个请求 429 + Retry-After。
-        /// 验证限流层在 Router::layer 路径可用（sdforge RateLimitLayer 直挂）。
+        /// 限流挂载回归：阈值 2 时第 3 个请求 429 + Retry-After。
         #[tokio::test]
         async fn test_ratelimit_small_threshold_rejects_with_429() {
             use crate::server::ratelimit::FixedWindowLimiter;

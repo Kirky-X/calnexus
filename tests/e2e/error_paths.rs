@@ -1,11 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S3 Error Paths —— 11 种 `ErrorKind` 全覆盖、错误 i18n 渲染、退出码契约。
-//!
-//! 既有套件仅深覆盖 7 种 kind；本模块补齐 `DependencyUnavailable`
-//! （经 fx mock 恒失败源确定性复现，零网络）、`Usage`/`UndefinedSymbol`
-//! （公开构造器契约 + 表达式层映射现状钉住）与 `Timeout` 的 kind 级断言。
+//! S3 错误路径：11 种 ErrorKind 全覆盖、错误 i18n 渲染与退出码契约。
 
 #[cfg(feature = "fx")]
 use calnexus::DomainRouter;
@@ -28,7 +24,7 @@ fn scalar_of(r: &EvalResult) -> f64 {
 // 11 种 ErrorKind 逐一断言（meta 清单：新增 kind 时本表必须扩展）
 // ---------------------------------------------------------------------------
 
-/// kind → 触发表达式/构造途径的完备性清单。
+/// 11 种 ErrorKind 的触发途径完备性清单。
 #[test]
 fn error_all_eleven_kinds_covered() {
     // 1. Parse —— 词法/语法错误
@@ -64,15 +60,12 @@ fn error_all_eleven_kinds_covered() {
     let usage = CalcError::usage("invalid --precision value");
     assert_eq!(usage.kind, ErrorKind::Usage);
     assert!(usage.message.contains("invalid --precision"));
-    // 10. UndefinedSymbol —— 公开构造器契约。现状钉住：evaluate() 管线
-    //     将未绑定变量映射为 Eval（见 #2），UndefinedSymbol kind 当前仅
-    //     经构造器与 CLI hint 上下文化逻辑（cli.rs 按 kind 匹配）消费
+    // 10. UndefinedSymbol —— 仅构造器与 CLI hint 消费，管线映射为 Eval
     let sym = CalcError::undefined_symbol("foo");
     assert_eq!(sym.kind, ErrorKind::UndefinedSymbol);
     assert_eq!(sym.message, "undefined symbol: foo");
     assert_eq!(sym.kind.exit_code(), 1);
-    // 11. DependencyUnavailable —— 经 fx mock 恒失败源确定性复现（fx 门控，
-    //     见下方独立测试；此处构造器契约）
+    // 11. DependencyUnavailable —— 构造器契约（fx 门控，见下方测试）
     assert_eq!(
         CalcError::dependency_unavailable("x").kind,
         ErrorKind::DependencyUnavailable
@@ -113,9 +106,7 @@ fn error_fx_dependency_unavailable_deterministic() {
 #[cfg(feature = "fx")]
 #[test]
 fn error_fx_real_domain_offline_tolerant() {
-    // 真实 FxDomain::default() 冒烟：断网 → DependencyUnavailable（缓存
-    // 过期且未开 ALLOW_STALE），有网/有缓存 → 成功。两侧均视为通过，
-    // 保证 CI 断网全绿的同时钉住「不 panic、错误带 kind」契约。
+    // 真实 FxDomain 冒烟：成功或 DependencyUnavailable 均通过，断网 CI 可跑
     let mut router = DomainRouter::new();
     router.register(Box::new(calnexus::FxDomain::default()));
     match crate::common::eval_via_router("fx_rate(\"USD\", \"EUR\")", &router) {

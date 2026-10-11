@@ -2,15 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! NumberTheory 计算域：GCD、LCM、素数判定、素数筛、模逆、模幂、欧拉函数。
-//!
-//! 设计依据：
-//! - number-theory-domain spec：7 个 requirements / 15+ scenarios
-//! - Miller-Rabin、num-integer 依赖
-//! - priority=25
-//!
-//! 路由策略：AST 含数论函数调用（gcd/lcm/is_prime/prime_sieve/mod_inverse/mod_pow/euler_phi）时路由至本域。
-//! 内部使用 BigInt 精确整数运算，支持 `is_prime(10^18+9)` 等大数场景（f64 无法精确表示）。
-//! 结果按值大小返回 Scalar（fit i64）或 BigInt。
+//! priority=25；内部用 BigInt 精确运算，结果按值大小返回 Scalar 或 BigInt。
 
 use super::common::{unsupported_function_error, unsupported_node_error};
 use crate::core::CalculationDomain;
@@ -32,9 +24,7 @@ const NUMBER_THEORY_FUNCTIONS: &[&str] = &[
     "euler_phi",
 ];
 
-/// NumberTheory 计算域。
-///
-/// priority=25，支持 gcd/lcm/is_prime/prime_sieve/mod_inverse/mod_pow/euler_phi。
+/// NumberTheory 计算域，priority=25，支持 7 个数论函数。
 pub struct NumberTheoryDomain;
 
 impl CalculationDomain for NumberTheoryDomain {
@@ -120,8 +110,7 @@ impl NumberTheoryDomain {
         }
     }
 
-    /// 将 AST 求值为 BigInt（精确整数运算）。
-    /// 用于解析数论函数的整数参数，支持 `10^18+9` 等大数表达式。
+    /// 将 AST 求值为 BigInt，支持 `10^18+9` 等大数整数参数。
     fn eval_int(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigInt, CalcError> {
         match ast {
             AstNode::Number(n) => f64_to_bigint(*n, "expected integer argument"),
@@ -209,9 +198,7 @@ impl NumberTheoryDomain {
                     )
                     .with_i18n("msg.core.negative_exponent", vec![]));
                 }
-                // 安全约束1：拒绝超大指数，防止 DoS（与 precision.rs 一致）。
-                // 攻击者可通过 `gcd(1,1) + 2^4000000000` 绕过 precision.rs 的防护
-                // （24 字节请求触发 ~1.2GB 输出导致 OOM）。
+                // 安全约束：拒绝超大指数，防止绕过 precision.rs 防护造成 OOM。
                 let exp_u64 = b.to_u64().ok_or(CalcError::overflow())?;
                 if exp_u64 > MAX_POW_EXPONENT {
                     return Err(CalcError::domain(format!(
@@ -226,8 +213,7 @@ impl NumberTheoryDomain {
                         ],
                     ));
                 }
-                // 安全约束2：底数复合限制，防止大底数 × 大指数产生超大输出 DoS。
-                // 复用 core 层 `check_pow_output_size`，三域共用同一检查。
+                // 安全约束：复用 core 层 check_pow_output_size 限制输出规模。
                 let base_bits = a.bits();
                 check_pow_output_size(base_bits, exp_u64)?;
                 let exp: u32 = exp_u64.try_into().map_err(|_| CalcError::overflow())?;
@@ -426,9 +412,7 @@ fn bigint_to_result(b: BigInt) -> EvalResult {
     }
 }
 
-/// 将 f64 转换为 BigInt：要求为整数且在 i64 范围内。
-///
-/// 复用于 `Number` 字面量求值和 `FunctionCall(Scalar)` 结果求值，消除重复检查。
+/// 将 f64 转换为 BigInt：要求整数且在 i64 范围内。
 fn f64_to_bigint(n: f64, err_msg: &str) -> Result<BigInt, CalcError> {
     if n.fract() != 0.0 {
         return Err(CalcError::domain(format!("{}: {}", err_msg, n)).with_i18n(
@@ -445,11 +429,7 @@ fn f64_to_bigint(n: f64, err_msg: &str) -> Result<BigInt, CalcError> {
     Ok(BigInt::from(n as i64))
 }
 
-/// 将 EvalResult 转换为 BigInt。
-///
-/// - `Scalar(n)`：复用 `f64_to_bigint` 走相同的整数/范围检查
-/// - `BigInt(b)`：直接返回
-/// - 其他：返回错误（非整数结果）
+/// 将 EvalResult 转换为 BigInt，非整数结果报错。
 fn evalresult_to_bigint(result: EvalResult, ast: &AstNode) -> Result<BigInt, CalcError> {
     match result {
         EvalResult::Scalar(n) => f64_to_bigint(n, "expected integer result"),
@@ -612,7 +592,6 @@ mod tests {
 
     #[test]
     fn test_is_prime_large_10e18() {
-        // 10^18 + 9 = 1000000000000000009 是素数
         let result = eval_scalar("is_prime(10^18+9)");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1.0);
@@ -686,7 +665,6 @@ mod tests {
 
     #[test]
     fn test_mod_inverse_negative() {
-        // mod_inverse(-3, 11) should return 7 (-3*7 = -21 ≡ 1 mod 11)
         assert_eq!(eval_scalar("mod_inverse(-3,11)").unwrap(), 7.0);
     }
 
@@ -708,7 +686,6 @@ mod tests {
 
     #[test]
     fn test_euler_phi_prime() {
-        // φ(p) = p-1 for prime p
         assert_eq!(eval_scalar("euler_phi(7)").unwrap(), 6.0);
     }
 
@@ -915,14 +892,12 @@ mod tests {
 
     #[test]
     fn test_arithmetic_combination() {
-        // gcd(12,18) + 1 = 7
         assert_eq!(eval_scalar("gcd(12,18)+1").unwrap(), 7.0);
     }
 
     #[test]
     fn test_bigint_result() {
-        // 大数 GCD 返回 BigInt：gcd(99999999999999999999, 33333333333333333333) = 33333333333333333333
-        // 33333333333333333333 > i64::MAX，故返回 BigInt
+        // 大数 GCD 超出 i64::MAX，返回 BigInt。
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![
@@ -1039,11 +1014,7 @@ mod tests {
 
     #[test]
     fn test_eval_int_function_call_scalar_non_integer() {
-        // eval_int FunctionCall returning non-integer Scalar
-        // gcd(12,18) = 6 (integer), but we need a non-integer result
-        // Use is_prime which returns 0.0 or 1.0 (both integers), so construct a case
-        // that returns non-integer: this is hard since all NT functions return integers.
-        // Instead, test the overflow path: gcd of very large big numbers
+        // 数论函数都返回整数，此用例覆盖嵌套大数调用的整数路径。
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![
@@ -1057,7 +1028,6 @@ mod tests {
                 AstNode::Number(18.0),
             ],
         );
-        // gcd(33333333333333333333, 18) = 3
         let result = NumberTheoryDomain
             .evaluate(&ast, &EvalContext::new())
             .unwrap();
@@ -1076,15 +1046,15 @@ mod tests {
 
     #[test]
     fn test_eval_int_binary_sub_mul() {
-        // eval_int_binary Sub and Mul success: gcd(10-4, 2*3) = gcd(6, 6) = 6
+        // 覆盖 eval_int_binary 的 Sub 与 Mul 分支。
         assert_eq!(eval_scalar("gcd(10-4, 2*3)").unwrap(), 6.0);
     }
 
     #[test]
     fn test_eval_int_binary_div_mod_success() {
-        // eval_int_binary Div success: gcd(10/2, 3) = gcd(5, 3) = 1
+        // 覆盖 eval_int_binary 的 Div 分支。
         assert_eq!(eval_scalar("gcd(10/2, 3)").unwrap(), 1.0);
-        // eval_int_binary Mod success via direct AST: gcd(BinaryOp::Mod(10,3), 3) = gcd(1, 3) = 1
+        // 覆盖 eval_int_binary 的 Mod 分支（直接构造 AST）。
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![
@@ -1166,8 +1136,7 @@ mod tests {
 
     #[test]
     fn test_eval_int_function_call_returns_vector() {
-        // 嵌套 prime_sieve 返回 Vector，eval_int FunctionCall 的 `_ =>` 分支
-        // gcd(prime_sieve(5), 18) → prime_sieve(5) 返回 Vector → DomainError
+        // 嵌套 prime_sieve 返回 Vector，覆盖 eval_int 的非整数分支。
         let ast = AstNode::FunctionCall(
             "gcd".to_string(),
             vec![

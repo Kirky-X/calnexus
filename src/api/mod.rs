@@ -1,10 +1,7 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 直接 API 层（L4b）。
-//!
-//! 提供 `CalNexus` 门面结构体 + 5 个分组 trait，绕过表达式解析直接调用 math 层函数。
-//!
+//! 直接 API 层（L4b）：`CalNexus` 门面 + 5 个分组 trait，绕过解析直调 math 层。
 //! 依赖方向：`api/` → `math/` → `core/`，不依赖 `domains/`。
 
 pub mod cache;
@@ -23,16 +20,14 @@ pub use self::scalar::ScalarMathImpl;
 pub use self::stats::DataAnalysisImpl;
 pub use self::symbolic_api::SymbolicMathImpl;
 
-// Re-export traits for external use.
+// 对外 re-export trait。
 pub use self::traits::{AppliedMath, DataAnalysis, LinearAlgebra, ScalarMath, SymbolicMath};
 
 use crate::api::types::{BigNumber, Complex, Matrix, Polynomial, Vector};
 use crate::core::{CalcError, EvalContext};
 use std::sync::RwLock;
 
-/// CalNexus 门面结构体：直接 API 入口。
-///
-/// 持有缓存管理器 + 变量上下文，提供 5 个分组 trait 访问器。
+/// CalNexus 门面：持有变量上下文，提供 5 个分组 trait 的访问器。
 pub struct CalNexus {
     ctx: RwLock<EvalContext>,
 }

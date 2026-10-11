@@ -1,27 +1,16 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 数值线性代数核心函数：特征分解/SVD/LU/QR/线性方程组求解/矩阵指数。
+//! 数值线性代数核心：特征分解/SVD/LU/QR/solve/矩阵指数，供 domains 与 api 共用。
 //!
-//! 从 `domains/numerical.rs` 提取的纯数学逻辑，返回纯 Rust 类型（非 `EvalResult`），
-//! 供 `domains/`（AST 求值路径）和 `api/`（直接 API 路径）共用。
-//!
-//! nalgebra 0.35 分解 API：
-//! - `LU::new(m)`：partial row pivoting，P·A = L·U
-//! - `SVD::new(m, compute_u, compute_v)`：三参数
-//! - `SymmetricEigen::new(m)`：实对称矩阵特征分解
-//! - `QR::new(m)`：Householder 瘦 QR
-//!
-//! 输入净化：所有函数入口先 `require_finite` 拦截 NaN/Inf。
+//! 所有函数入口先 `require_finite` 拦截 NaN/Inf。
 
 #![cfg(feature = "numerical")]
 
 use crate::core::CalcError;
 use nalgebra::{DMatrix, DVector, LU, QR, SVD, SymmetricEigen};
 
-/// 实对称矩阵特征分解 → (特征值升序, 特征向量矩阵列对应)。
-///
-/// 要求实对称方阵。非方阵 → DomainError；非对称 → DomainError；NaN/Inf → NaNOrInf。
+/// 实对称矩阵特征分解 →（特征值升序, 特征向量列对应）；非方阵或非对称返回 DomainError。
 pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError> {
     require_finite(matrix.iter().copied())?;
     if !matrix.is_square() {
@@ -74,10 +63,7 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
     Ok((values, sorted_vecs))
 }
 
-/// 奇异值分解 → (U, S降序, Vt)，满足 A = U·diag(S)·Vt。
-///
-/// NaN/Inf → NaNOrInf。
-/// SVD 三元组：(U, 奇异值降序, Vt)。
+/// SVD 三元组：(U, 奇异值降序, Vt)，满足 A = U·diag(S)·Vt。
 pub type SvdTriple = (DMatrix<f64>, Vec<f64>, DMatrix<f64>);
 /// LU 三元组：(L, U, P)。
 pub type LuTriple = (DMatrix<f64>, DMatrix<f64>, DMatrix<f64>);
@@ -101,9 +87,7 @@ pub fn svd(matrix: &DMatrix<f64>) -> Result<SvdTriple, CalcError> {
     Ok((u, s, vt))
 }
 
-/// LU 分解 → (L, U, P)，满足 P·A = L·U。
-///
-/// 方阵要求；L 单位下三角，U 上三角，P 置换矩阵。
+/// LU 分解 → (L, U, P)，满足 P·A = L·U；要求方阵。
 pub fn lu(matrix: &DMatrix<f64>) -> Result<LuTriple, CalcError> {
     require_finite(matrix.iter().copied())?;
     if !matrix.is_square() {
@@ -129,9 +113,7 @@ pub fn lu(matrix: &DMatrix<f64>) -> Result<LuTriple, CalcError> {
     Ok((l, u, p_mat))
 }
 
-/// QR 分解 → (Q, R)，满足 A = Q·R。
-///
-/// 瘦 QR（Householder），Q 列正交，R 上三角。
+/// QR 分解（Householder 瘦 QR）→ (Q, R)，满足 A = Q·R。
 pub fn qr(matrix: &DMatrix<f64>) -> Result<(DMatrix<f64>, DMatrix<f64>), CalcError> {
     require_finite(matrix.iter().copied())?;
     let decomp = QR::new(matrix.clone());
@@ -140,9 +122,7 @@ pub fn qr(matrix: &DMatrix<f64>) -> Result<(DMatrix<f64>, DMatrix<f64>), CalcErr
     Ok((q, r))
 }
 
-/// 解线性方程组 A·x = b → x。
-///
-/// A 须方阵且与 b 行数匹配；A 奇异 → DomainError。
+/// 解线性方程组 A·x = b；A 须方阵且行数与 b 匹配，奇异返回 DomainError。
 pub fn solve(matrix: &DMatrix<f64>, b: &DVector<f64>) -> Result<DVector<f64>, CalcError> {
     require_finite(matrix.iter().copied())?;
     require_finite(b.iter().copied())?;
@@ -183,10 +163,7 @@ pub fn solve(matrix: &DMatrix<f64>, b: &DVector<f64>) -> Result<DVector<f64>, Ca
     })
 }
 
-/// 矩阵指数 exp(A)。
-///
-/// 实对称矩阵走特征值分解快速路径；非对称方阵走 Pade 近似（缩放-平方法）；
-/// 非方阵 → DomainError；NaN/Inf → NaNOrInf。
+/// 矩阵指数 exp(A)：实对称走特征分解，非对称方阵走 Pade 缩放-平方法。
 pub fn matrix_exp(matrix: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
     require_finite(matrix.iter().copied())?;
     if !matrix.is_square() {
@@ -236,10 +213,7 @@ fn is_symmetric(m: &DMatrix<f64>) -> bool {
     true
 }
 
-/// Pade 近似矩阵指数（缩放-平方法）。
-///
-/// 选择缩放因子 s 使 ||A/2^s|| < 0.5，然后计算 6 阶 Pade 近似，
-/// 最后平方回 s 次。
+/// Pade 近似矩阵指数：选缩放因子 s 使 ||A/2^s|| < 0.5，6 阶近似后平方回 s 次。
 fn pade_exp(matrix: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
     let n = matrix.nrows();
     let norm = matrix.norm();
@@ -250,8 +224,7 @@ fn pade_exp(matrix: &DMatrix<f64>) -> Result<DMatrix<f64>, CalcError> {
         (norm / 0.5).log2().ceil() as usize
     };
     let scaled = matrix / (1i64 << s) as f64;
-    // 6 阶 Pade 近似：(D + N) / (D - N)，其中
-    // Pade 系数 c_k = (2p-k)! p! / ((2p)! k! (p-k)!)，p=6
+    // 6 阶 Pade 近似：(D + N) / (D - N)
     let i = DMatrix::<f64>::identity(n, n);
     let a2 = &scaled * &scaled;
     let a4 = &a2 * &a2;

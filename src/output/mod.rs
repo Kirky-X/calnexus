@@ -3,12 +3,7 @@
 
 //! CalNexus 输出格式化模块。
 //!
-//! 提供 LaTeX / 步骤 / 规范形式三种输出格式化器：
-//! - `latex::format_latex`：将 `EvalResult` + `AstNode` 渲染为 LaTeX 字符串
-//! - `steps::generate_steps`：遍历 AST 生成逐步求值字符串列表
-//! - `canonical::format_canonical`：暴露 `CanonicalForm` 的字符串形式
-//!
-//! 设计依据：独立模块避免 `src/cli.rs` 进一步膨胀。
+//! 提供 LaTeX / 步骤 / 规范形式三种输出格式化器。
 
 mod canonical;
 mod latex;

@@ -1,19 +1,14 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! API 层类型包装器。
-//!
-//! 为 `EvalResult` 的各变体提供类型安全的包装，
-//! 用于直接 API（`api/`）的方法参数和返回值。
+//! API 层类型包装器：为 `EvalResult` 各变体提供类型安全包装，用于直接 API 的参数与返回值。
 
 use num_bigint::BigInt;
 use num_complex::Complex64;
 
 use crate::core::EvalResult;
 
-/// 矩阵包装器：封装 `Vec<Vec<f64>>`（与 `EvalResult::Matrix` 一致）。
-///
-/// 提供行优先构造器 + 到/从 `EvalResult` 的双向转换。
+/// 矩阵包装器：封装 `Vec<Vec<f64>>`（行优先，与 `EvalResult::Matrix` 一致）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Matrix {
     rows: Vec<Vec<f64>>,

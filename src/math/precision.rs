@@ -2,19 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 //! 精度核心函数：BigRational 求值 + 格式化。
-//!
-//! 从 `domains/precision.rs` 提取的纯数学逻辑，
-//! 不含 AST 转换和域路由（留在域层）。
 
 use crate::core::{CalcError, EvalResult, MAX_FACTORIAL_INPUT};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Signed, Zero};
 
-/// 计算大整数阶乘。
-///
-/// 安全约束：拒绝超过 `MAX_FACTORIAL_INPUT` 的输入，防止循环 DoS。
-/// 负数输入返回 DomainError（阶乘定义域为非负整数）。
+/// 计算大整数阶乘；超过 MAX_FACTORIAL_INPUT 或负数返回错误（防 DoS）。
 pub fn factorial(n: &BigInt) -> Result<BigInt, CalcError> {
     if n < &BigInt::zero() {
         return Err(CalcError::domain(format!(
@@ -49,10 +43,7 @@ pub fn factorial(n: &BigInt) -> Result<BigInt, CalcError> {
     Ok(result)
 }
 
-/// 格式化 BigRational 为输出字符串。
-///
-/// - `precision = None`：分数形式 `num/den`，分母为 1 时输出整数
-/// - `precision = Some(N)`：N 位小数（不含前导 `0.`）
+/// 格式化 BigRational：None 输出分数（整数约简），Some(N) 输出 N 位小数。
 pub fn format_bigrational(value: &BigRational, precision: Option<usize>) -> String {
     if let Some(n) = precision {
         format_decimal(value, n)
@@ -63,10 +54,7 @@ pub fn format_bigrational(value: &BigRational, precision: Option<usize>) -> Stri
     }
 }
 
-/// 格式化 BigRational 为指定精度的十进制小数。
-///
-/// 例如 `1/3` 精度 5 → `0.33333`，`1/2` 精度 3 → `0.500`。
-/// 四舍五入到指定精度。
+/// 格式化为指定精度的小数，四舍五入。
 fn format_decimal(value: &BigRational, precision: usize) -> String {
     let ten = BigInt::from(10);
     let neg = value.is_negative();
@@ -78,8 +66,7 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
     for _ in 0..precision {
         scale *= &ten;
     }
-    // scaled_value = floor(value * 10^precision + 0.5) 实现四舍五入
-    // = (2 * numer * scale + denom) / (2 * denom)
+    // 加 0.5 后向下取整，实现四舍五入
     let rounded = (&BigInt::from(2) * numer * &scale + denom) / (&BigInt::from(2) * denom);
 
     if precision == 0 {
@@ -95,10 +82,7 @@ fn format_decimal(value: &BigRational, precision: usize) -> String {
     }
 }
 
-/// 将 f64 转换为 BigRational。
-///
-/// 整数且范围在 i64 内：精确转换为整数 BigRational；
-/// 否则：尝试 `BigRational::from_float`，失败时返回错误。
+/// f64 转 BigRational：i64 内整数精确转换，否则用 from_float，失败报错。
 pub fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
     if n.fract() == 0.0 && n.abs() <= i64::MAX as f64 {
         Ok(BigRational::from_integer(BigInt::from(n as i64)))
@@ -112,9 +96,7 @@ pub fn f64_to_rational(n: f64) -> Result<BigRational, CalcError> {
     }
 }
 
-/// 从 BigRational 提取 BigInt（要求为整数）。
-///
-/// 返回 BigInt 形式的操作数（可为负数，由调用方负责范围检查）。
+/// 从 BigRational 提取 BigInt；要求整数，可为负，范围检查由调用方负责。
 pub fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> {
     if !r.is_integer() {
         return Err(
@@ -130,9 +112,7 @@ pub fn rational_to_int(r: &BigRational, ctx: &str) -> Result<BigInt, CalcError> 
     Ok(r.numer().clone())
 }
 
-/// 将 BigRational 转换为 EvalResult。
-///
-/// 分母为 1 → BigInt；否则 → BigRational。
+/// BigRational 转 EvalResult：整数→BigInt，否则→BigRational。
 pub fn rational_to_result(value: BigRational) -> EvalResult {
     if value.is_integer() {
         EvalResult::BigInt(value.numer().clone())

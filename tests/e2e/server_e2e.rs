@@ -1,13 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! S8 Server E2E —— HTTP 端点矩阵、MCP 工具、docs/ratelimit feature 行为。
-//!
-//! 与既有 server_http/server_mcp 集成测试互补：本模块补齐
-//! `list_functions`、fx 双端点/双工具（网络容忍）、`docs` feature 的
-//! swagger 路由与 `ratelimit` feature 的 429 行为（此前零集成覆盖）。
-//! HTTP 经 tower oneshot 直测 Router；ratelimit 经子进程隔离
-//! （进程内改 CALNEXUS_* 会污染并行测试的共享路由器）。
+//! S8 Server E2E：HTTP 端点矩阵、MCP 工具、docs/ratelimit feature 行为。
+//! HTTP 经 tower oneshot 直测 Router；ratelimit 经子进程隔离。
 
 #![cfg(feature = "server")]
 
@@ -62,7 +57,7 @@ async fn http_evaluate_and_list_functions() {
     assert_eq!(body["result"], 14);
     assert_eq!(body["domain"], "arithmetic");
 
-    // list_functions（既有套件未覆盖的端点）
+    // list_functions 端点
     let (status, body) = post_json("/api/v1/list_functions", json!({})).await;
     assert_eq!(status, StatusCode::OK);
     let text = serde_json::to_string(&body).unwrap();
@@ -97,7 +92,7 @@ async fn http_health_and_metrics_endpoints() {
     assert!(!text.is_empty());
     let (status, body) = get("/metrics?format=json").await;
     assert_eq!(status, StatusCode::OK);
-    // JSON 格式键名不带 calnexus_ 前缀（Prometheus 文本才带）
+    // JSON 格式键名不带 calnexus_ 前缀
     assert!(
         body.get("hits").is_some() && body.get("entry_count").is_some(),
         "got {body}"
@@ -126,7 +121,7 @@ async fn http_error_contract_and_validation() {
         json!({"expr": "1", "vars": {"a": 0.0, "b": 0.0}}),
     )
     .await;
-    // 2 个变量合法（上限 1024），此请求应成功——对照契约
+    // 2 个变量在 1024 上限内，请求应成功
     assert_eq!(status, StatusCode::OK, "got {body}");
 }
 
@@ -164,7 +159,7 @@ async fn http_request_id_and_lang() {
 #[cfg(feature = "fx")]
 #[tokio::test]
 async fn http_fx_endpoints_network_tolerant() {
-    // fx 预算端点：有网/有缓存 → 200；断网 → 503（上游不可用）。两侧均绿。
+    // fx 预算端点网络容忍：200 或 503 均通过
     let (status, body) = post_json(
         "/api/v1/fx_budget",
         json!({
@@ -183,20 +178,20 @@ async fn http_fx_endpoints_network_tolerant() {
         StatusCode::SERVICE_UNAVAILABLE => assert_eq!(body["type"], "ServiceUnavailable"),
         other => panic!("tolerated 200/503, got {other}"),
     }
-    // 校验错误（与服务商可用性无关，确定性）：tuition<=0 → 400
+    // 校验错误与上游可用性无关：tuition<=0 必被拒
     let (status, _) = post_json(
         "/api/v1/fx_budget",
         json!({"tuition": -5, "tuition_currency": "USD", "duration_years": 4, "home_currency": "CNY"}),
     )
     .await;
-    // 负值学费在 #[forge] 参数校验层拦截 → 422 ValidationError
+    // 参数校验层拦截，返回 422 ValidationError
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[cfg(feature = "docs")]
 #[tokio::test]
 async fn http_docs_feature_serves_swagger_ui() {
-    // docs feature 挂载 /swagger-ui/（零覆盖面补齐）
+    // docs feature 挂载 /swagger-ui/
     let (status, _) = get("/swagger-ui/").await;
     assert_eq!(status, StatusCode::OK);
 }
@@ -225,7 +220,7 @@ fn tool_text(result: sdforge::rmcp::model::CallToolResult) -> (bool, Value) {
 #[test]
 fn mcp_tool_catalog_and_evaluate() {
     let server = calnexus::build_mcp_server();
-    // 基础工具 2 个；fx+server 组合追加 2 个（4）
+    // 基础工具 2 个；fx feature 追加 2 个
     #[cfg(feature = "fx")]
     assert_eq!(server.tool_count(), 4);
     #[cfg(not(feature = "fx"))]
