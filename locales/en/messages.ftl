@@ -397,7 +397,7 @@ cli-help_latex = Render result as LaTeX (e.g. matrices as pmatrix environments)
 cli-help_steps = Display step-by-step evaluation (e.g., `2+9=11` for `(2+9)*7-6`)
 cli-help_canonical = Print canonical S-expression form (e.g., `(+ 2 3)` for `3+2`), skip evaluation
 cli-help_timeout = Evaluation timeout in seconds (0.1-3600, default 5; env: CALNEXUS_TIMEOUT)
-cli-help_cache_size = Cache entry budget, approximate (entries x 4KB byte cap; env: CALNEXUS_CACHE_SIZE)
+cli-help_cache_size = Cache entry budget, approximate (entries x 4KB byte cap; entry weight counted as JSON serialized bytes; env: CALNEXUS_CACHE_SIZE)
 cli-help_bind = HTTP server bind address (default 127.0.0.1:3000; env: CALNEXUS_BIND_ADDR)
 cli-help_list_functions = List all available functions grouped by domain, then exit
 cli-help_serve_http = Start HTTP server mode (POST /api/v1/evaluate). Requires the server feature.

@@ -228,6 +228,8 @@ $ calnexus --var x=3 '2x'
 
 需以 `--features server` 启用（`server = http + mcp`）：`calnexus --serve-http` 提供 REST 求值 API 与 `/health`、`/live`、`/ready`、`/metrics` 运维端点（默认 `127.0.0.1:3000`，`--bind` 可改）；`calnexus --serve-mcp` 以 stdio 传输暴露 `evaluate`、`list_functions` 工具（`fx` 构建额外注册 `fx_budget` / `fx_pricing`），可直接接入 Claude Desktop、Cursor 等客户端。
 
+`/metrics` 契约：Prometheus 文本含缓存三族 `calnexus_cache_{hits,misses,entries}`（含 `# HELP` / `# TYPE` 注释行）+ `sdforge_http_requests_total{route,method,status}` 计数族 + `sdforge_http_request_duration_seconds` 时延直方图族；`?format=json` 调试分支恰含 `hits` / `misses` / `entry_count` / `http_route_count` 四键。route 标签取请求 path（非路由模板），含 id 的高基数 REST 路径会放大序列——本地/内网部署注意。
+
 HTTP 端点清单与语言协商、Docker / Kubernetes 部署、可观测性与 `ratelimit` 限流、MCP 客户端配置与参数约定、错误语义（400 / 422 / 503 与 CLI 退出码契约）及优雅关闭见 [🖥️ 服务模式指南](docs/SERVER.md)。
 
 ---

@@ -322,19 +322,89 @@ fn current_unix_timestamp() -> u64 {
 #[config(env_prefix = "CALNEXUS_FX_")]
 pub struct FxProviderConfig {
     /// `CALNEXUS_FX_TTL_HOURS`（小时，支持小数；非法回退 24h）。
+    #[serde(default, deserialize_with = "de_env_string")]
     pub ttl_hours: Option<String>,
     /// `CALNEXUS_FX_BREAKER_THRESHOLD`（连续失败次数；非法或 <1 回退默认）。
+    #[serde(default, deserialize_with = "de_env_string")]
     pub breaker_threshold: Option<String>,
     /// `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`（秒；0=关闭快速失败，非法回退默认）。
+    #[serde(default, deserialize_with = "de_env_string")]
     pub breaker_cooldown_secs: Option<String>,
     /// `CALNEXUS_FX_ALLOW_STALE`（仅 "1" 为 true）。
+    #[serde(default, deserialize_with = "de_env_string")]
     pub allow_stale: Option<String>,
+}
+
+/// env 层推断值统一按原始字符串收编。
+///
+/// confers EnvSource 的 `infer_config_value` 把 `"48"` 推断为整数、`"0.5"`
+/// 为浮点、`"true"` 为布尔——直接进 `Option<String>` 会反序列化失败，令整个
+/// `build()` 报错（再被 `from_env` 的 `unwrap_or_default` 吞成全默认，env
+/// 静默失效）。本助手把标量一律转回字符串，三态契约（合法值/非法回退默认/
+/// 缺省默认）仍由既有纯解析函数承载；`ALLOW_STALE` 的"仅 1 为 true"语义
+/// 依赖此处保留原始字符串而非推断出的布尔/整数。
+fn de_env_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct EnvStringVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for EnvStringVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a scalar env value (string, number, or bool)")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Self::Value, E> {
+            Ok(Some(v.to_string()))
+        }
+
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D2>(self, deserializer: D2) -> Result<Self::Value, D2::Error>
+        where
+            D2: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(self)
+        }
+    }
+
+    deserializer.deserialize_any(EnvStringVisitor)
 }
 
 impl FxProviderConfig {
     /// 从环境变量单点加载（env_prefix `CALNEXUS_FX_`）。
+    ///
+    /// `env_separator("__")`：confers 默认以单 `_` 作嵌套分隔符，会把 strip
+    /// 前缀后的 `TTL_HOURS` 转成嵌套路径 `ttl.hours`，与平铺字段 `ttl_hours`
+    /// 不匹配导致 env 静默失效；`__` 下 `CALNEXUS_FX_TTL_HOURS` → `ttl_hours`
+    /// 逐字命中，变量名与契约不变（`__` 保留给未来的嵌套字段）。
     pub fn from_env() -> Self {
         confers::config::<Self>()
+            .env_separator("__")
             .env_prefix("CALNEXUS_FX_")
             .build()
             .unwrap_or_default()
@@ -1070,6 +1140,65 @@ mod tests {
         assert!(!parse_allow_stale(Some("true")));
         assert!(!parse_allow_stale(Some("")));
         assert!(parse_allow_stale(Some("1")));
+    }
+
+    /// confers env 接线契约（串行化）：未设 → 访问器默认；逐一设值 → 映射生效；
+    /// remove 后回默认。env 为进程全局资源，静态互斥防止并行 #[test] 互相
+    /// 踩踏；edition 2024 下 set_var/remove_var 为 unsafe fn。
+    ///
+    /// 本测试是 confers `env_prefix` 接线的唯一直接保护：映射失效（前缀错误、
+    /// 字段名拼写错误）将使 CALNEXUS_FX_* 设置被静默忽略，只测纯解析函数
+    /// 无法暴露该故障。
+    #[test]
+    fn test_fx_config_env_mapping_contract() {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        const KEYS: [&str; 4] = [
+            "CALNEXUS_FX_TTL_HOURS",
+            "CALNEXUS_FX_BREAKER_THRESHOLD",
+            "CALNEXUS_FX_BREAKER_COOLDOWN_SECS",
+            "CALNEXUS_FX_ALLOW_STALE",
+        ];
+
+        // 未设任何 env：四字段访问器等于默认（R-fx-config-001 首条验收）
+        unsafe {
+            for key in KEYS {
+                std::env::remove_var(key);
+            }
+        }
+        let cfg = FxProviderConfig::from_env();
+        assert_eq!(cfg.ttl_seconds(), 24 * 3600);
+        assert_eq!(cfg.breaker_threshold(), DEFAULT_BREAKER_THRESHOLD);
+        assert_eq!(cfg.breaker_cooldown(), DEFAULT_BREAKER_COOLDOWN);
+        assert!(!cfg.allow_stale());
+
+        // 逐一设值：env_prefix 映射生效（整数与小数均覆盖）
+        unsafe { std::env::set_var("CALNEXUS_FX_TTL_HOURS", "48") };
+        assert_eq!(FxProviderConfig::from_env().ttl_seconds(), 48 * 3600);
+        unsafe { std::env::set_var("CALNEXUS_FX_TTL_HOURS", "0.5") };
+        assert_eq!(FxProviderConfig::from_env().ttl_seconds(), 1800);
+        unsafe { std::env::remove_var("CALNEXUS_FX_TTL_HOURS") };
+
+        unsafe { std::env::set_var("CALNEXUS_FX_BREAKER_THRESHOLD", "3") };
+        assert_eq!(FxProviderConfig::from_env().breaker_threshold(), 3);
+        unsafe { std::env::remove_var("CALNEXUS_FX_BREAKER_THRESHOLD") };
+
+        unsafe { std::env::set_var("CALNEXUS_FX_BREAKER_COOLDOWN_SECS", "0") };
+        assert_eq!(
+            FxProviderConfig::from_env().breaker_cooldown(),
+            Duration::ZERO
+        );
+        unsafe { std::env::remove_var("CALNEXUS_FX_BREAKER_COOLDOWN_SECS") };
+
+        unsafe { std::env::set_var("CALNEXUS_FX_ALLOW_STALE", "1") };
+        assert!(FxProviderConfig::from_env().allow_stale());
+        unsafe { std::env::remove_var("CALNEXUS_FX_ALLOW_STALE") };
+
+        // remove 后回默认（不留环境痕迹）
+        let cfg = FxProviderConfig::from_env();
+        assert_eq!(cfg.ttl_seconds(), 24 * 3600);
+        assert!(!cfg.allow_stale());
     }
 
     #[test]

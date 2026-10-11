@@ -298,7 +298,14 @@ impl HttpServer {
             .enable_all()
             .build()
             .map_err(|e| ServerError::Http(format!("failed to create tokio runtime: {}", e)))?;
-        runtime.block_on(self.start_inner())
+        let result = runtime.block_on(self.start_inner());
+        // inklog 的 LoggerManager（init_observability 经 init_inklog_logger_with_config
+        // 构建，库内部 mem::forget(manager)）的 sink worker 寄生在本 runtime 上；
+        // 库侧无 shutdown API，runtime 析构与 worker 退出握手死等（实测 >5min
+        // 不返回）——SIGTERM 优雅关闭后进程将永不退出。服务已停、进程即将退出，
+        // 跳过析构；每次调用泄漏一个有界 runtime（CLI 每进程调一次）。
+        std::mem::forget(runtime);
+        result
     }
 
     /// 内部 async 启动逻辑：bind TcpListener + sdforge 优雅关闭序列。
@@ -309,6 +316,13 @@ impl HttpServer {
     /// 在 select 前注册 SIGTERM handler（早期信号缓冲，无竞态窗口）。
     /// ConnectInfo 变体使请求携带真实对端地址（`super::ratelimit` 标识提取消费）。
     async fn start_inner(&self) -> Result<(), ServerError> {
+        // bind 先于日志初始化：bind 失败路径（含其测试）完全不触碰日志单例，
+        // 避免 inklog worker 寄生到会快速析构的 runtime 上导致退出死等，
+        // 并消除单例测试的顺序依赖（spec 未规定 init/bind 顺序，只约束
+        // 失败显性上抛）。
+        let listener = tokio::net::TcpListener::bind(&self.addr)
+            .await
+            .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
         // 日志初始化（observability feature）：async 上下文直接 await，无桥。
         // 失败显性化：ConfigError（单例哨兵已占）视为"已初始化"幂等成功
         // （重复调用不重试），其余错误上抛 ServerError::Http——不静默降级为
@@ -326,9 +340,6 @@ impl HttpServer {
         }
         #[cfg(not(feature = "observability"))]
         crate::server::init_observability().await;
-        let listener = tokio::net::TcpListener::bind(&self.addr)
-            .await
-            .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
         let router = build_router();
         sdforge::http::serve_with_graceful_shutdown_connect_info(
             router,

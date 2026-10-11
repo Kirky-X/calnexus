@@ -99,16 +99,6 @@ pub(crate) async fn evaluate_with_timeout(
     ))
 }
 
-/// 将 `CalcError` 映射为 sdforge 标准 `ApiError`（错误契约）。
-///
-/// 映射表：
-/// - `Timeout` → `ApiError::service_unavailable("evaluate", Some(30))`（HTTP 503 / MCP SERVICE_UNAVAILABLE）
-/// - 其余 9 种 `ErrorKind`（Parse/Eval/Overflow/DivisionByZero/Domain/Depth/NaNOrInf/
-///   UndefinedSymbol/Usage）→ `ApiError::invalid_input("{Kind}: {message}", None, None)`
-///   （HTTP 400 / MCP INVALID_INPUT）
-///
-/// `kind` 名称作为 `message` 前缀保留可诊断性（要求 message 含 kind 前缀，
-/// 如 `"DivisionByZero: ..."`）；原始 message 追加其后（失败显性化）。
 /// `CalcError` → `ApiError` 的标准映射（机器契约，恒英文）。
 ///
 /// - `Timeout`/`DependencyUnavailable` → `service_unavailable`（503 契约）

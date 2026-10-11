@@ -397,7 +397,7 @@ cli-help_latex = 以 LaTeX 渲染结果（如矩阵渲染为 pmatrix 环境）
 cli-help_steps = 显示分步求值过程（如 (2+9)*7-6 显示 2+9=11 等步骤）
 cli-help_canonical = 输出规范 S-表达式形式（如 3+2 输出 (+ 2 3)），跳过求值
 cli-help_timeout = 求值超时秒数（0.1-3600，默认 5；环境变量 CALNEXUS_TIMEOUT）
-cli-help_cache_size = 缓存条目预算（近似，条目数 × 4KB 字节上限；环境变量 CALNEXUS_CACHE_SIZE）
+cli-help_cache_size = 缓存条目预算（近似，条目数 × 4KB 字节上限；条目权重按 JSON 序列化字节计；环境变量 CALNEXUS_CACHE_SIZE）
 cli-help_bind = HTTP 服务绑定地址（默认 127.0.0.1:3000；环境变量 CALNEXUS_BIND_ADDR）
 cli-help_list_functions = 按域分组列出全部可用函数后退出
 cli-help_serve_http = 启动 HTTP 服务模式（POST /api/v1/evaluate）。需启用 server 特性。

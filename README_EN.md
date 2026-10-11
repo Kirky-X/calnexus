@@ -228,6 +228,8 @@ The behavior, output formats, and exit-code conventions of all flags — `--repl
 
 Enabled with `--features server` (`server = http + mcp`): `calnexus --serve-http` serves the REST evaluation API plus the `/health`, `/live`, `/ready`, and `/metrics` operational endpoints (default `127.0.0.1:3000`, configurable via `--bind`); `calnexus --serve-mcp` exposes the `evaluate` and `list_functions` tools over stdio (the `fx` build additionally registers `fx_budget` / `fx_pricing`), ready for Claude Desktop, Cursor, and other MCP clients.
 
+`/metrics` contract: the Prometheus text carries the three cache families `calnexus_cache_{hits,misses,entries}` (with `# HELP` / `# TYPE` comment lines) plus the `sdforge_http_requests_total{route,method,status}` counter family and the `sdforge_http_request_duration_seconds` latency histogram family; the `?format=json` debug branch carries exactly the four keys `hits` / `misses` / `entry_count` / `http_route_count`. The `route` label takes the request path (not the route template), so high-cardinality REST paths containing ids will multiply the series — relevant for local/intranet deployments.
+
 The endpoint list and language negotiation, Docker / Kubernetes deployment, observability and `ratelimit` throttling, MCP client configuration and argument conventions, error semantics (400 / 422 / 503 and the CLI exit-code contract), and graceful shutdown are covered in the [🖥️ Server Guide](docs/SERVER.md).
 
 ---
