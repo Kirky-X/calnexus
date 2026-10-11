@@ -9,7 +9,9 @@
 //!   （moka `try_get_with` per-key 并发去重，compute 错误传播给所有等待者且不缓存）、
 //!   命中计数（leader 计 miss / follower 计 hit）
 //! - 领域层（本模块）：`CanonicalForm` → BLAKE3 256-bit 键（无 hex 中间分配）、
-//!   `EvalResult` 体积估算（权重与准入共用）、仅缓存 `Ok(EvalResult)` 语义
+//!   `EvalResult` 体积估算（权重与准入共用；口径=oxcache UnifiedSerializer 的
+//!   JSON 序列化字节，失败回退常量 64——weigher 每次插入触发一次完整序列化）、
+//!   仅缓存 `Ok(EvalResult)` 语义
 //!
 //! 核心类型：
 //! - [`CacheKeyGen`]：将 `CanonicalForm` 单次 BLAKE3 哈希为 `[u8; 32]` 键
@@ -53,42 +55,49 @@ impl CacheKeyGen {
     }
 }
 
-/// 估算 `EvalResult` 的内存占用字节数（缓存权重与准入阈值共用）。
-///
-/// 估算为下界近似：只计主要载荷，不追指针内层碎片；对准入决策足够。
-pub fn estimate_result_bytes(r: &EvalResult) -> u64 {
-    const BASE: u64 = 64;
-    match r {
-        EvalResult::Scalar(_) => 16,
-        EvalResult::Complex(_, _) => 24,
-        EvalResult::Matrix(m) => BASE + m.iter().map(|row| row.len() as u64 * 8).sum::<u64>(),
-        EvalResult::Vector(v) | EvalResult::Polynomial(v) => BASE + v.len() as u64 * 8,
-        EvalResult::ComplexList(v) => BASE + v.len() as u64 * 16,
-        EvalResult::Steps(v) => BASE + v.iter().map(|s| s.len() as u64).sum::<u64>(),
-        EvalResult::Symbolic(s) | EvalResult::LaTeX(s) | EvalResult::DateTime(s) => {
-            BASE + s.len() as u64
+/// 序列化失败时的 weigher 回退常量（字节）。
+pub const WEIGHT_FALLBACK_BYTES: u64 = 64;
+
+/// 进程级序列化器（weigher 与准入估算共用；`OnceLock` 惰性单例）。
+fn serializer() -> &'static oxcache::infra::serialization::UnifiedSerializer {
+    static SERIALIZER: std::sync::OnceLock<oxcache::infra::serialization::UnifiedSerializer> =
+        std::sync::OnceLock::new();
+    SERIALIZER.get_or_init(oxcache::infra::serialization::UnifiedSerializer::new)
+}
+
+/// 估算结果 → 权重的映射：`Ok(n)` 取 `n`；`Err` 回退 [`WEIGHT_FALLBACK_BYTES`]。
+/// 序列化失败只记一次 debug 日志（weigher 在插入热路径，失败通常系统性——
+/// 逐次刷屏无诊断增量）。
+fn map_estimate(size: oxcache::OxCacheResult<usize>) -> u64 {
+    match size {
+        Ok(n) => n as u64,
+        Err(e) => {
+            // 仅 observability feature 下有 tracing；其余构建静默回退
+            // （weigher 热路径不做 IO 决策）。OnceLock 保证只记一次。
+            static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+            if WARNED.set(()).is_ok() {
+                #[cfg(feature = "observability")]
+                tracing::debug!(
+                    error = %e,
+                    fallback = WEIGHT_FALLBACK_BYTES,
+                    "cache weigher 序列化失败，回退常量权重"
+                );
+                #[cfg(not(feature = "observability"))]
+                let _ = e;
+            }
+            WEIGHT_FALLBACK_BYTES
         }
-        EvalResult::Json(v) => BASE + estimate_json_bytes(v),
-        EvalResult::BigInt(b) => BASE + b.bits() / 8 + 1,
-        EvalResult::BigRational(q) => BASE + (q.numer().bits() + q.denom().bits()) / 8 + 2,
     }
 }
 
-/// 估算 `serde_json::Value` 的序列化字节数（递归，无分配）。
-fn estimate_json_bytes(v: &serde_json::Value) -> u64 {
-    match v {
-        serde_json::Value::Null => 4,
-        serde_json::Value::Bool(_) => 5,
-        serde_json::Value::Number(_) => 16,
-        serde_json::Value::String(s) => s.len() as u64 + 2,
-        serde_json::Value::Array(a) => a.iter().map(estimate_json_bytes).sum::<u64>() + 2,
-        serde_json::Value::Object(o) => {
-            o.iter()
-                .map(|(k, val)| k.len() as u64 + 4 + estimate_json_bytes(val))
-                .sum::<u64>()
-                + 2
-        }
-    }
+/// 估算 `EvalResult` 的缓存权重（字节）。
+///
+/// 口径=oxcache `UnifiedSerializer` 的 JSON 序列化字节数（与缓存存储形态
+/// 一致，不再是独立的下界近似）；序列化失败回退 [`WEIGHT_FALLBACK_BYTES`]。
+/// 代价：每次插入触发一次完整序列化（weigher  semantics），已在
+/// `--cache-size` help 与模块文档注明。
+pub fn estimate_result_bytes(r: &EvalResult) -> u64 {
+    map_estimate(serializer().estimate_size(r))
 }
 
 /// L1 缓存管理器。
@@ -603,27 +612,56 @@ mod tests {
         assert_eq!(stats.entry_count, cache.entry_count());
     }
 
-    // ===== 估算函数 =====
+    // ===== 估算函数（口径：oxcache UnifiedSerializer JSON 序列化字节） =====
 
     #[test]
-    fn test_estimate_result_bytes_variants() {
-        assert_eq!(estimate_result_bytes(&EvalResult::Scalar(1.0)), 16);
+    fn test_estimate_result_bytes_variants_positive() {
+        // 每个 EvalResult 变体估重 > 0（序列化字节口径）
+        let cases = [
+            EvalResult::Scalar(1.0),
+            EvalResult::Complex(1.0, 2.0),
+            EvalResult::Matrix(vec![vec![0.0; 4]; 4]),
+            EvalResult::Vector(vec![1.0, 2.0]),
+            EvalResult::Polynomial(vec![1.0, 0.0, 3.5]),
+            EvalResult::ComplexList(vec![(1.0, 2.0)]),
+            EvalResult::Steps(vec!["a".to_string()]),
+            EvalResult::Symbolic("x+1".to_string()),
+            EvalResult::LaTeX("\\frac{1}{2}".to_string()),
+            EvalResult::DateTime("2026-10-09T00:00:00Z".to_string()),
+            EvalResult::Json(serde_json::json!({"a": 1})),
+            EvalResult::BigInt(num_bigint::BigInt::from(1u8)),
+            EvalResult::BigRational(num_rational::BigRational::new(1.into(), 2.into())),
+        ];
+        for case in &cases {
+            let w = estimate_result_bytes(case);
+            assert!(w > 0, "变体 {:?} 估重应 > 0，实际 {}", case, w);
+        }
+    }
+
+    #[test]
+    fn test_estimate_monotonic_with_payload() {
+        // 载荷增大 → 估重单调不减（序列化字节口径，Scalar→Json 字符串变长）
+        let small = estimate_result_bytes(&EvalResult::Json(serde_json::json!({"s": "x"})));
+        let large = estimate_result_bytes(&EvalResult::Json(
+            serde_json::json!({"s": "x".repeat(1024)}),
+        ));
         assert!(
-            estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 100]; 100])) > 100 * 100 * 8,
-            "矩阵估算应随尺寸增长"
+            large >= small,
+            "载荷增大估重不应减少：small={} large={}",
+            small,
+            large
         );
-        assert!(
-            estimate_result_bytes(&EvalResult::BigInt(num_bigint::BigInt::from(1u8))) > 0,
-            "BigInt 估算非负"
-        );
-        assert!(
-            estimate_result_bytes(&EvalResult::Json(serde_json::json!({"a": 1}))) > 0,
-            "Json 估算非负"
-        );
-        // 单调性：更大的矩阵估算更大
-        let small = estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 10]]));
-        let large = estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 100]]));
-        assert!(large > small);
+        let m_small = estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 10]]));
+        let m_large = estimate_result_bytes(&EvalResult::Matrix(vec![vec![0.0; 100]]));
+        assert!(m_large > m_small, "矩阵增大估重应增长");
+    }
+
+    #[test]
+    fn test_map_estimate_failure_falls_back_to_constant() {
+        // 序列化失败路径：Err → 回退常量 64，不 panic（纯映射单测）
+        let err = oxcache::OxCacheError::InvalidInput("injected".to_string());
+        assert_eq!(map_estimate(Err(err)), WEIGHT_FALLBACK_BYTES);
+        assert_eq!(map_estimate(Ok(128)), 128);
     }
 
     // ===== proptest 属性测试 =====

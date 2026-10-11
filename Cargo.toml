@@ -6,7 +6,7 @@ authors = ["Kirky-X <Kirky-X@outlook.com>"]
 license = "MIT"
 # MSRV 与 base 生态一致基线对齐（sdforge 0.5.0-rc 系要求 1.97.1；CI msrv 任务同步）
 rust-version = "1.97.1"
-description = "A command-line math expression evaluator with 11 core and 4 optional (numerical/time/unit/fx) computation domains, symbolic calculus, REPL, batch processing, HTTP and MCP servers"
+description = "A command-line math expression evaluator with 11 core and 3 optional (time/unit/fx) computation domains plus a numerical-linalg feature, symbolic calculus, REPL, batch processing, HTTP and MCP servers"
 keywords = ["math", "calculator", "symbolic", "repl", "cli"]
 categories = ["command-line-utilities", "mathematics", "science"]
 repository = "https://github.com/kirky-x/calnexus"
@@ -46,7 +46,7 @@ mathexpr = { version = "0.1", default-features = false }
 # 缓存层（oxcache byte-weight + serialization：同步字节权重预算 + try_get_with single-flight；
 # serialization feature 供 UnifiedSerializer::estimate_size 序列化字节估重（L1 缓存 weigher 口径）；
 # 禁用默认特性避免 tokio/redis 等后端栈；键生成留在 src/core/cache.rs）
-oxcache = { version = "0.5.0-rc.5", default-features = false, features = ["byte-weight", "serialization"] }
+oxcache = { version = "0.5.0-rc.6", default-features = false, features = ["byte-weight", "serialization"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
 # 哈希
