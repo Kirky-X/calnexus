@@ -14,7 +14,7 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 use crate::math::unit as math_unit;
 
 /// 单位换算函数白名单：mod/abs 由 parser 转换而来，包围 convert 结果时需路由至本域。
-const UNIT_FUNCTIONS: &[&str] = &["convert", "mod", "abs"];
+pub(crate) const UNIT_FUNCTIONS: &[&str] = &["convert", "mod", "abs"];
 
 /// 单位换算域：支持 `convert(value, "from", "to")` 覆盖 8 个量纲。
 pub struct UnitDomain;

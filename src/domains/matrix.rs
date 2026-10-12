@@ -17,7 +17,11 @@ use nalgebra::DVector;
 use crate::math::matrix as math_matrix;
 
 /// 矩阵函数白名单（eval_function 处理）；lu/qr/eig/svd/solve 走 numerical 短路。
-const MATRIX_FUNCTIONS: &[&str] = &["det", "transpose", "inverse", "identity"];
+pub(crate) const MATRIX_FUNCTIONS: &[&str] = &["det", "transpose", "inverse", "identity"];
+
+/// numerical feature 专有函数白名单（函数目录派生用）；matrix_exp 仅经 trait API 暴露，不可表达式路由。
+#[cfg(feature = "numerical")]
+pub(crate) const NUMERICAL_FUNCTIONS: &[&str] = &["lu", "qr", "eig", "svd", "solve"];
 
 /// 路由认领全集（contains_matrix 与 precision 错误信息共用）；新增函数只改这里。
 const MATRIX_NUMERICAL_FUNCTIONS: &[&str] = &[

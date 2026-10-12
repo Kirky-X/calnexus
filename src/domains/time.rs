@@ -49,7 +49,7 @@ impl Default for TimeDomain {
 }
 
 /// 时间域支持的函数名集合。
-const TIME_FUNCTIONS: &[&str] = &[
+pub(crate) const TIME_FUNCTIONS: &[&str] = &[
     "date",
     "datetime",
     "timestamp",

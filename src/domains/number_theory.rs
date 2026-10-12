@@ -14,7 +14,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 /// 数论函数白名单。
-const NUMBER_THEORY_FUNCTIONS: &[&str] = &[
+pub(crate) const NUMBER_THEORY_FUNCTIONS: &[&str] = &[
     "gcd",
     "lcm",
     "is_prime",

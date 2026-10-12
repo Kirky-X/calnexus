@@ -14,6 +14,9 @@ use num_complex::Complex64;
 
 use crate::math::complex as math_complex;
 
+/// 复数专用函数白名单（总是路由至本域）；abs/exp/ln 为跨域共享函数，不在此列。
+pub(crate) const COMPLEX_FUNCTIONS: &[&str] = &["complex", "conj", "arg"];
+
 /// Complex 计算域：priority=30，高于 Scientific（20）与 Arithmetic（10）。
 pub struct ComplexDomain;
 
@@ -271,7 +274,7 @@ fn contains_complex(ast: &AstNode) -> bool {
         AstNode::Complex(_, _) => true,
         AstNode::FunctionCall(name, args) => {
             // 复数专用函数：总是路由至 ComplexDomain
-            if matches!(name.as_str(), "complex" | "conj" | "arg") {
+            if COMPLEX_FUNCTIONS.contains(&name.as_str()) {
                 return true;
             }
             // 共享函数（abs/exp/ln）：仅当参数含 Complex 节点时路由

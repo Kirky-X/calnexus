@@ -15,7 +15,7 @@ use nalgebra::DVector;
 use crate::math::vector as math_vec;
 
 /// 向量函数白名单。
-const VECTOR_FUNCTIONS: &[&str] = &[
+pub(crate) const VECTOR_FUNCTIONS: &[&str] = &[
     "dot",
     "cross",
     "norm",

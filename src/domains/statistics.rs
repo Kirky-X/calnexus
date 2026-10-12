@@ -13,7 +13,7 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 use crate::math::statistics as math_stats;
 
 /// 统计函数白名单：基础统计、分布、假设检验、相关系数。
-const STATISTICS_FUNCTIONS: &[&str] = &[
+pub(crate) const STATISTICS_FUNCTIONS: &[&str] = &[
     // 基础统计
     "mean",
     "variance",

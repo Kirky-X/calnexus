@@ -9,7 +9,7 @@ use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
 /// 科学函数白名单。
-const SCIENTIFIC_FUNCTIONS: &[&str] = &[
+pub(crate) const SCIENTIFIC_FUNCTIONS: &[&str] = &[
     "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log10", "log2", "log", "exp", "sinh",
     "cosh", "tanh", "gamma", "erf",
 ];

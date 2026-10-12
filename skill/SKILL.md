@@ -162,9 +162,7 @@ calnexus --serve-mcp                          # MCP（stdio）
 | FX（`fx`） | 30 | `fx(value, "FROM", "TO")`、`fx_rate("FROM", "TO")` |
 | Numerical（`numerical`） | — | 经 Matrix 域委托 `lu qr eig svd solve`（无独立域） |
 
-路由策略：按优先级降序遍历，首个 `supports()` 命中即路由。`calnexus --list-functions` 输出运行时函数目录（按域分组）。
-
-> 注：`--list-functions` 目录与域实际路由存在少量漂移（目录多列了 `trace`/`re`/`im`/`magnitude`/`phase`/`stddev`，漏列 `count`/`identity`/`log10`/`log2`）；本表以实际可路由行为为准。
+路由策略：按优先级降序遍历，首个 `supports()` 命中即路由。`calnexus --list-functions` 输出运行时函数目录（按域分组）；目录由各域路由白名单常量派生，与实际路由一致（防漂移测试钉死）。
 
 ## 架构链路
 

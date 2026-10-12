@@ -15,7 +15,7 @@ use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 /// 组合函数白名单。
-const COMBINATORICS_FUNCTIONS: &[&str] = &["P", "C", "catalan", "stirling"];
+pub(crate) const COMBINATORICS_FUNCTIONS: &[&str] = &["P", "C", "catalan", "stirling"];
 
 /// Combinatorics 计算域：priority=25，支持 P/C/catalan/stirling。
 pub struct CombinatoricsDomain;

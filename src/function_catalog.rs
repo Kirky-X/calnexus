@@ -4,83 +4,29 @@
 //! 全量函数名表（单一事实源）：供 REPL 补全、CLI `--list-functions`、MCP `list_functions` 共用。
 
 /// 各域函数目录：`(域名, 函数名列表)`；域名与 `DomainRouter::domain_name()` 一致。
+/// 列表逐域派生自各域路由白名单常量（单一事实源，新增函数只改白名单），防目录漂移。
 pub const DOMAIN_FUNCTIONS: &[(&str, &[&str])] = &[
-    ("arithmetic", &["abs", "mod", "factorial"]),
-    (
-        "scientific",
-        &[
-            "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log", "exp", "sinh", "cosh",
-            "tanh", "gamma", "erf",
-        ],
-    ),
-    (
-        "statistics",
-        &["mean", "median", "variance", "stddev", "sum", "min", "max"],
-    ),
+    ("arithmetic", crate::domains::ARITHMETIC_FUNCTIONS),
+    ("scientific", crate::domains::SCIENTIFIC_FUNCTIONS),
+    ("statistics", crate::domains::STATISTICS_FUNCTIONS),
     ("precision", &["precision"]),
-    (
-        "number_theory",
-        &[
-            "gcd",
-            "lcm",
-            "is_prime",
-            "prime_sieve",
-            "mod_inverse",
-            "mod_pow",
-            "euler_phi",
-        ],
-    ),
-    ("combinatorics", &["P", "C", "catalan", "stirling"]),
-    (
-        "polynomial",
-        &[
-            "poly_add",
-            "poly_sub",
-            "poly_mul",
-            "poly_div",
-            "poly_eval",
-            "poly_diff",
-            "poly_integrate",
-            "roots",
-            "factor",
-        ],
-    ),
-    (
-        "complex",
-        &["complex", "re", "im", "conj", "magnitude", "phase"],
-    ),
-    ("matrix", &["det", "transpose", "inverse", "trace"]),
-    (
-        "vector",
-        &[
-            "dot",
-            "cross",
-            "norm",
-            "angle",
-            "normalize",
-            "scalar_triple",
-        ],
-    ),
-    (
-        "symbolic",
-        &["diff", "integrate", "simplify", "limit", "taylor"],
-    ),
+    ("number_theory", crate::domains::NUMBER_THEORY_FUNCTIONS),
+    ("combinatorics", crate::domains::COMBINATORICS_FUNCTIONS),
+    ("polynomial", crate::domains::POLYNOMIAL_FUNCTIONS),
+    ("complex", crate::domains::COMPLEX_FUNCTIONS),
+    ("matrix", crate::domains::MATRIX_FUNCTIONS),
+    ("vector", crate::domains::VECTOR_FUNCTIONS),
+    ("symbolic", crate::domains::SYMBOLIC_FUNCTIONS),
     // ---- 可选域（feature 门控） ----
-    // `time` feature
     #[cfg(feature = "time")]
-    ("time", &["now", "today", "date_diff"]),
-    // `unit` feature
+    ("time", crate::domains::TIME_FUNCTIONS),
     #[cfg(feature = "unit")]
-    ("unit", &["convert"]),
-    // `fx` feature
+    ("unit", crate::domains::UNIT_FUNCTIONS),
     #[cfg(feature = "fx")]
-    ("fx", &["fx", "fx_rate"]),
-    // `numerical` feature（经 matrix 域委托）
+    ("fx", crate::domains::FX_FUNCTIONS),
+    // `numerical` feature（matrix 域 numerical 短路函数；matrix_exp 仅经 trait API 暴露）
     #[cfg(feature = "numerical")]
-    (
-        "numerical",
-        &["lu", "qr", "eig", "svd", "solve", "matrix_exp"],
-    ),
+    ("numerical", crate::domains::NUMERICAL_FUNCTIONS),
 ];
 
 /// 全部函数名扁平列表（REPL Tab 补全用，按域序去重）。
@@ -107,12 +53,47 @@ mod tests {
             "arithmetic",
             "scientific",
             "statistics",
+            "precision",
             "number_theory",
+            "combinatorics",
+            "polynomial",
+            "complex",
             "matrix",
             "vector",
             "symbolic",
         ] {
-            assert!(domains.contains(&required), "目录应含 {} 域", required);
+            assert!(domains.contains(&required), "目录应含已注册域 {}", required);
+        }
+    }
+
+    /// 目录与各域路由白名单逐域对账：幻影项（目录有、路由无）与漏列（路由有、目录无）都在此暴露。
+    #[test]
+    fn test_catalog_matches_routing_whitelists() {
+        for (domain, funcs) in DOMAIN_FUNCTIONS {
+            let expected: &[&str] = match *domain {
+                "arithmetic" => crate::domains::ARITHMETIC_FUNCTIONS,
+                "scientific" => crate::domains::SCIENTIFIC_FUNCTIONS,
+                "statistics" => crate::domains::STATISTICS_FUNCTIONS,
+                "number_theory" => crate::domains::NUMBER_THEORY_FUNCTIONS,
+                "combinatorics" => crate::domains::COMBINATORICS_FUNCTIONS,
+                "polynomial" => crate::domains::POLYNOMIAL_FUNCTIONS,
+                "complex" => crate::domains::COMPLEX_FUNCTIONS,
+                "matrix" => crate::domains::MATRIX_FUNCTIONS,
+                "vector" => crate::domains::VECTOR_FUNCTIONS,
+                "symbolic" => crate::domains::SYMBOLIC_FUNCTIONS,
+                #[cfg(feature = "time")]
+                "time" => crate::domains::TIME_FUNCTIONS,
+                #[cfg(feature = "unit")]
+                "unit" => crate::domains::UNIT_FUNCTIONS,
+                #[cfg(feature = "fx")]
+                "fx" => crate::domains::FX_FUNCTIONS,
+                #[cfg(feature = "numerical")]
+                "numerical" => crate::domains::NUMERICAL_FUNCTIONS,
+                // precision 域无白名单常量，目录即事实源
+                "precision" => continue,
+                other => panic!("目录出现未知域 {}，请同步 factory 注册与白名单", other),
+            };
+            assert_eq!(*funcs, expected, "{} 目录与路由白名单漂移", domain);
         }
     }
 

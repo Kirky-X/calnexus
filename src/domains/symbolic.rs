@@ -12,7 +12,8 @@ use crate::math::symbolic as math_sym;
 pub use crate::math::symbolic::ast_to_symbolic;
 
 /// 符号函数白名单。
-const SYMBOLIC_FUNCTIONS: &[&str] = &["diff", "integrate", "simplify", "limit", "taylor"];
+pub(crate) const SYMBOLIC_FUNCTIONS: &[&str] =
+    &["diff", "integrate", "simplify", "limit", "taylor"];
 
 // ============================ AstNode ↔ SymbolicExpr 转换 ============================
 // ast_to_symbolic 实现在 math::symbolic，此处 re-export 兼容旧路径。

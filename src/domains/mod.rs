@@ -30,6 +30,26 @@ mod vector;
 
 pub(crate) use factory::{build_default_router, build_precision_domain};
 
+// 函数白名单常量供 function_catalog 派生目录（单一事实源，防目录漂移）
+pub(crate) use arithmetic::ARITHMETIC_FUNCTIONS;
+pub(crate) use combinatorics::COMBINATORICS_FUNCTIONS;
+pub(crate) use complex::COMPLEX_FUNCTIONS;
+#[cfg(feature = "fx")]
+pub(crate) use fx::FX_FUNCTIONS;
+pub(crate) use matrix::MATRIX_FUNCTIONS;
+#[cfg(feature = "numerical")]
+pub(crate) use matrix::NUMERICAL_FUNCTIONS;
+pub(crate) use number_theory::NUMBER_THEORY_FUNCTIONS;
+pub(crate) use polynomial::POLYNOMIAL_FUNCTIONS;
+pub(crate) use scientific::SCIENTIFIC_FUNCTIONS;
+pub(crate) use statistics::STATISTICS_FUNCTIONS;
+pub(crate) use symbolic::SYMBOLIC_FUNCTIONS;
+#[cfg(feature = "time")]
+pub(crate) use time::TIME_FUNCTIONS;
+#[cfg(feature = "unit")]
+pub(crate) use unit::UNIT_FUNCTIONS;
+pub(crate) use vector::VECTOR_FUNCTIONS;
+
 pub use arithmetic::ArithmeticDomain;
 pub use combinatorics::CombinatoricsDomain;
 pub use complex::ComplexDomain;

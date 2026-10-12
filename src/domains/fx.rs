@@ -15,7 +15,7 @@ use super::fx_provider::{FrankfurterProvider, RateProvider};
 use crate::math::fx as math_fx;
 
 /// fx 域函数白名单：仅 fx/fx_rate 触发路由，避免 mod/abs 误路由。
-const FX_FUNCTIONS: &[&str] = &["fx", "fx_rate"];
+pub(crate) const FX_FUNCTIONS: &[&str] = &["fx", "fx_rate"];
 
 /// 求值函数白名单：在 FX_FUNCTIONS 之上额外含 mod/abs，用于处理算术包围。
 const FX_EVAL_FUNCTIONS: &[&str] = &["fx", "fx_rate", "mod", "abs"];

@@ -10,7 +10,7 @@ use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
 /// 算术函数白名单（parser 预处理后的函数名）。
-const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
+pub(crate) const ARITHMETIC_FUNCTIONS: &[&str] = &["factorial", "mod", "abs"];
 
 /// Arithmetic 计算域：priority=10，四则运算/幂/阶乘/取模/绝对值，溢出用 is_finite 检测。
 pub struct ArithmeticDomain;

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- 函数目录（`--list-functions` / REPL Tab 补全 / MCP `list_functions`）与各域路由白名单漂移：删除幻影项 `stddev`/`trace`/`re`/`im`/`magnitude`/`phase`/`matrix_exp`（`matrix_exp` 仅经 trait API 暴露），补列 `count`/`identity`/`log10`/`log2`/`arg` 及 statistics 分布与检验 21 项、time 域 11 项、vector 域 7 项；目录改为从各域白名单常量派生（单一事实源），新增防漂移测试逐域对账
+
 ## [0.2.0-rc.2] - 2026-10-12
 
 ### 自研依赖升级与特性吸收（2026-10-12）

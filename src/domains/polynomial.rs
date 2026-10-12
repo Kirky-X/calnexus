@@ -14,7 +14,7 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 use crate::math::polynomial as math_poly;
 
 /// 多项式函数白名单。
-const POLYNOMIAL_FUNCTIONS: &[&str] = &[
+pub(crate) const POLYNOMIAL_FUNCTIONS: &[&str] = &[
     "poly_add",
     "poly_sub",
     "poly_mul",
