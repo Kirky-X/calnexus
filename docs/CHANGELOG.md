@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-rc.2] - 2026-10-12
+
 ### 自研依赖升级与特性吸收（2026-10-12）
 
 #### Changed
@@ -23,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fx 熔断 Open 态迟到成功误闭合（随 limiteron 0.3.0-rc.6 修复吸收，新增回归测试 `test_breaker_open_state_survives_late_success` 锚定）
 - inklog 通道打满时 ERROR/FATAL 兜底运行期补发、sink 降级/恢复 ops 事件自激循环修复、file sink fsync 与 0600 权限加固（随 inklog 升级吸收，无接线改动）
+
+## [0.2.0-rc.1] - 2026-09-21
 
 ### v015-comprehensive-optimization（2026-09-14，规格驱动：specmark）
 
@@ -278,7 +282,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 缓存层（`CacheManager` + `CanonicalForm` 规范化键）
 - 超时机制（`EvalContext.timeout` + 关键节点 `check_elapsed`）
 
-[unreleased]: https://github.com/kirky-x/calnexus/compare/v0.1.4...HEAD
+[unreleased]: https://github.com/kirky-x/calnexus/compare/v0.2.0-rc.2...HEAD
+[0.2.0-rc.2]: https://github.com/kirky-x/calnexus/compare/v0.2.0-rc.1...v0.2.0-rc.2
+[0.2.0-rc.1]: https://github.com/kirky-x/calnexus/compare/v0.1.4...v0.2.0-rc.1
 [0.1.4]: https://github.com/kirky-x/calnexus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/kirky-x/calnexus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/kirky-x/calnexus/compare/v0.1.1...v0.1.2
