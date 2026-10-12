@@ -174,7 +174,7 @@ $ calnexus --precision 30 '1/3'
 | `--steps` | 求解步骤 | `calnexus --steps '2+3*4'` → `3*4=12`、`2+12=14` |
 | `--explain` | 详细错误解释（与 `--json` 互斥） | 见[错误输出](#错误输出与退出码) |
 
-`--latex` / `--canonical` / `--steps` 与 `--json` / `--repl` / `--batch` / `--precision` 互斥。
+互斥关系（以 clap 声明为准）：`--latex` / `--steps` / `--canonical` 三者两两互斥，且均与 `--json` / `--repl` / `--batch` 互斥；其中仅 `--latex` / `--steps` 可与 `--precision` 组合（`--canonical` 与之互斥，实测 `--latex --precision 5 '1/3'` 正常输出 `0.33333`）。
 
 ### JSON 输出契约
 
@@ -216,6 +216,8 @@ Division by zero: divisor is zero
 ```
 
 退出码约定：**1** = 求值错误、**2** = 用法/系统错误、**3** = 超时/不可用（如 fx 上游故障）。
+
+管道下游提前关闭（如 `calnexus --list-functions | head -4`）时按 Unix 惯例被 SIGPIPE 静默终止（shell 报 141），不输出 panic 误报。
 
 ### 错误消息语言
 

@@ -385,7 +385,10 @@ repl-welcome = CalNexus REPL — type :help for commands, :quit to exit
 panic-internal_error = calnexus: internal error (panic)
 panic-report_bug = calnexus: please report this bug with the backtrace above
 panic-invalid_json = invalid JSON
+server-cache_stats_task_failed = cache stats task failed
 server-evaluate_task_failed = evaluate task failed
+server-observability_init_failed = observability init failed: { $error }
+server-readiness_check_timed_out = readiness check timed out after { $timeout }
 cli-help_expression = Expression to evaluate (reads from stdin if omitted and piped)
 cli-help_var = Variable binding: --var NAME=VALUE (can be repeated)
 cli-help_json = Output result as JSON with domain and cache metadata

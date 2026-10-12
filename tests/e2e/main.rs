@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 //! E2E 场景套件（S1-S9）：happy_path/edge_cases/error_paths/fx_mock/
-//! feature_gates/cache_router/security/server_e2e/cli_e2e 子模块，无 required-features。
+//! feature_gates/cache_router/security/server_e2e/cli_e2e 子模块，无 required-features
+//! （specmark/specs/test-coverage R-coverage-002）。
 
 #![allow(clippy::result_large_err)]
 // 测试输入含 3.14 等近似常量，与 lib.rs 同例豁免 clippy。
@@ -11,6 +12,7 @@
 mod common;
 
 mod cache_router;
+mod domain_dispatch;
 mod edge_cases;
 mod error_paths;
 mod feature_gates;

@@ -61,7 +61,7 @@ regex = { version = "1.13", default-features = false, features = ["std", "unicod
 num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
 # num-bigint: 锁定 0.4——num-rational 0.4.2（最新）固定 ^0.4，且 precision.rs 跨库传递 BigInt 类型，0.5 会破坏 BigRational 互操作
-num-bigint = { version = "0.5", default-features = false, features = ["std", "serde"] }
+num-bigint = { version = "0.4", default-features = false, features = ["std", "serde"] }
 num-rational = { version = "0.4", default-features = false, features = ["std", "serde", "num-bigint"] }
 num-integer = { version = "0.1", default-features = false, features = ["std"] }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
@@ -72,11 +72,12 @@ rayon = { version = "1.12", default-features = false, optional = true }
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
 # Fluent 消息目录（specmark change unify-rust-i18n：concurrent FluentBundle 双束承载 FTL，
 # locales/{en,zh}/messages.ftl 经 include_str! 内嵌；concurrent 变体为 Send+Sync 可入 static）
-fluent-bundle = "0.16"
-# Fluent 语言标识（束构建用 LanguageIdentifier）
-unic-langid = "0.9"
-# 系统语言探测（检测链第 4 级：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en）
-sys-locale = "0.3"
+fluent-bundle = { version = "0.16", default-features = false }
+# Fluent 语言标识（束构建用 LanguageIdentifier；default = []，无需额外特性）
+unic-langid = { version = "0.9", default-features = false }
+# 系统语言探测（检测链第 4 级：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en；
+# 无默认特性，js 特性仅 wasm 目标需要）
+sys-locale = { version = "0.3", default-features = false }
 # sdforge: CLI/HTTP/MCP 接口封装层
 sdforge = { version = "0.5.0-rc.8", default-features = false, optional = true }
 # axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
@@ -105,13 +106,18 @@ limiteron = { version = "0.3.0-rc.7", default-features = false, features = ["syn
 # 仅同步 env 源，无 feature 门控，不引入 dotenvy/toml 等格式栈）
 confers = { version = "0.6.0-rc.10", default-features = false, optional = true }
 
+# SIGPIPE 恢复默认处置：下游 `| head` 提前关闭管道时按 Unix 惯例静默终止，
+# 而非 EPIPE panic 被误报为内部 bug（仅 unix 目标链接；非 unix 由 panic hook 兜底）
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", default-features = false }
+
 [dev-dependencies]
-proptest = { version = "1.11", default-features = false, features = ["std"] }
+proptest = { version = "1.12", default-features = false, features = ["std"] }
 assert_cmd = { version = "2.2", default-features = false }
 predicates = { version = "3.1", default-features = false }
 tempfile = { version = "3.27", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
-insta = { version = "1.48", default-features = false }
+insta = { version = "1.49", default-features = false }
 criterion = { version = "0.8", default-features = false, features = ["plotters"] }
 expectrl = { version = "0.9", default-features = false }
 # tower: HTTP 集成测试用（ServiceExt::oneshot 测试 axum Router）

@@ -12,8 +12,8 @@ use crate::math;
 
 /// LinearAlgebra API 访问器。
 pub struct LinearAlgebraImpl<'a> {
-    #[allow(dead_code)]
-    pub(crate) cn: &'a CalNexus,
+    /// 保活字段：五个访问器统一持有引擎句柄（当前实现直调 math 层未读）。
+    pub(crate) _cn: &'a CalNexus,
 }
 
 // ── 辅助 ──

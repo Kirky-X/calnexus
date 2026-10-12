@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 通过 pty 驱动 `calnexus --repl` 的集成测试（30s 超时，flaky 用例标记 `#[ignore]`）。
+//! 通过 pty 驱动 `calnexus --repl` 的集成测试（30s 超时）。
 
 use expectrl::process::Healthcheck;
 use expectrl::session::OsSession;
-use expectrl::{Expect, spawn};
+use expectrl::{Expect, Session};
 use std::time::{Duration, Instant};
 
 /// REPL 提示符 `calnexus> `
@@ -14,11 +14,16 @@ const PROMPT: &str = "calnexus> ";
 /// 每测试 30s 超时
 const TEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// pty 终端类型：rustyline 对 TERM=dumb/cons25/emacs 禁用行编辑（无 Tab 补全、无历史召回），
+/// 而伪终端本身具备完整终端能力，故显式声明受支持的 TERM，使测试不受宿主 TERM 影响。
+const TERM: &str = "xterm-256color";
+
 /// 启动 calnexus --repl 会话
 fn spawn_repl() -> OsSession {
     let bin = assert_cmd::cargo::cargo_bin("calnexus");
-    let cmd_str = format!("{} --repl", bin.to_string_lossy());
-    spawn(&cmd_str).expect("failed to spawn calnexus --repl")
+    let mut cmd = std::process::Command::new(bin);
+    cmd.arg("--repl").env("TERM", TERM);
+    Session::spawn(cmd).expect("failed to spawn calnexus --repl")
 }
 
 /// 等待指定内容出现，超时则 panic
@@ -85,9 +90,8 @@ fn it_cli_019_view_vars() {
     let _ = session.send_line(":quit");
 }
 
-/// 上箭头召回历史输入（pty 下 flaky，标记 `#[ignore]`）
+/// 上箭头召回历史输入
 #[test]
-#[ignore = "history recall via pty is flaky on CI; run with --ignored"]
 fn it_cli_020_history_recall() {
     let mut session = spawn_repl();
     expect(&mut session, PROMPT, "IT-CLI-020 init");
@@ -122,17 +126,42 @@ fn it_cli_021_quit_exit_zero() {
     }
 }
 
-/// Tab 补全 `si` → `sin(`（pty 下 flaky，标记 `#[ignore]`）
-#[test]
-#[ignore = "tab completion via pty is flaky on CI; run with --ignored"]
-fn it_cli_022_tab_completion() {
+/// 输入 `prefix` 后按 Tab，断言补全候选（统一函数目录派生）已写入输入行
+fn assert_tab_completion(prefix: &str, expected: &str, test_name: &str) {
     let mut session = spawn_repl();
-    expect(&mut session, PROMPT, "IT-CLI-022 init");
-    session.send(b"si").expect("send si");
+    expect(&mut session, PROMPT, test_name);
+    session.send(prefix.as_bytes()).expect("send prefix");
     session.send(b"\t").expect("send tab");
-    expect(&mut session, "sin(", "IT-CLI-022 tab completion");
+    expect(&mut session, expected, test_name);
     let _ = session.send_line("");
     let _ = session.send_line(":quit");
+}
+
+/// Tab 补全 `si` → `sin`（候选取自统一函数目录）
+#[test]
+fn it_cli_022_tab_completion() {
+    assert_tab_completion("si", "sin", "IT-CLI-022 tab completion");
+}
+
+/// 启用 `unit` 后门控函数出现在 Tab 补全（`conv` → `convert`）
+#[cfg(feature = "unit")]
+#[test]
+fn it_cli_022_tab_completion_unit_gated() {
+    assert_tab_completion("conv", "convert", "IT-CLI-022 unit gated completion");
+}
+
+/// 启用 `time` 后门控函数出现在 Tab 补全（`tod` → `today`）
+#[cfg(feature = "time")]
+#[test]
+fn it_cli_022_tab_completion_time_gated() {
+    assert_tab_completion("tod", "today", "IT-CLI-022 time gated completion");
+}
+
+/// 启用 `fx` 后门控函数出现在 Tab 补全（`fx_` → `fx_rate`）
+#[cfg(feature = "fx")]
+#[test]
+fn it_cli_022_tab_completion_fx_gated() {
+    assert_tab_completion("fx_", "fx_rate", "IT-CLI-022 fx gated completion");
 }
 
 /// 无效输入报错后会话仍可继续求值

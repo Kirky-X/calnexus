@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 
 - 破坏性变更（0.x）：`ErrorKind` 新增 `DependencyUnavailable` 变体（exhaustive match 需适配）；`--json` 成功输出 `result` 键序由 serde_json 字典序决定、Scalar 以 `5.0` 形式序列化、Complex 输出 `{re,im}` 判别对象；`lib.rs` server 通配导出改具名。均已在 `docs/schema/result-v1.json` 与 CHANGELOG 记录。
-- 性能基线：`target/criterion/main`（cache_hit ≈ 1.29µs、parser_large_expression/4096-char ≈ 73µs）。
+- 性能基线：`target/criterion/main`（cache_hit ≈ 1.29µs、parser_large_expression/4096-char ≈ 73µs）。此为 v015 重构时点（2026-09-14）的历史基线，非当前口径——现行基线（cache_hit/`2+3` ≈ 0.902µs，2026-09-17 commit `597ffb2`）见 [PERFORMANCE.md](PERFORMANCE.md)。
 
 ## [0.1.4] - 2026-07-26
 

@@ -193,50 +193,6 @@ fn beta_series(a: f64, b: f64, x: f64) -> f64 {
     prefactor * sum_val
 }
 
-#[allow(dead_code)]
-fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
-    let qab = a + b;
-    let qap = a + 1.0;
-    let qam = a - 1.0;
-    let mut c = 1.0;
-    let mut d = 1.0 - qab * x / qap;
-    if d.abs() < TINY {
-        d = TINY;
-    }
-    d = 1.0 / d;
-    let mut h = d;
-    for m in 1..=MAX_ITER {
-        let m = m as f64;
-        let aa = m * (b - m) * x / ((qam + 2.0 * m) * (a + 2.0 * m));
-        d = 1.0 + aa * d;
-        if d.abs() < TINY {
-            d = TINY;
-        }
-        c = 1.0 + aa / c;
-        if c.abs() < TINY {
-            c = TINY;
-        }
-        d = 1.0 / d;
-        h *= d * c;
-        let aa = -(a + m) * (qab + m) * x / ((a + 2.0 * m) * (qap + 2.0 * m));
-        d = 1.0 + aa * d;
-        if d.abs() < TINY {
-            d = TINY;
-        }
-        c = 1.0 + aa / c;
-        if c.abs() < TINY {
-            c = TINY;
-        }
-        d = 1.0 / d;
-        let delta = d * c;
-        h *= delta;
-        if (delta - 1.0).abs() < EPS {
-            return h;
-        }
-    }
-    h
-}
-
 /// 计算 ln(n!)。小 n（≤20）直接累加；大 n 用 ln_gamma(n+1)。
 pub fn ln_factorial(n: u64) -> f64 {
     if n <= 1 {

@@ -36,5 +36,7 @@ name = "list_depth_fuzz"
 path = "fuzz_targets/list_depth_fuzz.rs"
 
 [dependencies]
-libfuzzer-sys = { version = "0.4", default-features = false }
+# link_libfuzzer 提供 libFuzzer 运行时与 main（#![no_main] 目标必需）；
+# 关闭默认特性后必须显式启用，否则 7 个目标均以 "undefined symbol: main" 链接失败
+libfuzzer-sys = { version = "0.4", default-features = false, features = ["link_libfuzzer"] }
 calnexus = { path = ".." }

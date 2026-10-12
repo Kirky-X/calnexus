@@ -4,7 +4,8 @@
 #![allow(clippy::result_large_err)]
 #![allow(clippy::approx_constant, non_snake_case)]
 
-//! 跨能力集成测试：解析→规范化→缓存→路由→计算→输出全链路（含错误传播）。
+//! 跨能力集成测试：解析→规范化→缓存→路由→计算→输出全链路
+//! （含错误传播与 L1 缓存去重：交换律等价 / 常量折叠等价 共享缓存）。
 
 mod common;
 use common::default_router;

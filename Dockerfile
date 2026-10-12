@@ -3,15 +3,20 @@
 # 运行：docker run -p 3000:3000 calnexus:latest --serve-http --bind 0.0.0.0:3000
 
 # ---- 构建阶段 ----
-FROM rust:1.85-slim AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends protoc && rm -rf /var/lib/apt/lists/*
+# 基础镜像 = crate MSRV（Cargo.toml rust-version = 1.97.1），标签与运行阶段同为 bookworm
+# 以保持 glibc 版本一致（distroless/cc-debian12 = bookworm / glibc 2.36）
+FROM rust:1.97-slim-bookworm AS builder
+# 包名是 protobuf-compiler（提供 /usr/bin/protoc 供 prost/tonic 代码生成）
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY locales ./locales
-# 依赖缓存层（无 lock 变更时复用）
-RUN mkdir -p src/bin && echo "fn main() {}" > src/bin/dummy.rs || true
-RUN cargo build --release --features server --bin calnexus || cargo build --release --features server
+# tests/ 与 benches/ 是 Cargo.toml 显式声明的 target 路径，cargo 解析 manifest 时要求文件存在
+COPY tests ./tests
+COPY benches ./benches
+# 服务入口 --serve-http 由 cli feature 提供（cli 未启用时二进制仅报 feature 缺失并退出 2）
+RUN cargo build --release --features cli,server --bin calnexus
 
 # ---- 运行阶段 ----
 FROM gcr.io/distroless/cc-debian12

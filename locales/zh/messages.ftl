@@ -385,7 +385,10 @@ repl-welcome = CalNexus REPL — 输入 :help 查看命令，:quit 退出
 panic-internal_error = calnexus: 内部错误（panic）
 panic-report_bug = calnexus: 请携带上方 backtrace 报告此问题
 panic-invalid_json = 非法 JSON
+server-cache_stats_task_failed = 缓存统计任务失败
 server-evaluate_task_failed = evaluate 任务失败
+server-observability_init_failed = 可观测性初始化失败: { $error }
+server-readiness_check_timed_out = 就绪检查在 { $timeout } 后超时
 cli-help_expression = 要求值的表达式（省略且为管道输入时从 stdin 读取）
 cli-help_var = 变量绑定：--var NAME=VALUE（可重复）
 cli-help_json = 以 JSON 输出结果（含 domain 与缓存元数据）

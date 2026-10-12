@@ -174,7 +174,7 @@ impl FrankfurterProvider {
         }
     }
 
-    /// 测试专用构造函数：缓存文件路径 + 注入抓取闭包（并发测试与真实网络解耦）。
+    /// 测试专用构造函数：缓存文件路径 + 注入抓取闭包（覆盖「L2 过期文件」场景，与真实网络解耦）。
     #[cfg(test)]
     fn with_cache_path_and_fetcher(
         path: PathBuf,
@@ -208,7 +208,8 @@ impl Default for FrankfurterProvider {
 
 impl RateProvider for FrankfurterProvider {
     fn rates(&self) -> Result<RateTable, CalcError> {
-        // 未命中时 get_or_compute 单飞执行 compute；失败不写缓存，下次调用重试。
+        // L1 命中直接返回；未命中时 get_or_compute 单飞执行 compute
+        // （L2 读 → TTL 判定 → 熔断拉取 → 写回），失败不写缓存，下次调用重试。
         self.cache.get_or_compute(FX_RATES_KEY, || {
             // L2: 文件缓存（TTL 内有效；损坏自愈为 miss）
             let cache_read = self
@@ -895,7 +896,7 @@ mod tests {
 
     #[test]
     fn test_fetch_lock_concurrent_success_consistency() {
-        // 成功侧镜像：并发下所有线程必须看到同一张表（同 base/date/rates）。
+        // 成功侧镜像：部分线程真实抓取并写回 L1/L2，并发下所有线程必须看到同一张表（同 base/date/rates）。
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let table = RateTable {
             base: "EUR".to_string(),

@@ -80,7 +80,7 @@
 </tr>
 </table>
 
-除上述核心能力外，LaTeX / 步骤 / 规范形式三种格式化输出、中英双语错误消息（ICU4X）、运行时函数目录（`--list-functions`）、多平台预编译二进制与容器镜像等能力也随版本持续提供；逐项能力与 `Cargo.toml` 的 `[features]` 对应关系见 [🎨 特性标志](#-特性标志) 一节。
+除上述核心能力外，LaTeX / 步骤 / 规范形式三种格式化输出、中英双语错误消息（Fluent 目录内嵌、始终可用，与 `icu` feature 无关）、运行时函数目录（`--list-functions`）、多平台预编译二进制与容器镜像等能力也随版本持续提供；逐项能力与 `Cargo.toml` 的 `[features]` 对应关系见 [🎨 特性标志](#-特性标志) 一节。
 
 ---
 
@@ -137,7 +137,7 @@ $ calnexus --json '2+3'
 | CLI | `cargo install calnexus --features cli` | 命令行 / REPL / 批量 |
 | CLI 全域 | `cargo install calnexus --features cli,time,unit,fx` | 加时间 / 单位 / 汇率域 |
 | CLI + 数值 | `cargo install calnexus --features cli,numerical` | 数值线性代数 |
-| 双语 CLI | `cargo install calnexus --features cli,icu` | ICU4X 中英双语错误消息 |
+| 双语 CLI | `cargo install calnexus --features cli,icu` | 中英双语错误消息（始终内置）；`icu` 提供标准 BCP-47 语言标签解析 |
 | HTTP 服务 | `cargo install calnexus --features server` | REST + MCP 双协议服务 |
 | 生产服务 | `cargo install calnexus --features server,ratelimit,docs,observability` | 限流 + Swagger UI + 结构化日志 |
 | 全量 | `cargo install calnexus --all-features` | 完整能力集 |
@@ -150,7 +150,7 @@ $ calnexus --json '2+3'
 <tr><th style="text-align:left">特性</th><th style="text-align:center">默认</th><th style="text-align:left">说明</th></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>核心库</b></td></tr>
 <tr><td><code>default</code></td><td align="center">✅</td><td>零依赖核心：解析、规范化、14 域路由、缓存，可作嵌入式引擎</td></tr>
-<tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X 国际化错误消息（中英双语）</td></tr>
+<tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X BCP-47 语言标签解析（中英双语错误消息经 Fluent 内嵌、始终可用，不受此 feature 门控）</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>CLI 与交互</b></td></tr>
 <tr><td><code>cli</code></td><td align="center">❌</td><td>CLI / REPL / 批量（clap、rustyline、rayon，经 sdforge/cli 间接启用）</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>可选计算域</b></td></tr>
@@ -163,7 +163,7 @@ $ calnexus --json '2+3'
 <tr><td><code>mcp</code></td><td align="center">❌</td><td>MCP stdio 服务（sdforge/mcp）</td></tr>
 <tr><td><code>server</code></td><td align="center">❌</td><td><code>http</code> + <code>mcp</code> 聚合</td></tr>
 <tr><td><code>ratelimit</code></td><td align="center">❌</td><td>HTTP 限流中间件（固定窗口 per-IP，<code>CALNEXUS_RATELIMIT_*</code> 可配，探针豁免）</td></tr>
-<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI（<code>/swagger-ui</code>；<code>/api-docs/openapi.json</code> 暂为空 spec，见服务模式指南）</td></tr>
+<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI（<code>/swagger-ui/</code>，带尾斜杠；<code>/api-docs/openapi.json</code> 暂为空 spec，见服务模式指南）</td></tr>
 <tr><td><code>observability</code></td><td align="center">❌</td><td>tracing 结构化日志（EnvFilter 消费 <code>RUST_LOG</code>）</td></tr>
 </table>
 
@@ -275,7 +275,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 测试规模
 
-截至 v0.2.0-rc.1：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3039 个，其中单元测试 2496（`src/` 内联）、集成与 E2E 共 543（`tests/`，其中 E2E 场景套件 145）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
+当前工作区（v0.2.0-rc.1 后）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3040 个，其中单元测试 2497（`src/` 内联）、集成与 E2E 共 543（`tests/`，其中 E2E 场景套件 145）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
 
 ---
 

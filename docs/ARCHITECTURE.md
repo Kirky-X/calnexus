@@ -191,7 +191,6 @@ flowchart LR
 | `stats.rs` | DataAnalysisImpl — 基础统计(8) + 分布(16) + 假设检验(3) + 相关(2) + 回归(3)，共 32 方法 |
 | `symbolic_api.rs` | SymbolicMathImpl — 符号演算(5) + 多项式(6) + 复数(9) + 方程求解(1)，共 21 方法 |
 | `applied.rs` | AppliedMathImpl — 时间(13) + 单位(1) + 汇率(2)，共 16 方法（feature-gated） |
-| `cache.rs` | build_api_cache_key 基础实现 |
 
 **依赖方向**：`api/` → `math/` → `core/`，不依赖 `domains/`。
 
@@ -417,7 +416,7 @@ flowchart LR
 2. **Green**：重构实现使测试通过（行为不变）
 3. **Verify**：`cargo test` 全套通过 + `cargo clippy -D warnings` 0 告警 + codenexus 复杂度复测
 
-最终测试规模：**2820 个测试函数（2432 lib 内联 + 388 集成），CI 矩阵覆盖 cli / cli,time,unit,fx / cli,server / cli,server,fx / cli,numerical / all 六条腿，全部绿色；行覆盖 90.4%（llvm-cov，门禁 ≥90%）**。
+v0.1.5 重构完成时点的测试规模（历史记录；当前规模见 README「测试规模」节，以 grep 为准）：**2820 个测试函数（2432 lib 内联 + 388 集成），CI 矩阵覆盖 cli / cli,time,unit,fx / cli,server / cli,server,fx / cli,numerical / all 六条腿，全部绿色；行覆盖 90.4%（llvm-cov，门禁 ≥90%）**。
 
 ---
 

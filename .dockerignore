@@ -1,0 +1,17 @@
+# 构建上下文瘦身：target/ 与 fuzz/target/ 体积达数十 GB，必须排除
+target/
+fuzz/target/
+**/target/
+
+# 版本控制与 CI 配置（Dockerfile 构建不需要）
+.git/
+.github/
+
+# 本地工件/剖析产物
+*.out
+*.profraw
+lcov*.info
+cobertura.xml
+strix_runs/
+.venv/
+__pycache__/

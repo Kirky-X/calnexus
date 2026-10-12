@@ -38,6 +38,8 @@ calnexus --serve-http --bind 0.0.0.0:8080
 |------|------|------|
 | `/api/v1/evaluate` | POST | 表达式求值（JSON 请求/响应） |
 | `/api/v1/list_functions` | POST | 运行时函数目录（含 feature 门控域可见性） |
+| `/api/v1/fx_budget` | POST | 留学预算换算本币并给出 ±3% 汇率风险区间（需 `fx` + `mcp` feature） |
+| `/api/v1/fx_pricing` | POST | 按成本与目标利润率计算各币种安全售价（需 `fx` + `mcp` feature） |
 | `/health` | GET | 综合健康检查（含 L1 缓存状态） |
 | `/live` | GET | 存活探针（liveness，纯进程存活语义） |
 | `/ready` | GET | 就绪探针（readiness，依赖就绪语义） |
@@ -51,7 +53,7 @@ curl -X POST localhost:3000/api/v1/evaluate -H 'content-type: application/json' 
 # → {"code":"BAD_REQUEST","message":"求值错误: 未绑定变量: foo","trace_id":"...",...}
 ```
 
-`docs` feature 提供 Swagger UI（`/swagger-ui`）；注意 `/api-docs/openapi.json` 当前返回空 spec（`#[forge]` 的 OpenAPI 路由注册按下游 crate 的 `openapi` feature 名门控，CalNexus 未定义该 feature——预存缺口，修复须同时处理 sdforge 宏对请求体 schema 的粗粒度映射）。
+`docs` feature 提供 Swagger UI（`/swagger-ui/`，须带尾斜杠——路由按 axum 精确匹配挂载，`GET /swagger-ui` 返回 404）；注意 `/api-docs/openapi.json` 当前返回空 spec（`#[forge]` 的 OpenAPI 路由注册按下游 crate 的 `openapi` feature 名门控，CalNexus 未定义该 feature——预存缺口，修复须同时处理 sdforge 宏对请求体 schema 的粗粒度映射）。
 
 ---
 

@@ -5,7 +5,7 @@ description: CalNexus 项目使用指南。当需要了解如何构建、运行�
 
 # CalNexus
 
-生产级命令行数学表达式求值器：11 个核心计算域 + 4 个可选域（time/unit/fx/numerical）+ 符号微积分 + REPL + 批量处理 + 任意精度 + HTTP/MCP 服务模式。
+生产级命令行数学表达式求值器：11 个核心计算域 + 3 个可选域（time/unit/fx；`numerical` 为独立 feature、经 Matrix 域委托，无独立域）+ 符号微积分 + REPL + 批量处理 + 任意精度 + HTTP/MCP 服务模式。
 
 ## 安装
 
@@ -46,7 +46,7 @@ cargo install --path . --features cli
 | `time` | 时间计算域 | `date` / `datetime` / `timestamp` / `date_diff` / `date_add` / `weekday` 等 14 函数（jiff 0.2 + 内嵌 IANA tzdb） |
 | `unit` | 物理单位换算 | `convert(value, "from", "to")`，8 量纲 + 温度仿射换算 |
 | `fx` | 汇率换算 | `fx(value, "FROM", "TO")`、`fx_rate("FROM", "TO")`（frankfurter.dev + 三级缓存 + 熔断） |
-| `icu` | ICU4X 国际化 | BCP-47 语言标签解析（错误消息中英双语） |
+| `icu` | ICU4X 国际化 | BCP-47 语言标签解析（中英双语错误消息经 Fluent 内嵌、始终可用，与本 feature 无关） |
 | `http` | HTTP API | `POST /api/v1/evaluate`、`POST /api/v1/list_functions`；`GET /health` `/ready` `/live` `/metrics`（sdforge、axum） |
 | `mcp` | MCP 工具 | `evaluate` + `list_functions`（stdio，sdforge） |
 | `server` | HTTP + MCP 聚合 | 展开为 `http` + `mcp`，启用 `--serve-http` / `--serve-mcp` 旗标 |
@@ -114,7 +114,7 @@ calnexus --repl
 # calnexus> :quit
 ```
 
-REPL 命令：`:let` 绑定变量、`:vars` 查看变量、`:clear` 清空变量、`:help` 帮助、`:quit` / `:q` 退出。
+REPL 命令：`:let` 绑定变量、`:vars` 查看变量、`:clear` 清屏（不清除变量）、`:help` 帮助、`:quit` / `:q` 退出。
 
 ### 批量处理（rayon 并行）
 
@@ -142,7 +142,7 @@ calnexus --serve-http --bind 127.0.0.1:3000   # HTTP（默认 127.0.0.1:3000）
 calnexus --serve-mcp                          # MCP（stdio）
 ```
 
-## 计算域（11 核心 + 4 可选）
+## 计算域（11 核心 + 3 可选；`numerical` 为 feature 而非独立域）
 
 | 域 | 优先级 | 函数（表达式面，经路由实测） |
 | --- | --- | --- |
@@ -185,13 +185,13 @@ parse → AstCanonicalizer → CacheManager → DomainRouter → CalculationDoma
 
 ```bash
 cargo test --all-features                              # 全量测试（约 3000 用例）
-cargo test --all-features --test e2e                   # E2E 场景套件（tests/e2e/，五类场景 139 用例）
+cargo test --all-features --test e2e                   # E2E 场景套件（tests/e2e/，五类核心场景 145 用例）
 cargo clippy --all-features --all-targets -- -D warnings  # 零警告
 calnexus --list-functions                              # 运行时函数目录（按域分组）
 cargo bench --features cli                             # criterion 基准
 ```
 
-CI 矩阵：clippy 三腿（`cli` / `cli,server` / all）+ test 六腿（`cli` / `cli,time,unit,fx` / `cli,server` / `cli,server,fx` / `cli,numerical` / all）+ 单 feature check。覆盖率门禁为行覆盖率 ≥ 90%（llvm-cov，`--features "cli,time,unit,fx"` 口径，实测 90.4%）。测试用例权威口径见 README（v0.1.4：3007 个 `#[test]` 函数）。
+CI 矩阵：clippy 三腿（`cli` / `cli,server` / all）+ test 六腿（`cli` / `cli,time,unit,fx` / `cli,server` / `cli,server,fx` / `cli,numerical` / all）+ 单 feature check。覆盖率门禁为行覆盖率 ≥ 90%（llvm-cov，`--features "cli,time,unit,fx"` 口径，实测 90.4%）。测试用例权威口径见 README「测试规模」节（以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准，当前工作区 3040 个）。
 
 ## 详细参考
 

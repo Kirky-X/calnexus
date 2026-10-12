@@ -57,7 +57,8 @@
                 "NaNOrInf",
                 "UndefinedSymbol",
                 "Timeout",
-                "Usage"
+                "Usage",
+                "DependencyUnavailable"
               ]
             },
             "message": { "type": "string" },

@@ -3,14 +3,14 @@
 > 适用版本：calnexus **0.1.4 + [Unreleased]**（Rust 1.97.1 / edition 2024）
 > 用途：穷举现有测试套件的场景矩阵，作为回归验收与覆盖对照的单一事实源。原《测试方案》（`docs/TEST.md` v0.2.0，2026-06-28）中仍然有效的方法论（测试策略、覆盖率目标、通过标准、缺陷分级）已合并至本文档，原文已归档为 [docs/archive/TEST.md](archive/TEST.md)。
 > 编写依据（只读核对）：`Cargo.toml` 的 `[features]` 与 `[[test]]` 注册表、`src/` 内联 `#[cfg(test)]` 模块、`tests/` 12 个集成测试文件、`tests/e2e/` 9 个场景模块、`fuzz/` 7 个目标、`benches/` 4 组基准、`.github/workflows/ci.yml`。
-> 所有引用的测试名均经 grep 核实存在；数量口径：`grep -rE "#\[(tokio::)?test\]" src/ tests/ --include="*.rs" | wc -l`（截至本文档更新时为 **3039**）。
+> 所有引用的测试名均经 grep 核实存在；数量口径：`grep -rE "#\[(tokio::)?test\]" src/ tests/ --include="*.rs" | wc -l`（截至本文档更新时为 **3040**）。
 
 ## 📋 目录
 
 - [🎯 阅读约定](#-阅读约定)
 - [🗺️ 总览：功能域 × 测试位置](#️-总览功能域--测试位置)
 - [🔬 测试策略与覆盖率目标](#-测试策略与覆盖率目标)
-- [🧱 单元测试（`src/` 内联，2496）](#-单元测试src-内联2496)
+- [🧱 单元测试（`src/` 内联，2497）](#-单元测试src-内联2497)
 - [🔧 集成测试（`tests/`，398）](#-集成测试tests398)
   - [核心流水线集成（integration.rs，132）](#核心流水线集成integrationrs132)
   - [CLI 集成（cli_integration.rs，133）](#cli-集成cli_integrationrs133)
@@ -27,7 +27,7 @@
   - [S6 缓存与路由（cache_router.rs，18）](#s6-缓存与路由cache_routerrs18)
   - [S7 安全与健壮性（security.rs，9）](#s7-安全与健壮性securityrs9)
   - [S8 HTTP/MCP/ratelimit/docs（server_e2e.rs，9）](#s8-httpmcpratelimitdocsserver_e2ers9)
-  - [S9 CLI/批处理缺口（cli_e2e.rs，11）](#s9-cli批处理缺口cli_e2ers11)
+  - [S9 CLI/批处理缺口（cli_e2e.rs，12）](#s9-cli批处理缺口cli_e2ers12)
 - [⚡ 属性测试（proptest，12）](#-属性测试proptest12)
 - [📸 快照测试（insta，22）](#-快照测试insta22)
 - [🛡️ 安全测试（security_tests.rs，18）](#️-安全测试security_testsrs18)
@@ -57,19 +57,19 @@
 | 单元测试 | `src/core/` 内联 | 403 | evaluator、canonicalizer、cache、router 等核心 |
 | 单元测试 | `src/domains/` 内联 | 1267 | 11 核心域 + 可选域求值 |
 | 单元测试 | `src/math/` 内联 | 471 | 数学函数层 |
-| 单元测试 | `src/server/` 内联 | 89 | http / mcp / ratelimit |
+| 单元测试 | `src/server/` 内联 | 90 | http / mcp / ratelimit |
 | 单元测试 | `src/output/` 内联 | 130 | 文本 / JSON / LaTeX / 规范形式 / 步骤输出 |
 | 单元测试 | `src/api/` 内联 | 12 | `CalNexus` 门面与直接 API |
-| 单元测试 | 入口层（`src/*.rs`：cli / repl / batch / i18n / function_catalog / lib） | 124 | CLI 解析、REPL、批量、双语消息 |
+| 单元测试 | 入口层（`src/*.rs`：main / cli / repl / batch / i18n / function_catalog / lib） | 125 | CLI 解析、REPL、批量、双语消息、panic hook 管道兜底 |
 | 集成测试 | `tests/`（12 个文件，`[[test]]` 显式注册） | 398 | 子进程（assert_cmd）、交互（expectrl）、tower oneshot |
-| E2E 场景 | `tests/e2e/`（9 个场景模块） | 145 | 五类核心场景 + 缓存/安全/服务端/CLI 缺口 |
+| E2E 场景 | `tests/e2e/`（9 个场景模块） | 146 | 五类核心场景 + 缓存/安全/服务端/CLI 缺口 |
 | 属性测试 | `tests/property_tests.rs` | 12 | proptest 不变量 |
 | 快照测试 | `tests/snapshot_tests.rs` | 22 | insta，全部 CLI 可达输出变体 |
 | 安全测试 | `tests/security_tests.rs` | 18 | DoS 向量与边界攻击 |
 | 性能回归 | `tests/performance_tests.rs` | 6 | criterion 基线对比与阈值 |
-| 合计 | `grep -rE "#\[(tokio::)?test\]" src/ tests/` | **3039** | 另有模糊目标 7 个、criterion 基准 4 组、doctest 随 `cargo test` 执行 |
+| 合计 | `grep -rE "#\[(tokio::)?test\]" src/ tests/` | **3042** | 另有模糊目标 7 个、criterion 基准 4 组、doctest 随 `cargo test` 执行 |
 
-> `tests/` 内 543 = 顶层集成 398 + E2E 145；各文件 `[[test]]` 的 `required-features` 声明见 `Cargo.toml`（如 `server_http_integration` 需 `server`，`time_unit_fx_integration` 需 `cli,time,unit,fx`）。
+> `tests/` 内 544 = 顶层集成 398 + E2E 146；各文件 `[[test]]` 的 `required-features` 声明见 `Cargo.toml`（如 `server_http_integration` 需 `server`，`time_unit_fx_integration` 需 `cli,time,unit,fx`）。
 
 ---
 
@@ -78,8 +78,8 @@
 ```mermaid
 graph TD
     A[模糊测试 cargo-fuzz 7 目标] --> B[属性测试 proptest 12 条]
-    B --> C[集成 / E2E tests/ 543 用例]
-    C --> D[单元测试 src/ 内联 2496 用例]
+    B --> C[集成 / E2E tests/ 544 用例]
+    C --> D[单元测试 src/ 内联 2498 用例]
 
     style A fill:#ffcdd2,stroke:#c62828
     style B fill:#fff3e0,stroke:#ef6c00
@@ -98,7 +98,7 @@ graph TD
 
 ---
 
-## 🧱 单元测试（`src/` 内联，2496）
+## 🧱 单元测试（`src/` 内联，2497）
 
 单元测试位于各模块 `#[cfg(test)] mod tests`，随特性门控编译。按目录统计：
 
@@ -108,10 +108,10 @@ graph TD
 | `src/math/` | 471 | 数学函数层实现（ gamma/erf/组合数/多项式/数值分解等底层纯函数） |
 | `src/core/` | 403 | evaluator 五阶段流水线、AST 规范化（常量折叠/交换律排序）、缓存键与 single-flight、路由优先级 |
 | `src/output/` | 130 | 文本 / JSON（`"v":1` 契约）/ LaTeX / 规范形式 / 步骤五种格式化器 |
-| `src/server/` | 89 | HTTP 路由与错误映射、限流固定窗口、语言协商、指标导出 |
+| `src/server/` | 90 | HTTP 路由与错误映射、限流固定窗口、语言协商、指标导出 |
 | 入口层 `src/*.rs` | 124 | CLI 参数解析与互斥、REPL 命令、批量文件读取、i18n 消息目录、函数目录 |
 | `src/api/` | 12 | `CalNexus` 门面（直接 API）与变量绑定状态 |
-| **合计** | **2496** | 口径：`grep -rE "#\[(tokio::)?test\]" src/ --include="*.rs" \| wc -l` |
+| **合计** | **2497** | 口径：`grep -rE "#\[(tokio::)?test\]" src/ --include="*.rs" \| wc -l` |
 
 ---
 
@@ -180,6 +180,8 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 | `it_cli_022_tab_completion` | Tab 补全函数名 |
 | `it_cli_023_error_recovery` | 出错后继续求值 |
 | `repl_infrastructure_present` | 基础设施自检 |
+
+> 另有 3 个 feature 门控补全用例（`it_cli_022_tab_completion_{unit,time,fx}_gated`），仅在启用对应 feature 的构建下编译运行（如 `--features cli,time,unit,fx`）。
 
 ### 门面 API 集成（api_integration.rs，17）
 
@@ -421,7 +423,7 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 | `mcp_fx_tools_network_tolerant` | fx_budget / fx_pricing 工具 |
 | `ratelimit_fixed_window_returns_429_via_subprocess` | 限流固定窗口 429（子进程形态，`ratelimit` 门控） |
 
-### S9 CLI/批处理缺口（cli_e2e.rs，11，`#[cfg(feature = "cli")]`）
+### S9 CLI/批处理缺口（cli_e2e.rs，12，`#[cfg(feature = "cli")]`）
 
 | 用例 | 场景 |
 |------|------|
@@ -436,6 +438,7 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 | `cli_precision_flag_contracts` | `--precision` 契约 |
 | `cli_usage_exit_2_for_unrecognized_flag` | 未识别旗标退出 2 |
 | `cli_usage_exit_2_for_invalid_var_format` | 非法变量格式退出 2 |
+| `cli_stdout_pipe_closed_downstream_dies_quietly` | 管道下游提前关闭：SIGPIPE 静默终止，不误报内部 bug |
 
 ---
 

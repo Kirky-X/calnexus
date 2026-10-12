@@ -4,7 +4,6 @@
 //! 直接 API 层（L4b）：`CalNexus` 门面 + 5 个分组 trait，绕过解析直调 math 层。
 //! 依赖方向：`api/` → `math/` → `core/`，不依赖 `domains/`。
 
-pub mod cache;
 pub mod traits;
 pub mod types;
 
@@ -74,12 +73,12 @@ impl CalNexus {
 
     /// 获取线性代数 API。
     pub fn linalg(&self) -> LinearAlgebraImpl<'_> {
-        LinearAlgebraImpl { cn: self }
+        LinearAlgebraImpl { _cn: self }
     }
 
     /// 获取数据分析 API。
     pub fn stats(&self) -> DataAnalysisImpl<'_> {
-        DataAnalysisImpl { cn: self }
+        DataAnalysisImpl { _cn: self }
     }
 
     /// 获取符号数学 API。
@@ -89,7 +88,7 @@ impl CalNexus {
 
     /// 获取应用数学 API（时间/单位/汇率）。
     pub fn applied(&self) -> AppliedMathImpl<'_> {
-        AppliedMathImpl { cn: self }
+        AppliedMathImpl { _cn: self }
     }
 }
 

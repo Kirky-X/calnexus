@@ -80,7 +80,7 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 </tr>
 </table>
 
-Beyond the core capabilities listed above, LaTeX / steps / canonical formatters, bilingual (EN/ZH) error messages via ICU4X, a runtime function catalog (`--list-functions`), multi-platform prebuilt binaries, and container images are also available; see the [🎨 Feature Flags](#-feature-flags) section for the full mapping to `Cargo.toml`'s `[features]`.
+Beyond the core capabilities listed above, LaTeX / steps / canonical formatters, bilingual (EN/ZH) error messages (embedded Fluent catalogs, always available regardless of the `icu` feature), a runtime function catalog (`--list-functions`), multi-platform prebuilt binaries, and container images are also available; see the [🎨 Feature Flags](#-feature-flags) section for the full mapping to `Cargo.toml`'s `[features]`.
 
 ---
 
@@ -137,7 +137,7 @@ $ calnexus --json '2+3'
 | CLI | `cargo install calnexus --features cli` | Command line / REPL / batch |
 | CLI + all domains | `cargo install calnexus --features cli,time,unit,fx` | Adds time / unit / fx domains |
 | CLI + numerical | `cargo install calnexus --features cli,numerical` | Numerical linear algebra |
-| Bilingual CLI | `cargo install calnexus --features cli,icu` | ICU4X EN/ZH localized error messages |
+| Bilingual CLI | `cargo install calnexus --features cli,icu` | EN/ZH error messages always built in; `icu` adds standard BCP-47 locale-tag parsing |
 | HTTP server | `cargo install calnexus --features server` | REST + MCP dual-protocol service |
 | Production server | `cargo install calnexus --features server,ratelimit,docs,observability` | Rate limiting + Swagger UI + structured logs |
 | Full | `cargo install calnexus --all-features` | Everything |
@@ -150,7 +150,7 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 <tr><th style="text-align:left">Feature</th><th style="text-align:center">Default</th><th style="text-align:left">Description</th></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>Core library</b></td></tr>
 <tr><td><code>default</code></td><td align="center">✅</td><td>Zero-dependency core: parsing, canonicalization, 14-domain routing, cache — usable as an embedded engine</td></tr>
-<tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X internationalized error messages (EN/ZH)</td></tr>
+<tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X BCP-47 locale-tag parsing (EN/ZH error messages are always available via embedded Fluent catalogs, not gated by this feature)</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>CLI & interaction</b></td></tr>
 <tr><td><code>cli</code></td><td align="center">❌</td><td>CLI / REPL / batch (clap, rustyline, rayon; enabled indirectly via sdforge/cli)</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>Optional computation domains</b></td></tr>
@@ -163,7 +163,7 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 <tr><td><code>mcp</code></td><td align="center">❌</td><td>MCP stdio server (sdforge/mcp)</td></tr>
 <tr><td><code>server</code></td><td align="center">❌</td><td>Aggregates <code>http</code> + <code>mcp</code></td></tr>
 <tr><td><code>ratelimit</code></td><td align="center">❌</td><td>HTTP rate-limiting middleware (fixed window per-IP, <code>CALNEXUS_RATELIMIT_*</code> configurable, probes exempt)</td></tr>
-<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI (<code>/swagger-ui</code>; <code>/api-docs/openapi.json</code> carries an empty spec for now — see the Server Guide)</td></tr>
+<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI (<code>/swagger-ui/</code>, trailing slash required; <code>/api-docs/openapi.json</code> carries an empty spec for now — see the Server Guide)</td></tr>
 <tr><td><code>observability</code></td><td align="center">❌</td><td>tracing structured logs (EnvFilter consuming <code>RUST_LOG</code>)</td></tr>
 </table>
 
@@ -275,7 +275,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 Test Scale
 
-As of v0.2.0-rc.1: grep statistics count 3039 `#[test]` / `#[tokio::test]` functions in total — 2496 unit tests (inline in `src/`), 543 integration & E2E tests (`tests/`, of which the E2E scenario suite has 145), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+Current working tree (after v0.2.0-rc.1): grep statistics count 3040 `#[test]` / `#[tokio::test]` functions in total — 2497 unit tests (inline in `src/`), 543 integration & E2E tests (`tests/`, of which the E2E scenario suite has 145), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
 
 ---
 

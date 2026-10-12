@@ -68,32 +68,44 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 2/9: cargo clippy (all targets, deny warnings)
+# Check 2/9: cargo clippy (cli + server feature domains, all targets, deny warnings)
 # -----------------------------------------------------------------------------
-step "Check 2/9: cargo clippy --features cli --all-targets -- -D warnings"
+step "Check 2/9: cargo clippy --features cli|server --all-targets -- -D warnings"
 clippy_out="$(cargo clippy --features cli --all-targets -- -D warnings 2>&1)"
-# server 域同步门禁（2026-09-19 审计：此前 server/time/fx 域本地零覆盖）
-cargo clippy --features server --all-targets -- -D warnings || clippy_rc=1
 clippy_rc=$?
-if [ "$clippy_rc" -eq 0 ]; then
+# server 域同步门禁（2026-09-19 审计：此前 server/time/fx 域本地零覆盖）
+server_clippy_out="$(cargo clippy --features server --all-targets -- -D warnings 2>&1)"
+server_clippy_rc=$?
+if [ "$clippy_rc" -eq 0 ] && [ "$server_clippy_rc" -eq 0 ]; then
     pass "clippy: no warnings"
 else
     fail "clippy: lint issues detected"
-    printf '%s\n' "$clippy_out" | indent
+    if [ "$clippy_rc" -ne 0 ]; then
+        printf '%s\n' "$clippy_out" | indent
+    fi
+    if [ "$server_clippy_rc" -ne 0 ]; then
+        printf '%s\n' "$server_clippy_out" | indent
+    fi
 fi
 
 # -----------------------------------------------------------------------------
-# Check 3/9: cargo test (all tests must pass)
+# Check 3/9: cargo test (cli + server feature domains, all tests must pass)
 # -----------------------------------------------------------------------------
-step "Check 3/9: cargo test --features cli"
+step "Check 3/9: cargo test --features cli|server"
 test_out="$(cargo test --features cli 2>&1)"
-cargo test --features server 2>&1 || test_rc=1
 test_rc=$?
-if [ "$test_rc" -eq 0 ]; then
+server_test_out="$(cargo test --features server 2>&1)"
+server_test_rc=$?
+if [ "$test_rc" -eq 0 ] && [ "$server_test_rc" -eq 0 ]; then
     pass "all tests passed"
 else
     fail "tests failed"
-    printf '%s\n' "$test_out" | indent
+    if [ "$test_rc" -ne 0 ]; then
+        printf '%s\n' "$test_out" | indent
+    fi
+    if [ "$server_test_rc" -ne 0 ]; then
+        printf '%s\n' "$server_test_out" | indent
+    fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -114,6 +126,7 @@ else
 fi
 
 # Gather tracked .rs files once for the file-based checks below.
+# 索引中存在但工作区已删除（删除未暂存）的路径不参与内容检查，避免误判为门禁失败。
 ALL_RS_FILES="$(git ls-files '*.rs')"
 
 # -----------------------------------------------------------------------------
@@ -125,6 +138,7 @@ COPYRIGHT_PREFIX='// Copyright (c) 2026 Kirky.X🌠'
 copyright_bad=""
 while IFS= read -r f; do
     [ -z "$f" ] && continue
+    [ -f "$f" ] || continue
     first_line="$(head -n1 "$f" 2>/dev/null)"
     case "$first_line" in
         "$COPYRIGHT_PREFIX"*) ;;
@@ -194,6 +208,7 @@ MAX_LINES=3000
 size_warn_count=0
 while IFS= read -r f; do
     [ -z "$f" ] && continue
+    [ -f "$f" ] || continue
     lines="$(wc -l < "$f" 2>/dev/null || echo 0)"
     if [ "$lines" -gt "$MAX_LINES" ]; then
         warn "$f has $lines lines (exceeds $MAX_LINES)"

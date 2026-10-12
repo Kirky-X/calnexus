@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! E2E 共享夹具：求值/断言助手与 fx mock 基础设施。
-//! 助手均为无状态封装（全新 CacheManager），保证用例间零缓存串扰。
+//! 助手均为无状态封装（全新 CacheManager），保证用例间零缓存串扰（now/fx 等非确定性函数本就旁路 L1 缓存）。
 
 #![allow(dead_code)]
 

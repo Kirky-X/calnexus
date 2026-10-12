@@ -192,3 +192,46 @@ fn cli_usage_exit_2_for_invalid_var_format() {
         .assert()
         .code(2);
 }
+
+// ---------------------------------------------------------------------------
+// 管道下游提前关闭（`calnexus --list-functions | head -4`）：静默终止，不误报内部 bug
+// ---------------------------------------------------------------------------
+
+/// stdout 读端在子进程启动前关闭（等价 `| head -4` 先退出）：子进程首次写必触发
+/// EPIPE——unix 上应被 SIGPIPE 静默终止（shell 惯例 141），任何平台 stderr 都不得
+/// 出现 "internal error / report this bug" 的 panic 误报。
+#[test]
+fn cli_stdout_pipe_closed_downstream_dies_quietly() {
+    use std::process::Stdio;
+    // assert_cmd 不便直控管道 fd，直接用 std::process::Command（同 cli_integration 先例）
+    let (dead_reader, writer) = std::io::pipe().expect("create pipe");
+    drop(dead_reader);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_calnexus"))
+        .arg("--list-functions")
+        .stdout(writer)
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn with closed stdout pipe");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.trim().is_empty(),
+        "broken pipe 必须静默终止，不得输出 panic 误报，stderr: {stderr}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            output.status.signal(),
+            Some(13),
+            "应被 SIGPIPE 静默终止，status: {:?}",
+            output.status
+        );
+    }
+    #[cfg(not(unix))]
+    assert_eq!(
+        output.status.code(),
+        Some(141),
+        "非 unix 兜底应静默退出 141，status: {:?}",
+        output.status
+    );
+}

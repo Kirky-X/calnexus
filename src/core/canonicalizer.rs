@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! AST 规范化器：常量折叠 + 交换律排序 + 一元归一化，生成 S-表达式规范形式。
-//! 不变式：规范化幂等；缓存键用折叠版 `canonicalize`，`canonicalize_no_fold` 仅供展示。
+//! 不变式：规范化幂等；L1 缓存键用折叠版 `canonicalize`，`canonicalize_no_fold` 仅供展示。
 
 use crate::core::parser::MAX_AST_DEPTH;
 use crate::core::types::{AstNode, BinaryOp, CalcError, CanonicalForm, UnaryOp};

@@ -11,7 +11,6 @@ use crate::math::symbolic::{SymbolicExpr, ast_to_symbolic, symbolic_to_string};
 
 /// SymbolicMath API 访问器。
 pub struct SymbolicMathImpl<'a> {
-    #[allow(dead_code)]
     pub(crate) cn: &'a CalNexus,
 }
 

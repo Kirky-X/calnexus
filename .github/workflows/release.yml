@@ -78,7 +78,7 @@ jobs:
 
       # 安全 M-2：发布前 SAST 扫描（规则24：0 CRITICAL 才允许继续）
       - name: Install cargo-audit
-        uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-audit
 
@@ -99,7 +99,7 @@ jobs:
 
       # Release 只带 GitHub 自动生成的源码压缩包,不附自制 archive/校验和产物。
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}

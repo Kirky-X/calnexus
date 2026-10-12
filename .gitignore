@@ -59,6 +59,9 @@ Desktop.ini
 .codenexus/
 # fuzz testing build artifacts
 /fuzz/target
+# fuzz 运行产物（本地语料与崩溃复现样本，不入库）
+/fuzz/corpus/
+/fuzz/artifacts/
 # reference templates
 temp/
 # spec source docs（ADD/PRD 已并入 docs/ARCHITECTURE.md 与 docs/archive/，见 git-workflow spec）
@@ -72,6 +75,5 @@ dhat.out.*
 logs/
 temp/
 strix_runs/
-+
-+# WorkBuddy AI local notes
-+.workbuddy-ai/
+# WorkBuddy AI local notes
+.workbuddy-ai/

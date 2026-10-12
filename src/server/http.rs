@@ -10,6 +10,7 @@ use std::time::Duration;
 use super::EvaluateRequest;
 use super::ServerError;
 use super::evaluate::{REQUEST_TIMEOUT_SECS, evaluate_with_timeout};
+use crate::i18n::I18n;
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
@@ -112,7 +113,10 @@ async fn cache_stats_outcome() -> sdforge::health::CheckOutcome {
             healthy: true,
             details: Some(serde_json::json!({ "entry_count": stats.entry_count })),
         },
-        Err(_) => sdforge::health::CheckOutcome::unhealthy("cache", "cache stats task failed"),
+        Err(_) => sdforge::health::CheckOutcome::unhealthy(
+            "cache",
+            I18n::from_detected().t("server.cache_stats_task_failed"),
+        ),
     }
 }
 
@@ -124,10 +128,13 @@ async fn run_readiness_with_timeout(
 ) -> sdforge::health::CheckOutcome {
     match tokio::time::timeout(timeout, check).await {
         Ok(outcome) => outcome,
-        Err(_) => sdforge::health::CheckOutcome::unhealthy(
-            name,
-            format!("readiness check timed out after {timeout:?}"),
-        ),
+        Err(_) => {
+            let reason = I18n::from_detected().tf(
+                "server.readiness_check_timed_out",
+                &[("timeout", &format!("{timeout:?}"))],
+            );
+            sdforge::health::CheckOutcome::unhealthy(name, reason)
+        }
     }
 }
 
@@ -199,7 +206,8 @@ struct MetricsQuery {
     format: Option<String>,
 }
 
-/// GET /metrics：缓存统计 + HTTP RED 指标；默认 Prometheus 文本，`?format=json` 返回 JSON。
+/// GET /metrics：缓存统计 + HTTP RED 指标；默认 Prometheus 文本（`text/plain; version=0.0.4`），
+/// `?format=json` 返回 JSON。
 async fn metrics_handler(query: axum::extract::Query<MetricsQuery>) -> axum::response::Response {
     use axum::response::IntoResponse;
     let stats = super::cache::shared_cache().stats();
@@ -299,9 +307,9 @@ impl HttpServer {
             Ok(()) => {}
             Err(inklog::InklogError::ConfigError(_)) => {}
             Err(e) => {
-                return Err(ServerError::Http(format!(
-                    "observability init failed: {}",
-                    e
+                return Err(ServerError::Http(I18n::from_detected().tf(
+                    "server.observability_init_failed",
+                    &[("error", &e.to_string())],
                 )));
             }
         }
@@ -501,14 +509,42 @@ mod tests {
                 .await;
         assert!(!outcome.healthy, "超时应判不健康");
         assert_eq!(outcome.name, "cache");
-        assert!(
-            outcome
-                .details
-                .as_ref()
-                .and_then(|d| d["error"].as_str())
-                .is_some_and(|e| e.contains("timed out")),
+        // 原因文案经 i18n 本地化，按同一检测链渲染期望值（zh 环境下不断言英文）
+        let expected =
+            I18n::from_detected().tf("server.readiness_check_timed_out", &[("timeout", "10ms")]);
+        assert_eq!(
+            outcome.details.as_ref().and_then(|d| d["error"].as_str()),
+            Some(expected.as_str()),
             "超时原因应写入 details.error: {:?}",
             outcome.details
+        );
+    }
+
+    /// 三条探针/启动错误文案的目录解析回归：en 默认、zh 术语（键缺失会回退键名，直接断言可发现）。
+    #[test]
+    fn test_probe_error_messages_resolve_from_catalog() {
+        let en = I18n::new(crate::i18n::Lang::En);
+        assert_eq!(
+            en.t("server.cache_stats_task_failed"),
+            "cache stats task failed"
+        );
+        assert_eq!(
+            en.tf("server.readiness_check_timed_out", &[("timeout", "5s")]),
+            "readiness check timed out after 5s"
+        );
+        assert_eq!(
+            en.tf("server.observability_init_failed", &[("error", "boom")]),
+            "observability init failed: boom"
+        );
+        let zh = I18n::new(crate::i18n::Lang::Zh);
+        assert_eq!(zh.t("server.cache_stats_task_failed"), "缓存统计任务失败");
+        assert_eq!(
+            zh.tf("server.readiness_check_timed_out", &[("timeout", "5s")]),
+            "就绪检查在 5s 后超时"
+        );
+        assert_eq!(
+            zh.tf("server.observability_init_failed", &[("error", "boom")]),
+            "可观测性初始化失败: boom"
         );
     }
 
