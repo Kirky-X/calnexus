@@ -90,20 +90,45 @@ fn finish_router(api: Router) -> Router {
     router
 }
 
-/// 注册 cache readiness check（进程级一次；/health 与 /ready 的 checks 数组消费）。
+/// cache 就绪检查超时上限：探针须在 SLO 内返回，超时判不健康。
+const READINESS_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 注册 cache readiness check（进程级一次；异步探针 + 超时，moka 维护不占运行时工作线程）。
 fn register_cache_readiness_check() {
     use std::sync::OnceLock;
     static REGISTER: OnceLock<()> = OnceLock::new();
     REGISTER.get_or_init(|| {
-        sdforge::health::register_readiness_check_fn("cache", || {
-            let stats = super::cache::shared_cache().stats();
-            sdforge::health::CheckOutcome {
-                name: "cache".to_string(),
-                healthy: true,
-                details: Some(serde_json::json!({ "entry_count": stats.entry_count })),
-            }
+        sdforge::health::register_async_readiness_check_fn("cache", || async {
+            run_readiness_with_timeout("cache", READINESS_TIMEOUT, cache_stats_outcome()).await
         });
     });
+}
+
+/// cache 就绪检查体：spawn_blocking 隔离 moka 维护（同步阻塞调用），任务失败判不健康。
+async fn cache_stats_outcome() -> sdforge::health::CheckOutcome {
+    match tokio::task::spawn_blocking(|| super::cache::shared_cache().stats()).await {
+        Ok(stats) => sdforge::health::CheckOutcome {
+            name: "cache".to_string(),
+            healthy: true,
+            details: Some(serde_json::json!({ "entry_count": stats.entry_count })),
+        },
+        Err(_) => sdforge::health::CheckOutcome::unhealthy("cache", "cache stats task failed"),
+    }
+}
+
+/// 限时执行就绪检查：超时判不健康并记录原因（不无限等待依赖）。
+async fn run_readiness_with_timeout(
+    name: &str,
+    timeout: Duration,
+    check: impl std::future::Future<Output = sdforge::health::CheckOutcome>,
+) -> sdforge::health::CheckOutcome {
+    match tokio::time::timeout(timeout, check).await {
+        Ok(outcome) => outcome,
+        Err(_) => sdforge::health::CheckOutcome::unhealthy(
+            name,
+            format!("readiness check timed out after {timeout:?}"),
+        ),
+    }
 }
 
 /// 与 `#[forge]` 生成的 HTTP 外壳等价：Json 提取 + `ApiError::into_response` 错误路径。
@@ -465,6 +490,45 @@ mod tests {
         assert!(
             registry.route_count() >= 1,
             "请求后 sdforge registry 应记录路由序列（RED 计数取代手写 static）"
+        );
+    }
+
+    /// 就绪检查超时兜底：限时内未完成判不健康（探针不随依赖阻塞无限等待）。
+    #[tokio::test]
+    async fn test_readiness_timeout_marks_unhealthy() {
+        let outcome =
+            run_readiness_with_timeout("cache", Duration::from_millis(10), std::future::pending())
+                .await;
+        assert!(!outcome.healthy, "超时应判不健康");
+        assert_eq!(outcome.name, "cache");
+        assert!(
+            outcome
+                .details
+                .as_ref()
+                .and_then(|d| d["error"].as_str())
+                .is_some_and(|e| e.contains("timed out")),
+            "超时原因应写入 details.error: {:?}",
+            outcome.details
+        );
+    }
+
+    /// 异步 cache 就绪检查：spawn_blocking 隔离 moka 维护后仍反映 entry_count。
+    #[tokio::test]
+    async fn test_cache_stats_outcome_reports_entry_count() {
+        let cf = crate::core::CanonicalForm::new("(readiness-async 1)");
+        super::super::cache::shared_cache().insert(&cf, &Ok(crate::core::EvalResult::Scalar(1.0)));
+
+        let outcome = cache_stats_outcome().await;
+        assert!(outcome.healthy, "cache 检查应健康");
+        assert_eq!(outcome.name, "cache");
+        assert!(
+            outcome
+                .details
+                .as_ref()
+                .and_then(|d| d["entry_count"].as_u64())
+                .is_some_and(|n| n >= 1),
+            "插入条目后 entry_count 应 ≥1: {:?}",
+            outcome.details
         );
     }
 

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 自研依赖升级与特性吸收（2026-10-12）
+
+#### Changed
+
+- 自研依赖升级：sdforge 0.5.0-rc.5→rc.8、inklog 0.3.0-rc.5→rc.9、limiteron 0.3.0-rc.5→rc.7、confers 0.6.0-rc.6→rc.10；Cargo.lock 落定 oxcache 0.5.0-rc.8、utoipa 6.0、utoipa-swagger-ui 10.0（vendored，docs 构建不再联网下载 Swagger UI 资源）
+- **（破坏性，HTTP 错误体）** 对齐 sdforge 统一错误契约：HTTP 错误体由 `ApiError` 直序列化（变体名 + 该变体字段：422 携 `constraint`，503 携 `service`/`retry_after`）改为 `{"code","message","trace_id","field"}`——400 `BAD_REQUEST`、422 `UNPROCESSABLE_ENTITY`、503 `UNAVAILABLE`（MCP 侧保持 `ApiError` 序列化的 `type` 协议名不变）；422 不再携带 `constraint` 限额明细，改由 `field` 指明违规字段，503 不再输出 `service`/`retry_after`（`retry_after` 仅存于 `ServiceError` details，不经 HTTP 体或响应头输出）
+- cache 就绪检查改异步探针（`register_async_readiness_check_fn` + `spawn_blocking` 隔离 moka 维护 + 5s 超时判不健康），moka 维护不再占用运行时工作线程
+
+#### Added
+
+- `.github/workflows/feature-matrix.yml`：`cargo hack check --each-feature --all-targets` 周度矩阵（单特性编译裂缝门禁）
+
+#### Fixed
+
+- fx 熔断 Open 态迟到成功误闭合（随 limiteron 0.3.0-rc.6 修复吸收，新增回归测试 `test_breaker_open_state_survives_late_success` 锚定）
+- inklog 通道打满时 ERROR/FATAL 兜底运行期补发、sink 降级/恢复 ops 事件自激循环修复、file sink fsync 与 0600 权限加固（随 inklog 升级吸收，无接线改动）
+
 ### v015-comprehensive-optimization（2026-09-14，规格驱动：specmark）
 
 六维度架构审计（安全/易用性/性能/分布式/可维护性/架构先进性）后的一次性全量优化，RICE 优先级量化排序，14 阶段实施。

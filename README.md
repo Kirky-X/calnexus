@@ -163,7 +163,7 @@ $ calnexus --json '2+3'
 <tr><td><code>mcp</code></td><td align="center">❌</td><td>MCP stdio 服务（sdforge/mcp）</td></tr>
 <tr><td><code>server</code></td><td align="center">❌</td><td><code>http</code> + <code>mcp</code> 聚合</td></tr>
 <tr><td><code>ratelimit</code></td><td align="center">❌</td><td>HTTP 限流中间件（固定窗口 per-IP，<code>CALNEXUS_RATELIMIT_*</code> 可配，探针豁免）</td></tr>
-<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI（<code>/swagger-ui</code>）</td></tr>
+<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI（<code>/swagger-ui</code>；<code>/api-docs/openapi.json</code> 暂为空 spec，见服务模式指南）</td></tr>
 <tr><td><code>observability</code></td><td align="center">❌</td><td>tracing 结构化日志（EnvFilter 消费 <code>RUST_LOG</code>）</td></tr>
 </table>
 
@@ -275,7 +275,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 测试规模
 
-截至 v0.2.0-rc.1：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3036 个，其中单元测试 2493（`src/` 内联）、集成与 E2E 共 543（`tests/`，其中 E2E 场景套件 145）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
+截至 v0.2.0-rc.1：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3039 个，其中单元测试 2496（`src/` 内联）、集成与 E2E 共 543（`tests/`，其中 E2E 场景套件 145）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
 
 ---
 

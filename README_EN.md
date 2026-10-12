@@ -163,7 +163,7 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 <tr><td><code>mcp</code></td><td align="center">❌</td><td>MCP stdio server (sdforge/mcp)</td></tr>
 <tr><td><code>server</code></td><td align="center">❌</td><td>Aggregates <code>http</code> + <code>mcp</code></td></tr>
 <tr><td><code>ratelimit</code></td><td align="center">❌</td><td>HTTP rate-limiting middleware (fixed window per-IP, <code>CALNEXUS_RATELIMIT_*</code> configurable, probes exempt)</td></tr>
-<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI (<code>/swagger-ui</code>)</td></tr>
+<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI (<code>/swagger-ui</code>; <code>/api-docs/openapi.json</code> carries an empty spec for now — see the Server Guide)</td></tr>
 <tr><td><code>observability</code></td><td align="center">❌</td><td>tracing structured logs (EnvFilter consuming <code>RUST_LOG</code>)</td></tr>
 </table>
 
@@ -275,7 +275,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 Test Scale
 
-As of v0.2.0-rc.1: grep statistics count 3036 `#[test]` / `#[tokio::test]` functions in total — 2493 unit tests (inline in `src/`), 543 integration & E2E tests (`tests/`, of which the E2E scenario suite has 145), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+As of v0.2.0-rc.1: grep statistics count 3039 `#[test]` / `#[tokio::test]` functions in total — 2496 unit tests (inline in `src/`), 543 integration & E2E tests (`tests/`, of which the E2E scenario suite has 145), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
 
 ---
 

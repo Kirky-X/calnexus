@@ -119,7 +119,7 @@ Rust 1.97.1 及以上（MSRV，CI 有对应 MSRV 任务守护）。核心库无�
 
 ### ❓ 错误响应的语义是什么？
 
-三分类：400 `InvalidInput`（语法错误、除零等求值失败）、422 `ValidationError`（请求体参数超限，求值前拦截，HTTP/MCP 形态独有）、503 `ServiceUnavailable`（超时或 fx 上游不可达，带 `Retry-After`）。CLI 退出码：1 = 计算错误、2 = 用法错误、3 = 超时/不可用。
+三分类（HTTP 体 `code` 字段）：400 `BAD_REQUEST`（语法错误、除零等求值失败）、422 `UNPROCESSABLE_ENTITY`（请求体参数超限，求值前拦截，HTTP/MCP 形态独有，`field` 指明违规字段）、503 `UNAVAILABLE`（超时或 fx 上游不可达）。MCP 侧沿用 `ApiError` 的 `type` 协议名（`InvalidInput` / `ValidationError` / `ServiceUnavailable`）。CLI 退出码：1 = 计算错误、2 = 用法错误、3 = 超时/不可用。
 
 ### ❓ 如何把 CalNexus 接入 Claude Desktop / Cursor？
 

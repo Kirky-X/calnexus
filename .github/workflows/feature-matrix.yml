@@ -1,0 +1,30 @@
+name: Feature Matrix
+
+# 单特性 × --all-targets 全量矩阵（cargo hack）：捕获「某 feature 单独开启即不可编译」类裂缝。
+# 每周定时 + 手动触发；PR 门禁由 ci.yml 的 curated 组合矩阵兜底（逐特性全量跑成本高于收益）。
+on:
+  schedule:
+    - cron: "41 5 * * 1" # 每周一 05:41 UTC
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  each-feature:
+    name: cargo hack --each-feature
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
+        with:
+          tool: cargo-hack
+      - name: Check each feature alone
+        run: cargo hack check --each-feature --all-targets

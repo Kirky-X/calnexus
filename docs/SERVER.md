@@ -43,15 +43,15 @@ calnexus --serve-http --bind 0.0.0.0:8080
 | `/ready` | GET | 就绪探针（readiness，依赖就绪语义） |
 | `/metrics` | GET | 指标导出（Prometheus 文本，`?format=json` 返回 JSON） |
 
-**语言协商**：`evaluate`、`fx_budget`、`fx_pricing` 请求体均支持可选 `lang` 字段（BCP-47 标签，如 `"en"`/`"zh-CN"`）。缺省或未知值回退英文（协议默认）；`"zh"` 时错误消息与 fx 风险提示等人类可读文案切换中文，机器可读字段（`type` 协议名等）保持英文契约。MCP tool args 同构支持 `lang`：
+**语言协商**：`evaluate`、`fx_budget`、`fx_pricing` 请求体均支持可选 `lang` 字段（BCP-47 标签，如 `"en"`/`"zh-CN"`）。缺省或未知值回退英文（协议默认）；`"zh"` 时错误消息与 fx 风险提示等人类可读文案切换中文，机器可读字段（`code` 错误码等）保持英文契约。MCP tool args 同构支持 `lang`：
 
 ```bash
 curl -X POST localhost:3000/api/v1/evaluate -H 'content-type: application/json' \
   -d '{"expr": "foo + 1", "lang": "zh"}'
-# → {"type":"InvalidInput","message":"求值错误: 未绑定变量: foo",...}
+# → {"code":"BAD_REQUEST","message":"求值错误: 未绑定变量: foo","trace_id":"...",...}
 ```
 
-`docs` feature 提供 Swagger UI（`/swagger-ui`，OpenAPI 文档）。
+`docs` feature 提供 Swagger UI（`/swagger-ui`）；注意 `/api-docs/openapi.json` 当前返回空 spec（`#[forge]` 的 OpenAPI 路由注册按下游 crate 的 `openapi` feature 名门控，CalNexus 未定义该 feature——预存缺口，修复须同时处理 sdforge 宏对请求体 schema 的粗粒度映射）。
 
 ---
 
@@ -161,11 +161,13 @@ Claude Desktop 的 `claude_desktop_config.json`：
 
 服务端错误三分类与 CLI 退出码出自同一 `ErrorKind` 契约；注意 422 来自独立的请求校验层，而非求值错误：
 
-| HTTP | MCP | 语义 | 触发来源 |
+| HTTP（`code` 字段） | MCP（`type` 字段） | 语义 | 触发来源 |
 |------|-----|------|----------|
-| 400 `InvalidInput` | INVALID_INPUT | 求值/解析失败 | 9 种求值类 `ErrorKind`（Parse / Eval / Overflow / DivisionByZero / Domain / Depth / NaNOrInf / UndefinedSymbol / Usage），message 以 kind 名为前缀 |
-| 422 `ValidationError` | VALIDATION_ERROR | 请求体参数校验失败 | DTO 校验层（`server/types.rs::validate()`）：expr ≤ 4096 字符、vars ≤ 1024 键、precision ≤ 10000；在求值之前拦截 |
-| 503 `ServiceUnavailable` | SERVICE_UNAVAILABLE | 服务端/上游故障 | `Timeout` / `DependencyUnavailable`（fx 上游不可达），带 `Retry-After` |
+| 400 `BAD_REQUEST` | `InvalidInput` | 求值/解析失败 | 9 种求值类 `ErrorKind`（Parse / Eval / Overflow / DivisionByZero / Domain / Depth / NaNOrInf / UndefinedSymbol / Usage），message 以 kind 名为前缀 |
+| 422 `UNPROCESSABLE_ENTITY` | `ValidationError` | 请求体参数校验失败 | DTO 校验层（`server/types.rs::validate()`）：expr ≤ 4096 字符、vars ≤ 1024 键、precision ≤ 10000；在求值之前拦截，HTTP 体经 `field` 指明违规字段 |
+| 503 `UNAVAILABLE` | `ServiceUnavailable` | 服务端/上游故障 | `Timeout` / `DependencyUnavailable`（fx 上游不可达）；`retry_after` 仅存于 `ApiError`/`ServiceError` details，不经 HTTP 体或响应头输出 |
+
+HTTP 错误体为 sdforge 统一契约 `{"code","message","trace_id","field"}`（`trace_id` 取自请求上下文，`field` 仅校验类错误携带）；MCP 侧保持 `ApiError` 序列化（`type` 为 serde 变体名：`InvalidInput` / `ValidationError` / `ServiceUnavailable`）。
 
 CLI 侧退出码（`ErrorKind::exit_code()` 契约）：**1** = 计算错误、**2** = 用法错误（`Usage`）、**3** = 超时/上游不可用。422 校验层为 HTTP/MCP 形态独有，CLI 形态的对应约束由 clap / `--precision` 校验承担。
 

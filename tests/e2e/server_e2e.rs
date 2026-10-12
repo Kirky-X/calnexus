@@ -101,21 +101,22 @@ async fn http_health_and_metrics_endpoints() {
 
 #[tokio::test]
 async fn http_error_contract_and_validation() {
-    // 计算错误 → 400 InvalidInput，message 带 ErrorKind 前缀
+    // 计算错误 → 400 code=BAD_REQUEST，message 带 ErrorKind 前缀
     let (status, body) = post_json("/api/v1/evaluate", json!({"expr": "1/0"})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["type"], "InvalidInput");
+    assert_eq!(body["code"], "BAD_REQUEST");
     let msg = body["message"].as_str().unwrap_or("");
     assert!(
         msg.contains("DivisionByZero") || msg.contains("division"),
         "got {msg}"
     );
 
-    // 参数校验 → 422 ValidationError
+    // 参数校验 → 422 code=UNPROCESSABLE_ENTITY
     let (status, body) =
         post_json("/api/v1/evaluate", json!({"expr": "1", "precision": 99999})).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["type"], "ValidationError");
+    assert_eq!(body["code"], "UNPROCESSABLE_ENTITY");
+    assert_eq!(body["field"], "precision");
     let (status, body) = post_json(
         "/api/v1/evaluate",
         json!({"expr": "1", "vars": {"a": 0.0, "b": 0.0}}),
@@ -175,7 +176,7 @@ async fn http_fx_endpoints_network_tolerant() {
             assert!(body["tuition_home"].as_f64().unwrap() > 0.0);
             assert_eq!(body["home_currency"], "CNY");
         }
-        StatusCode::SERVICE_UNAVAILABLE => assert_eq!(body["type"], "ServiceUnavailable"),
+        StatusCode::SERVICE_UNAVAILABLE => assert_eq!(body["code"], "UNAVAILABLE"),
         other => panic!("tolerated 200/503, got {other}"),
     }
     // 校验错误与上游可用性无关：tuition<=0 必被拒

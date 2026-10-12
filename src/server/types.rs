@@ -3,7 +3,7 @@
 
 //! Server 接口层 DTO：请求/响应类型 + EvalResult→JSON 转换。
 //!
-//! 错误契约：`ApiError`（InvalidInput→400 / ValidationError→422）。
+//! 错误契约：`ApiError`（InvalidInput→400 / ValidationError→422）；HTTP 体为 sdforge UnifiedError（`code`/`message`/`field?`）。
 
 use crate::core::{EvalContext, EvalResult, MAX_PRECISION};
 use crate::domains::format_bigrational;
@@ -58,7 +58,7 @@ impl EvaluateRequest {
         }
     }
 
-    /// 校验请求安全约束（expr≤4096 / vars≤1024 / 键名≤64 / 非有限值拒绝 / precision≤10000）；违规返回 HTTP 422 / MCP VALIDATION_ERROR。
+    /// 校验请求安全约束（expr≤4096 / vars≤1024 / 键名≤64 / 非有限值拒绝 / precision≤10000）；违规返回 HTTP 422 `code=UNPROCESSABLE_ENTITY` / MCP `ValidationError`。
     // ApiError 体积为框架设计；校验错误路径罕见，Box 化会迫使所有 `validate()?` 调用点解包
     #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<(), ApiError> {
@@ -448,7 +448,7 @@ mod tests {
             lang: None,
         };
         let err = req.validate().unwrap_err();
-        // 422 VALIDATION_ERROR，field="precision"（契约）
+        // 422 契约（HTTP code=UNPROCESSABLE_ENTITY / MCP ValidationError），field="precision"
         assert!(matches!(err, ApiError::ValidationError { .. }));
     }
 
@@ -465,7 +465,7 @@ mod tests {
             lang: None,
         };
         let err = req.validate().unwrap_err();
-        // 422 VALIDATION_ERROR，field="vars"（契约）
+        // 422 契约（HTTP code=UNPROCESSABLE_ENTITY / MCP ValidationError），field="vars"
         assert!(matches!(err, ApiError::ValidationError { .. }));
     }
 
@@ -482,7 +482,7 @@ mod tests {
                 lang: None,
             };
             let err = req.validate().unwrap_err();
-            // 422 VALIDATION_ERROR，field="vars"（输入值不合法）
+            // 422 契约（HTTP code=UNPROCESSABLE_ENTITY / MCP ValidationError），field="vars"（输入值不合法）
             assert!(
                 matches!(err, ApiError::ValidationError { .. }),
                 "NaN/Infinity vars should be rejected"

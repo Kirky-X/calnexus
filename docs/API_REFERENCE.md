@@ -396,21 +396,21 @@ let m2 = Matrix::try_from(result).unwrap();
 
 所有 API 的错误类型为 `CalcError`，其 `kind` 字段为 `ErrorKind` 枚举：
 
-| ErrorKind | 退出码 | 服务端映射 | 触发场景 |
+| ErrorKind | 退出码 | 服务端映射（HTTP `code`） | 触发场景 |
 |-----------|--------|-----------|----------|
-| `Parse` | 1 | 400 InvalidInput | 表达式语法错误 |
-| `Eval` | 1 | 400 InvalidInput | 求值失败（定义域、未实现运算等） |
-| `Overflow` | 1 | 400 InvalidInput | 数值溢出 |
-| `DivisionByZero` | 1 | 400 InvalidInput | 除零 |
-| `Domain` | 1 | 400 InvalidInput | 函数定义域错误 |
-| `Depth` | 1 | 400 InvalidInput | 超出 AST 深度上限（`MAX_AST_DEPTH=256`） |
-| `NaNOrInf` | 1 | 400 InvalidInput | NaN / 无穷结果 |
-| `UndefinedSymbol` | 1 | 400 InvalidInput | 未绑定变量（附 `--var` / `:let` 提示） |
-| `Usage` | 2 | 400 InvalidInput（message 前缀 `Usage:`） | 用法/参数错误 |
-| `Timeout` | 3 | 503 ServiceUnavailable | 超过 `--timeout` |
-| `DependencyUnavailable` | 3 | 503 ServiceUnavailable | 上游依赖故障（fx 汇率源不可达），带 `Retry-After` |
+| `Parse` | 1 | 400 BAD_REQUEST | 表达式语法错误 |
+| `Eval` | 1 | 400 BAD_REQUEST | 求值失败（定义域、未实现运算等） |
+| `Overflow` | 1 | 400 BAD_REQUEST | 数值溢出 |
+| `DivisionByZero` | 1 | 400 BAD_REQUEST | 除零 |
+| `Domain` | 1 | 400 BAD_REQUEST | 函数定义域错误 |
+| `Depth` | 1 | 400 BAD_REQUEST | 超出 AST 深度上限（`MAX_AST_DEPTH=256`） |
+| `NaNOrInf` | 1 | 400 BAD_REQUEST | NaN / 无穷结果 |
+| `UndefinedSymbol` | 1 | 400 BAD_REQUEST | 未绑定变量（附 `--var` / `:let` 提示） |
+| `Usage` | 2 | 400 BAD_REQUEST（message 前缀 `Usage:`） | 用法/参数错误 |
+| `Timeout` | 3 | 503 UNAVAILABLE | 超过 `--timeout` |
+| `DependencyUnavailable` | 3 | 503 UNAVAILABLE | 上游依赖故障（fx 汇率源不可达） |
 
-> **422 不来自 `ErrorKind`**：HTTP/MCP 的 422 `ValidationError` 由独立的请求体校验层（`server/types.rs::validate()`：expr ≤ 4096 字符、vars ≤ 1024 键、precision ≤ 10000）在求值之前产生；CLI 形态无此层，对应约束由 clap / `--precision` 校验承担（退出码 2）。
+> **422 不来自 `ErrorKind`**：HTTP 422 `UNPROCESSABLE_ENTITY`（MCP `ValidationError`）由独立的请求体校验层（`server/types.rs::validate()`：expr ≤ 4096 字符、vars ≤ 1024 键、precision ≤ 10000）在求值之前产生；CLI 形态无此层，对应约束由 clap / `--precision` 校验承担（退出码 2）。HTTP 错误体为 sdforge UnifiedError（`code`/`message`/`trace_id`/`field`），MCP 保持 `ApiError` 序列化（`type` 协议名）。
 
 `CalcError` 携带 `message`（本地化文案，`--lang` / HTTP `lang` 协商）、`hint`（修复建议）、`source_detail`（错误链）。退出码契约由 `ErrorKind::exit_code()` 统一给出：0 = 成功、1 = 计算错误、2 = 用法错误、3 = 超时/上游不可用。
 

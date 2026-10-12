@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! HTTP server 集成测试：`POST /api/v1/evaluate` 等端点（`#[forge]` 生成）。
-//! 经 tower oneshot 直测 Router；错误契约 400 InvalidInput / 422 ValidationError。
+//! 经 tower oneshot 直测 Router；错误契约 400 `BAD_REQUEST` / 422 `UNPROCESSABLE_ENTITY`（sdforge UnifiedError 体）。
 use calnexus::build_router;
 use http_body_util::BodyExt;
 use sdforge::axum::Body;
@@ -89,13 +89,13 @@ async fn test_http_evaluate_cache_miss() {
     assert_eq!(body["result"], 15);
 }
 
-/// 计算错误（1/0）→ 400 InvalidInput，message 含 ErrorKind 前缀。
+/// 计算错误（1/0）→ 400 code=BAD_REQUEST，message 含 ErrorKind 前缀。
 #[tokio::test]
 async fn test_http_evaluate_calc_error_invalid_input() {
     let (status, body) = send_request(json!({"expr": "1/0"})).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["type"], "InvalidInput");
+    assert_eq!(body["code"], "BAD_REQUEST");
     // message 含 ErrorKind 前缀（calc_error_to_api_error 注入 "DivisionByZero:"）
     assert!(
         body["message"]
@@ -106,24 +106,25 @@ async fn test_http_evaluate_calc_error_invalid_input() {
     );
 }
 
-/// precision 超限（>10000）→ 422 ValidationError，field=precision。
+/// precision 超限（>10000）→ 422 code=UNPROCESSABLE_ENTITY，field=precision。
 #[tokio::test]
 async fn test_http_evaluate_validation_error_oversized_precision() {
     let (status, body) = send_request(json!({"expr": "2+3", "precision": 10001})).await;
 
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["type"], "ValidationError");
+    assert_eq!(body["code"], "UNPROCESSABLE_ENTITY");
     assert_eq!(body["field"], "precision");
+    // 统一错误体只保留 field：限额明细自 sdforge 0.5.0-rc.6 起不再进 HTTP body
     assert!(
-        body["constraint"]
+        body["message"]
             .as_str()
-            .is_some_and(|c| c.contains("exceeds limit")),
-        "constraint 应描述限额: {}",
-        body["constraint"]
+            .is_some_and(|m| m.contains("precision")),
+        "message 应指明违规字段: {}",
+        body["message"]
     );
 }
 
-/// vars 键数超限（>1024）→ 422 ValidationError，field=vars。
+/// vars 键数超限（>1024）→ 422 code=UNPROCESSABLE_ENTITY，field=vars。
 #[tokio::test]
 async fn test_http_evaluate_validation_error_oversized_vars() {
     // 构造 1025 个 vars（超过 MAX_VARS=1024）
@@ -134,7 +135,7 @@ async fn test_http_evaluate_validation_error_oversized_vars() {
     let (status, body) = send_request(json!({"expr": "v1", "vars": vars})).await;
 
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["type"], "ValidationError");
+    assert_eq!(body["code"], "UNPROCESSABLE_ENTITY");
     assert_eq!(body["field"], "vars");
 }
 
@@ -366,7 +367,7 @@ async fn test_http_evaluate_default_lang_follows_detection() {
     let (status, body) = send_request(json!({"expr": "foo + 1"})).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["type"], "InvalidInput");
+    assert_eq!(body["code"], "BAD_REQUEST");
     let message = body["message"].as_str().expect("message field");
     if expect_zh {
         assert!(
@@ -387,7 +388,7 @@ async fn test_http_evaluate_zh_lang_localized_error() {
     let (status, body) = send_request(json!({"expr": "foo + 1", "lang": "zh"})).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["type"], "InvalidInput");
+    assert_eq!(body["code"], "BAD_REQUEST");
     assert!(
         body["message"]
             .as_str()
@@ -397,8 +398,8 @@ async fn test_http_evaluate_zh_lang_localized_error() {
         "zh 协商应返回中文消息: {}",
         body["message"]
     );
-    // 机器可读 kind 字段保持英文协议值
-    assert_eq!(body["type"], "InvalidInput");
+    // 机器可读错误码保持英文协议值
+    assert_eq!(body["code"], "BAD_REQUEST");
 }
 
 /// lang=en 显式请求：恒为英文机器契约。
@@ -443,7 +444,6 @@ async fn test_http_evaluate_unknown_lang_falls_back_to_english() {
 #[tokio::test]
 async fn test_metrics_records_red_via_sdforge_registry() {
     let registry = sdforge::metrics::global_registry();
-    registry.reset();
 
     // 预热：中间件在 handler 返回后才记录，先打 /health 让 registry 有序列。
     let warm = build_router()

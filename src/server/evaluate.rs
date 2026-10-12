@@ -19,14 +19,14 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
 
 /// `POST /api/v1/evaluate` + MCP `evaluate` tool（`#[forge]` 生成路由与 schema）。
 ///
-/// 超时返回 503 ServiceUnavailable（`retry_after=REQUEST_TIMEOUT_SECS`）。
+/// 超时映射 503 ServiceUnavailable（`ApiError::retry_after = REQUEST_TIMEOUT_SECS`；HTTP 统一错误体不渲染该字段）。
 #[forge(
     name = "evaluate",
     version = 1,
     path = "/evaluate",
     method = "POST",
     tool_name = "evaluate",
-    description = "Evaluate a math expression. Args MUST be wrapped in a req object: req.expr is the expression string, req.vars holds optional variable bindings, req.precision is optional, req.lang is optional response language (BCP-47 tag, 'en' default, 'zh' supported). Limits: expr up to 4096 chars, vars up to 1024 keys, precision up to 10000. Returns result, domain, cache. Errors: 400 InvalidInput (syntax/eval), 422 ValidationError (limit exceeded), 503 ServiceUnavailable (timeout/upstream, includes Retry-After)."
+    description = "Evaluate a math expression. Args MUST be wrapped in a req object: req.expr is the expression string, req.vars holds optional variable bindings, req.precision is optional, req.lang is optional response language (BCP-47 tag, 'en' default, 'zh' supported). Limits: expr up to 4096 chars, vars up to 1024 keys, precision up to 10000. Returns result, domain, cache. Errors: HTTP 400 code=BAD_REQUEST (InvalidInput: syntax/eval), 422 code=UNPROCESSABLE_ENTITY (ValidationError: limit exceeded, body carries field), 503 code=UNAVAILABLE (ServiceUnavailable: timeout/upstream). MCP errors carry the ApiError type names."
 )]
 pub(crate) async fn evaluate(req: EvaluateRequest) -> Result<EvaluateResponse, ApiError> {
     evaluate_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await

@@ -989,6 +989,19 @@ mod tests {
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
+    /// Open 态迟到成功不回闭合（limiteron 0.3.0-rc.6 修复锚点：在途调用先放行，熔断随后被其他失败打开）。
+    #[test]
+    fn test_breaker_open_state_survives_late_success() {
+        let breaker = SyncCircuitBreaker::new(1, Duration::from_secs(60));
+        assert!(breaker.admit(), "闭合态应放行在途调用");
+        breaker.record_failure();
+        breaker.record_success();
+        assert!(
+            breaker.call(|| Ok::<(), CalcError>(())).is_err(),
+            "Open 态迟到成功不应关闭熔断"
+        );
+    }
+
     // ===== FrankfurterProvider 基本行为（不出网） =====
 
     #[test]

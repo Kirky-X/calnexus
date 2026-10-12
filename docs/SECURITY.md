@@ -120,7 +120,7 @@ fx 汇率域是唯一的网络面，加固措施：ureq `https_only`（禁明文
 
 ### 错误语义分级
 
-`ErrorKind::DependencyUnavailable`（exit_code=3）与客户端输入错误严格区分：服务化部署下分别映射 503（带 `Retry-After`）与 400，避免上游故障被误判为客户端问题、污染调用方重试与告警策略。
+`ErrorKind::DependencyUnavailable`（exit_code=3）与客户端输入错误严格区分：服务化部署下分别映射 503（`code=UNAVAILABLE`）与 400，避免上游故障被误判为客户端问题、污染调用方重试与告警策略。
 
 ---
 
@@ -136,7 +136,7 @@ fx 汇率域是唯一的网络面，加固措施：ureq `https_only`（禁明文
 
 - 服务监听地址默认 `127.0.0.1:3000`；对外暴露时置于反向代理 / Ingress 之后，再绑定 `0.0.0.0`。
 - 为容器设置内存预算并相应配置 `CALNEXUS_CACHE_SIZE`；K8s `terminationGracePeriodSeconds` ≥ 45（drain 30s + 余量）。
-- 启用 `ratelimit` feature 限流（探针与 metrics 自动豁免），`/metrics` 接入监控，关注 503 与 `Retry-After` 信号区分上游故障。
+- 启用 `ratelimit` feature 限流（探针与 metrics 自动豁免），`/metrics` 接入监控，关注 503（`code=UNAVAILABLE`）与 429（带 `Retry-After`）信号区分上游故障与限流。
 - 详见 [🖥️ 服务模式指南](SERVER.md)。
 
 ---

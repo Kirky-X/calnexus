@@ -200,7 +200,7 @@ flowchart LR
 - **CLI** (`src/cli.rs`)：clap 命令行入口，`--latex`/`--steps`/`--canonical`/`--json`/`--precision` 等标志
 - **REPL** (`src/repl.rs`)：rustyline 交互式求值
 - **Batch** (`src/batch.rs`)：批处理文件求值
-- **Server** (`src/server/`)：HTTP + MCP 双协议服务，`#[forge]` 声明式封装（sdforge）——单个 async fn 同时生成 HTTP `POST /api/v1/evaluate` 路由 + MCP `evaluate` tool，错误响应统一 `ApiError` 契约（`InvalidInput`→400 / `ValidationError`→422 / `ServiceUnavailable`→503）。模块包含：`evaluate.rs`（`#[forge]` 入口）、`http.rs`（HTTP 启动 + 优雅关闭）、`mcp.rs`（MCP stdio 启动）、`types.rs`（请求/响应 DTO + vars 校验）、`cache.rs`（共享服务端缓存）、`ratelimit.rs`（固定窗口限流，`ratelimit` feature）
+- **Server** (`src/server/`)：HTTP + MCP 双协议服务，`#[forge]` 声明式封装（sdforge）——单个 async fn 同时生成 HTTP `POST /api/v1/evaluate` 路由 + MCP `evaluate` tool，错误响应统一 `ApiError` 契约（`InvalidInput`→400 / `ValidationError`→422 / `ServiceUnavailable`→503；HTTP 体渲染为 sdforge UnifiedError `{code,message,trace_id?,field?}`，MCP 保持 `ApiError` 序列化）。模块包含：`evaluate.rs`（`#[forge]` 入口）、`http.rs`（HTTP 启动 + 优雅关闭）、`mcp.rs`（MCP stdio 启动）、`types.rs`（请求/响应 DTO + vars 校验）、`cache.rs`（共享服务端缓存）、`ratelimit.rs`（固定窗口限流，`ratelimit` feature）
 - **Output** (`src/output/`)：LaTeX / 步骤 / 规范形式三种格式化器
 
 ### 仓库目录结构
@@ -268,7 +268,7 @@ sequenceDiagram
 
 ### 服务模式数据流
 
-`#[forge]` 声明的求值入口同时生成 HTTP 路由与 MCP tool；HTTP 路由由 `build_router()` 显式挂载（单一事实源），经 context 中间件注入 `X-Request-ID` / `traceparent`，经限流层（可选）后进入 evaluator；错误统一映射 `ApiError`（400 / 422 / 503 + `Retry-After`），探针（`/live` `/ready` `/health`）语义分离，优雅关闭 drain 最长 30s。
+`#[forge]` 声明的求值入口同时生成 HTTP 路由与 MCP tool；HTTP 路由由 `build_router()` 显式挂载（单一事实源），经 context 中间件注入 `X-Request-ID` / `traceparent`，经限流层（可选）后进入 evaluator；错误统一映射 `ApiError`（400 / 422 / 503；HTTP 体为 UnifiedError `{code,message,trace_id?,field?}`），探针（`/live` `/ready` `/health`）语义分离，优雅关闭 drain 最长 30s。
 
 ---
 
@@ -425,11 +425,11 @@ flowchart LR
 
 v015-comprehensive-optimization（2026-09）：
 
-1. **缓存引擎重构**：oxcache 封装退役，`CacheManager` 直连 `moka::sync`——`try_get_with` 生产级 single-flight（并发相同键恰一次求值、错误原样传播），字节权重预算（默认 64MB）+ 256KB 大结果准入阈值，`Arc<EvalResult>` 命中零拷贝，单次 BLAKE3 键。连带消除 JSON 序列化存储、临时 tokio runtime 与 hex 键分配。（后注：当前实现经 crates.io 的 oxcache 0.5.0-rc.6 `ByteWeightCache` 提供同等机制，但其 `get`/`get_or_compute` 返回克隆值——命中为克隆而非 `Arc` 零拷贝；本文各处缓存表述以此为准。）
+1. **缓存引擎重构**：oxcache 封装退役，`CacheManager` 直连 `moka::sync`——`try_get_with` 生产级 single-flight（并发相同键恰一次求值、错误原样传播），字节权重预算（默认 64MB）+ 256KB 大结果准入阈值，`Arc<EvalResult>` 命中零拷贝，单次 BLAKE3 键。连带消除 JSON 序列化存储、临时 tokio runtime 与 hex 键分配。（后注：当前实现经 crates.io 的 oxcache 0.5.0-rc.8 `ByteWeightCache` 提供同等机制，但其 `get`/`get_or_compute` 返回克隆值——命中为克隆而非 `Arc` 零拷贝；本文各处缓存表述以此为准。）
 2. **HTTP 路由显式注册**：`#[forge]` inventory 注册在 rlib/测试二进制下会被链接器 GC 静默丢弃（生产 404），HTTP 路由改为 `build_router()` 显式挂载（单一事实源）；`#[forge]` 保留 MCP tool 注册与 schema 推导职责。
 3. **递归深度防护闭环**：括号字面量递归 thread-local RAII 守卫、mathexpr 前迭代括号预检、canonicalizer 深度守卫；fuzz 目标覆盖真实深度域。
 4. **错误语义服务化**：`ErrorKind::DependencyUnavailable`（exit_code=3）→ HTTP 503，与客户端 400 严格区分；`/ready`/`/live`/`/health` 三探针语义分离。
 5. **可观测性**：request-id/traceparent 中间件、HTTP RED 指标委托 sdforge metrics（`sdforge_http_requests_total{route,method,status}`）、observability feature 接入 inklog 单例（RUST_LOG，缺省 warn）。
 6. **公共 API**：`evaluate_with_router` 路由器可注入；`pub use server::*` 具名化；math/domains 标注内部 API 边界；统一函数目录 `function_catalog`（REPL 补全 / `--list-functions` / MCP `list_functions` 单一事实源）。
 7. **规格流程**：openspec/ 已收敛并入 `specmark/specs/`（27 个能力域），**specmark 为唯一 SDD 流程**。
-8. **sdforge 基座吸收（手写基础设施迁移）**：优雅关闭切换 `sdforge::http::serve_with_graceful_shutdown` + `default_shutdown_signal`；`/health` `/ready` 切换 `sdforge::health::readyz_handler`（checks 数组契约，cache 经 `register_readiness_check_fn` 注册）、`/live` 切换 `healthz_handler`；请求标识切换 `sdforge::context::context_middleware`（+W3C traceparent 提取 trace_id 回写 `X-Trace-ID`，task-local 上下文）。`ratelimit` feature 接通：`src/server/ratelimit.rs` 固定窗口 per-IP 策略实现 sdforge `HttpRequestRateLimiter` 契约，经 Clone 桥接层挂载，`CALNEXUS_RATELIMIT_LIMIT/WINDOW_SECS` 可配，探针/metrics 豁免限流。
+8. **sdforge 基座吸收（手写基础设施迁移）**：优雅关闭切换 `sdforge::http::serve_with_graceful_shutdown` + `default_shutdown_signal`；`/health` `/ready` 切换 `sdforge::health::readyz_handler`（checks 数组契约，cache 经 `register_async_readiness_check_fn` 注册：spawn_blocking 隔离 moka 维护 + 5s 超时判不健康）、`/live` 切换 `healthz_handler`；请求标识切换 `sdforge::context::context_middleware`（+W3C traceparent 提取 trace_id 回写 `X-Trace-ID`，task-local 上下文）。`ratelimit` feature 接通：`src/server/ratelimit.rs` 固定窗口 per-IP 策略实现 sdforge `HttpRequestRateLimiter` 契约，经 Clone 桥接层挂载，`CALNEXUS_RATELIMIT_LIMIT/WINDOW_SECS` 可配，探针/metrics 豁免限流。
