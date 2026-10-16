@@ -54,6 +54,18 @@ jobs:
           echo "Extracted tag: $TAG"
           echo "Extracted version: $VERSION"
 
+      # semver 预发布段（-rc.N 等）→ GitHub prerelease 标记；rc 不得抢占 Latest
+      - name: Derive prerelease flag
+        id: meta
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ "$VERSION" == *-* ]]; then
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # 架构 M-1 / 性能 M-1：版本验证前移，fail-fast 节约 CI 资源
       - name: Verify Cargo.toml version matches tag
         env:
@@ -90,29 +102,46 @@ jobs:
       - name: Verify package builds
         run: cargo publish --dry-run
 
+      # 幂等:已发布版本直接跳过,避免重跑时"already exists"报错
+      - name: Check already published
+        id: published
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -H 'User-Agent: kirky-x-release-verify' \
+            "https://crates.io/api/v1/crates/calnexus/${VERSION}")
+          echo "calnexus ${VERSION}: HTTP ${CODE}"
+          echo "exists=$([[ "$CODE" == "200" ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+
       # 性能 H-2：-v 提供进度反馈，避免日志黑屏 45s 像 hang 死
       # crates.io 是事实发布，必须在 GitHub Release 之前
       - name: Publish to crates.io
+        if: steps.published.outputs.exists == 'false'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -v
 
       # Release 只带 GitHub 自动生成的源码压缩包,不附自制 archive/校验和产物。
+      # 幂等：softprops 对同 tag 已有 release 为 upsert 语义（重跑改写而非新建），
+      # 随后 uniqueness 断言钉住恰好 1 个。
       - name: Create GitHub Release
         uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
+          prerelease: ${{ steps.meta.outputs.PRERELEASE }}
 
+      # TAG 取自 extract 步（与创建步同源）：手动触发时 GITHUB_REF 是分支 ref，
+      # 按 GITHUB_REF 剥前缀会得到错误 tag 导致断言误报
       - name: Verify release uniqueness (idempotency guard)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
           COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate --jq "[.[] | select(.tag_name == \"${TAG}\")] | length")
           echo "release objects for ${TAG}: ${COUNT}"
           if [ "${COUNT}" != "1" ]; then
             echo "::error::expected exactly 1 release for ${TAG}, found ${COUNT}; release state is not idempotent"
             exit 1
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
