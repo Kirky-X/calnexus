@@ -577,21 +577,34 @@ fn is_var(expr: &SymbolicExpr, var: &str) -> bool {
 
 // ============================ 表达式化简 simplify ============================
 
-/// 表达式化简：常量折叠、代数恒等式与递归化简。
+/// 表达式化简：贪心化简 +（可选）E-graph 饱和提取。
 pub fn simplify(expr: &SymbolicExpr) -> SymbolicExpr {
+    let greedy = simplify_greedy(expr);
+    #[cfg(feature = "egraph")]
+    {
+        crate::math::egraph::saturate(&greedy).unwrap_or(greedy)
+    }
+    #[cfg(not(feature = "egraph"))]
+    {
+        greedy
+    }
+}
+
+/// 贪心化简：常量折叠、代数恒等式与递归化简。
+fn simplify_greedy(expr: &SymbolicExpr) -> SymbolicExpr {
     match expr {
         SymbolicExpr::Const(_) | SymbolicExpr::Var(_) => expr.clone(),
-        SymbolicExpr::Add(l, r) => simplify_add(&simplify(l), &simplify(r)),
-        SymbolicExpr::Sub(l, r) => simplify_sub(&simplify(l), &simplify(r)),
-        SymbolicExpr::Mul(l, r) => simplify_mul(&simplify(l), &simplify(r)),
-        SymbolicExpr::Div(l, r) => simplify_div(&simplify(l), &simplify(r)),
-        SymbolicExpr::Pow(l, r) => simplify_pow(&simplify(l), &simplify(r)),
-        SymbolicExpr::Neg(e) => simplify_neg(&simplify(e)),
-        SymbolicExpr::Sin(e) => SymbolicExpr::Sin(Box::new(simplify(e))),
-        SymbolicExpr::Cos(e) => SymbolicExpr::Cos(Box::new(simplify(e))),
-        SymbolicExpr::Tan(e) => SymbolicExpr::Tan(Box::new(simplify(e))),
-        SymbolicExpr::Ln(e) => SymbolicExpr::Ln(Box::new(simplify(e))),
-        SymbolicExpr::Exp(e) => SymbolicExpr::Exp(Box::new(simplify(e))),
+        SymbolicExpr::Add(l, r) => simplify_add(&simplify_greedy(l), &simplify_greedy(r)),
+        SymbolicExpr::Sub(l, r) => simplify_sub(&simplify_greedy(l), &simplify_greedy(r)),
+        SymbolicExpr::Mul(l, r) => simplify_mul(&simplify_greedy(l), &simplify_greedy(r)),
+        SymbolicExpr::Div(l, r) => simplify_div(&simplify_greedy(l), &simplify_greedy(r)),
+        SymbolicExpr::Pow(l, r) => simplify_pow(&simplify_greedy(l), &simplify_greedy(r)),
+        SymbolicExpr::Neg(e) => simplify_neg(&simplify_greedy(e)),
+        SymbolicExpr::Sin(e) => SymbolicExpr::Sin(Box::new(simplify_greedy(e))),
+        SymbolicExpr::Cos(e) => SymbolicExpr::Cos(Box::new(simplify_greedy(e))),
+        SymbolicExpr::Tan(e) => SymbolicExpr::Tan(Box::new(simplify_greedy(e))),
+        SymbolicExpr::Ln(e) => SymbolicExpr::Ln(Box::new(simplify_greedy(e))),
+        SymbolicExpr::Exp(e) => SymbolicExpr::Exp(Box::new(simplify_greedy(e))),
     }
 }
 
@@ -605,6 +618,10 @@ fn simplify_add(l: &SymbolicExpr, r: &SymbolicExpr) -> SymbolicExpr {
     if r.is_zero() {
         return l.clone();
     }
+    // sin²θ + cos²θ = 1（含反序）
+    if is_pythagorean_pair(l, r) {
+        return SymbolicExpr::Const(1.0);
+    }
     // 合并同类项
     let (ca, rest_a) = extract_coeff(l);
     let (cb, rest_b) = extract_coeff(r);
@@ -612,6 +629,36 @@ fn simplify_add(l: &SymbolicExpr, r: &SymbolicExpr) -> SymbolicExpr {
         return coeff_times(ca + cb, rest_a);
     }
     SymbolicExpr::Add(Box::new(l.clone()), Box::new(r.clone()))
+}
+
+/// 检测 `sin²θ + cos²θ`（含反序）：两侧基底表达式必须相等。
+fn is_pythagorean_pair(l: &SymbolicExpr, r: &SymbolicExpr) -> bool {
+    fn arg_of<F>(expr: &SymbolicExpr, is_target: F) -> Option<&SymbolicExpr>
+    where
+        F: Fn(&SymbolicExpr) -> bool,
+    {
+        if let SymbolicExpr::Pow(base, exp) = expr
+            && exp.as_const() == Some(2.0)
+            && is_target(base)
+        {
+            return match base.as_ref() {
+                SymbolicExpr::Sin(inner) | SymbolicExpr::Cos(inner) => Some(inner),
+                _ => None,
+            };
+        }
+        None
+    }
+
+    let is_sin = |e: &SymbolicExpr| matches!(e, SymbolicExpr::Sin(_));
+    let is_cos = |e: &SymbolicExpr| matches!(e, SymbolicExpr::Cos(_));
+
+    if let (Some(s), Some(c)) = (arg_of(l, is_sin), arg_of(r, is_cos)) {
+        return s == c;
+    }
+    if let (Some(c), Some(s)) = (arg_of(l, is_cos), arg_of(r, is_sin)) {
+        return s == c;
+    }
+    false
 }
 
 fn simplify_sub(l: &SymbolicExpr, r: &SymbolicExpr) -> SymbolicExpr {
@@ -1277,6 +1324,42 @@ mod tests {
             result,
             SymbolicExpr::Mul(Box::new(const_(5.0)), Box::new(var("x")))
         );
+    }
+
+    /// 构造 `sin(x)^2 + cos(x)^2` 形态（可交换项顺序与变量）。
+    fn sin_sq_plus_cos_sq(sin_var: &str, cos_var: &str, reversed: bool) -> SymbolicExpr {
+        let sin_sq = SymbolicExpr::Pow(
+            Box::new(SymbolicExpr::Sin(Box::new(var(sin_var)))),
+            Box::new(const_(2.0)),
+        );
+        let cos_sq = SymbolicExpr::Pow(
+            Box::new(SymbolicExpr::Cos(Box::new(var(cos_var)))),
+            Box::new(const_(2.0)),
+        );
+        if reversed {
+            SymbolicExpr::Add(Box::new(cos_sq), Box::new(sin_sq))
+        } else {
+            SymbolicExpr::Add(Box::new(sin_sq), Box::new(cos_sq))
+        }
+    }
+
+    #[test]
+    fn test_simplify_sin_sq_plus_cos_sq() {
+        let expr = sin_sq_plus_cos_sq("x", "x", false);
+        assert_eq!(symbolic_to_string(&simplify(&expr)), "1");
+    }
+
+    #[test]
+    fn test_simplify_sin_sq_plus_cos_sq_reversed() {
+        let expr = sin_sq_plus_cos_sq("x", "x", true);
+        assert_eq!(symbolic_to_string(&simplify(&expr)), "1");
+    }
+
+    #[test]
+    fn test_simplify_sin_sq_plus_cos_sq_different_vars_unchanged() {
+        let expr = sin_sq_plus_cos_sq("x", "y", false);
+        let out = symbolic_to_string(&simplify(&expr));
+        assert!(out.contains("sin") && out.contains("cos"), "got {out}");
     }
 
     // --- limit ---

@@ -233,6 +233,9 @@ impl AstCanonicalizer {
     }
 
     /// 将 AST 序列化为 S-表达式字符串 `(op arg1 arg2 ...)`。
+    ///
+    /// `Add`/`Mul` 先递归展平同运算符子树再排序，使括号结合方式不影响规范串；
+    /// 其余运算符保持二元形式（不可交换/结合）。
     fn serialize(ast: &AstNode) -> String {
         match ast {
             AstNode::Number(n) => Self::format_number(*n),
@@ -254,7 +257,16 @@ impl AstCanonicalizer {
                     BinaryOp::Pow => "^",
                     BinaryOp::Mod => "mod",
                 };
-                format!("({} {} {})", op_str, Self::serialize(l), Self::serialize(r))
+                if matches!(op, BinaryOp::Add | BinaryOp::Mul) {
+                    let mut nodes = Vec::new();
+                    Self::collect_same_op(*op, l, &mut nodes);
+                    Self::collect_same_op(*op, r, &mut nodes);
+                    let mut parts: Vec<String> = nodes.into_iter().map(Self::serialize).collect();
+                    parts.sort_unstable();
+                    format!("({} {})", op_str, parts.join(" "))
+                } else {
+                    format!("({} {} {})", op_str, Self::serialize(l), Self::serialize(r))
+                }
             }
             AstNode::UnaryOp(op, e) => {
                 let op_str = match op {
@@ -288,6 +300,18 @@ impl AstCanonicalizer {
             }
             // (str ...) 包装隔离字符串与变量/函数命名空间，避免误识别。
             AstNode::Str(s) => format!("(str {})", s),
+        }
+    }
+
+    /// 递归收集同运算符子树（用于 Add/Mul 展平）；叶子节点写入 `out`。
+    fn collect_same_op<'a>(op: BinaryOp, ast: &'a AstNode, out: &mut Vec<&'a AstNode>) {
+        if let AstNode::BinaryOp(inner, l, r) = ast
+            && *inner == op
+        {
+            Self::collect_same_op(op, l, out);
+            Self::collect_same_op(op, r, out);
+        } else {
+            out.push(ast);
         }
     }
 
@@ -329,6 +353,52 @@ mod tests {
     }
 
     // ===== 交换律排序 =====
+
+    // ===== 结合律展平（Add/Mul） =====
+
+    #[test]
+    fn test_associativity_add_flattened() {
+        assert_eq!(
+            canon("(a+b)+c").unwrap(),
+            canon("a+(b+c)").unwrap(),
+            "加法括号结合方式不同应产生同一规范串"
+        );
+        assert_eq!(canon("(a+b)+c").unwrap(), canon("(c+a)+b").unwrap());
+    }
+
+    #[test]
+    fn test_associativity_mul_flattened() {
+        assert_eq!(
+            canon("(a*b)*c").unwrap(),
+            canon("a*(b*c)").unwrap(),
+            "乘法括号结合方式不同应产生同一规范串"
+        );
+    }
+
+    #[test]
+    fn test_subtraction_not_associative() {
+        assert_ne!(
+            canon("a-(b-c)").unwrap(),
+            canon("(a-b)-c").unwrap(),
+            "减法不可结合，规范串必须不同"
+        );
+    }
+
+    #[test]
+    fn test_flattened_form_is_stable() {
+        // 多层嵌套 + 不同书写顺序 → 同一 n 叉规范串
+        let first = canon("((a+b)+(c+d))+e").unwrap();
+        let second = canon("e+((c+d)+(a+b))").unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first, "(+ a b c d e)");
+    }
+
+    #[test]
+    fn test_non_associative_ops_keep_binary_shape() {
+        assert_eq!(canon("(a/b)/c").unwrap(), "(/ (/ a b) c)");
+        assert_eq!(canon("a/(b/c)").unwrap(), "(/ a (/ b c))");
+        assert_eq!(canon("(a-b)-c").unwrap(), "(- (- a b) c)");
+    }
 
     #[test]
     fn test_variable_sort_addition() {

@@ -20,9 +20,9 @@ cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 icu = ["dep:icu"]
 # HTTP: HTTP API 接口；sdforge/health 健康探针（/health /ready /live + ReadinessCheck）
 # sdforge/context 请求标识传播（context_middleware）
-http = ["dep:sdforge", "sdforge/http", "sdforge/graceful", "sdforge/health", "sdforge/context", "sdforge/metrics", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
+http = ["dep:tokio", "dep:sdforge", "sdforge/http", "sdforge/graceful", "sdforge/health", "sdforge/context", "sdforge/metrics", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
-mcp = ["dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
+mcp = ["dep:tokio", "dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # Time: 时间计算（日期差、时间戳、格式解析，feature 门控）
 time = ["dep:jiff"]
 # Unit: 物理单位换算（8 量纲，feature 门控）
@@ -38,25 +38,34 @@ ratelimit = ["dep:sdforge", "sdforge/ratelimit-http", "dep:limiteron"]
 # Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
 docs = ["dep:sdforge", "sdforge/docs"]
 # Observability: tracing 日志（server 模式 EnvFilter 消费 RUST_LOG）
-observability = ["dep:tracing", "dep:inklog", "tokio/rt-multi-thread"]
+# tokio 由 http/mcp 提供（observability 仅作用于 src/server/，不单独引入运行 时 ）
+observability = ["dep:tracing", "dep:inklog"]
+# wasm-api: wasm-bindgen 导出层（仅 wasm32 目标；非 wasm 启用会编译期报错）
+wasm-api = ["dep:wasm-bindgen"]
+# egraph: 基于 egg 的 equality saturation 化简（默认关闭）
+egraph = ["dep:egg"]
 
 [dependencies]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层（oxcache byte-weight + serialization：同步字节权重预算 + try_get_with single-flight；
 # serialization feature 供 UnifiedSerializer::estimate_size 序列化字节估重（L1 缓存 weigher 口径）；
-# 禁用默认特性避免 tokio/redis 等后端栈；键生成留在 src/core/cache.rs）
-oxcache = { version = "0.5.0-rc.8", default-features = false, features = ["byte-weight", "serialization"] }
+# 禁用默认特性避免 tokio/redis 等后端栈；键生成留在 src/core/cache.rs）。
+# 0.5.0-rc.9 起（本地待发布版）`byte-weight + serialization` 支持 wasm32（tokio 解耦 + moka atomic64）。
+oxcache = { version = "0.5.0-rc.9", default-features = false, features = ["byte-weight", "serialization"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
 # 哈希
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
 # 序列化
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
-# tokio 运行时
-tokio = { version = "1.53", default-features = false, features = ["rt"] }
+# tokio 运行时（仅 http/mcp 的 server 模块使用；optional 避免 wasm32 目标触发
+# `Only features sync,macros,io-util,rt,time are supported on wasm` 编译错误）
+tokio = { version = "1.53", default-features = false, features = ["rt"], optional = true }
 # 正则表达式
 regex = { version = "1.13", default-features = false, features = ["std", "unicode-perl"] }
+# libm: 纯 Rust fdlibm 移植（J/Y Bessel 族，零传递依赖，wasm 可用）
+libm = { version = "0.2", default-features = false }
 # 数值计算（均禁用默认特性）
 num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
@@ -105,6 +114,10 @@ limiteron = { version = "0.3.0-rc.7", default-features = false, features = ["syn
 # confers: 声明式配置加载（fx 域 CALNEXUS_FX_* 环境变量单点经 Config derive + env_prefix 映射；
 # 仅同步 env 源，无 feature 门控，不引入 dotenvy/toml 等格式栈）
 confers = { version = "0.6.0-rc.10", default-features = false, optional = true }
+# wasm-bindgen: wasm32 导出层（仅 wasm-api feature 启用）
+wasm-bindgen = { version = "0.2", optional = true }
+# egg: E-graph equality saturation（仅 egraph feature 启用）
+egg = { version = "0.9", default-features = false, optional = true }
 
 # SIGPIPE 恢复默认处置：下游 `| head` 提前关闭管道时按 Unix 惯例静默终止，
 # 而非 EPIPE panic 被误报为内部 bug（仅 unix 目标链接；非 unix 由 panic hook 兜底）
@@ -197,3 +210,7 @@ required-features = ["cli", "numerical"]
 # 启用/禁用两侧用例（--all-features 跑启用侧，default 跑禁用侧）。
 [[test]]
 name = "e2e"
+
+# 本地 oxcache（含 wasm32 支持、待发布）开发用；发布后删除本段并 `cargo update -p oxcache`。
+[patch.crates-io]
+oxcache = { path = "../base/oxcache" }

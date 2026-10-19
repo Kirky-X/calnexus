@@ -9,6 +9,7 @@
 
 use crate::core::CalcError;
 use nalgebra::{DMatrix, DVector, LU, QR, SVD, SymmetricEigen};
+use num_complex::Complex;
 
 /// 实对称矩阵特征分解 →（特征值升序, 特征向量列对应）；非方阵或非对称返回 DomainError。
 pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError> {
@@ -36,6 +37,7 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
                 return Err(CalcError::domain(
                     "eig() requires a real symmetric matrix".to_string(),
                 )
+                .with_hint("use eig_general for non-symmetric matrices")
                 .with_i18n("msg.numerical.eig_requires_symmetric", vec![]));
             }
         }
@@ -61,6 +63,198 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
         }
     }
     Ok((values, sorted_vecs))
+}
+
+/// 实矩阵特征分解结果：特征值与对应特征向量（列序一致）。
+pub struct EigGeneral {
+    /// 特征值（按 `(re, im)` 升序）。
+    pub values: Vec<Complex<f64>>,
+    /// 特征向量：`vectors[i]` 对应 `values[i]`，长度 n。
+    pub vectors: Vec<Vec<Complex<f64>>>,
+}
+
+/// 实矩阵特征值与特征向量：对称委托 [`eig`]，非对称走实 Schur + 零空间回代。
+pub fn eig_general(matrix: &DMatrix<f64>) -> Result<EigGeneral, CalcError> {
+    require_finite(matrix.iter().copied())?;
+    if !matrix.is_square() {
+        return Err(CalcError::domain(format!(
+            "eig_general() requires a square matrix, got {}x{}",
+            matrix.nrows(),
+            matrix.ncols()
+        ))
+        .with_i18n(
+            "msg.numerical.eig_requires_square",
+            vec![
+                ("rows".to_string(), matrix.nrows().to_string()),
+                ("cols".to_string(), matrix.ncols().to_string()),
+            ],
+        ));
+    }
+    let n = matrix.nrows();
+    if is_symmetric_within(matrix) {
+        let (values, vecs) = eig(matrix)?;
+        return Ok(EigGeneral {
+            values: values
+                .into_iter()
+                .map(|v| Complex::new(normalize_zero(v), 0.0))
+                .collect(),
+            vectors: (0..n)
+                .map(|col| {
+                    (0..n)
+                        .map(|row| Complex::new(normalize_zero(vecs[(row, col)]), 0.0))
+                        .collect()
+                })
+                .collect(),
+        });
+    }
+
+    let schur = nalgebra::linalg::Schur::new(matrix.clone());
+    let (q, t) = schur.unpack();
+    let raw_values = schur_block_eigenvalues(&t);
+    let t_c = DMatrix::<Complex<f64>>::from_fn(n, n, |i, j| Complex::new(t[(i, j)], 0.0));
+    let q_c = DMatrix::<Complex<f64>>::from_fn(n, n, |i, j| Complex::new(q[(i, j)], 0.0));
+
+    let mut pairs: Vec<(Complex<f64>, Vec<Complex<f64>>)> = raw_values
+        .iter()
+        .map(|lambda| {
+            let mut shifted = t_c.clone();
+            for i in 0..n {
+                shifted[(i, i)] -= lambda;
+            }
+            let y = null_vector_complex(&shifted);
+            let y_vec = nalgebra::DVector::from_vec(y);
+            let x = &q_c * y_vec;
+            (
+                *lambda,
+                normalize_complex_vector(x.iter().copied().collect()),
+            )
+        })
+        .collect();
+
+    pairs.sort_by(|(a, _), (b, _)| a.re.total_cmp(&b.re).then(a.im.total_cmp(&b.im)));
+    let (values, vectors) = pairs.into_iter().unzip();
+    Ok(EigGeneral { values, vectors })
+}
+
+/// 高斯消元求复矩阵的零空间向量（自由变量取第一个非主元列）。
+fn null_vector_complex(matrix: &DMatrix<Complex<f64>>) -> Vec<Complex<f64>> {
+    let n = matrix.nrows();
+    let mut a = matrix.clone();
+    let mut pivot_cols: Vec<usize> = Vec::new();
+    let mut rank = 0usize;
+    for col in 0..n {
+        let mut pivot = None;
+        let mut best = 0.0;
+        for r in rank..n {
+            let v = a[(r, col)].norm();
+            if v > best {
+                best = v;
+                pivot = Some(r);
+            }
+        }
+        let Some(p) = pivot else { continue };
+        if best < 1e-12 {
+            continue;
+        }
+        if p != rank {
+            a.swap_rows(p, rank);
+        }
+        let d = a[(rank, col)];
+        for r in (rank + 1)..n {
+            let factor = a[(r, col)] / d;
+            if factor.norm() > 0.0 {
+                for c in col..n {
+                    let sub = factor * a[(rank, c)];
+                    a[(r, c)] -= sub;
+                }
+            }
+        }
+        pivot_cols.push(col);
+        rank += 1;
+        if rank == n {
+            break;
+        }
+    }
+    let mut y = vec![Complex::new(0.0, 0.0); n];
+    let free = (0..n).find(|c| !pivot_cols.contains(c)).unwrap_or(n - 1);
+    y[free] = Complex::new(1.0, 0.0);
+    for (row, &col) in pivot_cols.iter().enumerate().rev() {
+        let mut sum = Complex::new(0.0, 0.0);
+        for j in (col + 1)..n {
+            sum += a[(row, j)] * y[j];
+        }
+        y[col] = -sum / a[(row, col)];
+    }
+    y
+}
+
+/// 从实 Schur 形式 T 的 1×1/2×2 对角块提取特征值（与块顺序一致）。
+fn schur_block_eigenvalues(t: &DMatrix<f64>) -> Vec<Complex<f64>> {
+    let n = t.nrows();
+    let mut values = Vec::with_capacity(n);
+    let mut i = 0;
+    while i < n {
+        if i + 1 < n && t[(i + 1, i)].abs() > 1e-12 {
+            let a = t[(i, i)];
+            let b = t[(i, i + 1)];
+            let c = t[(i + 1, i)];
+            let d = t[(i + 1, i + 1)];
+            let tr = a + d;
+            let det = a * d - b * c;
+            let disc = tr * tr - 4.0 * det;
+            if disc < 0.0 {
+                let re = tr / 2.0;
+                let im = (-disc).sqrt() / 2.0;
+                values.push(Complex::new(re, im));
+                values.push(Complex::new(re, -im));
+            } else {
+                let root = disc.sqrt() / 2.0;
+                values.push(Complex::new(tr / 2.0 + root, 0.0));
+                values.push(Complex::new(tr / 2.0 - root, 0.0));
+            }
+            i += 2;
+        } else {
+            values.push(Complex::new(t[(i, i)], 0.0));
+            i += 1;
+        }
+    }
+    values
+}
+
+/// 复向量归一化：除以最大模分量；实特征值向量的微小虚部置 0。
+fn normalize_complex_vector(mut x: Vec<Complex<f64>>) -> Vec<Complex<f64>> {
+    let max_re = x.iter().map(|c| c.re.abs()).fold(0.0, f64::max);
+    let max_im = x.iter().map(|c| c.im.abs()).fold(0.0, f64::max);
+    if max_im <= 1e-12 * max_re.max(1.0) {
+        for c in &mut x {
+            c.im = 0.0;
+        }
+    }
+    let scale = x.iter().map(|c| c.norm()).fold(0.0, f64::max).max(1e-300);
+    for c in &mut x {
+        *c /= scale;
+    }
+    x
+}
+
+/// 对称性判定（相对尺度 1e-10）：方阵对角线两侧元素近似相等。
+fn is_symmetric_within(matrix: &DMatrix<f64>) -> bool {
+    const SYMMETRY_TOL: f64 = 1e-10;
+    let n = matrix.nrows();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let scale = matrix[(i, j)].abs().max(matrix[(j, i)].abs()).max(1.0);
+            if (matrix[(i, j)] - matrix[(j, i)]).abs() > SYMMETRY_TOL * scale {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// 将 `-0.0` 规范为 `0.0`，保证 JSON 与快照输出稳定。
+fn normalize_zero(x: f64) -> f64 {
+    if x == 0.0 { 0.0 } else { x }
 }
 
 /// SVD 三元组：(U, 奇异值降序, Vt)，满足 A = U·diag(S)·Vt。
@@ -120,6 +314,48 @@ pub fn qr(matrix: &DMatrix<f64>) -> Result<(DMatrix<f64>, DMatrix<f64>), CalcErr
     let q = decomp.q();
     let r = decomp.r();
     Ok((q, r))
+}
+
+/// 最小二乘 lstsq(A, b)：QR 主路径回代；R 对角近零（秩亏）时回退 SVD 伪逆返回最小范数解。
+pub fn lstsq(a: &DMatrix<f64>, b: &DVector<f64>) -> Result<DVector<f64>, CalcError> {
+    if a.nrows() != b.nrows() {
+        return Err(CalcError::domain(
+            "lstsq: row count of A must equal length of b".to_string(),
+        ));
+    }
+    if a.nrows() == 0 || a.ncols() == 0 {
+        return Err(CalcError::domain("lstsq: A must be non-empty".to_string()));
+    }
+    let (q, r) = qr(a)?;
+    let n = r.ncols();
+    let diag_max = (0..n).map(|i| r[(i, i)].abs()).fold(0.0_f64, f64::max);
+    let tol = 1e-12 * diag_max.max(1.0);
+    let rank_deficient = (0..n).any(|i| r[(i, i)].abs() <= tol);
+    if !rank_deficient {
+        let qtb = q.transpose() * b;
+        let mut x = DVector::<f64>::zeros(n);
+        for i in (0..n).rev() {
+            let mut sum = qtb[i];
+            for j in (i + 1)..n {
+                sum -= r[(i, j)] * x[j];
+            }
+            x[i] = sum / r[(i, i)];
+        }
+        require_finite(x.iter().copied())?;
+        return Ok(x);
+    }
+    let (u, s, vt) = svd(a)?;
+    let mut x = DVector::<f64>::zeros(a.ncols());
+    for i in 0..s.len() {
+        if s[i] > tol {
+            let coef = u.column(i).dot(b) / s[i];
+            for j in 0..a.ncols() {
+                x[j] += vt[(i, j)] * coef;
+            }
+        }
+    }
+    require_finite(x.iter().copied())?;
+    Ok(x)
 }
 
 /// 解线性方程组 A·x = b；A 须方阵且行数与 b 匹配，奇异返回 DomainError。
@@ -329,6 +565,94 @@ mod tests {
         assert!(matches!(eig(&m), Err(e) if e.kind == ErrorKind::NaNOrInf));
     }
 
+    // ===== eig_general（非对称） =====
+
+    /// 断言 `A·x = λ·x`（逐分量残差 < 1e-9）。
+    fn assert_eigenpair(m: &DMatrix<f64>, lambda: Complex<f64>, x: &[Complex<f64>]) {
+        let n = m.nrows();
+        assert_eq!(x.len(), n);
+        for i in 0..n {
+            let ax = (0..n).fold(Complex::new(0.0, 0.0), |acc, j| {
+                acc + Complex::new(m[(i, j)], 0.0) * x[j]
+            });
+            let lx = lambda * x[i];
+            assert!(
+                (ax - lx).norm() < 1e-9,
+                "row {i}: A·x = {ax:?}, λ·x = {lx:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn eig_general_rotation_returns_conjugate_pair() {
+        let m = DMatrix::from_row_slice(2, 2, &[0.0, -1.0, 1.0, 0.0]);
+        let result = eig_general(&m).unwrap();
+        let values = &result.values;
+        assert_eq!(values.len(), 2);
+        assert!(values[0].re.abs() < 1e-9);
+        assert!((values[0].im + 1.0).abs() < 1e-9);
+        assert!(values[1].re.abs() < 1e-9);
+        assert!((values[1].im - 1.0).abs() < 1e-9);
+        assert_eq!(result.vectors.len(), 2);
+        for (lambda, x) in values.iter().zip(result.vectors.iter()) {
+            assert_eigenpair(&m, *lambda, x);
+        }
+    }
+
+    #[test]
+    fn eig_general_upper_triangular_returns_diagonal() {
+        let m = DMatrix::from_row_slice(3, 3, &[3.0, 1.0, 2.0, 0.0, -1.0, 4.0, 0.0, 0.0, 2.0]);
+        let result = eig_general(&m).unwrap();
+        let values = &result.values;
+        let mut re: Vec<f64> = values.iter().map(|c| c.re).collect();
+        re.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!((re[0] + 1.0).abs() < 1e-9);
+        assert!((re[1] - 2.0).abs() < 1e-9);
+        assert!((re[2] - 3.0).abs() < 1e-9);
+        assert!(values.iter().all(|c| c.im.abs() < 1e-9));
+        for (lambda, x) in values.iter().zip(result.vectors.iter()) {
+            assert_eigenpair(&m, *lambda, x);
+        }
+    }
+
+    #[test]
+    fn eig_general_symmetric_matches_eig() {
+        let m = DMatrix::from_row_slice(2, 2, &[2.0, 1.0, 1.0, 2.0]);
+        let (expected, _) = eig(&m).unwrap();
+        let result = eig_general(&m).unwrap();
+        assert_eq!(result.values.len(), expected.len());
+        for (c, e) in result.values.iter().zip(expected.iter()) {
+            assert!((c.re - e).abs() < 1e-9);
+            assert!(c.im.abs() < 1e-9);
+        }
+        for (lambda, x) in result.values.iter().zip(result.vectors.iter()) {
+            assert_eigenpair(&m, *lambda, x);
+        }
+    }
+
+    #[test]
+    fn eig_general_diagonal_vectors_are_basis() {
+        let m = DMatrix::from_row_slice(3, 3, &[2.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, -1.0]);
+        let result = eig_general(&m).unwrap();
+        for (lambda, x) in result.values.iter().zip(result.vectors.iter()) {
+            assert_eigenpair(&m, *lambda, x);
+            let max_norm = x.iter().map(|c| c.norm()).fold(0.0, f64::max);
+            assert!((max_norm - 1.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn eig_general_non_square_errors() {
+        let m = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert!(matches!(eig_general(&m), Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    #[test]
+    fn eig_general_rejects_nan() {
+        let m = DMatrix::from_row_slice(2, 2, &[1.0, f64::NAN, 2.0, 4.0]);
+        assert!(matches!(eig_general(&m), Err(e) if e.kind == ErrorKind::NaNOrInf));
+    }
+
     // ===== svd =====
 
     #[test]
@@ -438,5 +762,31 @@ mod tests {
     fn matrix_exp_rejects_nan() {
         let m = DMatrix::from_row_slice(2, 2, &[f64::NAN, 0.0, 0.0, 1.0]);
         assert!(matches!(matrix_exp(&m), Err(e) if e.kind == ErrorKind::NaNOrInf));
+    }
+
+    #[test]
+    fn lstsq_overdetermined_line() {
+        let a = DMatrix::from_row_slice(3, 2, &[1.0, 1.0, 1.0, 2.0, 1.0, 3.0]);
+        let b = DVector::from_vec(vec![6.0, 9.0, 12.0]);
+        let x = lstsq(&a, &b).unwrap();
+        assert!(
+            (x[0] - 3.0).abs() < 1e-9 && (x[1] - 3.0).abs() < 1e-9,
+            "x={x:?}"
+        );
+    }
+
+    #[test]
+    fn lstsq_rank_deficient_returns_min_norm() {
+        let a = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 2.0, 4.0]);
+        let b = DVector::from_vec(vec![3.0, 6.0]);
+        let x = lstsq(&a, &b).unwrap();
+        assert!(x.iter().all(|v| v.is_finite()), "x={x:?}");
+    }
+
+    #[test]
+    fn lstsq_dimension_mismatch_errors() {
+        let a = DMatrix::from_row_slice(2, 2, &[1.0, 0.0, 0.0, 1.0]);
+        let b = DVector::from_vec(vec![1.0]);
+        assert!(matches!(lstsq(&a, &b), Err(e) if e.kind == ErrorKind::Domain));
     }
 }

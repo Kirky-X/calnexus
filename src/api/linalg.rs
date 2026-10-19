@@ -112,6 +112,26 @@ impl<'a> LinearAlgebraImpl<'a> {
     }
 
     #[cfg(feature = "numerical")]
+    pub fn eig_general(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
+        let dm = to_dmatrix(m);
+        let result = math::numerical::eig_general(&dm)?;
+        Ok(EvalResult::Json(serde_json::json!({
+            "values_re": result.values.iter().map(|c| c.re).collect::<Vec<_>>(),
+            "values_im": result.values.iter().map(|c| c.im).collect::<Vec<_>>(),
+            "vectors_re": result
+                .vectors
+                .iter()
+                .map(|v| v.iter().map(|c| c.re).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            "vectors_im": result
+                .vectors
+                .iter()
+                .map(|v| v.iter().map(|c| c.im).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+        })))
+    }
+
+    #[cfg(feature = "numerical")]
     pub fn svd(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
         let dm = to_dmatrix(m);
         let (u, s, vt) = math::numerical::svd(&dm)?;

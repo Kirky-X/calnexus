@@ -122,6 +122,70 @@ impl<'a> ScalarMathImpl<'a> {
         math::scientific::erf(x).map(scalar)
     }
 
+    pub fn bessel_j0(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_j0(x).map(scalar)
+    }
+
+    pub fn bessel_j1(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_j1(x).map(scalar)
+    }
+
+    pub fn bessel_j(&self, n: u32, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_j(n, x).map(scalar)
+    }
+
+    pub fn bessel_y0(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_y0(x).map(scalar)
+    }
+
+    pub fn bessel_y1(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_y1(x).map(scalar)
+    }
+
+    pub fn bessel_y(&self, n: u32, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_y(n, x).map(scalar)
+    }
+
+    pub fn bessel_i0(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_i0(x).map(scalar)
+    }
+
+    pub fn bessel_i1(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_i1(x).map(scalar)
+    }
+
+    pub fn bessel_i(&self, n: u32, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_i(n, x).map(scalar)
+    }
+
+    pub fn bessel_k0(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_k0(x).map(scalar)
+    }
+
+    pub fn bessel_k1(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_k1(x).map(scalar)
+    }
+
+    pub fn bessel_k(&self, n: u32, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::bessel_k(n, x).map(scalar)
+    }
+
+    pub fn beta(&self, a: f64, b: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::beta(a, b).map(scalar)
+    }
+
+    pub fn zeta(&self, s: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::zeta(s).map(scalar)
+    }
+
+    pub fn airy_ai(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::airy_ai(x).map(scalar)
+    }
+
+    pub fn airy_bi(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::airy_bi(x).map(scalar)
+    }
+
     // ── 精度 ──
 
     pub fn precision_eval(&self, digits: usize, expr: &str) -> Result<EvalResult, CalcError> {

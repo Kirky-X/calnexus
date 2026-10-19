@@ -55,6 +55,38 @@ pub trait ScalarMath {
     fn gamma(&self, x: f64) -> Result<EvalResult, CalcError>;
     /// 误差函数。
     fn erf(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 0 阶第一类 Bessel 函数。
+    fn bessel_j0(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 1 阶第一类 Bessel 函数。
+    fn bessel_j1(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 整数阶第一类 Bessel 函数（0..=100）。
+    fn bessel_j(&self, n: u32, x: f64) -> Result<EvalResult, CalcError>;
+    /// 0 阶第二类 Bessel 函数。
+    fn bessel_y0(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 1 阶第二类 Bessel 函数。
+    fn bessel_y1(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 整数阶第二类 Bessel 函数（0..=100）。
+    fn bessel_y(&self, n: u32, x: f64) -> Result<EvalResult, CalcError>;
+    /// 0 阶第一类修正 Bessel 函数。
+    fn bessel_i0(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 1 阶第一类修正 Bessel 函数。
+    fn bessel_i1(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 整数阶第一类修正 Bessel 函数（0..=100）。
+    fn bessel_i(&self, n: u32, x: f64) -> Result<EvalResult, CalcError>;
+    /// 0 阶第二类修正 Bessel 函数。
+    fn bessel_k0(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 1 阶第二类修正 Bessel 函数。
+    fn bessel_k1(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 整数阶第二类修正 Bessel 函数（0..=100）。
+    fn bessel_k(&self, n: u32, x: f64) -> Result<EvalResult, CalcError>;
+    /// Beta 函数。
+    fn beta(&self, a: f64, b: f64) -> Result<EvalResult, CalcError>;
+    /// Riemann Zeta 函数。
+    fn zeta(&self, s: f64) -> Result<EvalResult, CalcError>;
+    /// Airy Ai 函数。
+    fn airy_ai(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// Airy Bi 函数。
+    fn airy_bi(&self, x: f64) -> Result<EvalResult, CalcError>;
 
     // ── 精度 ──
     /// 任意精度求值：BigRational 计算后格式化为 digits 位小数。
@@ -141,6 +173,9 @@ pub trait LinearAlgebra {
     #[cfg(feature = "numerical")]
     /// 实对称矩阵特征分解（numerical feature）。
     fn eig(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    /// 实矩阵特征值（含非对称/复数，numerical feature）。
+    fn eig_general(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
     #[cfg(feature = "numerical")]
     /// 奇异值分解（numerical feature）。
     fn svd(&self, m: &Matrix) -> Result<EvalResult, CalcError>;

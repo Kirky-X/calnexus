@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- wasm32 构建支持与 CI 门禁：`oxcache` 限定为非 wasm 目标依赖、wasm 目标补 `uuid/js` 随机源、`tokio` 改为按需启用（`http`/`mcp`）；core 与 `cli` 特性构建进入 `ci.yml` 的 `wasm32` job（lib+bins + clippy）
+- wasm32 下 `CacheManager` 无缓存回退（同签名：`get` 恒 `None`、`insert` 空操作、`get_or_compute` 直接求值、统计零值）；语言探测回退 `en`
+- `eig_general`：非对称实矩阵特征值（nalgebra 实 Schur + 复特征值排序），路由与 `LinearAlgebra` trait 同步；`eig` 保持对称语义并在错误 hint 指向新函数
+- 特殊函数扩展：`besselj`/`bessely`/`besseli`/`besselk`（J/Y 族复用 `libm` fdlibm，I/K 族 A&S 9.8）、`beta`、`zeta`（Euler–Maclaurin N=20/K=10 + 函数方程）、`airy_ai`/`airy_bi`（Maclaurin 级数 + 四项渐近）；域路由、函数目录与 `ScalarMath` trait 同步（新增依赖 `libm 0.2`）
+- 数值求根与积分：`root(expr, var, a, b)`（Brent）与 `integral(expr, var, a, b)`（Gauss–Kronrod 15 + 自适应 Simpson）；math 层新增 `secant`/`adaptive_simpson`/`gauss_kronrod_15`，变量名解析提入 `domains/common` 共用
+- wasm 运行时 API（`wasm-api` feature）：`evaluate(expr)` 返回 `{"v":1,"result":...}`，`list_functions()` 返回函数目录 JSON；错误 payload 为 `{"v":1,"error":{"code","kind","message"}}`；仅 wasm32 目标可用
+- wasm 真实 L1 缓存：升级 oxcache `0.5.0-rc.9`（其 wasm32 支持已在 oxcache 仓独立发布），删除 CalNexus 侧的 wasm 无缓存回退，恢复统一 `ByteWeightCache` 实现
+- E-graph 化简（`egraph` feature，基于 `egg 0.9`）：在贪心化简后追加 equality saturation（交换/结合、恒等元、`x-x`、`x/x`、`sin²+cos²→1`），迭代/节点上限保护，失败回退贪心
+- 非对称特征向量：`eig_general` 扩展为返回值 + 向量（实 Schur + 复零空间回代），JSON 增加 `vectors_re`/`vectors_im`
+
+### Changed
+
+- Canonicalizer：`Add`/`Mul` 规范串改为 n 叉展平并按条目排序（`(a+b)+c` 与 `a+(b+c)` 同键，复数项顺序也归一）；`Sub`/`Div`/`Pow`/`Mod` 保持二元
+- `symbolic::simplify` 识别 `sin²θ + cos²θ → 1`（同一基底，含反序）
+
 ### Fixed
 
 - 函数目录（`--list-functions` / REPL Tab 补全 / MCP `list_functions`）与各域路由白名单漂移：删除幻影项 `stddev`/`trace`/`re`/`im`/`magnitude`/`phase`/`matrix_exp`（`matrix_exp` 仅经 trait API 暴露），补列 `count`/`identity`/`log10`/`log2`/`arg` 及 statistics 分布与检验 21 项、time 域 11 项、vector 域 7 项；目录改为从各域白名单常量派生（单一事实源），新增防漂移测试逐域对账

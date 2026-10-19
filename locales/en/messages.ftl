@@ -97,6 +97,7 @@ msg-core-serialize_failed = failed to serialize { $name } result: { $error }
 msg-core-variable_not_integer = variable { $name } is not an integer: { $value }
 msg-domain-factorial_not_supported = factorial not supported in { $domain } domain
 msg-domain-unsupported_function = unsupported function in { $domain } domain: { $name }
+msg-domain-expected_variable_name = expected variable name, got: { $node }
 msg-domain-unsupported_node = { $domain } domain does not support this node type: { $node }
 msg-function_arg_count = Function { $name } expects { $expected } args, got { $actual }
 msg-fx-budget_risk_note = Estimated using a ±3% exchange-rate fluctuation band; converting in batches is recommended to reduce risk.
@@ -235,7 +236,12 @@ msg-precision-precision_out_of_range = precision N out of range: { $value }
 msg-precision-requires_integer_operand = { $ctx } requires integer operand, got { $value }
 msg-scientific-acos_domain = acos requires argument in [-1, 1], got { $value }
 msg-scientific-arg_count = { $name } expects 1 argument, got { $actual }
+msg-scientific-arg_count_2 = { $name } expects 2 arguments, got { $actual }
+msg-scientific-arg_count_4 = { $name } expects 4 arguments (expr, var, a, b), got { $actual }
 msg-scientific-asin_domain = asin requires argument in [-1, 1], got { $value }
+msg-scientific-bessel_order_invalid = { $name } order must be an integer in 0..=100, got { $value }
+msg-scientific-bessel_positive_domain = { $name } requires x > 0, got { $value }
+msg-scientific-beta_domain = beta requires positive arguments, got (a, b) = ({ $a }, { $b })
 msg-scientific-gamma_pole = gamma({ $value }) is undefined: pole at non-positive integer
 msg-scientific-ln_positive = ln requires positive argument, got { $value }
 msg-scientific-log10_positive = log10 requires positive argument, got { $value }
@@ -243,6 +249,8 @@ msg-scientific-log2_positive = log2 requires positive argument, got { $value }
 msg-scientific-log_arg_count = log expects 2 arguments (value, base), got { $actual }
 msg-scientific-log_positive_base = log requires positive base != 1, got { $value }
 msg-scientific-log_positive_value = log requires positive value, got { $value }
+msg-scientific-root_not_bracketed = root: interval [{ $a }, { $b }] does not bracket a root
+msg-scientific-zeta_pole = zeta(1) is undefined: pole
 msg-solvers-bisection_same_sign = bisection: f({ $a }) and f({ $b }) have the same sign
 msg-solvers-brent_not_converged = brent: did not converge after { $max_iter } iterations
 msg-solvers-brent_same_sign = brent: f({ $a }) and f({ $b }) have the same sign

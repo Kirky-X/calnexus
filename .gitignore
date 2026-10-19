@@ -67,6 +67,9 @@ temp/
 # spec source docs（ADD/PRD 已并入 docs/ARCHITECTURE.md 与 docs/archive/，见 git-workflow spec）
 docs/ADD.md
 docs/PRD.md
+docs/TRD.md
+docs/DDD.md
+docs/HUB_PROTOCOL.md
 docs/TEST.md
 docs/archive/
 

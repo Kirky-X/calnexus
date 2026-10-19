@@ -11,7 +11,8 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 /// 科学函数白名单。
 pub(crate) const SCIENTIFIC_FUNCTIONS: &[&str] = &[
     "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log10", "log2", "log", "exp", "sinh",
-    "cosh", "tanh", "gamma", "erf",
+    "cosh", "tanh", "gamma", "erf", "besselj", "bessely", "besseli", "besselk", "beta", "zeta",
+    "airy_ai", "airy_bi", "root", "integral",
 ];
 
 /// Scientific 计算域，priority=20，内置 pi/e 常量。
@@ -120,6 +121,17 @@ impl ScientificDomain {
             // ===== 特殊函数 =====
             "gamma" => self.eval_unary_math(name, args, ctx, crate::math::scientific::gamma),
             "erf" => self.eval_unary_math(name, args, ctx, crate::math::scientific::erf),
+            "zeta" => self.eval_unary_math(name, args, ctx, crate::math::scientific::zeta),
+            "airy_ai" => self.eval_unary_math(name, args, ctx, crate::math::scientific::airy_ai),
+            "airy_bi" => self.eval_unary_math(name, args, ctx, crate::math::scientific::airy_bi),
+            "beta" => self.eval_binary_math(name, args, ctx, crate::math::scientific::beta),
+            "besselj" => self.eval_bessel(name, args, ctx, crate::math::scientific::bessel_j),
+            "bessely" => self.eval_bessel(name, args, ctx, crate::math::scientific::bessel_y),
+            "besseli" => self.eval_bessel(name, args, ctx, crate::math::scientific::bessel_i),
+            "besselk" => self.eval_bessel(name, args, ctx, crate::math::scientific::bessel_k),
+            // ===== 数值求根 / 积分 =====
+            "root" => self.eval_root(args, ctx),
+            "integral" => self.eval_integral(args, ctx),
             _ => Err(
                 CalcError::eval(format!("unknown function: {}", name)).with_i18n(
                     "msg.unknown_function",
@@ -139,6 +151,179 @@ impl ScientificDomain {
     ) -> Result<f64, CalcError> {
         let x = self.eval_one_arg(name, args, ctx)?;
         f(x)
+    }
+
+    /// 双参数 math 函数通用模板：求值两参数 → 调用 math 函数。
+    fn eval_binary_math(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+        f: impl Fn(f64, f64) -> Result<f64, CalcError>,
+    ) -> Result<f64, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::eval(format!(
+                "{} expects 2 arguments, got {}",
+                name,
+                args.len()
+            ))
+            .with_i18n(
+                "msg.scientific.arg_count_2",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
+        }
+        let a = self.eval_node(&args[0], ctx)?;
+        let b = self.eval_node(&args[1], ctx)?;
+        f(a, b)
+    }
+
+    /// Bessel 族模板：阶数（0..=100 整数）+ 参数 x。
+    fn eval_bessel(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+        f: impl Fn(u32, f64) -> Result<f64, CalcError>,
+    ) -> Result<f64, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::eval(format!(
+                "{} expects 2 arguments (order, x), got {}",
+                name,
+                args.len()
+            ))
+            .with_i18n(
+                "msg.scientific.arg_count_2",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
+        }
+        let order = self.eval_integer_arg(name, &args[0], ctx)?;
+        let x = self.eval_node(&args[1], ctx)?;
+        f(order, x)
+    }
+
+    /// 在指定变量取值下对子表达式求值（`root`/`integral` 用）。
+    fn eval_expr_at(
+        &self,
+        expr: &AstNode,
+        var: &str,
+        x: f64,
+        ctx: &EvalContext,
+    ) -> Result<f64, CalcError> {
+        let mut local = ctx.clone();
+        local.vars.insert(var.to_string(), x);
+        self.eval_node(expr, &local)
+    }
+
+    /// `root(expr, var, a, b)`：Brent 法求根；区间未包围根返回 Domain。
+    fn eval_root(&self, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        let (var, a, b) = self.eval_quad_args("root", args, ctx)?;
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        let f = |x: f64| {
+            self.eval_expr_at(&args[0], &var, x, ctx)
+                .unwrap_or(f64::NAN)
+        };
+        let fa = f(lo);
+        let fb = f(hi);
+        if !fa.is_finite() || !fb.is_finite() {
+            return Err(CalcError::nan_or_inf());
+        }
+        if fa * fb > 0.0 {
+            return Err(CalcError::domain(format!(
+                "root: interval [{}, {}] does not bracket a root",
+                lo, hi
+            ))
+            .with_i18n(
+                "msg.scientific.root_not_bracketed",
+                vec![
+                    ("a".to_string(), lo.to_string()),
+                    ("b".to_string(), hi.to_string()),
+                ],
+            ));
+        }
+        crate::math::solvers::brent(f, lo, hi, 1e-12, 200)
+    }
+
+    /// `integral(expr, var, a, b)`：GK15 定积分，误差超阈值退回自适应 Simpson。
+    fn eval_integral(&self, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        let (var, a, b) = self.eval_quad_args("integral", args, ctx)?;
+        if a == b {
+            return Ok(0.0);
+        }
+        let f = |x: f64| {
+            self.eval_expr_at(&args[0], &var, x, ctx)
+                .unwrap_or(f64::NAN)
+        };
+        for x in [a, 0.5 * (a + b), b] {
+            if !f(x).is_finite() {
+                return Err(CalcError::nan_or_inf());
+            }
+        }
+        let (value, err) = crate::math::solvers::gauss_kronrod_15(f, a, b)?;
+        if err > 1e-10 {
+            crate::math::solvers::adaptive_simpson(f, a, b, 1e-10, 50)
+        } else {
+            Ok(value)
+        }
+    }
+
+    /// `root`/`integral` 公共参数解析：4 个参数（expr, var, a, b）。
+    fn eval_quad_args(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<(String, f64, f64), CalcError> {
+        if args.len() != 4 {
+            return Err(CalcError::eval(format!(
+                "{} expects 4 arguments (expr, var, a, b), got {}",
+                name,
+                args.len()
+            ))
+            .with_i18n(
+                "msg.scientific.arg_count_4",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
+        }
+        let var = crate::domains::common::extract_variable_name(&args[1])?;
+        let a = self.eval_node(&args[2], ctx)?;
+        let b = self.eval_node(&args[3], ctx)?;
+        if !a.is_finite() || !b.is_finite() {
+            return Err(CalcError::nan_or_inf());
+        }
+        Ok((var, a, b))
+    }
+
+    /// 求值 Bessel 阶数参数：非负整数且 <= 100。
+    fn eval_integer_arg(
+        &self,
+        name: &str,
+        ast: &AstNode,
+        ctx: &EvalContext,
+    ) -> Result<u32, CalcError> {
+        let value = self.eval_node(ast, ctx)?;
+        if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > 100.0 {
+            return Err(CalcError::domain(format!(
+                "{}() order must be an integer in 0..=100, got {}",
+                name, value
+            ))
+            .with_i18n(
+                "msg.scientific.bessel_order_invalid",
+                vec![
+                    ("name".to_string(), name.to_string()),
+                    ("value".to_string(), value.to_string()),
+                ],
+            ));
+        }
+        Ok(value as u32)
     }
 
     /// log(value, base)：委托给 `math::scientific::log`。

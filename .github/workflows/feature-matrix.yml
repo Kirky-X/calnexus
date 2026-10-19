@@ -27,4 +27,5 @@ jobs:
         with:
           tool: cargo-hack
       - name: Check each feature alone
-        run: cargo hack check --each-feature --all-targets
+        # wasm-api 仅 wasm32 可用（非 wasm 启用会 compile_error），矩阵中排除
+        run: cargo hack check --each-feature --exclude-features wasm-api --all-targets

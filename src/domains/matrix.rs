@@ -21,7 +21,7 @@ pub(crate) const MATRIX_FUNCTIONS: &[&str] = &["det", "transpose", "inverse", "i
 
 /// numerical feature 专有函数白名单（函数目录派生用）；matrix_exp 仅经 trait API 暴露，不可表达式路由。
 #[cfg(feature = "numerical")]
-pub(crate) const NUMERICAL_FUNCTIONS: &[&str] = &["lu", "qr", "eig", "svd", "solve"];
+pub(crate) const NUMERICAL_FUNCTIONS: &[&str] = &["lu", "qr", "eig", "eig_general", "svd", "solve"];
 
 /// 路由认领全集（contains_matrix 与 precision 错误信息共用）；新增函数只改这里。
 const MATRIX_NUMERICAL_FUNCTIONS: &[&str] = &[
@@ -32,6 +32,7 @@ const MATRIX_NUMERICAL_FUNCTIONS: &[&str] = &[
     "lu",
     "qr",
     "eig",
+    "eig_general",
     "svd",
     "solve",
 ];
@@ -306,12 +307,13 @@ impl MatrixDomain {
     ) -> Result<Option<EvalResult>, CalcError> {
         use crate::domains::numerical;
         match name {
-            "lu" | "qr" | "eig" | "svd" => {
+            "lu" | "qr" | "eig" | "eig_general" | "svd" => {
                 let m = self.numerical_matrix_arg(name, args, ctx)?;
                 Ok(Some(match name {
                     "lu" => numerical::lu(m)?,
                     "qr" => numerical::qr(m)?,
                     "eig" => numerical::eig(m)?,
+                    "eig_general" => numerical::eig_general(m)?,
                     "svd" => numerical::svd(m)?,
                     _ => return Ok(None),
                 }))

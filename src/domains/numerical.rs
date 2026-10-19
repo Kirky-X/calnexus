@@ -6,9 +6,35 @@
 
 #![cfg(feature = "numerical")]
 
-use crate::core::{CalcError, EvalResult};
+use crate::core::{CacheManager, CalcError, EvalContext, EvalResult, evaluate};
 use nalgebra::{DMatrix, DVector};
 use serde_json::{Value, json};
+
+/// 数值微分 derivative(f, var, x)：中心差分 + Richardson 外推（误差 ~1e-10）。
+/// 位于域层以复用表达式求值链（math 层不依赖 evaluator）。
+pub fn derivative(f: &str, var: &str, x: f64) -> Result<f64, CalcError> {
+    let eval_at = |t: f64| -> Result<f64, CalcError> {
+        let mut ctx = EvalContext::new();
+        ctx.vars.insert(var.to_string(), t);
+        let cache = CacheManager::new();
+        let (result, _, _, _) = evaluate(f, &ctx, None, &cache)?;
+        match result {
+            EvalResult::Scalar(v) => Ok(v),
+            _ => Err(CalcError::domain(
+                "derivative: expression did not evaluate to a scalar".to_string(),
+            )),
+        }
+    };
+    let h = f64::EPSILON.cbrt() * x.abs().max(1.0);
+    let d1 = (eval_at(x + h)? - eval_at(x - h)?) / (2.0 * h);
+    let h2 = h * 0.5;
+    let d2 = (eval_at(x + h2)? - eval_at(x - h2)?) / (2.0 * h2);
+    let d = (4.0 * d2 - d1) / 3.0;
+    if !d.is_finite() {
+        return Err(CalcError::nan_or_inf());
+    }
+    Ok(d)
+}
 
 /// LU 分解 → `{"L":[[..]], "U":[[..]], "P":[[..]]}`，满足 P·A = L·U。
 pub fn lu(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
@@ -35,6 +61,25 @@ pub fn eig(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
     Ok(EvalResult::Json(json!({
         "values": values,
         "vectors": dmatrix_to_json(&vectors),
+    })))
+}
+
+/// 实矩阵特征值（含复数）与特征向量 → `{"values_re","values_im","vectors_re","vectors_im"}`。
+pub fn eig_general(matrix: DMatrix<f64>) -> Result<EvalResult, CalcError> {
+    let result = crate::math::numerical::eig_general(&matrix)?;
+    Ok(EvalResult::Json(json!({
+        "values_re": result.values.iter().map(|c| c.re).collect::<Vec<_>>(),
+        "values_im": result.values.iter().map(|c| c.im).collect::<Vec<_>>(),
+        "vectors_re": result
+            .vectors
+            .iter()
+            .map(|v| v.iter().map(|c| c.re).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
+        "vectors_im": result
+            .vectors
+            .iter()
+            .map(|v| v.iter().map(|c| c.im).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
     })))
 }
 
@@ -493,5 +538,18 @@ mod tests {
         let a = DMatrix::from_row_slice(2, 2, &[1.0, 2.0, 3.0, 4.0]);
         let b = DVector::from_row_slice(&[1.0, f64::NAN]);
         assert!(matches!(solve(a, b), Err(e) if e.kind == ErrorKind::NaNOrInf));
+    }
+
+    /// derivative 中心差分 + Richardson 外推：sin'(0)=1、x^2'(3)=6。
+    #[test]
+    fn derivative_sin_at_zero() {
+        let d = derivative("sin(x)", "x", 0.0).unwrap();
+        assert!((d - 1.0).abs() < 1e-6, "d={d}");
+    }
+
+    #[test]
+    fn derivative_quadratic_at_three() {
+        let d = derivative("x^2", "x", 3.0).unwrap();
+        assert!((d - 6.0).abs() < 1e-6, "d={d}");
     }
 }
