@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.png" alt="CalNexus Logo" width="180">
+<img src="docs/assets/logo.png" alt="CalNexus Logo" height="240">
 
 [![CI Status](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml/badge.svg)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/calnexus.svg)](https://crates.io/crates/calnexus) [![Docs.rs](https://docs.rs/calnexus/badge.svg)](https://docs.rs/calnexus) [![Downloads](https://img.shields.io/crates/d/calnexus.svg)](https://crates.io/crates/calnexus) [![License](https://img.shields.io/crates/l/calnexus.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/) [![Coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen)](https://github.com/kirky-x/calnexus)
 
