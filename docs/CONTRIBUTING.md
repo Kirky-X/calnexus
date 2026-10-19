@@ -221,7 +221,7 @@ git push origin feat/support-complex-numbers
 
 4. **向 `kirky-x/calnexus:main` 发起 Pull Request**——PR 模板会自动填充，请逐项补全。
 5. **响应评审意见**：追加提交即可（评审期间避免 force-push，除非被明确要求）。
-6. 评审通过且 CI 全绿后，维护者会 squash-merge 你的 PR。
+6. 评审通过且 CI 全绿后，由 Kirky.X squash-merge 你的 PR。
 
 > 安全相关的修复请先阅读 [🔒 安全文档](SECURITY.md) 的报告流程——安全漏洞请勿走公开 Issue / PR。
 

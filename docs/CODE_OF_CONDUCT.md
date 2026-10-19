@@ -48,7 +48,7 @@
 
 ## 执行
 
-辱骂、骚扰或其他不可接受的行为可通过 [conduct@calnexus.dev](mailto:conduct@calnexus.dev) 向负责维护的项目维护者举报。所有投诉都将得到及时和公正的审查和调查。
+辱骂、骚扰或其他不可接受的行为可通过 [Kirky-X@outlook.com](mailto:Kirky-X@outlook.com)（受理人：Kirky.X）向负责维护的项目维护者举报。所有投诉都将得到及时和公正的审查和调查。
 
 所有社区维护者都有义务尊重举报者的隐私和安全。
 

@@ -297,7 +297,7 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 
 ### 🚨 报告安全漏洞
 
-请勿通过公开 issue 报告安全漏洞。请发送邮件至 **security@calnexus.dev** 私密披露。项目承诺 48 小时内确认、7 天内给出初步评估。完整政策见 [SECURITY.md](docs/SECURITY.md)。
+请勿通过公开 issue 报告安全漏洞。请优先使用 GitHub [Security Advisories](https://github.com/kirky-x/calnexus/security/policy) 私密披露通道提交报告（不可用时再邮件至 Kirky-X@outlook.com，受理人 Kirky.X）。项目承诺 48 小时内确认、7 天内给出初步评估。完整政策见 [SECURITY.md](docs/SECURITY.md)。
 
 ---
 

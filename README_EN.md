@@ -297,7 +297,7 @@ CalNexus is an evaluator with no network access (except the `fx` upstream), no u
 
 ### 🚨 Reporting a Vulnerability
 
-Please do **not** report security vulnerabilities through public issues. Email **security@calnexus.dev** for private disclosure. We commit to acknowledging within 48 hours and providing an initial assessment within 7 days. Full policy in [SECURITY.md](docs/SECURITY.md).
+Please do **not** report security vulnerabilities through public issues. Use the GitHub [Security Advisories](https://github.com/kirky-x/calnexus/security/policy) private disclosure channel as the primary route (fall back to email Kirky-X@outlook.com, handled by Kirky.X, only if that channel is unavailable). We commit to acknowledging within 48 hours and providing an initial assessment within 7 days. Full policy in [SECURITY.md](docs/SECURITY.md).
 
 ---
 

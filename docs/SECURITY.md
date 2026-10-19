@@ -64,7 +64,11 @@ cargo deny check
 
 **请勿通过公开 GitHub Issue 报告安全漏洞。**
 
-请发送邮件至 **[security@calnexus.dev](mailto:security@calnexus.dev)** 私密披露。我们遵循负责任披露（responsible disclosure）模型，也请求报告者同样遵守：修复发布并经您确认前，请勿公开披露问题。
+**首选渠道**：通过 GitHub [Security Advisories](https://github.com/kirky-x/calnexus/security/policy) 私密披露通道提交报告（仓库页 **Security → Report a vulnerability**）。
+
+**备选渠道**：仅当首选通道不可用时，发送邮件至 [Kirky-X@outlook.com](mailto:Kirky-X@outlook.com)（受理人：Kirky.X）。
+
+我们遵循负责任披露（responsible disclosure）模型，也请求报告者同样遵守：修复发布并经您确认前，请勿公开披露问题。
 
 ### 报告内容
 
