@@ -35,6 +35,9 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 
 ## 📋 Table of Contents
 
+<details open>
+<summary>📑 目录</summary>
+
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
 - [🎨 Feature Flags](#-feature-flags)
@@ -52,6 +55,8 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 - [🙏 Acknowledgments](#-acknowledgments)
 - [📞 Contact & Support](#-contact--support)
 - [⭐ Star History](#-star-history)
+
+</details>
 
 ---
 
@@ -88,13 +93,21 @@ Beyond the core capabilities listed above, LaTeX / steps / canonical formatters,
 
 ### 📦 Installation
 
+<details>
+<summary>📄 代码 · bash</summary>
+
 ```bash
 cargo install calnexus --features cli
 ```
 
+</details>
+
 Requires Rust 1.97.1 or later (MSRV, matching the CI MSRV job). The core library has `default = []` with zero dependencies; enable `cli` for the command-line experience. Install commands for every feature combo (optional domains, numerical linear algebra, HTTP server, etc.) are unified in the [🎨 Feature Flags](#-feature-flags) section below.
 
 Prebuilt multi-platform binaries (linux x86_64/aarch64 musl static, macOS x86_64/aarch64, windows x86_64, with SHA256SUMS) are available from [GitHub Releases](https://github.com/kirky-x/calnexus/releases), or build from source; the wasm32 target supports library/binary builds for the core and `cli` features (CI-gated), but has no L1 cache and does not promise runtime usability:
+
+<details>
+<summary>📄 代码 · bash</summary>
 
 ```bash
 git clone https://github.com/kirky-x/calnexus.git
@@ -102,9 +115,14 @@ cd calnexus
 cargo install --path . --features cli
 ```
 
+</details>
+
 ### 💡 Minimal Example
 
 The following examples run directly in your terminal:
+
+<details>
+<summary>📄 代码 · bash</summary>
 
 ```bash
 $ calnexus '2+3*4'
@@ -116,6 +134,8 @@ $ calnexus 'diff(x^2, x)'
 $ calnexus --json '2+3'
 {"cache":"miss","domain":"arithmetic","result":5.0,"v":1}
 ```
+
+</details>
 
 ### 🧭 Core Concepts
 
@@ -131,6 +151,9 @@ $ calnexus --json '2+3'
 
 ### 📦 Recommended Combos
 
+<details>
+<summary>📋 表格</summary>
+
 | Combo | Install / features | Use case |
 |-------|--------------------|----------|
 | Minimal library | `cargo add calnexus` (`default = []`) | Embedded engine, zero extra deps |
@@ -142,9 +165,14 @@ $ calnexus --json '2+3'
 | Production server | `cargo install calnexus --features server,ratelimit,docs,observability` | Rate limiting + Swagger UI + structured logs |
 | Full | `cargo install calnexus --all-features` | Everything |
 
+</details>
+
 ### 📋 Feature Matrix
 
 The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
+
+<details>
+<summary>📋 表格</summary>
 
 <table style="width:100%; border-collapse: collapse">
 <tr><th style="text-align:left">Feature</th><th style="text-align:center">Default</th><th style="text-align:left">Description</th></tr>
@@ -167,9 +195,14 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 <tr><td><code>observability</code></td><td align="center">❌</td><td>tracing structured logs (EnvFilter consuming <code>RUST_LOG</code>)</td></tr>
 </table>
 
+</details>
+
 ---
 
 ## 📚 Documentation
+
+<details>
+<summary>📋 表格</summary>
 
 | Document | Description |
 |----------|-------------|
@@ -186,6 +219,8 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 | [📦 Online API docs](https://docs.rs/calnexus) | Latest docs.rs-generated documentation |
 | [📦 crates.io](https://crates.io/crates/calnexus) | Publication page |
 
+</details>
+
 Design & process documents: [Code of Conduct](docs/CODE_OF_CONDUCT.md) · [archived process documents](docs/archive/) (PRD, test plan v0.2, research analysis)
 
 ---
@@ -195,6 +230,9 @@ Design & process documents: [Code of Conduct](docs/CODE_OF_CONDUCT.md) · [archi
 Evaluation examples are provided as inline command-line invocations — copy them into a terminal and run. The ones below cover arithmetic, scientific functions, number theory, arbitrary precision, symbolic calculus, and implicit multiplication; for full REPL sessions (`:let` / `:vars` / Tab completion), rayon-parallel batch runs (`--batch`), and the functions and usage of the optional domains (time / unit / fx / numerical linear algebra), see the [📖 User Guide](docs/USER_GUIDE.md) and the [📖 User Guide · Domain Guide](docs/USER_GUIDE.md#-计算域指南).
 
 ### 🖥️ Evaluation Examples
+
+<details>
+<summary>📄 代码 · bash</summary>
 
 ```bash
 # Basics and scientific functions
@@ -217,6 +255,8 @@ $ calnexus 'taylor(exp(x), x, 3)'
 $ calnexus --var x=3 '2x'
 6
 ```
+
+</details>
 
 ### 🧰 CLI Flags
 
@@ -250,6 +290,9 @@ The test pyramid covers nine layers: inline unit tests in `src/`, integration te
 
 ### ▶️ Run Commands (matching CI)
 
+<details>
+<summary>📄 代码 · bash</summary>
+
 ```bash
 # Full test run (CI matrix has six legs: cli / cli,time,unit,fx / cli,server / cli,server,fx / cli,numerical / all)
 cargo test --all-features
@@ -272,6 +315,8 @@ cargo bench --features cli
 # Fuzz testing (from the fuzz/ directory)
 cargo fuzz run parser_fuzz
 ```
+
+</details>
 
 ### 📊 Test Scale
 
@@ -303,6 +348,9 @@ Please do **not** report security vulnerabilities through public issues. Use the
 
 ## 🗺️ Roadmap
 
+<details>
+<summary>📋 表格</summary>
+
 <table style="width:100%; border-collapse: collapse">
 <tr><th style="text-align:center">Status</th><th style="text-align:left">Direction</th><th style="text-align:left">Items</th></tr>
 <tr><td align="center">✅</td><td>Core engine (v0.1.0)</td><td>11 computation domains, symbolic calculus, REPL, batch processing, arbitrary precision, JSON output, implicit multiplication</td></tr>
@@ -311,6 +359,8 @@ Please do **not** report security vulnerabilities through public issues. Use the
 <tr><td align="center">✅</td><td>WebAssembly (wasm32) support</td><td>Core and `cli` builds are CI-gated: <code>cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features</code> and <code>--features cli</code>. wasm uses oxcache's real L1 cache (ByteWeightCache); <code>wasm-api</code> exports <code>evaluate</code>/<code>list_functions</code> for browser/Node (build-gated only, runtime behavior not promised); the <code>fx</code>/<code>http</code>/<code>mcp</code>/<code>icu</code>/<code>time</code>/<code>unit</code> feature combos are out of scope</td></tr>
 <tr><td align="center">📋</td><td>Numerical capability growth</td><td>Frontier-algorithm tracking and gap closure (see the <a href="docs/archive/RESEARCH_ANALYSIS.md">research analysis</a>)</td></tr>
 </table>
+
+</details>
 
 ---
 
@@ -362,12 +412,17 @@ When filing an issue, please include reproduction steps, your `calnexus` version
 
 Full version history in the [📋 Changelog](docs/CHANGELOG.md) (following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), semantic versioning).
 
+<details>
+<summary>📋 表格</summary>
+
 | Version | Date | Highlights |
 |---------|------|------------|
 | 0.2.0-rc.1 | unreleased | Fluent i18n migration, logging switched to inklog, E2E scenario suite, dependencies moved to crates.io, Commons Clause license condition (see the [CHANGELOG](docs/CHANGELOG.md) Unreleased section) |
 | 0.1.4 | 2026-07-26 | Release pipeline closed loop: automated `cargo publish` + pre-release security gates (`cargo audit`, version verification, dry-run validation) |
 | 0.1.3 | 2026-07-26 | Added time / unit / fx optional domains and 8 vector operations; nondeterministic function cache bypass |
 | 0.1.2 | 2026-07-21 | 20 doc-code consistency fixes; parser & canonicalizer boundary fixes (NaN total order, `0^0`, consecutive-operator validation) |
+
+</details>
 
 ---
 
@@ -383,6 +438,9 @@ This project is licensed under the [MIT License](LICENSE) with the additional [C
 
 CalNexus stands on the shoulders of these excellent open-source projects:
 
+<details>
+<summary>📋 表格</summary>
+
 | Dependency | Purpose |
 |------------|---------|
 | [mathexpr](https://crates.io/crates/mathexpr) | Expression parsing foundation |
@@ -394,6 +452,8 @@ CalNexus stands on the shoulders of these excellent open-source projects:
 | [nalgebra](https://github.com/dimforge/nalgebra) | Numerical linear algebra (`numerical` feature) |
 | [sdforge](https://crates.io/crates/sdforge) | CLI / HTTP / MCP interface facade |
 | [criterion](https://github.com/bheisler/criterion.rs) | Benchmarking |
+
+</details>
 
 ### 💝 Special Thanks
 
