@@ -35,6 +35,9 @@
 
 ## 📋 目录
 
+<details open>
+<summary>📑 目录</summary>
+
 - [✨ 功能特性](#-功能特性)
 - [🚀 快速开始](#-快速开始)
 - [🎨 特性标志](#-特性标志)
@@ -52,6 +55,8 @@
 - [🙏 致谢](#-致谢)
 - [📞 联系与支持](#-联系与支持)
 - [⭐ Star 历史](#-star-历史)
+
+</details>
 
 ---
 
@@ -88,13 +93,21 @@
 
 ### 📦 安装
 
+<details>
+<summary>📄 代码 · bash</summary>
+
 ```bash
 cargo install calnexus --features cli
 ```
 
+</details>
+
 要求 Rust 1.97.1 及以上（MSRV，与 CI MSRV 任务一致）。核心库 `default = []` 零依赖；CLI 体验需启用 `cli`。各功能组合（可选计算域、数值线性代数、HTTP 服务等）的安装方式统一见下方 [🎨 特性标志](#-特性标志) 一节。
 
 也可以从 [GitHub Releases](https://github.com/kirky-x/calnexus/releases) 下载多平台预编译二进制（linux x86_64/aarch64 musl 静态、macOS x86_64/aarch64、windows x86_64，附 SHA256SUMS），或从源码构建；wasm32 目标支持 core 与 `cli` 特性的库/二进制构建（CI 门禁），但无 L1 缓存且不承诺运行时可用性：
+
+<details>
+<summary>📄 代码 · bash</summary>
 
 ```bash
 git clone https://github.com/kirky-x/calnexus.git
@@ -102,9 +115,14 @@ cd calnexus
 cargo install --path . --features cli
 ```
 
+</details>
+
 ### 💡 最小示例
 
 以下示例可直接在终端运行：
+
+<details>
+<summary>📄 代码 · bash</summary>
 
 ```bash
 $ calnexus '2+3*4'
@@ -116,6 +134,8 @@ $ calnexus 'diff(x^2, x)'
 $ calnexus --json '2+3'
 {"cache":"miss","domain":"arithmetic","result":5.0,"v":1}
 ```
+
+</details>
 
 ### 🧭 核心概念
 
@@ -131,6 +151,9 @@ $ calnexus --json '2+3'
 
 ### 📦 推荐组合
 
+<details>
+<summary>📋 表格</summary>
+
 | 组合 | 安装方式 / 特性 | 适用场景 |
 |------|----------------|----------|
 | 最小库 | `cargo add calnexus`（`default = []`） | 嵌入式引擎，零额外依赖 |
@@ -142,9 +165,14 @@ $ calnexus --json '2+3'
 | 生产服务 | `cargo install calnexus --features server,ratelimit,docs,observability` | 限流 + Swagger UI + 结构化日志 |
 | 全量 | `cargo install calnexus --all-features` | 完整能力集 |
 
+</details>
+
 ### 📋 功能矩阵
 
 下表逐项对应 `Cargo.toml` 的 `[features]` 定义，`default = []`。
+
+<details>
+<summary>📋 表格</summary>
 
 <table style="width:100%; border-collapse: collapse">
 <tr><th style="text-align:left">特性</th><th style="text-align:center">默认</th><th style="text-align:left">说明</th></tr>
@@ -167,9 +195,14 @@ $ calnexus --json '2+3'
 <tr><td><code>observability</code></td><td align="center">❌</td><td>tracing 结构化日志（EnvFilter 消费 <code>RUST_LOG</code>）</td></tr>
 </table>
 
+</details>
+
 ---
 
 ## 📚 文档
+
+<details>
+<summary>📋 表格</summary>
 
 | 文档 | 说明 |
 |------|------|
@@ -186,6 +219,8 @@ $ calnexus --json '2+3'
 | [📦 在线 API 文档](https://docs.rs/calnexus) | docs.rs 自动生成的最新文档 |
 | [📦 crates.io](https://crates.io/crates/calnexus) | 发布页面 |
 
+</details>
+
 设计与过程文档：[行为准则](docs/CODE_OF_CONDUCT.md)
 
 ---
@@ -195,6 +230,9 @@ $ calnexus --json '2+3'
 求值示例以内联命令行形式提供，复制到终端即可运行，以下覆盖算术、科学函数、数论、任意精度、符号微积分与隐式乘法等核心计算域；REPL 交互（`:let` / `:vars` / Tab 补全）与批量并行求值（`--batch`，rayon）的完整会话示例，以及时间 / 单位 / 汇率 / 数值线性代数等可选域的函数与用法，见 [📖 用户指南](docs/USER_GUIDE.md) 与 [📖 用户指南 · 计算域指南](docs/USER_GUIDE.md#-计算域指南)。
 
 ### 🖥️ 求值示例
+
+<details>
+<summary>📄 代码 · bash</summary>
 
 ```bash
 # 基础与科学函数
@@ -217,6 +255,8 @@ $ calnexus 'taylor(exp(x), x, 3)'
 $ calnexus --var x=3 '2x'
 6
 ```
+
+</details>
 
 ### 🧰 CLI 旗标
 
@@ -250,6 +290,9 @@ CalNexus 采用五层分层架构（入口层 → 编排层 → 计算域层 →
 
 ### ▶️ 运行命令（与 CI 一致）
 
+<details>
+<summary>📄 代码 · bash</summary>
+
 ```bash
 # 全量测试（CI 矩阵六条腿：cli / cli,time,unit,fx / cli,server / cli,server,fx / cli,numerical / all）
 cargo test --all-features
@@ -272,6 +315,8 @@ cargo bench --features cli
 # 模糊测试（在 fuzz/ 目录下）
 cargo fuzz run parser_fuzz
 ```
+
+</details>
 
 ### 📊 测试规模
 
@@ -303,6 +348,9 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 
 ## 🗺️ 开发路线图
 
+<details>
+<summary>📋 表格</summary>
+
 <table style="width:100%; border-collapse: collapse">
 <tr><th style="text-align:center">状态</th><th style="text-align:left">方向</th><th style="text-align:left">条目</th></tr>
 <tr><td align="center">✅</td><td>核心引擎（v0.1.0）</td><td>11 计算域、符号微积分、REPL、批量处理、任意精度、JSON 输出、隐式乘法</td></tr>
@@ -311,6 +359,8 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 <tr><td align="center">✅</td><td>WebAssembly (wasm32) 支持</td><td>core 与 cli 特性构建进入 CI 门禁：<code>cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features</code> 与 <code>--features cli</code>。wasm 下使用 oxcache 真实 L1 缓存（ByteWeightCache）；<code>wasm-api</code> 可导出 <code>evaluate</code>/<code>list_functions</code> 供浏览器/Node 调用（仅构建门禁，运行时行为不承诺）；<code>fx</code>/<code>http</code>/<code>mcp</code>/<code>icu</code>/<code>time</code>/<code>unit</code> 特性组合不在支持范围</td></tr>
 <tr><td align="center">📋</td><td>数值能力增强</td><td>前沿算法跟踪与功能缺口收敛</td></tr>
 </table>
+
+</details>
 
 ---
 
@@ -362,12 +412,17 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 
 完整版本历史见 [📋 更新日志](docs/CHANGELOG.md)（遵循 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 格式，语义化版本）。
 
+<details>
+<summary>📋 表格</summary>
+
 | 版本 | 日期 | 要点 |
 |------|------|------|
 | 0.2.0-rc.1 | 待发布 | i18n 迁移 Fluent、日志栈切换 inklog、E2E 场景套件、依赖全面切换 crates.io、许可补充 Commons Clause（详见 [CHANGELOG](docs/CHANGELOG.md) Unreleased） |
 | 0.1.4 | 2026-07-26 | Release pipeline 闭环：`cargo publish` 自动化 + 发布前安全门禁（`cargo audit`、版本校验、dry-run 验证） |
 | 0.1.3 | 2026-07-26 | 新增时间 / 单位 / 汇率三个可选计算域与 8 个向量运算；非确定性函数缓存旁路 |
 | 0.1.2 | 2026-07-21 | 20 项文档-代码一致性修复；解析与规范化边界行为修复（NaN 全序、`0^0`、连续运算符校验） |
+
+</details>
 
 ---
 
@@ -383,6 +438,9 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 
 CalNexus 站在以下优秀开源项目的肩膀上：
 
+<details>
+<summary>📋 表格</summary>
+
 | 依赖 | 用途 |
 |------|------|
 | [mathexpr](https://crates.io/crates/mathexpr) | 表达式解析基础 |
@@ -394,6 +452,8 @@ CalNexus 站在以下优秀开源项目的肩膀上：
 | [nalgebra](https://github.com/dimforge/nalgebra) | 数值线性代数（`numerical` feature） |
 | [sdforge](https://crates.io/crates/sdforge) | CLI / HTTP / MCP 接口封装层 |
 | [criterion](https://github.com/bheisler/criterion.rs) | 基准测试 |
+
+</details>
 
 ### 💝 特别感谢
 
