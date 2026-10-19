@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo.png" alt="CalNexus Logo" height="240">
 
-[![CI Status](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml/badge.svg)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/calnexus.svg)](https://crates.io/crates/calnexus) [![Docs.rs](https://docs.rs/calnexus/badge.svg)](https://docs.rs/calnexus) [![Downloads](https://img.shields.io/crates/d/calnexus.svg)](https://crates.io/crates/calnexus) [![License](https://img.shields.io/crates/l/calnexus.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/) [![Coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen)](https://github.com/kirky-x/calnexus)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![docs.rs](https://img.shields.io/docsrs/calnexus?style=for-the-badge)](https://docs.rs/calnexus) [![downloads](https://img.shields.io/crates/d/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![CI](https://img.shields.io/github/actions/workflow/status/kirky-x/calnexus/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen?style=for-the-badge)](https://github.com/kirky-x/calnexus) [![license](https://img.shields.io/crates/l/calnexus?style=for-the-badge)](LICENSE)
 
 [中文](README.md) | **English**
 
@@ -41,11 +41,11 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 - [📚 Documentation](#-documentation)
 - [💻 Examples](#-examples)
 - [🌐 Server Mode](#-server-mode)
-- [🏗️ Architecture](#️-architecture)
+- [🏗️ Architecture](#-architecture)
 - [🧪 Testing](#-testing)
 - [📊 Performance](#-performance)
 - [🔒 Security](#-security)
-- [🗺️ Roadmap](#️-roadmap)
+- [🗺️ Roadmap](#-roadmap)
 - [🤝 Contributing](#-contributing)
 - [📋 Changelog](#-changelog)
 - [📄 License](#-license)
@@ -94,7 +94,7 @@ cargo install calnexus --features cli
 
 Requires Rust 1.97.1 or later (MSRV, matching the CI MSRV job). The core library has `default = []` with zero dependencies; enable `cli` for the command-line experience. Install commands for every feature combo (optional domains, numerical linear algebra, HTTP server, etc.) are unified in the [🎨 Feature Flags](#-feature-flags) section below.
 
-Prebuilt multi-platform binaries (linux x86_64/aarch64 musl static, macOS x86_64/aarch64, windows x86_64, with SHA256SUMS) are available from [GitHub Releases](https://github.com/kirky-x/calnexus/releases), or build from source:
+Prebuilt multi-platform binaries (linux x86_64/aarch64 musl static, macOS x86_64/aarch64, windows x86_64, with SHA256SUMS) are available from [GitHub Releases](https://github.com/kirky-x/calnexus/releases), or build from source; the wasm32 target supports library/binary builds for the core and `cli` features (CI-gated), but has no L1 cache and does not promise runtime usability:
 
 ```bash
 git clone https://github.com/kirky-x/calnexus.git
@@ -220,7 +220,7 @@ $ calnexus --var x=3 '2x'
 
 ### 🧰 CLI Flags
 
-The behavior, output formats, and exit-code conventions of all flags — `--repl`, `--batch`, `--var`, `--precision`, `--timeout`, `--cache-size`, `--json`, `--latex` / `--canonical` / `--steps`, `--explain`, `--lang`, `--list-functions`, `--serve-http` / `--serve-mcp`, `--bind` — are documented in [📖 User Guide · CLI Usage](docs/USER_GUIDE.md#️-cli-usage), or run `calnexus --help`.
+The behavior, output formats, and exit-code conventions of all flags — `--repl`, `--batch`, `--var`, `--precision`, `--timeout`, `--cache-size`, `--json`, `--latex` / `--canonical` / `--steps`, `--explain`, `--lang`, `--list-functions`, `--serve-http` / `--serve-mcp`, `--bind` — are documented in [📖 User Guide · CLI Usage](docs/USER_GUIDE.md#-cli-使用), or run `calnexus --help`.
 
 ---
 
@@ -275,7 +275,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 Test Scale
 
-Current working tree (after v0.2.0-rc.1): grep statistics count 3040 `#[test]` / `#[tokio::test]` functions in total — 2497 unit tests (inline in `src/`), 543 integration & E2E tests (`tests/`, of which the E2E scenario suite has 145), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+Current working tree (after v0.2.0-rc.2): grep statistics count 3113 `#[test]` / `#[tokio::test]` functions in total — 2538 unit tests (inline in `src/`), 575 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
 
 ---
 
@@ -308,7 +308,7 @@ Please do **not** report security vulnerabilities through public issues. Use the
 <tr><td align="center">✅</td><td>Core engine (v0.1.0)</td><td>11 computation domains, symbolic calculus, REPL, batch processing, arbitrary precision, JSON output, implicit multiplication</td></tr>
 <tr><td align="center">✅</td><td>Optional domains & server (v0.1.3-v0.1.5)</td><td>Time / unit / fx domains, HTTP + MCP dual protocol, probe separation, rate limiting, observability, multi-platform releases & container images</td></tr>
 <tr><td align="center">✅</td><td>Cache engine modernization</td><td>oxcache byte-weight cache (moka core), single-flight, byte-weight budget, BLAKE3 keys, large-result admission threshold</td></tr>
-<tr><td align="center">🚧</td><td>WebAssembly (wasm32) support</td><td><code>tokio::rt</code> (pulled in by server) does not support wasm32; the CLI-only shape is theoretically buildable but unverified. Until then wasm32 builds are <strong>not CI-gated and not guaranteed</strong>: <code>cargo build --target wasm32-unknown-unknown --no-default-features</code></td></tr>
+<tr><td align="center">✅</td><td>WebAssembly (wasm32) support</td><td>Core and `cli` builds are CI-gated: <code>cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features</code> and <code>--features cli</code>. wasm uses oxcache's real L1 cache (ByteWeightCache); <code>wasm-api</code> exports <code>evaluate</code>/<code>list_functions</code> for browser/Node (build-gated only, runtime behavior not promised); the <code>fx</code>/<code>http</code>/<code>mcp</code>/<code>icu</code>/<code>time</code>/<code>unit</code> feature combos are out of scope</td></tr>
 <tr><td align="center">📋</td><td>Numerical capability growth</td><td>Frontier-algorithm tracking and gap closure (see the <a href="docs/archive/RESEARCH_ANALYSIS.md">research analysis</a>)</td></tr>
 </table>
 

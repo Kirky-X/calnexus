@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo.png" alt="CalNexus Logo" height="240">
 
-[![CI Status](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml/badge.svg)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![Version](https://img.shields.io/crates/v/calnexus.svg)](https://crates.io/crates/calnexus) [![Docs.rs](https://docs.rs/calnexus/badge.svg)](https://docs.rs/calnexus) [![Downloads](https://img.shields.io/crates/d/calnexus.svg)](https://crates.io/crates/calnexus) [![License](https://img.shields.io/crates/l/calnexus.svg)](LICENSE) [![Rust](https://img.shields.io/badge/rust-1.97.1%2B-orange.svg)](https://www.rust-lang.org/) [![Coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen)](https://github.com/kirky-x/calnexus)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![docs.rs](https://img.shields.io/docsrs/calnexus?style=for-the-badge)](https://docs.rs/calnexus) [![downloads](https://img.shields.io/crates/d/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![CI](https://img.shields.io/github/actions/workflow/status/kirky-x/calnexus/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen?style=for-the-badge)](https://github.com/kirky-x/calnexus) [![license](https://img.shields.io/crates/l/calnexus?style=for-the-badge)](LICENSE)
 
 **中文** | [English](README_EN.md)
 
@@ -41,11 +41,11 @@
 - [📚 文档](#-文档)
 - [💻 示例](#-示例)
 - [🌐 服务模式](#-服务模式)
-- [🏗️ 架构](#️-架构)
+- [🏗️ 架构](#-架构)
 - [🧪 测试](#-测试)
 - [📊 性能](#-性能)
 - [🔒 安全](#-安全)
-- [🗺️ 开发路线图](#️-开发路线图)
+- [🗺️ 开发路线图](#-开发路线图)
 - [🤝 参与贡献](#-参与贡献)
 - [📋 更新日志](#-更新日志)
 - [📄 许可证](#-许可证)
@@ -94,7 +94,7 @@ cargo install calnexus --features cli
 
 要求 Rust 1.97.1 及以上（MSRV，与 CI MSRV 任务一致）。核心库 `default = []` 零依赖；CLI 体验需启用 `cli`。各功能组合（可选计算域、数值线性代数、HTTP 服务等）的安装方式统一见下方 [🎨 特性标志](#-特性标志) 一节。
 
-也可以从 [GitHub Releases](https://github.com/kirky-x/calnexus/releases) 下载多平台预编译二进制（linux x86_64/aarch64 musl 静态、macOS x86_64/aarch64、windows x86_64，附 SHA256SUMS），或从源码构建：
+也可以从 [GitHub Releases](https://github.com/kirky-x/calnexus/releases) 下载多平台预编译二进制（linux x86_64/aarch64 musl 静态、macOS x86_64/aarch64、windows x86_64，附 SHA256SUMS），或从源码构建；wasm32 目标支持 core 与 `cli` 特性的库/二进制构建（CI 门禁），但无 L1 缓存且不承诺运行时可用性：
 
 ```bash
 git clone https://github.com/kirky-x/calnexus.git
@@ -186,7 +186,7 @@ $ calnexus --json '2+3'
 | [📦 在线 API 文档](https://docs.rs/calnexus) | docs.rs 自动生成的最新文档 |
 | [📦 crates.io](https://crates.io/crates/calnexus) | 发布页面 |
 
-设计与过程文档：[行为准则](docs/CODE_OF_CONDUCT.md) · [历史过程文档归档](docs/archive/)（PRD、测试方案 v0.2、前沿研究分析）
+设计与过程文档：[行为准则](docs/CODE_OF_CONDUCT.md)
 
 ---
 
@@ -220,7 +220,7 @@ $ calnexus --var x=3 '2x'
 
 ### 🧰 CLI 旗标
 
-`--repl`、`--batch`、`--var`、`--precision`、`--timeout`、`--cache-size`、`--json`、`--latex` / `--canonical` / `--steps`、`--explain`、`--lang`、`--list-functions`、`--serve-http` / `--serve-mcp`、`--bind` 等全部旗标的行为、输出格式与错误码约定见 [📖 用户指南 · CLI 使用](docs/USER_GUIDE.md#️-cli-使用)，也可运行 `calnexus --help` 查看。
+`--repl`、`--batch`、`--var`、`--precision`、`--timeout`、`--cache-size`、`--json`、`--latex` / `--canonical` / `--steps`、`--explain`、`--lang`、`--list-functions`、`--serve-http` / `--serve-mcp`、`--bind` 等全部旗标的行为、输出格式与错误码约定见 [📖 用户指南 · CLI 使用](docs/USER_GUIDE.md#-cli-使用)，也可运行 `calnexus --help` 查看。
 
 ---
 
@@ -275,7 +275,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 测试规模
 
-当前工作区（v0.2.0-rc.1 后）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3040 个，其中单元测试 2497（`src/` 内联）、集成与 E2E 共 543（`tests/`，其中 E2E 场景套件 145）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
+当前工作区（v0.2.0-rc.2 后）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3113 个，其中单元测试 2538（`src/` 内联）、集成与 E2E 共 575（`tests/`，其中 E2E 场景套件 158）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
 
 ---
 
@@ -308,8 +308,8 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 <tr><td align="center">✅</td><td>核心引擎（v0.1.0）</td><td>11 计算域、符号微积分、REPL、批量处理、任意精度、JSON 输出、隐式乘法</td></tr>
 <tr><td align="center">✅</td><td>可选域与服务化（v0.1.3-v0.1.5）</td><td>时间 / 单位 / 汇率域、HTTP + MCP 双协议、探针分离、限流、可观测性、多平台发布与容器镜像</td></tr>
 <tr><td align="center">✅</td><td>缓存引擎现代化</td><td>oxcache byte-weight 缓存（moka 内核）、single-flight、字节权重预算、BLAKE3 键、大结果准入阈值</td></tr>
-<tr><td align="center">🚧</td><td>WebAssembly (wasm32) 支持</td><td><code>tokio::rt</code>（server 引入）不支持 wasm32；CLI-only 形态理论上可编译，未验证。在此之前 wasm32 构建<strong>不受 CI 门禁保护、不承诺可用</strong>：<code>cargo build --target wasm32-unknown-unknown --no-default-features</code></td></tr>
-<tr><td align="center">📋</td><td>数值能力增强</td><td>前沿算法跟踪与功能缺口收敛（见 <a href="docs/archive/RESEARCH_ANALYSIS.md">研究分析</a>）</td></tr>
+<tr><td align="center">✅</td><td>WebAssembly (wasm32) 支持</td><td>core 与 cli 特性构建进入 CI 门禁：<code>cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features</code> 与 <code>--features cli</code>。wasm 下使用 oxcache 真实 L1 缓存（ByteWeightCache）；<code>wasm-api</code> 可导出 <code>evaluate</code>/<code>list_functions</code> 供浏览器/Node 调用（仅构建门禁，运行时行为不承诺）；<code>fx</code>/<code>http</code>/<code>mcp</code>/<code>icu</code>/<code>time</code>/<code>unit</code> 特性组合不在支持范围</td></tr>
+<tr><td align="center">📋</td><td>数值能力增强</td><td>前沿算法跟踪与功能缺口收敛</td></tr>
 </table>
 
 ---
