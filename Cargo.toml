@@ -46,7 +46,7 @@ egraph = ["dep:egg"]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层：oxcache byte-weight（同步字节预算）+ serialization（L1 weigher 估重）
-oxcache = { version = "0.5.0-rc.9", default-features = false, features = ["byte-weight", "serialization"] }
+oxcache = { version = "0.5.0-rc.10", default-features = false, features = ["byte-weight", "serialization"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
 # 哈希
@@ -191,9 +191,7 @@ required-features = ["cli", "time", "unit", "fx"]
 name = "numerical_linalg_test"
 required-features = ["cli", "numerical"]
 
-# E2E 场景套件（specmark change: e2e-scenario-suite）：
-# 无 required-features —— 目标在一切 feature 组合下编译，内部 #[cfg] 门控
-# 启用/禁用两侧用例（--all-features 跑启用侧，default 跑禁用侧）。
+# E2E 场景套件：无 required-features，内部 #[cfg] 门控启用/禁用两侧用例
 [[test]]
 name = "e2e"
 
