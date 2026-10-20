@@ -23,6 +23,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Check fuzz workspace formatting
+        run: cargo +stable fmt --all --manifest-path fuzz/Cargo.toml -- --check
 
   clippy:
     name: Clippy (${{ matrix.features }})
@@ -150,4 +152,6 @@ jobs:
         with:
           tool: cargo-llvm-cov
       - name: Run coverage
-        run: cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 90 --summary-only
+        # 门禁 95%（发布编排统一口径）。实测基线：本命令行覆盖率 95.57%
+        # （28653 行 / 1269 未覆盖），区域 95.83%；wasm-api 不在原生腿启用。
+        run: cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 95 --summary-only
