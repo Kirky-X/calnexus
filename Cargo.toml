@@ -194,7 +194,3 @@ required-features = ["cli", "numerical"]
 # E2E 场景套件：无 required-features，内部 #[cfg] 门控启用/禁用两侧用例
 [[test]]
 name = "e2e"
-
-# 本地 oxcache（含 wasm32 支持、待发布）开发用；发布后删除本段并 `cargo update -p oxcache`。
-[patch.crates-io]
-oxcache = { path = "../base/oxcache" }
