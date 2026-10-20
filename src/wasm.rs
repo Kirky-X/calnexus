@@ -32,14 +32,14 @@ fn kind_name(kind: ErrorKind) -> &'static str {
 
 /// 构造错误 payload（JSON 字符串）。
 fn error_payload(code: u8, kind: &str, message: &str) -> String {
-    serde_json::json!({
+    crate::core::sort_json_keys(serde_json::json!({
         "v": 1,
         "error": {
             "code": code,
             "kind": kind,
             "message": message,
         }
-    })
+    }))
     .to_string()
 }
 
@@ -67,7 +67,10 @@ pub fn evaluate(expr: &str) -> Result<String, JsValue> {
     }
     match crate::core::evaluate(expr, &EvalContext::new(), None, shared_cache()) {
         Ok((result, _, _, _)) => {
-            let payload = serde_json::json!({"v": 1, "result": result});
+            let payload = crate::core::sort_json_keys(serde_json::json!({
+                "v": 1,
+                "result": result
+            }));
             Ok(payload.to_string())
         }
         Err(err) => Err(to_js_error(&err)),

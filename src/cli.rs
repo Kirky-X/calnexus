@@ -380,12 +380,12 @@ fn format_json_output(
         EvalResult::Steps(v) => serde_json::json!(v),
         _ => serde_json::json!(format_result(result, fmt_prec)),
     };
-    serde_json::json!({
+    crate::core::sort_json_keys(serde_json::json!({
         "v": 1,
         "result": result_value,
         "domain": domain,
         "cache": cache_str,
-    })
+    }))
     .to_string()
 }
 

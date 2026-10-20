@@ -653,8 +653,8 @@ impl CalcError {
         if let Some(src) = &self.source_detail {
             obj.insert("source".to_string(), serde_json::Value::String(src.clone()));
         }
-        // 错误契约同版本化
-        serde_json::json!({ "v": 1, "error": err }).to_string()
+        // 错误契约同版本化（键序统一重排，见 sort_json_keys）
+        sort_json_keys(serde_json::json!({ "v": 1, "error": err })).to_string()
     }
 
     /// 教育模式（--explain）。
@@ -735,6 +735,28 @@ impl EvalContext {
     /// 查询变量值。
     pub fn get_var(&self, name: &str) -> Option<f64> {
         self.vars.get(name).copied()
+    }
+}
+
+/// 递归按 Unicode 字典序重排 JSON 对象键。
+///
+/// `--json` 契约声明键序为字典序（docs/CHANGELOG 0.2.0 破坏性变更段）。
+/// serde_json 的 map 实现随依赖特性合并而变（如 confers 启用 `preserve_order`
+/// 时改为插入序），故序列化前统一重排，使输出与特性组合无关。
+pub fn sort_json_keys(value: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut out = serde_json::Map::with_capacity(entries.len());
+            for (k, v) in entries {
+                out.insert(k, sort_json_keys(v));
+            }
+            Value::Object(out)
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sort_json_keys).collect()),
+        other => other,
     }
 }
 
