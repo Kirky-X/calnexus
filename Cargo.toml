@@ -18,8 +18,7 @@ default = []
 cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
-# HTTP: HTTP API 接口；sdforge/health 健康探针（/health /ready /live + ReadinessCheck）
-# sdforge/context 请求标识传播（context_middleware）
+# HTTP: HTTP API + sdforge 健康探针（/health /ready /live）与请求标识传播
 http = ["dep:tokio", "dep:sdforge", "sdforge/http", "sdforge/graceful", "sdforge/health", "sdforge/context", "sdforge/metrics", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
 mcp = ["dep:tokio", "dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
@@ -32,13 +31,11 @@ fx = ["dep:ureq", "dep:dirs", "dep:limiteron", "dep:confers"]
 # Numerical: 高级数值计算（eig/SVD 等）
 numerical = []
 server = ["http", "mcp"]
-# Ratelimit: HTTP 限流中间件（sdforge/ratelimit-http：RateLimitLayer + HttpRequestRateLimiter 契约；
-# 策略为 src/server/ratelimit.rs 固定窗口，经 Clone 桥接层挂载，CALNEXUS_RATELIMIT_* 可配）
+# Ratelimit: HTTP 固定窗口限流（sdforge/ratelimit-http；CALNEXUS_RATELIMIT_* 可配）
 ratelimit = ["dep:sdforge", "sdforge/ratelimit-http", "dep:limiteron"]
 # Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
 docs = ["dep:sdforge", "sdforge/docs"]
-# Observability: tracing 日志（server 模式 EnvFilter 消费 RUST_LOG）
-# tokio 由 http/mcp 提供（observability 仅作用于 src/server/，不单独引入运行 时 ）
+# Observability: tracing/inklog 日志（server 模式，RUST_LOG；tokio 由 http/mcp 提供）
 observability = ["dep:tracing", "dep:inklog"]
 # wasm-api: wasm-bindgen 导出层（仅 wasm32 目标；非 wasm 启用会编译期报错）
 wasm-api = ["dep:wasm-bindgen"]
@@ -48,10 +45,7 @@ egraph = ["dep:egg"]
 [dependencies]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
-# 缓存层（oxcache byte-weight + serialization：同步字节权重预算 + try_get_with single-flight；
-# serialization feature 供 UnifiedSerializer::estimate_size 序列化字节估重（L1 缓存 weigher 口径）；
-# 禁用默认特性避免 tokio/redis 等后端栈；键生成留在 src/core/cache.rs）。
-# 0.5.0-rc.9 起（本地待发布版）`byte-weight + serialization` 支持 wasm32（tokio 解耦 + moka atomic64）。
+# 缓存层：oxcache byte-weight（同步字节预算）+ serialization（L1 weigher 估重）
 oxcache = { version = "0.5.0-rc.9", default-features = false, features = ["byte-weight", "serialization"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
@@ -59,8 +53,7 @@ thiserror = { version = "2.0", default-features = false }
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
 # 序列化
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
-# tokio 运行时（仅 http/mcp 的 server 模块使用；optional 避免 wasm32 目标触发
-# `Only features sync,macros,io-util,rt,time are supported on wasm` 编译错误）
+# tokio 运行时（仅 http/mcp 的 server 模块；optional 避免 wasm32 特性限制编译错误）
 tokio = { version = "1.53", default-features = false, features = ["rt"], optional = true }
 # 正则表达式
 regex = { version = "1.13", default-features = false, features = ["std", "unicode-perl"] }
@@ -69,7 +62,7 @@ libm = { version = "0.2", default-features = false }
 # 数值计算（均禁用默认特性）
 num-complex = { version = "0.4", default-features = false, features = ["std", "serde"] }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
-# num-bigint: 锁定 0.4——num-rational 0.4.2（最新）固定 ^0.4，且 precision.rs 跨库传递 BigInt 类型，0.5 会破坏 BigRational 互操作
+# num-bigint 锁 0.4：num-rational 固定 ^0.4，0.5 会破坏 BigRational 互操作
 num-bigint = { version = "0.4", default-features = false, features = ["std", "serde"] }
 num-rational = { version = "0.4", default-features = false, features = ["std", "serde", "num-bigint"] }
 num-integer = { version = "0.1", default-features = false, features = ["std"] }
@@ -79,48 +72,42 @@ rustyline = { version = "18.0", default-features = false, features = ["derive"],
 rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-# Fluent 消息目录（specmark change unify-rust-i18n：concurrent FluentBundle 双束承载 FTL，
-# locales/{en,zh}/messages.ftl 经 include_str! 内嵌；concurrent 变体为 Send+Sync 可入 static）
+# Fluent 消息束：locales/{en,zh}/messages.ftl 经 include_str! 内嵌（concurrent 可入 static）
 fluent-bundle = { version = "0.16", default-features = false }
 # Fluent 语言标识（束构建用 LanguageIdentifier；default = []，无需额外特性）
 unic-langid = { version = "0.9", default-features = false }
-# 系统语言探测（检测链第 4 级：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en；
-# 无默认特性，js 特性仅 wasm 目标需要）
+# 系统语言探测：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en
 sys-locale = { version = "0.3", default-features = false }
 # sdforge: CLI/HTTP/MCP 接口封装层
 sdforge = { version = "0.5.0-rc.8", default-features = false, optional = true }
-# axum: HTTP 框架（与 sdforge 0.8 同版本，仅 http feature 启用；获取 Router 类型用于 build_router）
+# axum: HTTP 框架（仅 http；Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
-# serde_json: JSON 序列化（核心依赖：EvalResult::Json 复合返回变体 + server 模块共用）
+# serde_json: JSON 序列化（EvalResult::Json + server 共用）
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
-# anyhow: 错误上下文（sdforge 0.4.2 #[forge] MCP codegen 硬依赖 anyhow::anyhow!/anyhow::Error；仅 mcp feature 启用）
+# anyhow: MCP codegen 错误上下文（#[forge] 硬依赖；仅 mcp feature）
 anyhow = { version = "1.0", default-features = false, features = ["std"], optional = true }
 # async-trait: HealthChecker trait 实现（sdforge health-check 依赖 async_trait 宏；仅 http feature 启用）
 async-trait = { version = "0.1", default-features = false, optional = true }
 # tracing: observability 支持（server 模式结构化日志；仅 observability feature 启用）
 tracing = { version = "0.1", default-features = false, optional = true }
-# 生产日志（observability feature）：inklog 接管，tokio 经本 feature 门控进入
-# （CLI 纯构建不含 observability，保持 tokio-free 轻量化设计）
+# 生产日志（observability）：inklog 接管，CLI 纯构建保持 tokio-free
 inklog = { version = "0.3.0-rc.9", default-features = false, optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
 ureq = { version = "3.4", default-features = false, features = ["rustls"], optional = true }
-# dirs: 跨平台缓存目录（仅 fx feature 启用；7.0 为最新稳定 major，API 兼容仅用 cache_dir）
+# dirs: 跨平台缓存目录（仅 fx；7.x 稳定，仅用 cache_dir）
 dirs = { version = "7.0", default-features = false, optional = true }
-# limiteron: 同步限流原语（sync = tokio-free 熔断器/固定窗口；default = []，仅 std + parking_lot）。
-# fx feature 消费 SyncCircuitBreaker（汇率源熔断），ratelimit feature 消费 SyncFixedWindowLimiter
+# limiteron: 同步限流原语（sync 特性：熔断 + 固定窗口；fx/ratelimit 共用）
 limiteron = { version = "0.3.0-rc.7", default-features = false, features = ["sync"], optional = true }
-# confers: 声明式配置加载（fx 域 CALNEXUS_FX_* 环境变量单点经 Config derive + env_prefix 映射；
-# 仅同步 env 源，无 feature 门控，不引入 dotenvy/toml 等格式栈）
+# confers: 声明式配置（fx 域 CALNEXUS_FX_* 经 env_prefix 映射；无 dotenvy/toml）
 confers = { version = "0.6.0-rc.10", default-features = false, optional = true }
 # wasm-bindgen: wasm32 导出层（仅 wasm-api feature 启用）
 wasm-bindgen = { version = "0.2", optional = true }
 # egg: E-graph equality saturation（仅 egraph feature 启用）
 egg = { version = "0.9", default-features = false, optional = true }
 
-# SIGPIPE 恢复默认处置：下游 `| head` 提前关闭管道时按 Unix 惯例静默终止，
-# 而非 EPIPE panic 被误报为内部 bug（仅 unix 目标链接；非 unix 由 panic hook 兜底）
+# SIGPIPE 恢复默认处置：`| head` 提前关管道时静默终止而非 EPIPE panic（仅 unix）
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", default-features = false }
 
@@ -138,8 +125,7 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 http-body-util = { version = "0.1", default-features = false }
 
 [lints.rust]
-# check-cfg: sdforge #[forge] 宏总会 emit `#[cfg(feature="openapi")]` / `#[cfg(feature="observability")]` gate，
-# 但 CalNexus 不启用这些 feature。声明这些值为合法 cfg 以消除 unexpected_cfgs warning。
+# check-cfg: #[forge] 会 emit openapi/observability cfg，本 crate 未启用，声明以消除 warning
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("openapi"))', 'cfg(feature, values("observability"))'] }
 
 [[bench]]
