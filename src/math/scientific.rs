@@ -544,7 +544,12 @@ fn bessel_k1_raw(x: f64) -> f64 {
 }
 
 /// Euler–Mascheroni 常数。
-const EULER_GAMMA: f64 = 0.5772156649015329;
+///
+/// 直接取标准库常量而非手写字面量：`clippy::approx_constant` 会把任何近似
+/// `f64::consts::EULER_GAMMA` 的字面量判为硬错误（`-D warnings` 下直接阻断
+/// ci.yml 的四条 clippy/wasm32 腿），而标准库版本的舍入精度由 rustc 保证。
+/// 两者数值完全相等（同为 0.5772156649015329），本替换不引入任何精度漂移。
+const EULER_GAMMA: f64 = std::f64::consts::EULER_GAMMA;
 
 // ===== Beta / Riemann Zeta =====
 
