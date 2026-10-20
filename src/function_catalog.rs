@@ -105,6 +105,62 @@ mod tests {
         assert_eq!(unique.len(), names.len(), "函数名应去重");
     }
 
+    /// numeric-frontier 批次新增函数必须进入目录（防"实现了但没注册"）。
+    #[test]
+    fn test_catalog_includes_numeric_frontier_functions() {
+        let names = all_function_names();
+        for required in ["erfc", "lgamma", "polylog"] {
+            assert!(
+                names.contains(&required),
+                "函数目录缺少 numeric-frontier 新增函数 {}",
+                required
+            );
+        }
+        let scientific: Vec<&str> = DOMAIN_FUNCTIONS
+            .iter()
+            .find(|(d, _)| *d == "scientific")
+            .map(|(_, f)| f.to_vec())
+            .unwrap_or_default();
+        for required in ["erfc", "lgamma", "polylog"] {
+            assert!(
+                scientific.contains(&required),
+                "scientific 域白名单缺少 {}",
+                required
+            );
+        }
+    }
+
+    /// 目录里每个 scientific 函数名都必须真的可被路由分发：
+    /// 白名单加了但 match 漏写时，这里会以 "unknown function" 失败。
+    #[test]
+    fn test_scientific_catalog_names_are_dispatchable() {
+        let funcs = crate::domains::SCIENTIFIC_FUNCTIONS;
+        for name in funcs {
+            // 一元与二元两种形态各试一次，允许参数个数/定义域错误，唯独不允许"未知函数"
+            let mut last: Option<String> = None;
+            for probe in [format!("{name}(1)"), format!("{name}(1, 2)")] {
+                let cache = crate::core::CacheManager::new();
+                match crate::core::evaluate(&probe, &crate::core::EvalContext::new(), None, &cache)
+                {
+                    Ok(_) => {
+                        last = None;
+                        break;
+                    }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        assert!(
+                            !msg.contains("unknown function"),
+                            "目录函数 {} 未被路由分发（探测 {probe} 报 {msg}）",
+                            name
+                        );
+                        last = Some(msg);
+                    }
+                }
+            }
+            let _ = last;
+        }
+    }
+
     #[cfg(feature = "fx")]
     #[test]
     fn test_fx_domain_in_catalog_when_feature_on() {

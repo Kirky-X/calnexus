@@ -122,6 +122,21 @@ impl<'a> ScalarMathImpl<'a> {
         math::scientific::erf(x).map(scalar)
     }
 
+    /// 互补误差函数 erfc(x)。
+    pub fn erfc(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::erfc(x).map(scalar)
+    }
+
+    /// 对数 Gamma 函数 lgamma(x)。
+    pub fn lgamma(&self, x: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::lgamma(x).map(scalar)
+    }
+
+    /// 二/三阶对数积分 polylog(s, z)。
+    pub fn polylog(&self, s: u32, z: f64) -> Result<EvalResult, CalcError> {
+        math::scientific::polylog(s, z).map(scalar)
+    }
+
     /// 数值微分：对表达式 `f` 关于变量 `var` 在 `x` 处的导数（中心差分 + Richardson 外推）。
     #[cfg(feature = "numerical")]
     pub fn derivative(&self, f: &str, var: &str, x: f64) -> Result<EvalResult, CalcError> {

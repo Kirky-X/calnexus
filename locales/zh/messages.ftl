@@ -176,6 +176,8 @@ msg-numbertheory-requires_integer = 数论域要求整数, 得到 { $value }
 msg-numerical-derivative_not_scalar = derivative(): 表达式求值结果不是标量
 msg-numerical-eig_requires_square = eig() 需要方阵，得到 { $rows }x{ $cols }
 msg-numerical-eig_requires_symmetric = eig() 需要实对称矩阵
+msg-numerical-lstsq_empty_matrix = lstsq(): A 必须非空（得到 { $dim } 行 x { $value } 列）
+msg-numerical-lstsq_row_mismatch = lstsq(): A 的行数（{ $dim }）必须等于 b 的长度（{ $value }）
 msg-numerical-lu_requires_square = lu() 需要方阵，得到 { $rows }x{ $cols }
 msg-numerical-matrix_exp_pade_singular = matrix_exp(): Pade 分母矩阵奇异
 msg-numerical-matrix_exp_requires_square = matrix_exp() 需要方阵，得到 { $rows }x{ $cols }
@@ -250,6 +252,8 @@ msg-scientific-log2_positive = log2 需要正数参数，得到 { $value }
 msg-scientific-log_arg_count = log 期望 2 个参数（值, 底），得到 { $actual }
 msg-scientific-log_positive_base = log 需要正底数且不等于 1，得到 { $value }
 msg-scientific-log_positive_value = log 需要正值，得到 { $value }
+msg-scientific-polylog_domain = polylog({ $dim }, { $value }) 无定义：|z| 必须 <= 1
+msg-scientific-polylog_order = polylog() 阶数只能是 2 或 3，得到 { $value }
 msg-scientific-root_not_bracketed = root: 区间 [{ $a }, { $b }] 未包围根
 msg-scientific-zeta_pole = zeta(1) 未定义: 极点
 msg-solvers-bisection_same_sign = bisection: f({ $a }) 与 f({ $b }) 同号

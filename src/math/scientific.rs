@@ -223,16 +223,25 @@ pub fn lgamma(x: f64) -> Result<f64, CalcError> {
 /// `|z| > 1` 或 `s ∉ {2,3}` 返回 `Domain`；`|z|` 极度接近 1 时级数不收敛，显性返回 `Domain`。
 pub fn polylog(s: u32, z: f64) -> Result<f64, CalcError> {
     if s != 2 && s != 3 {
-        return Err(CalcError::domain(format!(
-            "polylog() order must be 2 or 3, got {}",
-            s
-        )));
+        return Err(
+            CalcError::domain(format!("polylog() order must be 2 or 3, got {}", s)).with_i18n(
+                "msg.scientific.polylog_order",
+                vec![("value".to_string(), s.to_string())],
+            ),
+        );
     }
     if !z.is_finite() || !(-1.0..=1.0).contains(&z) {
         return Err(CalcError::domain(format!(
             "polylog({}, {}) is undefined: |z| must be <= 1",
             s, z
-        )));
+        ))
+        .with_i18n(
+            "msg.scientific.polylog_domain",
+            vec![
+                ("dim".to_string(), s.to_string()),
+                ("value".to_string(), z.to_string()),
+            ],
+        ));
     }
     if z == 1.0 {
         return zeta(s as f64);

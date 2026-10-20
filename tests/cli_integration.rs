@@ -1568,3 +1568,44 @@ fn undefined_symbol_hint_suggests_cli_var_flag() {
         stderr
     );
 }
+
+/// numeric-frontier 批次：erfc / lgamma / polylog 的三条输出面
+/// （`--list-functions` 目录、`--canonical` 规范式、`--json` 机器可读结果）。
+#[test]
+fn numeric_frontier_functions_expose_all_output_surfaces() {
+    let mut cmd = assert_cmd::Command::cargo_bin("calnexus").unwrap();
+    let listing = cmd
+        .arg("--list-functions")
+        .output()
+        .expect("list-functions");
+    assert!(listing.status.success());
+    let listed = String::from_utf8_lossy(&listing.stdout);
+    for name in ["erfc", "lgamma", "polylog"] {
+        assert!(
+            listed
+                .lines()
+                .any(|l| l.trim() == name || l.split(',').any(|p| p.trim() == name)),
+            "--list-functions 应包含 {name}，实际:\n{listed}"
+        );
+    }
+
+    let mut cmd = assert_cmd::Command::cargo_bin("calnexus").unwrap();
+    let canonical = cmd
+        .args(["--canonical", "erfc(1) + lgamma(2) + polylog(2, 0.5)"])
+        .output()
+        .expect("canonical");
+    assert!(canonical.status.success());
+    let text = String::from_utf8_lossy(&canonical.stdout);
+    for name in ["erfc", "lgamma", "polylog"] {
+        assert!(text.contains(name), "规范式应保留 {name}，实际: {text}");
+    }
+
+    let mut cmd = assert_cmd::Command::cargo_bin("calnexus").unwrap();
+    let json = cmd.args(["--json", "erfc(0)"]).output().expect("json erfc");
+    assert!(json.status.success());
+    let text = String::from_utf8_lossy(&json.stdout);
+    assert!(
+        text.contains("\"result\":1") && text.contains("\"domain\":\"scientific\""),
+        "erfc(0) 应为 scientific 域的 1，实际: {text}"
+    );
+}

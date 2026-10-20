@@ -215,6 +215,19 @@ impl ScalarMath for ScalarMathImpl<'_> {
     fn airy_bi(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
         ScalarMathImpl::airy_bi(self, x)
     }
+    fn erfc(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::erfc(self, x)
+    }
+    fn lgamma(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::lgamma(self, x)
+    }
+    fn polylog(&self, s: u32, z: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::polylog(self, s, z)
+    }
+    #[cfg(feature = "numerical")]
+    fn derivative(&self, f: &str, var: &str, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::derivative(self, f, var, x)
+    }
     fn precision_eval(
         &self,
         digits: usize,
@@ -354,6 +367,10 @@ impl LinearAlgebra for LinearAlgebraImpl<'_> {
     #[cfg(feature = "numerical")]
     fn matrix_exp(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> {
         LinearAlgebraImpl::matrix_exp(self, m)
+    }
+    #[cfg(feature = "numerical")]
+    fn lstsq(&self, a: &Matrix, b: &Vector) -> Result<crate::core::EvalResult, CalcError> {
+        LinearAlgebraImpl::lstsq(self, a, b)
     }
 }
 

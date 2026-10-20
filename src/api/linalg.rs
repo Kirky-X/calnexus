@@ -187,6 +187,14 @@ impl<'a> LinearAlgebraImpl<'a> {
         Ok(EvalResult::Vector(x.iter().copied().collect()))
     }
 
+    /// 最小二乘解 Ax≈b：QR 回代；R 对角近零（秩亏）时回退 SVD 伪逆取最小范数解。
+    #[cfg(feature = "numerical")]
+    pub fn lstsq(&self, a: &Matrix, b: &Vector) -> Result<EvalResult, CalcError> {
+        let da = to_dmatrix(a);
+        let db = nalgebra::DVector::from_row_slice(b.as_slice());
+        math::numerical::lstsq(&da, &db).map(|x| EvalResult::Vector(x.iter().copied().collect()))
+    }
+
     #[cfg(feature = "numerical")]
     pub fn matrix_exp(&self, m: &Matrix) -> Result<EvalResult, CalcError> {
         let dm = to_dmatrix(m);

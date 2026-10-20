@@ -319,12 +319,27 @@ pub fn qr(matrix: &DMatrix<f64>) -> Result<(DMatrix<f64>, DMatrix<f64>), CalcErr
 /// 最小二乘 lstsq(A, b)：QR 主路径回代；R 对角近零（秩亏）时回退 SVD 伪逆返回最小范数解。
 pub fn lstsq(a: &DMatrix<f64>, b: &DVector<f64>) -> Result<DVector<f64>, CalcError> {
     if a.nrows() != b.nrows() {
-        return Err(CalcError::domain(
-            "lstsq: row count of A must equal length of b".to_string(),
-        ));
+        return Err(
+            CalcError::domain("lstsq: row count of A must equal length of b".to_string())
+                .with_i18n(
+                    "msg.numerical.lstsq_row_mismatch",
+                    vec![
+                        ("dim".to_string(), a.nrows().to_string()),
+                        ("value".to_string(), b.len().to_string()),
+                    ],
+                ),
+        );
     }
     if a.nrows() == 0 || a.ncols() == 0 {
-        return Err(CalcError::domain("lstsq: A must be non-empty".to_string()));
+        return Err(
+            CalcError::domain("lstsq: A must be non-empty".to_string()).with_i18n(
+                "msg.numerical.lstsq_empty_matrix",
+                vec![
+                    ("dim".to_string(), a.nrows().to_string()),
+                    ("value".to_string(), a.ncols().to_string()),
+                ],
+            ),
+        );
     }
     let (q, r) = qr(a)?;
     let n = r.ncols();

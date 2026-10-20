@@ -357,7 +357,7 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 <tr><td align="center">✅</td><td>可选域与服务化（v0.1.3-v0.1.5）</td><td>时间 / 单位 / 汇率域、HTTP + MCP 双协议、探针分离、限流、可观测性、多平台发布与容器镜像</td></tr>
 <tr><td align="center">✅</td><td>缓存引擎现代化</td><td>oxcache byte-weight 缓存（moka 内核）、single-flight、字节权重预算、BLAKE3 键、大结果准入阈值</td></tr>
 <tr><td align="center">✅</td><td>WebAssembly (wasm32) 支持</td><td>core 与 cli 特性构建进入 CI 门禁：<code>cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features</code> 与 <code>--features cli</code>。wasm 下使用 oxcache 真实 L1 缓存（ByteWeightCache）；<code>wasm-api</code> 可导出 <code>evaluate</code>/<code>list_functions</code> 供浏览器/Node 调用（仅构建门禁，运行时行为不承诺）；<code>fx</code>/<code>http</code>/<code>mcp</code>/<code>icu</code>/<code>time</code>/<code>unit</code> 特性组合不在支持范围</td></tr>
-<tr><td align="center">📋</td><td>数值能力增强</td><td>前沿算法跟踪与功能缺口收敛</td></tr>
+<tr><td align="center">✅</td><td>数值能力增强（v0.2.0-rc.3）</td><td>特殊函数补齐 <code>erfc</code>/<code>lgamma</code>/<code>polylog</code>，数值分析 <code>derivative</code>（中心差分 + Richardson）、<code>lstsq</code>（QR + SVD 伪逆回退）；与 <code>root</code>/<code>integral</code>、Bessel/Airy/<code>beta</code>/<code>zeta</code> 同批进入域路由、函数目录与 trait API</td></tr>
 </table>
 
 </details>

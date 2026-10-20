@@ -176,6 +176,8 @@ msg-numbertheory-requires_integer = number theory domain requires integer, got {
 msg-numerical-derivative_not_scalar = derivative(): expression did not evaluate to a scalar
 msg-numerical-eig_requires_square = eig() requires a square matrix, got { $rows }x{ $cols }
 msg-numerical-eig_requires_symmetric = eig() requires a real symmetric matrix
+msg-numerical-lstsq_empty_matrix = lstsq(): A must be non-empty (got { $dim } rows x { $value } cols)
+msg-numerical-lstsq_row_mismatch = lstsq(): row count of A ({ $dim }) must equal length of b ({ $value })
 msg-numerical-lu_requires_square = lu() requires a square matrix, got { $rows }x{ $cols }
 msg-numerical-matrix_exp_pade_singular = matrix_exp(): Pade denominator is singular
 msg-numerical-matrix_exp_requires_square = matrix_exp() requires a square matrix, got { $rows }x{ $cols }
@@ -250,6 +252,8 @@ msg-scientific-log2_positive = log2 requires positive argument, got { $value }
 msg-scientific-log_arg_count = log expects 2 arguments (value, base), got { $actual }
 msg-scientific-log_positive_base = log requires positive base != 1, got { $value }
 msg-scientific-log_positive_value = log requires positive value, got { $value }
+msg-scientific-polylog_domain = polylog({ $dim }, { $value }) is undefined: |z| must be <= 1
+msg-scientific-polylog_order = polylog() order must be 2 or 3, got { $value }
 msg-scientific-root_not_bracketed = root: interval [{ $a }, { $b }] does not bracket a root
 msg-scientific-zeta_pole = zeta(1) is undefined: pole
 msg-solvers-bisection_same_sign = bisection: f({ $a }) and f({ $b }) have the same sign

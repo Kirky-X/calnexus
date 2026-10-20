@@ -87,6 +87,15 @@ pub trait ScalarMath {
     fn airy_ai(&self, x: f64) -> Result<EvalResult, CalcError>;
     /// Airy Bi 函数。
     fn airy_bi(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 互补误差函数 erfc(x) = 1 - erf(x)（大 x 不因相消误差归零）。
+    fn erfc(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 对数 Gamma 函数 ln|Γ(x)|（覆盖 gamma 溢出的大参数区间）。
+    fn lgamma(&self, x: f64) -> Result<EvalResult, CalcError>;
+    /// 二/三阶对数积分 Li_s(z)（s ∈ {2,3} 且 |z| ≤ 1）。
+    fn polylog(&self, s: u32, z: f64) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    /// 数值微分：表达式 `f` 对 `var` 在 `x` 处的导数（numerical feature）。
+    fn derivative(&self, f: &str, var: &str, x: f64) -> Result<EvalResult, CalcError>;
 
     // ── 精度 ──
     /// 任意精度求值：BigRational 计算后格式化为 digits 位小数。
@@ -191,6 +200,9 @@ pub trait LinearAlgebra {
     #[cfg(feature = "numerical")]
     /// 矩阵指数（Pade 近似，numerical feature）。
     fn matrix_exp(&self, m: &Matrix) -> Result<EvalResult, CalcError>;
+    #[cfg(feature = "numerical")]
+    /// 最小二乘解 Ax≈b（QR 主路径，秩亏回退 SVD 伪逆取最小范数解）。
+    fn lstsq(&self, a: &Matrix, b: &Vector) -> Result<EvalResult, CalcError>;
 }
 
 /// 数据分析 trait：统计。

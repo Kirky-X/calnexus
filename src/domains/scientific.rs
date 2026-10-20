@@ -11,8 +11,8 @@ use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp
 /// 科学函数白名单。
 pub(crate) const SCIENTIFIC_FUNCTIONS: &[&str] = &[
     "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log10", "log2", "log", "exp", "sinh",
-    "cosh", "tanh", "gamma", "erf", "besselj", "bessely", "besseli", "besselk", "beta", "zeta",
-    "airy_ai", "airy_bi", "root", "integral",
+    "cosh", "tanh", "gamma", "erf", "erfc", "lgamma", "polylog", "besselj", "bessely", "besseli",
+    "besselk", "beta", "zeta", "airy_ai", "airy_bi", "root", "integral",
 ];
 
 /// Scientific 计算域，priority=20，内置 pi/e 常量。
@@ -121,6 +121,10 @@ impl ScientificDomain {
             // ===== 特殊函数 =====
             "gamma" => self.eval_unary_math(name, args, ctx, crate::math::scientific::gamma),
             "erf" => self.eval_unary_math(name, args, ctx, crate::math::scientific::erf),
+            "erfc" => self.eval_unary_math(name, args, ctx, crate::math::scientific::erfc),
+            "lgamma" => self.eval_unary_math(name, args, ctx, crate::math::scientific::lgamma),
+            // polylog(s, z)：阶数必须是 2/3 的整数，与 bessel 同 (阶数, 自变量) 形态
+            "polylog" => self.eval_polylog(args, ctx),
             "zeta" => self.eval_unary_math(name, args, ctx, crate::math::scientific::zeta),
             "airy_ai" => self.eval_unary_math(name, args, ctx, crate::math::scientific::airy_ai),
             "airy_bi" => self.eval_unary_math(name, args, ctx, crate::math::scientific::airy_bi),
@@ -205,6 +209,26 @@ impl ScientificDomain {
         let order = self.eval_integer_arg(name, &args[0], ctx)?;
         let x = self.eval_node(&args[1], ctx)?;
         f(order, x)
+    }
+
+    /// `polylog(s, z)`：s 取整数阶（越界由实现层返回 Domain），z 为实自变量。
+    fn eval_polylog(&self, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
+        if args.len() != 2 {
+            return Err(CalcError::eval(format!(
+                "polylog expects 2 arguments (order, z), got {}",
+                args.len()
+            ))
+            .with_i18n(
+                "msg.scientific.arg_count_2",
+                vec![
+                    ("name".to_string(), "polylog".to_string()),
+                    ("actual".to_string(), args.len().to_string()),
+                ],
+            ));
+        }
+        let order = self.eval_integer_arg("polylog", &args[0], ctx)?;
+        let z = self.eval_node(&args[1], ctx)?;
+        crate::math::scientific::polylog(order, z)
     }
 
     /// 在指定变量取值下对子表达式求值（`root`/`integral` 用）。

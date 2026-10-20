@@ -57,6 +57,17 @@ fn scalar_math_trait_dispatch_covers_all_methods() {
         approx(scalar_of(s.tanh(0.0).unwrap()), 0.0);
         approx(scalar_of(s.gamma(5.0).unwrap()), 24.0);
         approx(scalar_of(s.erf(0.0).unwrap()), 0.0);
+        // numeric-frontier 批次：erfc / lgamma / polylog / derivative
+        approx(scalar_of(s.erfc(0.0).unwrap()), 1.0);
+        approx(scalar_of(s.lgamma(1.0).unwrap()), 0.0);
+        approx(
+            scalar_of(s.polylog(2, 1.0).unwrap()),
+            std::f64::consts::PI * std::f64::consts::PI / 6.0,
+        );
+        assert!(s.polylog(5, 0.5).is_err(), "polylog 阶数只支持 2/3");
+        assert!(s.polylog(2, 1.5).is_err(), "|z| > 1 必须显式 Domain 拒绝");
+        #[cfg(feature = "numerical")]
+        approx(scalar_of(s.derivative("x^2", "x", 3.0).unwrap()), 6.0);
         let precise = s.precision_eval(30, "0.1+0.2").unwrap();
         let value = match precise {
             EvalResult::BigRational(r) => {
@@ -207,6 +218,26 @@ fn linear_algebra_trait_dispatch_covers_all_methods() {
         let u = Vector::new(&[1.0, 2.0, 3.0]);
         let v = Vector::new(&[4.0, 5.0, 6.0]);
         approx(scalar_of(l.dot(&u, &v).unwrap()), 32.0);
+        // numeric-frontier 批次：lstsq（超定系统 QR 主路径，解 ≈ [3, 3]）
+        #[cfg(feature = "numerical")]
+        {
+            let la = Matrix::from_rows(&[&[1.0, 1.0], &[1.0, 2.0], &[1.0, 3.0]]);
+            let lb = Vector::new(&[6.0, 9.0, 12.0]);
+            match l.lstsq(&la, &lb).unwrap() {
+                EvalResult::Vector(x) => {
+                    approx(x[0], 3.0);
+                    approx(x[1], 3.0);
+                }
+                other => panic!("expected Vector, got {other:?}"),
+            }
+            // 行数与 b 长度不一致必须以维度类错误显性拒绝（i18n 键已登记）
+            assert!(
+                l.lstsq(&la, &Vector::new(&[1.0, 2.0]))
+                    .err()
+                    .is_some_and(|e| e.to_string().contains("row count")),
+                "lstsq 行数不匹配必须报错"
+            );
+        }
         match l.cross(&u, &v).unwrap() {
             EvalResult::Vector(w) => {
                 approx(w[0], -3.0);

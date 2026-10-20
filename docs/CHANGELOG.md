@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `fuzz/` crate edition 2021 → 2024（与主 crate 对齐）：rustfmt style edition 随之为 2024，导入排序与全仓一致；CI 与本地 pre-commit 门禁新增 `fuzz/` 独立 workspace 的格式校验，防止风格再次分裂
+
+## [0.2.0-rc.3] - 2026-10-20
+
 ### Added
 
 - wasm32 构建支持与 CI 门禁：`oxcache` 限定为非 wasm 目标依赖、wasm 目标补 `uuid/js` 随机源、`tokio` 改为按需启用（`http`/`mcp`）；core 与 `cli` 特性构建进入 `ci.yml` 的 `wasm32` job（lib+bins + clippy）
@@ -18,15 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - wasm 真实 L1 缓存：升级 oxcache `0.5.0-rc.9`（其 wasm32 支持已在 oxcache 仓独立发布），删除 CalNexus 侧的 wasm 无缓存回退，恢复统一 `ByteWeightCache` 实现
 - E-graph 化简（`egraph` feature，基于 `egg 0.9`）：在贪心化简后追加 equality saturation（交换/结合、恒等元、`x-x`、`x/x`、`sin²+cos²→1`），迭代/节点上限保护，失败回退贪心
 - 非对称特征向量：`eig_general` 扩展为返回值 + 向量（实 Schur + 复零空间回代），JSON 增加 `vectors_re`/`vectors_im`
+- numeric-frontier 批次收口：`erfc`（libm fdlibm，大参数不因相消误差归零）、`lgamma`（ln|Γ(x)|，覆盖 `gamma` 溢出的大参数区间）、`polylog(s, z)`（s ∈ {2,3}；|z|<1 幂级数、z=1 复用 `zeta`、z=-1 解析值、越界显式 Domain）、`derivative(f, var, x)`（中心差分 + Richardson 外推）、`lstsq(A, b)`（QR 主路径回代，秩亏回退 SVD 伪逆取最小范数解）
+- 上述函数同步接入：scientific 域白名单与表达式路由（`polylog` 新增整数阶解析 `eval_polylog`）、`ScalarMath` trait（`erfc`/`lgamma`/`polylog`/`derivative`）与 `LinearAlgebra` trait（`lstsq`，`numerical` 门控）、`--list-functions` / REPL 补全 / MCP `list_functions` 目录
+- i18n 错误键（中英成对，含 `{ $dim }` / `{ $value }` 插值）：`msg.scientific.polylog_order`、`msg.scientific.polylog_domain`、`msg.numerical.lstsq_row_mismatch`、`msg.numerical.lstsq_empty_matrix`
+- 防漂移测试：函数目录必须含新增函数；目录内每个 scientific 函数必须可被路由分发（白名单加了但 match 漏写即失败）；trait 分发面覆盖新增方法；CLI 三面（`--list-functions` / `--canonical` / `--json`）输出面断言
 
 ### Changed
 
 - Canonicalizer：`Add`/`Mul` 规范串改为 n 叉展平并按条目排序（`(a+b)+c` 与 `a+(b+c)` 同键，复数项顺序也归一）；`Sub`/`Div`/`Pow`/`Mod` 保持二元
 - `symbolic::simplify` 识别 `sin²θ + cos²θ → 1`（同一基底，含反序）
+- 依赖锚定（发布编排 §1.4）：`oxcache 0.5.0-rc.10`（吸收其 wasm32 byte-weight / serialization 能力）、`sdforge 0.5.0-rc.9`、`inklog 0.3.0-rc.10`、`limiteron 0.3.0-rc.8`、`confers 0.6.0-rc.11`；`cargo tree -d` 无第二份 oxcache / inklog，无 `[patch.crates-io]`
+- 覆盖率门禁 90 → 95：与 CI 同命令实测行覆盖 95.57%（28653 行 / 1269 未覆盖），`--fail-under-lines 95` 退出码 0
 
 ### Fixed
 
 - 函数目录（`--list-functions` / REPL Tab 补全 / MCP `list_functions`）与各域路由白名单漂移：删除幻影项 `stddev`/`trace`/`re`/`im`/`magnitude`/`phase`/`matrix_exp`（`matrix_exp` 仅经 trait API 暴露），补列 `count`/`identity`/`log10`/`log2`/`arg` 及 statistics 分布与检验 21 项、time 域 11 项、vector 域 7 项；目录改为从各域白名单常量派生（单一事实源），新增防漂移测试逐域对账
+- `--json` 键序契约回归：`confers 0.6.0-rc.11` 经特性合并启用 `serde_json/preserve_order`，使输出由字典序退化为插入序，打破 0.2.0 记录的键序契约。现于四处序列化出口（`CalcError::to_json`、CLI 成功输出、wasm 成功与错误 payload）统一递归重排键（`core::sort_json_keys`），输出不再依赖 serde_json 的 map 实现
+- `sort_json_keys` 再导出按 `cli` / `wasm32` 门控，修复 `cargo clippy --features server --all-targets -- -D warnings` 的 `unused_imports` 失败
+
+### 版本口径说明
+
+本批任务原写 `0.3.0`，按发布编排裁定（规则 5：`0.2.0-rc.2 → 0.2.0-rc.3`）改走补丁 + 预发布号；`--json` 契约版本 `v:1` 未变，不占用 minor。
 
 ## [0.2.0-rc.2] - 2026-10-12
 

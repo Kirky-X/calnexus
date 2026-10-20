@@ -23,7 +23,7 @@ pub use types::{
     AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext, EvalResult,
     MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION, Span, UnaryOp, check_pow_output_size,
 };
-// `--json` 键序重排出口：仅 CLI 与 wasm32 两条序列化链消费它，
+// `--json` 键序重排出口：仅 CLI 与 wasm-api 两条序列化链消费它，
 // server / lib-only 构建下再导出即为未使用。
-#[cfg(any(feature = "cli", target_arch = "wasm32"))]
+#[cfg(any(feature = "cli", feature = "wasm-api"))]
 pub use types::sort_json_keys;
