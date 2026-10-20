@@ -36,7 +36,7 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 ## 📋 Table of Contents
 
 <details open>
-<summary>📑 目录</summary>
+<summary>📑 Table of Contents</summary>
 
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
@@ -94,7 +94,7 @@ Beyond the core capabilities listed above, LaTeX / steps / canonical formatters,
 ### 📦 Installation
 
 <details>
-<summary>📄 代码 · bash</summary>
+<summary>📄 Code · bash</summary>
 
 ```bash
 cargo install calnexus --features cli
@@ -107,7 +107,7 @@ Requires Rust 1.97.1 or later (MSRV, matching the CI MSRV job). The core library
 Prebuilt multi-platform binaries (linux x86_64/aarch64 musl static, macOS x86_64/aarch64, windows x86_64, with SHA256SUMS) are available from [GitHub Releases](https://github.com/kirky-x/calnexus/releases), or build from source; the wasm32 target supports library/binary builds for the core and `cli` features (CI-gated), but has no L1 cache and does not promise runtime usability:
 
 <details>
-<summary>📄 代码 · bash</summary>
+<summary>📄 Code · bash</summary>
 
 ```bash
 git clone https://github.com/kirky-x/calnexus.git
@@ -122,7 +122,7 @@ cargo install --path . --features cli
 The following examples run directly in your terminal:
 
 <details>
-<summary>📄 代码 · bash</summary>
+<summary>📄 Code · bash</summary>
 
 ```bash
 $ calnexus '2+3*4'
@@ -152,7 +152,7 @@ $ calnexus --json '2+3'
 ### 📦 Recommended Combos
 
 <details>
-<summary>📋 表格</summary>
+<summary>📋 Table</summary>
 
 | Combo | Install / features | Use case |
 |-------|--------------------|----------|
@@ -172,7 +172,7 @@ $ calnexus --json '2+3'
 The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 
 <details>
-<summary>📋 表格</summary>
+<summary>📋 Table</summary>
 
 <table style="width:100%; border-collapse: collapse">
 <tr><th style="text-align:left">Feature</th><th style="text-align:center">Default</th><th style="text-align:left">Description</th></tr>
@@ -202,7 +202,7 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 ## 📚 Documentation
 
 <details>
-<summary>📋 表格</summary>
+<summary>📋 Table</summary>
 
 | Document | Description |
 |----------|-------------|
@@ -232,7 +232,7 @@ Evaluation examples are provided as inline command-line invocations — copy the
 ### 🖥️ Evaluation Examples
 
 <details>
-<summary>📄 代码 · bash</summary>
+<summary>📄 Code · bash</summary>
 
 ```bash
 # Basics and scientific functions
@@ -291,7 +291,7 @@ The test pyramid covers nine layers: inline unit tests in `src/`, integration te
 ### ▶️ Run Commands (matching CI)
 
 <details>
-<summary>📄 代码 · bash</summary>
+<summary>📄 Code · bash</summary>
 
 ```bash
 # Full test run (CI matrix has six legs: cli / cli,time,unit,fx / cli,server / cli,server,fx / cli,numerical / all)
@@ -320,7 +320,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 Test Scale
 
-Current working tree (after v0.2.0-rc.2): grep statistics count 3113 `#[test]` / `#[tokio::test]` functions in total — 2538 unit tests (inline in `src/`), 575 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+Current working tree (after v0.2.0-rc.2): grep statistics count 3133 `#[test]` / `#[tokio::test]` functions in total — 2557 unit tests (inline in `src/`), 576 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
 
 ---
 
@@ -349,7 +349,7 @@ Please do **not** report security vulnerabilities through public issues. Use the
 ## 🗺️ Roadmap
 
 <details>
-<summary>📋 表格</summary>
+<summary>📋 Table</summary>
 
 <table style="width:100%; border-collapse: collapse">
 <tr><th style="text-align:center">Status</th><th style="text-align:left">Direction</th><th style="text-align:left">Items</th></tr>
@@ -413,7 +413,7 @@ When filing an issue, please include reproduction steps, your `calnexus` version
 Full version history in the [📋 Changelog](docs/CHANGELOG.md) (following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), semantic versioning).
 
 <details>
-<summary>📋 表格</summary>
+<summary>📋 Table</summary>
 
 | Version | Date | Highlights |
 |---------|------|------------|
@@ -439,7 +439,7 @@ This project is licensed under the [MIT License](LICENSE) with the additional [C
 CalNexus stands on the shoulders of these excellent open-source projects:
 
 <details>
-<summary>📋 表格</summary>
+<summary>📋 Table</summary>
 
 | Dependency | Purpose |
 |------------|---------|

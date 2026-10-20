@@ -6,7 +6,7 @@
 
 - [🧭 通用问题](#-通用问题)
 - [📦 安装与特性](#-安装与特性)
-- [🛠️ 使用与特性](#️-使用与特性)
+- [🛠️ 使用与特性](#-使用与特性)
 - [⚡ 性能](#-性能)
 - [🌐 服务模式](#-服务模式)
 - [🔧 故障排查](#-故障排查)
@@ -25,7 +25,7 @@
 
 ### ❓ 支持哪些平台？
 
-linux x86_64/aarch64（musl 静态）、macOS x86_64/aarch64、windows x86_64 有预编译二进制；其余平台可从源码构建。wasm32 为实验性路线图目标，当前不可构建（见下文故障排查）。
+linux x86_64/aarch64（musl 静态）、macOS x86_64/aarch64、windows x86_64 有预编译二进制；其余平台可从源码构建。wasm32 支持 core 与 `cli` 特性的库/二进制构建（CI 门禁），使用 oxcache 真实 L1 缓存（`ByteWeightCache`）、语言探测回退 `en`，不承诺运行时可用性（见下文支持范围）。
 
 ### ❓ 项目采用什么许可证？
 
@@ -129,9 +129,22 @@ Rust 1.97.1 及以上（MSRV，CI 有对应 MSRV 任务守护）。核心库无�
 
 ## 🔧 故障排查
 
-### ❓ wasm32 为什么构建失败？
+### ❓ wasm32 支持范围是什么？
 
-`server` feature 引入的 `tokio::rt` 不支持 wasm32；缓存层已无 tokio 链（v0.1.5 重构），CLI-only 形态理论上可编译但未验证。在移除 tokio 依赖的构建组合评估完成前，wasm32 构建**不受 CI 门禁保护、不承诺可用**。
+core 与 `cli` 特性可构建并受 CI 门禁保护：
+
+```bash
+cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features
+cargo build --lib --bins --target wasm32-unknown-unknown --features cli
+```
+
+限制：
+
+- wasm 下使用 oxcache 的 `ByteWeightCache`（真实 L1 缓存）；`oxcache` 的 `minimal`/async 后端仍不在 wasm 支持范围。
+- `wasm-api` feature 可导出 `evaluate` / `list_functions`（wasm-bindgen），仅做构建门禁，不承诺浏览器/Node 运行时行为。
+- 语言探测因无环境变量与系统 API，回退 `en`。
+- `fx` / `http` / `mcp` / `icu` / `time` / `unit` 特性组合不在支持范围。
+- 测试与基准目标不在 wasm 上编译（dev-dependencies 的 `getrandom 0.4` 需要 `wasm_js` 特性）。
 
 ### ❓ 求值报 Timeout（退出码 3）？
 

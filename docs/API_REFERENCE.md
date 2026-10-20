@@ -40,7 +40,7 @@
 | Feature | 启用模块 | 说明 |
 |---------|----------|------|
 | _(default, 无)_ | `scalar` / `linalg` / `stats` / `symbolic` | 核心 API，零额外依赖 |
-| `numerical` | `linalg.eig/svd/lu/qr/solve/matrix_exp` | 数值线性代数分解（nalgebra f64） |
+| `numerical` | `linalg.eig/eig_general/svd/lu/qr/solve/matrix_exp` | 数值线性代数分解（nalgebra f64） |
 | `unit` | `applied.convert()` | 8 量纲物理单位换算 |
 | `time` | `applied.date/datetime/now/today/...` | 13 个时间方法（表达式域含 14 个时间函数，jiff 0.2 + IANA tzdb） |
 | `fx` | `applied.fx/fx_rate` | 汇率换算（frankfurter.dev API + 三级缓存） |
@@ -99,8 +99,8 @@ assert_eq!(result.as_scalar(), Some(1.0));
 
 | 访问器 | trait | 方法数 | 覆盖 |
 |--------|-------|--------|------|
-| `cn.scalar()` | `ScalarMath` | 37 | 算术(8) + 科学函数(14) + 精度(1) + 数论(9) + 组合(5) |
-| `cn.linalg()` | `LinearAlgebra` | 20 | 矩阵(8) + 向量(6) + 数值分解(6) |
+| `cn.scalar()` | `ScalarMath` | 53 | 算术(8) + 科学函数(30) + 精度(1) + 数论(9) + 组合(5) |
+| `cn.linalg()` | `LinearAlgebra` | 21 | 矩阵(8) + 向量(6) + 数值分解(7) |
 | `cn.stats()` | `DataAnalysis` | 32 | 基础统计(8) + 分布(16) + 假设检验(3) + 相关(2) + 回归(3) |
 | `cn.symbolic()` | `SymbolicMath` | 21 | 符号演算(5) + 多项式(6) + 复数(9) + 方程求解(1) |
 | `cn.applied()` | `AppliedMath` | 16 | 时间(13) + 单位(1) + 汇率(2)，feature 门控 |
@@ -154,6 +154,51 @@ assert_eq!(cn.get_var("x"), None);
 | `tanh` | `(x: f64) → Result<EvalResult, CalcError>` | 双曲正切 |
 | `gamma` | `(x: f64) → Result<EvalResult, CalcError>` | Gamma 函数 |
 | `erf` | `(x: f64) → Result<EvalResult, CalcError>` | 误差函数 |
+| `bessel_j0` / `bessel_j1` | `(x: f64) → Result<EvalResult, CalcError>` | 第一类 Bessel J0/J1（libm fdlibm） |
+| `bessel_j` | `(n: u32, x: f64) → Result<EvalResult, CalcError>` | 整数阶第一类 Bessel（0..=100） |
+| `bessel_y0` / `bessel_y1` / `bessel_y` | `(x: f64) / (n: u32, x: f64) → ...` | 第二类 Bessel（x > 0） |
+| `bessel_i0` / `bessel_i1` / `bessel_i` | `(x: f64) / (n: u32, x: f64) → ...` | 第一类修正 Bessel（A&S 9.8） |
+| `bessel_k0` / `bessel_k1` / `bessel_k` | `(x: f64) / (n: u32, x: f64) → ...` | 第二类修正 Bessel（x > 0） |
+| `beta` | `(a: f64, b: f64) → Result<EvalResult, CalcError>` | Beta 函数（a, b > 0） |
+| `zeta` | `(s: f64) → Result<EvalResult, CalcError>` | Riemann Zeta（s ≠ 1） |
+| `airy_ai` / `airy_bi` | `(x: f64) → Result<EvalResult, CalcError>` | Airy 函数 |
+
+#### 数值求根与积分（表达式级）
+
+`root` 与 `integral` 以表达式为输入（不是数值参数），在 `scientific` 域路由。
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `root` | `(expr: &str, var: &str, a: f64, b: f64) → Result<EvalResult, CalcError>` | Brent 法求根：`expr` 中对 `var` 求根，根须落在闭区间 `[a, b]` 内 |
+| `integral` | `(expr: &str, var: &str, a: f64, b: f64) → Result<EvalResult, CalcError>` | Gauss-Kronrod 15 定积分，误差估计超限时退回自适应辛普森 |
+
+参数语义：
+
+- `expr` — 含待求值变量 `var` 的表达式字符串；`var` 必须是裸变量名。
+- `var` — 求根/积分所针对的变量名（如 `x`）。
+- `a` / `b` — 求根为搜索区间端点（须包围根）；积分为积分区间端点。`a > b` 时积分取负值。
+
+返回形态：标量结果（`EvalResult::Scalar`），JSON 形如 `{"cache":"miss","domain":"scientific","result":<f64>,"v":1}`。
+
+错误情形：
+
+| 错误 | 触发条件 |
+|------|----------|
+| `Eval`（参数个数） | `root` / `integral` 的实参个数不是 4 |
+| `Domain`（变量名） | `var` 不是表达式中的裸变量 |
+| `Domain`（未包围根） | `root` 的区间 `[a, b]` 内不存在符号变号，Brent 法无法收敛 |
+| `NaNOrInf` | 求值过程中出现 NaN/Inf |
+| `Domain`（积分区间） | 积分区间端点非法（如 a、b 非有限值） |
+
+示例：
+
+```bash
+# 求 sqrt(2)：root(x^2-2, x, 1, 2) → 1.414213562373137
+calnexus --expression "root(x^2-2,x,1,2)"
+
+# ∫₀^π sin(x) dx：integral(sin(x),x,0,pi) → 1.9999999999999942
+calnexus --expression "integral(sin(x),x,0,pi)"
+```
 
 #### 精度
 
@@ -215,7 +260,8 @@ assert_eq!(cn.get_var("x"), None);
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `eig` | `(m: &Matrix) → Result<EvalResult, CalcError>` | 特征值/特征向量 |
+| `eig` | `(m: &Matrix) → Result<EvalResult, CalcError>` | 实对称矩阵特征值/特征向量 |
+| `eig_general` | `(m: &Matrix) → Result<EvalResult, CalcError>` | 任意实方阵特征值与特征向量（`{"values_re","values_im","vectors_re","vectors_im"}`，含复数） |
 | `svd` | `(m: &Matrix) → Result<EvalResult, CalcError>` | 奇异值分解 |
 | `lu` | `(m: &Matrix) → Result<EvalResult, CalcError>` | LU 分解 |
 | `qr` | `(m: &Matrix) → Result<EvalResult, CalcError>` | QR 分解 |
@@ -426,6 +472,23 @@ let m2 = Matrix::try_from(result).unwrap();
 | `numerical` | `linalg()` 数值分解方法 | nalgebra f64 近似 |
 | `server` | `HttpServer` / `build_router` / `McpServer` / `build_mcp_server` | HTTP + MCP 服务 |
 | `icu` | 影响 `I18n` 的 BCP-47 解析实现（`I18n` / `Lang` 类型始终可用，不受门控） | 启用 ICU4X 语言标签解析；未启用时 `from_str` 退化为简单字符串匹配 |
+| `wasm-api` | `wasm::evaluate` / `wasm::list_functions` | 仅 wasm32 目标可用；非 wasm 启用会编译期报错 |
+| `egraph` | `symbolic::simplify` 追加 E-graph 饱和 | 依赖 `egg 0.9`；默认关闭，失败回退贪心 |
+
+### wasm API（`wasm-api`，仅 wasm32）
+
+```rust
+// Rust 侧签名（经 wasm-bindgen 导出到 JS）
+pub fn evaluate(expr: &str) -> Result<String, JsValue>;
+pub fn list_functions() -> String;
+```
+
+- `evaluate("2+3")` → `{"v":1,"result":{"Scalar":5.0}}`
+- `evaluate("")` → `Err`，payload `{"v":1,"error":{"code":2,"kind":"usage","message":"expression must not be empty"}}`
+- 计算类错误 `code` 为 1，依赖不可用/超时为 3；`kind` 为 `ErrorKind` 的 snake_case 名称
+- `list_functions()` → `[{"domain":"scientific","functions":[...]}, ...]`
+
+构建（CI 门禁）：`cargo build --lib --target wasm32-unknown-unknown --features cli,wasm-api`。
 
 各计算域类型（`ArithmeticDomain` 等 14 个）均实现 `CalculationDomain` trait 并可经 `evaluate_with_router` 注入；`build_default_router()` 注册全部启用域。
 

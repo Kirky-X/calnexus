@@ -8,7 +8,7 @@
 ## 📋 目录
 
 - [🎯 阅读约定](#-阅读约定)
-- [🗺️ 总览：功能域 × 测试位置](#️-总览功能域--测试位置)
+- [🗺️ 总览：功能域 × 测试位置](#-总览功能域--测试位置)
 - [🔬 测试策略与覆盖率目标](#-测试策略与覆盖率目标)
 - [🧱 单元测试（`src/` 内联，2497）](#-单元测试src-内联2497)
 - [🔧 集成测试（`tests/`，398）](#-集成测试tests398)
@@ -22,19 +22,19 @@
   - [S1 正常路径（happy_path.rs，29）](#s1-正常路径happy_pathrs29)
   - [S2 边界条件（edge_cases.rs，25）](#s2-边界条件edge_casesrs25)
   - [S3 异常路径（error_paths.rs，13）](#s3-异常路径error_pathsrs13)
-  - [S4 fx 域离线全链路（fx_mock.rs，14）](#s4-fx-域离线全链路fx_mockrs14)
+  - [S4 fx 域离线全链路（fx_mock.rs，14）](#s4-fx-域离线全链路fx_mockrs14cfgfeature--fx)
   - [S5 特性组合矩阵（feature_gates.rs，17）](#s5-特性组合矩阵feature_gatesrs17)
   - [S6 缓存与路由（cache_router.rs，18）](#s6-缓存与路由cache_routerrs18)
   - [S7 安全与健壮性（security.rs，9）](#s7-安全与健壮性securityrs9)
-  - [S8 HTTP/MCP/ratelimit/docs（server_e2e.rs，9）](#s8-httpmcpratelimitdocsserver_e2ers9)
-  - [S9 CLI/批处理缺口（cli_e2e.rs，12）](#s9-cli批处理缺口cli_e2ers12)
+  - [S8 HTTP/MCP/ratelimit/docs（server_e2e.rs，9）](#s8-httpmcpratelimitdocsserver_e2ers9cfgfeature--server)
+  - [S9 CLI/批处理缺口（cli_e2e.rs，12）](#s9-cli批处理缺口cli_e2ers12cfgfeature--cli)
 - [⚡ 属性测试（proptest，12）](#-属性测试proptest12)
 - [📸 快照测试（insta，22）](#-快照测试insta22)
-- [🛡️ 安全测试（security_tests.rs，18）](#️-安全测试security_testsrs18)
-- [⏱️ 性能回归测试（performance_tests.rs，6）](#️-性能回归测试performance_testsrs6)
+- [🛡️ 安全测试（security_tests.rs，18）](#-安全测试security_testsrs18)
+- [⏱️ 性能回归测试（performance_tests.rs，6）](#-性能回归测试performance_testsrs6)
 - [🎲 模糊测试（`fuzz/`，7 目标）](#-模糊测试fuzz7-目标)
 - [📈 基准测试（`benches/`，4 组）](#-基准测试benches4-组)
-- [▶️ 执行命令（与 CI 一致）](#️-执行命令与-ci-一致)
+- [▶️ 执行命令（与 CI 一致）](#-执行命令与-ci-一致)
 - [✅ 测试通过标准](#-测试通过标准)
 - [🚦 缺陷分级](#-缺陷分级)
 - [📚 相关文档](#-相关文档)
@@ -98,7 +98,7 @@ graph TD
 
 ---
 
-## 🧱 单元测试（`src/` 内联，2497）
+## 🧱 单元测试（`src/` 内联，2538）
 
 单元测试位于各模块 `#[cfg(test)] mod tests`，随特性门控编译。按目录统计：
 
@@ -115,7 +115,7 @@ graph TD
 
 ---
 
-## 🔧 集成测试（`tests/`，398）
+## 🔧 集成测试（`tests/`，417）
 
 ### 核心流水线集成（integration.rs，132）
 
@@ -248,7 +248,7 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 
 ---
 
-## 🌐 E2E 场景套件（`tests/e2e/`，145）
+## 🌐 E2E 场景套件（`tests/e2e/`，158）
 
 按九类场景组织（见 `tests/e2e/main.rs` 模块表），套件无 `required-features`，一切 feature 组合下编译；提交记录见 git log `f247fd9`。
 
@@ -598,6 +598,31 @@ cargo fuzz run parser_fuzz
 ```
 
 依赖安全门禁（`.github/workflows/audit.yml`，每周一 03:00 UTC 定时）：`cargo audit --deny warnings`、`cargo deny check`；静态安全分析（`.github/workflows/codeql.yml`）：CodeQL Rust。
+
+---
+
+## 🆕 wasm32-numerics-expansion 批次新增场景
+
+| 场景 | 位置 | 核心断言 |
+| :--- | :--- | :--- |
+| wasm32 core 构建 | CI `wasm32` job | `cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features` 退出码 0 |
+| wasm32 cli 构建 + clippy | CI `wasm32` job | `--features cli` 构建与 `clippy -D warnings` 通过 |
+| 非对称 eig | `src/math/numerical.rs`、`tests/numerical_linalg_test.rs` | 旋转矩阵返回 ±i；对称矩阵虚部全 0；非方阵/NaN 错误 |
+| 规范串展平 | `src/core/canonicalizer.rs`、`tests/integration.rs` | `(a+b)+c` 与 `a+(b+c)` 同键；`a-(b-c)` 与 `(a-b)-c` 不同键 |
+| 三角恒等 | `src/math/symbolic.rs` | `simplify(sin²x+cos²x) = 1`；不同变量不化简 |
+| 特殊函数 | `src/math/scientific.rs`、`tests/integration.rs` | J/Y/I/K/Beta/Zeta/Airy 参考值；定义域与阶数越界错误 |
+| 数值求根/积分 | `src/math/solvers.rs`、`tests/integration.rs` | `root(x^2-2,x,1,2)=√2`；`integral(sin(x),x,0,pi)=2`；区间未包围根报错 |
+
+---
+
+## 🆕 wasm-runtime-egraph-eig 批次新增场景
+
+| 场景 | 位置 | 核心断言 |
+| :--- | :--- | :--- |
+| wasm 真实 L1 缓存 | `src/core/cache.rs`、CI `wasm32` job | 同一 `CacheManager` 实现；wasm core/cli 构建退出码 0 |
+| wasm 运行时 API | `src/wasm.rs`、CI `wasm32` job | `--features cli,wasm-api` 构建通过；原生启用报 compile_error |
+| 非对称特征向量 | `src/math/numerical.rs`、`tests/numerical_linalg_test.rs` | 每个 `(λ, x)` 满足 `‖A·x−λ·x‖ < 1e-9` |
+| E-graph 化简 | `src/math/egraph.rs`（`egraph` feature） | `sin²+cos²→1`、`x-x→0`、`x*0→0`、`x/x→1`、结合律等价、`0/0` 不化简 |
 
 ---
 

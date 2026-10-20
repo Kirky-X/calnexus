@@ -14,7 +14,7 @@
   - [三种执行模式](#三种执行模式)
   - [计算域与优先级路由](#计算域与优先级路由)
   - [L1 缓存与非确定性函数](#l1-缓存与非确定性函数)
-- [🖥️ CLI 使用](#️-cli-使用)
+- [🖥️ CLI 使用](#-cli-使用)
   - [单表达式求值](#单表达式求值)
   - [变量绑定与隐式乘法](#变量绑定与隐式乘法)
   - [精度控制](#精度控制)
@@ -32,7 +32,7 @@
   - [汇率域（fx feature）](#汇率域fx-feature)
   - [数值线性代数（numerical feature）](#数值线性代数numerical-feature)
 - [🌐 服务模式](#-服务模式)
-- [⚙️ 环境变量](#️-环境变量)
+- [⚙️ 环境变量](#-环境变量)
 - [🧰 故障排查](#-故障排查)
 - [📚 相关文档](#-相关文档)
 
@@ -282,7 +282,7 @@ scientific:
 | 计算域 | 优先级 | 代表函数 |
 |--------|--------|----------|
 | Arithmetic | 10 | `+` `-` `*` `/` `^` `factorial` `mod` `abs` |
-| Scientific | 20 | `sin` `cos` `tan` `ln` `log10` `log2` `exp` `gamma` `erf` |
+| Scientific | 20 | `sin` `cos` `tan` `ln` `log10` `log2` `exp` `gamma` `erf` `besselj` `bessely` `besseli` `besselk` `beta` `zeta` `airy_ai` `airy_bi` `root` `integral` |
 | Statistics | 20 | `mean` `median` `variance` `std` `sum` `min` `max` `count` |
 | Precision | 25 | `precision(N, expr)` |
 | NumberTheory | 25 | `gcd` `lcm` `is_prime` `prime_sieve` `mod_inverse` `mod_pow` `euler_phi` |
@@ -292,6 +292,16 @@ scientific:
 | Matrix | 30 | `det` `transpose` `inverse` `identity` |
 | Vector | 30 | `dot` `cross` `norm` `angle` `normalize` `cosine_similarity` + Hadamard 积 `[a,b]*[c,d]` |
 | Symbolic | 30 | `diff` `integrate` `simplify` `limit` `taylor` |
+
+### 数值求根与积分
+
+`root(expr, var, a, b)` 用 Brent 法在 `[a, b]` 内求根（区间未包围根时报错）；`integral(expr, var, a, b)` 用 Gauss–Kronrod 15 点做定积分，误差超阈值时退回自适应 Simpson。变量名必须是第二个参数：
+
+```text
+root(x^2-2, x, 1, 2)          → 1.414213562…
+integral(sin(x), x, 0, pi)    → 2
+integral(x^2, x, 0, 1)        → 0.333333333…
+```
 
 ### 时间域（time feature）
 
@@ -376,7 +386,7 @@ $ calnexus 'lu([[4,3],[6,3]])'
 
 ## 🧰 故障排查
 
-常见问题与解答见 [❓ FAQ](FAQ.md)，包括：精度不符合预期、fx 网络失败的行为、wasm32 构建状态、feature 组合选择等。
+常见问题与解答见 [❓ FAQ](FAQ.md)，包括：精度不符合预期、fx 网络失败的行为、wasm32 支持范围与构建命令、wasm-api 导出、feature 组合选择等。
 
 ---
 
