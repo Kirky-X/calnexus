@@ -2,7 +2,7 @@
 # =============================================================================
 # CalNexus pre-commit hook — industrial-grade code quality gate.
 #
-# Runs 9 checks before allowing a commit. Fails the commit on any blocking
+# Runs 10 checks before allowing a commit. Fails the commit on any blocking
 # failure; the file-size check is warn-only.
 #
 # Install (one-time, per clone):
@@ -55,9 +55,9 @@ echo "${C_BOLD}CalNexus pre-commit quality gate${C_NC}"
 echo "----------------------------------------"
 
 # -----------------------------------------------------------------------------
-# Check 1/9: cargo fmt (formatting must already be correct; no auto-fix here)
+# Check 1/10: cargo fmt (formatting must already be correct; no auto-fix here)
 # -----------------------------------------------------------------------------
-step "Check 1/9: cargo fmt --all -- --check"
+step "Check 1/10: cargo fmt --all -- --check"
 fmt_out="$(cargo fmt --all -- --check 2>&1)"
 fmt_rc=$?
 if [ "$fmt_rc" -eq 0 ]; then
@@ -68,9 +68,9 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 2/9: cargo clippy (cli + server feature domains, all targets, deny warnings)
+# Check 2/10: cargo clippy (cli + server feature domains, all targets, deny warnings)
 # -----------------------------------------------------------------------------
-step "Check 2/9: cargo clippy --features cli|server --all-targets -- -D warnings"
+step "Check 2/10: cargo clippy --features cli|server --all-targets -- -D warnings"
 clippy_out="$(cargo clippy --features cli --all-targets -- -D warnings 2>&1)"
 clippy_rc=$?
 # server 域同步门禁（2026-09-19 审计：此前 server/time/fx 域本地零覆盖）
@@ -89,9 +89,9 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 3/9: cargo test (cli + server feature domains, all tests must pass)
+# Check 3/10: cargo test (cli + server feature domains, all tests must pass)
 # -----------------------------------------------------------------------------
-step "Check 3/9: cargo test --features cli|server"
+step "Check 3/10: cargo test --features cli|server"
 test_out="$(cargo test --features cli 2>&1)"
 test_rc=$?
 server_test_out="$(cargo test --features server 2>&1)"
@@ -109,10 +109,10 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 4/9: cargo build --release with zero warnings
+# Check 4/10: cargo build --release with zero warnings
 #   Build must succeed AND output must not contain "warning".
 # -----------------------------------------------------------------------------
-step "Check 4/9: cargo build --release --features cli (zero warnings)"
+step "Check 4/10: cargo build --release --features cli (zero warnings)"
 build_out="$(cargo build --release --features cli 2>&1)"
 build_rc=$?
 if [ "$build_rc" -ne 0 ]; then
@@ -130,10 +130,10 @@ fi
 ALL_RS_FILES="$(git ls-files '*.rs')"
 
 # -----------------------------------------------------------------------------
-# Check 5/9: copyright header on every .rs file
+# Check 5/10: copyright header on every .rs file
 #   First line must start with: // Copyright (c) 2026 Kirky.X🌠 + // SPDX-License-Identifier: MIT
 # -----------------------------------------------------------------------------
-step "Check 5/9: copyright header (// Copyright (c) 2026 Kirky.X🌠)"
+step "Check 5/10: copyright header (// Copyright (c) 2026 Kirky.X🌠)"
 COPYRIGHT_PREFIX='// Copyright (c) 2026 Kirky.X🌠'
 copyright_bad=""
 while IFS= read -r f; do
@@ -155,11 +155,11 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 6/9: no debug prints (println!/dbg!) in library code
+# Check 6/10: no debug prints (println!/dbg!) in library code
 #   eprintln! is allowed everywhere; println!/dbg! is forbidden in lib code.
 #   CLI/REPL entry points (cli.rs, repl.rs, main.rs, batch.rs) are exempt.
 # -----------------------------------------------------------------------------
-step "Check 6/9: no println!/dbg! in lib code (eprintln! OK in CLI/REPL)"
+step "Check 6/10: no println!/dbg! in lib code (eprintln! OK in CLI/REPL)"
 LIB_RS_FILES="$(printf '%s\n' "$ALL_RS_FILES" | grep '^src/' | grep -vE '^src/(cli|repl|main|batch)\.rs$')"
 debug_bad=""
 if [ -n "$LIB_RS_FILES" ]; then
@@ -173,10 +173,10 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 7/9: no TODO/FIXME/HACK comments in src/
+# Check 7/10: no TODO/FIXME/HACK comments in src/
 #   Tests live in tests/ and are not scanned.
 # -----------------------------------------------------------------------------
-step "Check 7/9: no TODO/FIXME/HACK comments in src/"
+step "Check 7/10: no TODO/FIXME/HACK comments in src/"
 SRC_RS_FILES="$(printf '%s\n' "$ALL_RS_FILES" | grep '^src/')"
 todo_bad=""
 if [ -n "$SRC_RS_FILES" ]; then
@@ -190,9 +190,9 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 8/9: Cargo.lock exists and is tracked
+# Check 8/10: Cargo.lock exists and is tracked
 # -----------------------------------------------------------------------------
-step "Check 8/9: Cargo.lock is committed"
+step "Check 8/10: Cargo.lock is committed"
 if [ -f 'Cargo.lock' ] && [ -n "$(git ls-files -- Cargo.lock)" ]; then
     pass "Cargo.lock exists and is tracked"
 else
@@ -200,10 +200,10 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Check 9/9: file size check (warn only, non-blocking)
+# Check 9/10: file size check (warn only, non-blocking)
 #   No source file should exceed 3000 lines.
 # -----------------------------------------------------------------------------
-step "Check 9/9: file size <= 3000 lines (warn only)"
+step "Check 9/10: file size <= 3000 lines (warn only)"
 MAX_LINES=3000
 size_warn_count=0
 while IFS= read -r f; do
@@ -219,6 +219,23 @@ if [ "$size_warn_count" -eq 0 ]; then
     pass "all .rs files within $MAX_LINES lines"
 else
     printf '%s[WARN]%s %d file(s) exceed %d lines — non-blocking\n' "$C_YELLOW" "$C_NC" "$size_warn_count" "$MAX_LINES"
+fi
+
+# -----------------------------------------------------------------------------
+# Check 10/10: gitleaks secret scan (blocking)
+#   Scans the staged tree for hardcoded credentials (cloud provider keys, tokens,
+#   PEM private keys, high-entropy strings). Complements the private-key check
+#   above by covering provider-specific key formats.
+# -----------------------------------------------------------------------------
+step "Check 10/10: gitleaks secret scan"
+if command -v gitleaks >/dev/null 2>&1; then
+    if gitleaks protect --verbose --redact --no-banner --staged >/dev/null 2>&1; then
+        pass "gitleaks found no secrets in staged changes"
+    else
+        fail "gitleaks detected potential secrets in staged changes (run 'gitleaks protect' for details)"
+    fi
+else
+    warn "gitleaks is not installed - secret scan skipped (install: cargo install gitleaks)"
 fi
 
 # -----------------------------------------------------------------------------
