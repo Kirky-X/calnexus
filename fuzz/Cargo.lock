@@ -130,11 +130,12 @@ dependencies = [
 
 [[package]]
 name = "calnexus"
-version = "0.2.0-rc.1"
+version = "0.2.0-rc.3"
 dependencies = [
  "blake3",
  "fluent-bundle",
  "libc",
+ "libm",
  "mathexpr",
  "nalgebra",
  "num-bigint",
@@ -148,7 +149,6 @@ dependencies = [
  "serde_json",
  "sys-locale",
  "thiserror",
- "tokio",
  "unic-langid",
 ]
 
@@ -1046,9 +1046,9 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "oxcache"
-version = "0.5.0-rc.8"
+version = "0.5.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6c684538b8626da5e37a495e10a0c8cd88219d5ccd51ba19d47d4e83bcefa6f"
+checksum = "ede643c41f28680a136a9c23b60aabb5964264ca661f7adc023e3033f3795d80"
 dependencies = [
  "async-trait",
  "fluent-bundle",

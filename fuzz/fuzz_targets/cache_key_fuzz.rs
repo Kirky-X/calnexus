@@ -12,16 +12,20 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &str| {
     // 任意输入解析 + 规范化 + 缓存键生成
-    if let Ok(ast) = parse(data) {
-        if let Ok((canonical_ast, cf)) = AstCanonicalizer::canonicalize(&ast) {
-            let cache = CacheManager::new();
-            cache.insert(&cf, &Ok(calnexus::EvalResult::Scalar(0.0)));
-            let _ = cache.get(&cf);
+    if let Ok(ast) = parse(data)
+        && let Ok((canonical_ast, cf)) = AstCanonicalizer::canonicalize(&ast)
+    {
+        let cache = CacheManager::new();
+        cache.insert(&cf, &Ok(calnexus::EvalResult::Scalar(0.0)));
+        let _ = cache.get(&cf);
 
-            // 二次规范化应幂等
-            if let Ok((_, cf2)) = AstCanonicalizer::canonicalize(&canonical_ast) {
-                assert_eq!(cf.as_str(), cf2.as_str(), "canonicalize should be idempotent");
-            }
+        // 二次规范化应幂等
+        if let Ok((_, cf2)) = AstCanonicalizer::canonicalize(&canonical_ast) {
+            assert_eq!(
+                cf.as_str(),
+                cf2.as_str(),
+                "canonicalize should be idempotent"
+            );
         }
     }
 });

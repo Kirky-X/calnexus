@@ -35,7 +35,7 @@ fuzz_target!(|data: &[u8]| {
     expr.push(']');
 
     // 解析 + 求值应不 panic
-    if let Ok(_) = parse(&expr) {
+    if parse(&expr).is_ok() {
         let cache = CacheManager::new();
         let ctx = EvalContext::new();
         let _ = calnexus::evaluate(&expr, &ctx, None, &cache);

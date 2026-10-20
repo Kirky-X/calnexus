@@ -10,17 +10,15 @@ use calnexus::{AstCanonicalizer, parse};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &str| {
-    if let Ok(ast) = parse(data) {
-        if let Ok((canon_ast, cf1)) = AstCanonicalizer::canonicalize(&ast) {
-            // 二次规范化
-            if let Ok((_, cf2)) = AstCanonicalizer::canonicalize(&canon_ast) {
-                assert_eq!(
-                    cf1.as_str(),
-                    cf2.as_str(),
-                    "canonicalize not idempotent for input: {:?}",
-                    data
-                );
-            }
-        }
+    if let Ok(ast) = parse(data)
+        && let Ok((canon_ast, cf1)) = AstCanonicalizer::canonicalize(&ast)
+        && let Ok((_, cf2)) = AstCanonicalizer::canonicalize(&canon_ast)
+    {
+        assert_eq!(
+            cf1.as_str(),
+            cf2.as_str(),
+            "canonicalize not idempotent for input: {:?}",
+            data
+        );
     }
 });
