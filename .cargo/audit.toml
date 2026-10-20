@@ -3,3 +3,26 @@
 # 间接引入，上游 rand 版本问题）；关闭 yanked 检查，漏洞（vulnerabilities）保持 deny。
 [yanked]
 enabled = false
+
+# 以下为“无上游补丁、且属元数据状态标记”的逐条豁免。注意：本文件必须放在
+# `.cargo/audit.toml`（或 `~/.cargo/audit.toml`）才会被 cargo-audit 读取，
+# 放在仓根的 `audit.toml` 会被忽略。`cargo audit --deny warnings` 阈值不变：
+# 除此处逐条登记的 ID 外，任何新进入依赖图的 advisory 仍会直接把门禁红掉。
+#
+# RUSTSEC-2025-0057 (fxhash 0.2.1) 与 RUSTSEC-2024-0384 (instant 0.1.13)：
+# • 性质：两条均为 `unmaintained`（停止维护）状态标记，不是漏洞；advisory 无
+#   patched 版本区间，即上游没有“升级即修复”的选项。
+# • 命中路径（Cargo.lock 可复现）：可选 feature `egraph` → egg 0.9.5 →
+#   {fxhash 0.2.1, instant 0.1.13, hashbrown 0.12.3, indexmap 1.9.3}；
+#   `egraph = ["dep:egg"]` 默认关闭且 `egg` 为 optional，默认产物不引用二者。
+# • 为何本轮不升级：本仓声明 `egg = { version = "0.9", optional = true }`，
+#   而 egg 0.10/0.11 是跨 minor 的 API 变更面（涉及 src/math/egraph.rs 的
+#   EGraph 用法与化简规则回归），属独立变更，不塞进发布提交。
+# • 退出条件（已核实可执行）：crates.io 上 egg 0.11.0 的依赖清单已不含
+#   fxhash/instant（改用 rustc-hash + quanta）。egraph 迁移到 egg >= 0.10 后
+#   删除下面两条并重跑 `cargo audit --deny warnings` 确认全绿。
+[advisories]
+ignore = [
+    "RUSTSEC-2025-0057",
+    "RUSTSEC-2024-0384",
+]
