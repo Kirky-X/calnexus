@@ -60,11 +60,16 @@ echo "----------------------------------------"
 step "Check 1/10: cargo fmt --all -- --check"
 fmt_out="$(cargo fmt --all -- --check 2>&1)"
 fmt_rc=$?
-if [ "$fmt_rc" -eq 0 ]; then
+# fuzz/ 是独立 workspace（独立 Cargo.toml + 独立 rust-toolchain），格式单独校验。
+# 不用 `+stable`：那会绕过版本钉住，使本地与 CI（ci.yml 的 Rustfmt job 已钉 1.97.1）口径不一致。
+fuzz_fmt_out="$(cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check 2>&1)"
+fuzz_fmt_rc=$?
+if [ "$fmt_rc" -eq 0 ] && [ "$fuzz_fmt_rc" -eq 0 ]; then
     pass "formatting is clean"
 else
     fail "formatting issues detected (run 'cargo fmt --all' to fix)"
-    printf '%s\n' "$fmt_out" | indent
+    [ "$fmt_rc" -ne 0 ] && printf '%s\n' "$fmt_out" | indent
+    [ "$fuzz_fmt_rc" -ne 0 ] && printf '%s\n' "$fuzz_fmt_out" | indent
 fi
 
 # -----------------------------------------------------------------------------

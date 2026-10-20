@@ -17,14 +17,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned rustfmt
+        # 工具链钉住（不随最新 stable 漂移）：本 job 原用 dtolnay/rust-toolchain@stable，
+        # 而 runner 上的最新 stable rustfmt 会把混合大小写导入按小写优先重排
+        # （实测 run 39446066779 对 fuzz/fuzz_targets/*.rs 要求
+        # `use calnexus::{parse, AstCanonicalizer}`），本地 1.97.1（= 本仓 MSRV，见下方
+        # MSRV job）的 rustfmt 1.9.0-stable 却认为现有序就是已格式化——
+        # 两边互斥会使门禁变成不定量。钉到 1.97.1 后 CI 与开发环境同一口径；
+        # 其余 job（clippy/test/coverage）仍跑最新 stable，保留新工具链的拦截能力。
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check fuzz workspace formatting
-        run: cargo +stable fmt --all --manifest-path fuzz/Cargo.toml -- --check
+        # 不再用 `+stable` 强推：那会绕过钉住版本使本腿重新变成随 runner 镜像漂移的检查。
+        # fuzz/ 目录的 rust-toolchain.toml 钉 nightly 是为 cargo-fuzz 的 -Zsanitizer，
+        # 与格式化无关，此处显式用 1.97.1 统一口径。
+        run: cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check
 
   clippy:
     name: Clippy (${{ matrix.features }})
