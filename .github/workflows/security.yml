@@ -15,7 +15,15 @@ jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # checkout 钉 SHA + fetch-depth: 0：浅克隆（默认 depth=1）下 gitleaks 算出的
+      # `<head>^..<head>` 区间取不到父提交，直接报
+      # "fatal: ambiguous argument ... unknown revision" 并以 Unexpected exit code [1] 退出
+      # （实跑 run 39470406817 即此原因，并非检出泄密），全量历史不可见使扫描变成空转。
+      # 写法对齐本工作区 vecboost 仓已采用的同一修正（含 @v4 → v7 SHA 钉，顺便消除
+      # Node.js 20 弃用告警）。
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
       - name: actionlint
         uses: docker://rhysd/actionlint:latest
         with:
