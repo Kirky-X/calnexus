@@ -43,10 +43,11 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
-      - name: cargo-vet (依赖来源审计)
-        run: |
-          cargo install cargo-vet --locked
-          cargo vet verify
+      # 不引入 cargo-vet：依赖来源审计由本仓 audit.yml（cargo audit --deny warnings +
+      # cargo deny check）承担；cargo-vet 需要 supply-chain/ 配置（audits.toml + config.toml）
+      # 且必须逐 crate 录入审计依据，600+ 依赖不可能在此补齐，`cargo vet verify` 只会
+      # 固定失败（实跑 run 39473509412 在 gitleaks 转绿后即卡在本步）。
+      # 处理方式与本工作区 vecboost 仓的同一 workflow 一致，理由已在那边文档化。
       - name: trivy (文件系统/依赖漏洞)
         uses: aquasecurity/trivy-action@master
         with:
