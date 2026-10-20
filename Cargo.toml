@@ -103,7 +103,7 @@ limiteron = { version = "0.3.0-rc.7", default-features = false, features = ["syn
 # confers: 声明式配置（fx 域 CALNEXUS_FX_* 经 env_prefix 映射；无 dotenvy/toml）
 confers = { version = "0.6.0-rc.10", default-features = false, optional = true }
 # wasm-bindgen: wasm32 导出层（仅 wasm-api feature 启用）
-wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen = { version = "0.2", default-features = false, optional = true }
 # egg: E-graph equality saturation（仅 egraph feature 启用）
 egg = { version = "0.9", default-features = false, optional = true }
 

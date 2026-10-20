@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 
 /// 数值微分 derivative(f, var, x)：中心差分 + Richardson 外推（误差 ~1e-10）。
 /// 位于域层以复用表达式求值链（math 层不依赖 evaluator）。
+// 待 numeric-frontier-closure/T011 注册进函数目录与 ScalarMath trait 后移除本 allow
+#[allow(dead_code)]
 pub fn derivative(f: &str, var: &str, x: f64) -> Result<f64, CalcError> {
     let eval_at = |t: f64| -> Result<f64, CalcError> {
         let mut ctx = EvalContext::new();

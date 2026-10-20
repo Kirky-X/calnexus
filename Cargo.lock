@@ -2787,7 +2787,9 @@ checksum = "13c45bb4a6ae1280ec0803b1ef9d3455eb50f01efbbe1447ab020f1d54fba9d8"
 
 [[package]]
 name = "oxcache"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ede643c41f28680a136a9c23b60aabb5964264ca661f7adc023e3033f3795d80"
 dependencies = [
  "async-trait",
  "chrono",

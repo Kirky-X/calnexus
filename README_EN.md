@@ -320,7 +320,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 Test Scale
 
-Current working tree (after v0.2.0-rc.2): grep statistics count 3113 `#[test]` / `#[tokio::test]` functions in total — 2538 unit tests (inline in `src/`), 575 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+Current working tree (after v0.2.0-rc.2): grep statistics count 3133 `#[test]` / `#[tokio::test]` functions in total — 2557 unit tests (inline in `src/`), 576 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
 
 ---
 

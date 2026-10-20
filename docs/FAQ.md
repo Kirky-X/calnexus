@@ -25,7 +25,7 @@
 
 ### ❓ 支持哪些平台？
 
-linux x86_64/aarch64（musl 静态）、macOS x86_64/aarch64、windows x86_64 有预编译二进制；其余平台可从源码构建。wasm32 支持 core 与 `cli` 特性的库/二进制构建（CI 门禁），但无 L1 缓存、语言探测回退 `en`，不承诺运行时可用性（见下文支持范围）。
+linux x86_64/aarch64（musl 静态）、macOS x86_64/aarch64、windows x86_64 有预编译二进制；其余平台可从源码构建。wasm32 支持 core 与 `cli` 特性的库/二进制构建（CI 门禁），使用 oxcache 真实 L1 缓存（`ByteWeightCache`）、语言探测回退 `en`，不承诺运行时可用性（见下文支持范围）。
 
 ### ❓ 项目采用什么许可证？
 

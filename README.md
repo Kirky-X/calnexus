@@ -320,7 +320,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 测试规模
 
-当前工作区（v0.2.0-rc.2 后）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3113 个，其中单元测试 2538（`src/` 内联）、集成与 E2E 共 575（`tests/`，其中 E2E 场景套件 158）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
+当前工作区（v0.2.0-rc.2 后）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3133 个，其中单元测试 2557（`src/` 内联）、集成与 E2E 共 576（`tests/`，其中 E2E 场景套件 158）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 90%（llvm-cov，`--features cli,time,unit,fx` 口径，实测 90.4%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
 
 ---
 

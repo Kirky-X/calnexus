@@ -163,6 +163,43 @@ assert_eq!(cn.get_var("x"), None);
 | `zeta` | `(s: f64) → Result<EvalResult, CalcError>` | Riemann Zeta（s ≠ 1） |
 | `airy_ai` / `airy_bi` | `(x: f64) → Result<EvalResult, CalcError>` | Airy 函数 |
 
+#### 数值求根与积分（表达式级）
+
+`root` 与 `integral` 以表达式为输入（不是数值参数），在 `scientific` 域路由。
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `root` | `(expr: &str, var: &str, a: f64, b: f64) → Result<EvalResult, CalcError>` | Brent 法求根：`expr` 中对 `var` 求根，根须落在闭区间 `[a, b]` 内 |
+| `integral` | `(expr: &str, var: &str, a: f64, b: f64) → Result<EvalResult, CalcError>` | Gauss-Kronrod 15 定积分，误差估计超限时退回自适应辛普森 |
+
+参数语义：
+
+- `expr` — 含待求值变量 `var` 的表达式字符串；`var` 必须是裸变量名。
+- `var` — 求根/积分所针对的变量名（如 `x`）。
+- `a` / `b` — 求根为搜索区间端点（须包围根）；积分为积分区间端点。`a > b` 时积分取负值。
+
+返回形态：标量结果（`EvalResult::Scalar`），JSON 形如 `{"cache":"miss","domain":"scientific","result":<f64>,"v":1}`。
+
+错误情形：
+
+| 错误 | 触发条件 |
+|------|----------|
+| `Eval`（参数个数） | `root` / `integral` 的实参个数不是 4 |
+| `Domain`（变量名） | `var` 不是表达式中的裸变量 |
+| `Domain`（未包围根） | `root` 的区间 `[a, b]` 内不存在符号变号，Brent 法无法收敛 |
+| `NaNOrInf` | 求值过程中出现 NaN/Inf |
+| `Domain`（积分区间） | 积分区间端点非法（如 a、b 非有限值） |
+
+示例：
+
+```bash
+# 求 sqrt(2)：root(x^2-2, x, 1, 2) → 1.414213562373137
+calnexus --expression "root(x^2-2,x,1,2)"
+
+# ∫₀^π sin(x) dx：integral(sin(x),x,0,pi) → 1.9999999999999942
+calnexus --expression "integral(sin(x),x,0,pi)"
+```
+
 #### 精度
 
 | 方法 | 签名 | 说明 |
