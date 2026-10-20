@@ -167,6 +167,54 @@ impl ScalarMath for ScalarMathImpl<'_> {
     fn erf(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
         ScalarMathImpl::erf(self, x)
     }
+    fn bessel_j0(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_j0(self, x)
+    }
+    fn bessel_j1(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_j1(self, x)
+    }
+    fn bessel_j(&self, n: u32, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_j(self, n, x)
+    }
+    fn bessel_y0(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_y0(self, x)
+    }
+    fn bessel_y1(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_y1(self, x)
+    }
+    fn bessel_y(&self, n: u32, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_y(self, n, x)
+    }
+    fn bessel_i0(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_i0(self, x)
+    }
+    fn bessel_i1(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_i1(self, x)
+    }
+    fn bessel_i(&self, n: u32, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_i(self, n, x)
+    }
+    fn bessel_k0(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_k0(self, x)
+    }
+    fn bessel_k1(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_k1(self, x)
+    }
+    fn bessel_k(&self, n: u32, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::bessel_k(self, n, x)
+    }
+    fn beta(&self, a: f64, b: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::beta(self, a, b)
+    }
+    fn zeta(&self, s: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::zeta(self, s)
+    }
+    fn airy_ai(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::airy_ai(self, x)
+    }
+    fn airy_bi(&self, x: f64) -> Result<crate::core::EvalResult, CalcError> {
+        ScalarMathImpl::airy_bi(self, x)
+    }
     fn precision_eval(
         &self,
         digits: usize,
@@ -282,6 +330,10 @@ impl LinearAlgebra for LinearAlgebraImpl<'_> {
     #[cfg(feature = "numerical")]
     fn eig(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> {
         LinearAlgebraImpl::eig(self, m)
+    }
+    #[cfg(feature = "numerical")]
+    fn eig_general(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> {
+        LinearAlgebraImpl::eig_general(self, m)
     }
     #[cfg(feature = "numerical")]
     fn svd(&self, m: &Matrix) -> Result<crate::core::EvalResult, CalcError> {

@@ -62,6 +62,69 @@ fn eig_end_to_end_returns_json_with_values_and_vectors() {
 }
 
 #[test]
+fn eig_general_end_to_end_returns_complex_values() {
+    // 2×2 旋转矩阵特征值为 ±i：实部 0、虚部 -1/+1
+    let v = as_json(evaluate_full("eig_general([[0,-1],[1,0]])").unwrap());
+    let re = v["values_re"].as_array().expect("values_re must be array");
+    let im = v["values_im"].as_array().expect("values_im must be array");
+    assert_eq!(re.len(), 2);
+    assert_eq!(im.len(), 2);
+    assert!(re.iter().all(|x| x.as_f64().unwrap().abs() < 1e-9));
+    assert!((im[0].as_f64().unwrap() + 1.0).abs() < 1e-9);
+    assert!((im[1].as_f64().unwrap() - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn eig_general_symmetric_still_returns_zero_imaginary() {
+    let v = as_json(evaluate_full("eig_general([[2,1],[1,2]])").unwrap());
+    let im = v["values_im"].as_array().expect("values_im must be array");
+    assert!(im.iter().all(|x| x.as_f64().unwrap().abs() < 1e-9));
+}
+
+#[test]
+fn eig_general_vectors_satisfy_definition_end_to_end() {
+    let v = as_json(evaluate_full("eig_general([[0,-1],[1,0]])").unwrap());
+    let m = [[0.0_f64, -1.0], [1.0, 0.0]];
+    let re = v["values_re"].as_array().unwrap();
+    let im = v["values_im"].as_array().unwrap();
+    let vr = v["vectors_re"].as_array().unwrap();
+    let vi = v["vectors_im"].as_array().unwrap();
+    assert_eq!(vr.len(), 2);
+    assert_eq!(vi.len(), 2);
+    for k in 0..2 {
+        let lambda = (re[k].as_f64().unwrap(), im[k].as_f64().unwrap());
+        let xr = vr[k].as_array().unwrap();
+        let xi = vi[k].as_array().unwrap();
+        let x = [
+            (xr[0].as_f64().unwrap(), xi[0].as_f64().unwrap()),
+            (xr[1].as_f64().unwrap(), xi[1].as_f64().unwrap()),
+        ];
+        for i in 0..2 {
+            let ax_re = m[i][0] * x[0].0 + m[i][1] * x[1].0;
+            let ax_im = m[i][0] * x[0].1 + m[i][1] * x[1].1;
+            let lx_re = lambda.0 * x[i].0 - lambda.1 * x[i].1;
+            let lx_im = lambda.0 * x[i].1 + lambda.1 * x[i].0;
+            let residual = ((ax_re - lx_re).powi(2) + (ax_im - lx_im).powi(2)).sqrt();
+            assert!(residual < 1e-9, "row {i} residual {residual}");
+        }
+    }
+}
+
+#[test]
+fn eig_non_symmetric_still_errors_with_hint() {
+    let r = evaluate_full("eig([[1,2],[3,4]])");
+    assert!(r.is_err());
+    let err = r.unwrap_err();
+    assert!(
+        err.hint
+            .as_deref()
+            .is_some_and(|h| h.contains("eig_general")),
+        "eig error hint should point at eig_general, got {:?}",
+        err.hint
+    );
+}
+
+#[test]
 fn svd_end_to_end_returns_json_with_usvt() {
     let v = as_json(evaluate_full("svd([[1,2],[3,4]])").unwrap());
     assert!(v["U"].is_array(), "svd U must be a matrix");

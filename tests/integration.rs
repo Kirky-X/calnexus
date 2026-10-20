@@ -764,13 +764,98 @@ fn test_precision_pipeline_route_by_function() {
 // ----- 跨域缓存去重（新域） -----
 
 #[test]
+fn test_special_functions_end_to_end() {
+    let cases = [
+        ("besselj(0,1)", 0.7651976865579666, 1e-12),
+        ("bessely(0,1)", 0.08825696421567697, 1e-12),
+        ("besseli(0,1)", 1.2660658777520084, 1e-7),
+        ("besselk(0,1)", 0.42102443824070834, 1e-7),
+        ("beta(2,3)", 1.0 / 12.0, 1e-12),
+        ("zeta(2)", 1.6449340668482264, 1e-12),
+        ("airy_ai(0)", 0.3550280538878172, 1e-12),
+        ("airy_bi(0)", 0.6149266274460007, 1e-12),
+    ];
+    for (expr, expected, tol) in cases {
+        let got = evaluate(expr).unwrap_or_else(|e| panic!("{expr} failed: {e}"));
+        assert!(
+            (got - expected).abs() <= tol * expected.abs().max(1.0),
+            "{expr}: got {got}, expected {expected}"
+        );
+    }
+}
+
+#[test]
+fn test_special_function_domains_end_to_end() {
+    assert_eq!(
+        evaluate("besselj(1.5,1)").unwrap_err().kind,
+        ErrorKind::Domain
+    );
+    assert_eq!(
+        evaluate("besselj(101,1)").unwrap_err().kind,
+        ErrorKind::Domain
+    );
+    assert_eq!(
+        evaluate("bessely(0,0)").unwrap_err().kind,
+        ErrorKind::Domain
+    );
+    assert_eq!(evaluate("beta(0,1)").unwrap_err().kind, ErrorKind::Domain);
+    assert_eq!(evaluate("zeta(1)").unwrap_err().kind, ErrorKind::Domain);
+}
+
+#[test]
+fn test_list_functions_includes_special_functions() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_calnexus"))
+        .arg("--list-functions")
+        .output()
+        .expect("run calnexus --list-functions");
+    assert!(output.status.success(), "--list-functions failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for name in [
+        "besselj", "bessely", "besseli", "besselk", "beta", "zeta", "airy_ai", "airy_bi",
+    ] {
+        assert!(stdout.contains(name), "missing {name} in --list-functions");
+    }
+}
+
+#[test]
+fn test_root_and_integral_end_to_end() {
+    let root = evaluate("root(x^2-2, x, 1, 2)").unwrap();
+    assert!((root - std::f64::consts::SQRT_2).abs() < 1e-9, "got {root}");
+
+    let area = evaluate("integral(sin(x), x, 0, pi)").unwrap();
+    assert!((area - 2.0).abs() < 1e-9, "got {area}");
+
+    let cubic = evaluate("integral(x^2, x, 0, 1)").unwrap();
+    assert!((cubic - 1.0 / 3.0).abs() < 1e-9, "got {cubic}");
+
+    let reversed = evaluate("integral(x, x, 1, 0)").unwrap();
+    assert!((reversed + 0.5).abs() < 1e-12, "got {reversed}");
+}
+
+#[test]
+fn test_root_and_integral_error_paths() {
+    assert_eq!(
+        evaluate("root(x^2+1, x, -1, 1)").unwrap_err().kind,
+        ErrorKind::Domain
+    );
+    assert_eq!(
+        evaluate("root(1, 1, 0, 1)").unwrap_err().kind,
+        ErrorKind::Domain
+    );
+    assert_eq!(
+        evaluate("integral(1, 1, 0, 1)").unwrap_err().kind,
+        ErrorKind::Domain
+    );
+}
+
+#[test]
 fn test_cache_dedup_complex_equivalent() {
-    // 复数节点不参与交换律排序，不同顺序规范形式不同但求值结果相同
+    // 复数节点不参与 AST 交换律排序，但 Add 展平后规范串按条目排序，顺序仍归一
     let ast1 = parse("(1+2i)+(3+4i)").unwrap();
     let ast2 = parse("(3+4i)+(1+2i)").unwrap();
     let (_, cf1) = AstCanonicalizer::canonicalize(&ast1).unwrap();
     let (_, cf2) = AstCanonicalizer::canonicalize(&ast2).unwrap();
-    assert_ne!(cf1, cf2, "复数节点不参与交换律排序，规范形式应不同");
+    assert_eq!(cf1, cf2, "加法展平后复数项顺序应归一");
 
     let r1 = evaluate_full("(1+2i)+(3+4i)", &EvalContext::new()).unwrap();
     let r2 = evaluate_full("(3+4i)+(1+2i)", &EvalContext::new()).unwrap();

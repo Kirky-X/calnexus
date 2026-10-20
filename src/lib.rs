@@ -26,6 +26,8 @@ mod output;
 mod repl;
 #[cfg(any(feature = "http", feature = "mcp"))]
 mod server;
+#[cfg(feature = "wasm-api")]
+pub mod wasm;
 
 pub use api::traits::{AppliedMath, DataAnalysis, LinearAlgebra, ScalarMath, SymbolicMath};
 pub use api::types::{BigNumber, Complex, Matrix, Polynomial, Vector};

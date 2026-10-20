@@ -4,6 +4,7 @@
 //! L1 缓存管理器：oxcache 字节权重缓存的领域封装，BLAKE3 单次哈希生成 256-bit 键。
 //! 仅缓存 `Ok(EvalResult)`；权重超预算驱逐；并发同 key 仅一个 compute 执行（错误不缓存）。
 //! 分层（ADD ADR-001）：L1-only 进程内，无 L2/Redis。
+//! 0.5.0-rc.9 起 oxcache 的 `byte-weight + serialization` 支持 wasm32，全目标共用同一实现。
 
 use oxcache::sync::ByteWeightCache;
 

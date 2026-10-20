@@ -8,6 +8,8 @@
 pub mod arithmetic;
 pub mod combinatorics;
 pub mod complex;
+#[cfg(feature = "egraph")]
+pub mod egraph;
 pub mod matrix;
 pub mod number_theory;
 pub mod polynomial;

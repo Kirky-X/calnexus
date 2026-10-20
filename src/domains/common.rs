@@ -36,6 +36,19 @@ pub fn resolve_variable(ctx: &EvalContext, name: &str) -> Result<f64, CalcError>
     })
 }
 
+/// 从 AST 提取变量名（Variable 节点）；symbolic/scientific 域共用。
+pub fn extract_variable_name(ast: &AstNode) -> Result<String, CalcError> {
+    match ast {
+        AstNode::Variable(name) => Ok(name.clone()),
+        _ => Err(
+            CalcError::domain(format!("expected variable name, got: {:?}", ast)).with_i18n(
+                "msg.domain.expected_variable_name",
+                vec![("node".to_string(), format!("{:?}", ast))],
+            ),
+        ),
+    }
+}
+
 /// 构造"域不支持此节点类型"错误。
 pub fn unsupported_node_error(domain: &str, ast: &AstNode) -> CalcError {
     CalcError::domain(format!(

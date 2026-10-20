@@ -45,7 +45,8 @@ jobs:
       - name: Run clippy (${{ matrix.features }})
         run: |
           if [ "${{ matrix.features }}" = "all" ]; then
-            cargo clippy --all-features --all-targets -- -D warnings
+            # wasm-api 仅 wasm32 可用（非 wasm 启用会 compile_error），从 all 腿排除
+            cargo clippy --features "cli,server,time,unit,fx,numerical,ratelimit,docs,observability,icu,egraph" --all-targets -- -D warnings
           else
             cargo clippy --features ${{ matrix.features }} --all-targets -- -D warnings
           fi
@@ -72,7 +73,8 @@ jobs:
       - name: Run tests (${{ matrix.features }})
         run: |
           if [ "${{ matrix.features }}" = "all" ]; then
-            cargo test --all-features
+            # wasm-api 仅 wasm32 可用，从 all 腿排除
+            cargo test --features "cli,server,time,unit,fx,numerical,ratelimit,docs,observability,icu,egraph"
           else
             cargo test --features "${{ matrix.features }}"
           fi
@@ -96,7 +98,8 @@ jobs:
           rustup default 1.97.1
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check with MSRV
-        run: cargo check --all-features
+        # wasm-api 仅 wasm32 可用，MSRV 检查排除
+        run: cargo check --features "cli,server,time,unit,fx,numerical,ratelimit,docs,observability,icu,egraph"
 
   build:
     name: Build (release)
@@ -109,6 +112,27 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Build release
         run: cargo build --release --features cli
+
+  # wasm32 构建门禁：只覆盖 lib+bins。测试/基准目标依赖的 dev-dependencies
+  # （getrandom 0.4 等）需要 wasm_js 特性，不在本 job 承诺范围。
+  wasm32:
+    name: wasm32 build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Build (no default features)
+        run: cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features
+      - name: Build (cli)
+        run: cargo build --lib --bins --target wasm32-unknown-unknown --features cli
+      - name: Build (cli,wasm-api)
+        run: cargo build --lib --target wasm32-unknown-unknown --features cli,wasm-api
+      - name: Clippy (wasm32, cli)
+        run: cargo clippy --target wasm32-unknown-unknown --features cli -- -D warnings
 
   coverage:
     name: Coverage

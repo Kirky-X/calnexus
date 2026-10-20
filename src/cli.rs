@@ -956,7 +956,8 @@ mod tests {
     fn test_canonicalize_no_fold_function_call() {
         let ast = parse("sin(x)+cos(y)").unwrap();
         let (_, cf) = AstCanonicalizer::canonicalize_no_fold(&ast).unwrap();
-        assert_eq!(cf.as_str(), "(+ (sin x) (cos y))");
+        // Add/Mul 规范串按条目排序：(cos y) 先于 (sin x)
+        assert_eq!(cf.as_str(), "(+ (cos y) (sin x))");
     }
 
     #[test]
