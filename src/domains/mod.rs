@@ -44,6 +44,10 @@ pub(crate) use polynomial::POLYNOMIAL_FUNCTIONS;
 pub(crate) use scientific::SCIENTIFIC_FUNCTIONS;
 pub(crate) use statistics::STATISTICS_FUNCTIONS;
 pub(crate) use symbolic::SYMBOLIC_FUNCTIONS;
+
+// 数值微分实现（域层）：经 api 层 ScalarMathImpl::derivative 公开暴露
+#[cfg(feature = "numerical")]
+pub(crate) use numerical::derivative;
 #[cfg(feature = "time")]
 pub(crate) use time::TIME_FUNCTIONS;
 #[cfg(feature = "unit")]

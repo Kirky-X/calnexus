@@ -173,6 +173,7 @@ msg-numbertheory-mod_inverse_not_coprime = mod_inverse: { $a } and { $m } are no
 msg-numbertheory-mod_pow_non_negative = mod_pow() requires non-negative exponent
 msg-numbertheory-prime_sieve_non_negative = prime_sieve() requires non-negative argument
 msg-numbertheory-requires_integer = number theory domain requires integer, got { $value }
+msg-numerical-derivative_not_scalar = derivative(): expression did not evaluate to a scalar
 msg-numerical-eig_requires_square = eig() requires a square matrix, got { $rows }x{ $cols }
 msg-numerical-eig_requires_symmetric = eig() requires a real symmetric matrix
 msg-numerical-lu_requires_square = lu() requires a square matrix, got { $rows }x{ $cols }

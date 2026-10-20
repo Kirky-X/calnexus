@@ -12,9 +12,8 @@ use serde_json::{Value, json};
 
 /// 数值微分 derivative(f, var, x)：中心差分 + Richardson 外推（误差 ~1e-10）。
 /// 位于域层以复用表达式求值链（math 层不依赖 evaluator）。
-// 待 numeric-frontier-closure/T011 注册进函数目录与 ScalarMath trait 后移除本 allow
-#[allow(dead_code)]
-pub fn derivative(f: &str, var: &str, x: f64) -> Result<f64, CalcError> {
+/// 经 `ScalarMathImpl::derivative` 公开暴露（api 层委托本函数）。
+pub(crate) fn derivative(f: &str, var: &str, x: f64) -> Result<f64, CalcError> {
     let eval_at = |t: f64| -> Result<f64, CalcError> {
         let mut ctx = EvalContext::new();
         ctx.vars.insert(var.to_string(), t);
@@ -24,7 +23,8 @@ pub fn derivative(f: &str, var: &str, x: f64) -> Result<f64, CalcError> {
             EvalResult::Scalar(v) => Ok(v),
             _ => Err(CalcError::domain(
                 "derivative: expression did not evaluate to a scalar".to_string(),
-            )),
+            )
+            .with_i18n("msg.numerical.derivative_not_scalar", vec![])),
         }
     };
     let h = f64::EPSILON.cbrt() * x.abs().max(1.0);

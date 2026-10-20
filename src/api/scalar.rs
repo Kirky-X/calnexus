@@ -122,6 +122,12 @@ impl<'a> ScalarMathImpl<'a> {
         math::scientific::erf(x).map(scalar)
     }
 
+    /// 数值微分：对表达式 `f` 关于变量 `var` 在 `x` 处的导数（中心差分 + Richardson 外推）。
+    #[cfg(feature = "numerical")]
+    pub fn derivative(&self, f: &str, var: &str, x: f64) -> Result<EvalResult, CalcError> {
+        crate::domains::derivative(f, var, x).map(scalar)
+    }
+
     pub fn bessel_j0(&self, x: f64) -> Result<EvalResult, CalcError> {
         math::scientific::bessel_j0(x).map(scalar)
     }
@@ -290,5 +296,48 @@ impl<'a> ScalarMathImpl<'a> {
         let bn = BigInt::from(n);
         let bk = BigInt::from(k);
         math::combinatorics::stirling_second(&bn, &bk).map(big)
+    }
+}
+
+#[cfg(all(test, feature = "numerical"))]
+mod tests {
+    use super::*;
+
+    /// 公开可达：x^2 关于 x 在 3 处的导数为 6。
+    #[test]
+    fn derivative_quadratic() {
+        let cn = CalNexus::new();
+        let r = cn.scalar().derivative("x^2", "x", 3.0).unwrap();
+        match r {
+            EvalResult::Scalar(v) => assert!((v - 6.0).abs() < 1e-6, "d={v}"),
+            other => panic!("expected scalar, got {other:?}"),
+        }
+    }
+
+    /// sin'(0) = 1。
+    #[test]
+    fn derivative_sin_at_zero() {
+        let cn = CalNexus::new();
+        let r = cn.scalar().derivative("sin(x)", "x", 0.0).unwrap();
+        match r {
+            EvalResult::Scalar(v) => assert!((v - 1.0).abs() < 1e-6, "d={v}"),
+            other => panic!("expected scalar, got {other:?}"),
+        }
+    }
+
+    /// 表达式求值结果非标量时返回 Domain 错误，并挂 i18n 键。
+    #[test]
+    fn derivative_non_scalar_expression_is_domain_error() {
+        let cn = CalNexus::new();
+        let err = cn
+            .scalar()
+            .derivative("[[1,2],[3,4]]", "x", 0.0)
+            .unwrap_err();
+        assert_eq!(err.kind, crate::core::ErrorKind::Domain, "err={err:?}");
+        assert_eq!(
+            err.i18n_key,
+            Some("msg.numerical.derivative_not_scalar"),
+            "i18n key not attached: {err:?}"
+        );
     }
 }

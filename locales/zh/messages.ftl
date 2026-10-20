@@ -173,6 +173,7 @@ msg-numbertheory-mod_inverse_not_coprime = mod_inverse: { $a } 与 { $m } 不互
 msg-numbertheory-mod_pow_non_negative = mod_pow() 要求非负指数
 msg-numbertheory-prime_sieve_non_negative = prime_sieve() 要求非负参数
 msg-numbertheory-requires_integer = 数论域要求整数, 得到 { $value }
+msg-numerical-derivative_not_scalar = derivative(): 表达式求值结果不是标量
 msg-numerical-eig_requires_square = eig() 需要方阵，得到 { $rows }x{ $cols }
 msg-numerical-eig_requires_symmetric = eig() 需要实对称矩阵
 msg-numerical-lu_requires_square = lu() 需要方阵，得到 { $rows }x{ $cols }
