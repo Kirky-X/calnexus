@@ -105,7 +105,7 @@ confers = { version = "0.6.0-rc.11", default-features = false, optional = true }
 # wasm-bindgen: wasm32 导出层（仅 wasm-api feature 启用）
 wasm-bindgen = { version = "0.2", default-features = false, optional = true }
 # egg: E-graph equality saturation（仅 egraph feature 启用）
-egg = { version = "0.9", default-features = false, optional = true }
+egg = { version = "0.11", default-features = false, optional = true }
 
 # SIGPIPE 恢复默认处置：`| head` 提前关管道时静默终止而非 EPIPE panic（仅 unix）
 [target.'cfg(unix)'.dependencies]
