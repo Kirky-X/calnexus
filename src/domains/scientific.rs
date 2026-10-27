@@ -252,12 +252,15 @@ impl ScientificDomain {
             self.eval_expr_at(&args[0], &var, x, ctx)
                 .unwrap_or(f64::NAN)
         };
+        // fa/fb 仅用于初始同号判定：Brent 内部每次迭代重新求值，此处结果不可复用。
         let fa = f(lo);
         let fb = f(hi);
         if !fa.is_finite() || !fb.is_finite() {
             return Err(CalcError::nan_or_inf());
         }
-        if fa * fb > 0.0 {
+        // 同号判定用符号比较而非乘积：|fa|、|fb| 可达 ±1e200 量级，乘积会溢出 ±inf
+        // 误报「不包围」。零值端点（fa==0 或 fb==0）本身即根，沿用既有语义放行 Brent。
+        if fa != 0.0 && fb != 0.0 && (fa > 0.0) == (fb > 0.0) {
             return Err(CalcError::domain(format!(
                 "root: interval [{}, {}] does not bracket a root",
                 lo, hi
@@ -276,6 +279,8 @@ impl ScientificDomain {
     /// `integral(expr, var, a, b)`：GK15 定积分，误差超阈值退回自适应 Simpson。
     fn eval_integral(&self, args: &[AstNode], ctx: &EvalContext) -> Result<f64, CalcError> {
         let (var, a, b) = self.eval_quad_args("integral", args, ctx)?;
+        // 退化区间积分为 0 是解析事实，绕过数值采样是有意为之
+        // （数值路径可能因端点奇点对 f(a)=f(b) 采样失败而误报 NaN/Inf）。
         if a == b {
             return Ok(0.0);
         }
@@ -437,6 +442,20 @@ mod tests {
     /// 辅助函数：近似比较
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-10
+    }
+
+    // ===== root / integral 退化区间语义 =====
+
+    #[test]
+    fn test_integral_degenerate_interval_is_zero() {
+        // a == b 直接返回 0.0（解析事实，绕过数值采样）
+        assert!(approx(eval("integral(x, x, 3.0, 3.0)").unwrap(), 0.0));
+    }
+
+    #[test]
+    fn test_root_zero_endpoint_is_root() {
+        // 端点为零即根：符号判定不得把零端点误判为「不包围」
+        assert!(approx(eval("root(x - 2, x, 2, 5)").unwrap(), 2.0));
     }
 
     // ===== Trigonometric Functions in Radians =====

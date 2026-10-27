@@ -64,6 +64,8 @@ fn scalar_math_trait_dispatch_covers_all_methods() {
             scalar_of(s.polylog(2, 1.0).unwrap()),
             std::f64::consts::PI * std::f64::consts::PI / 6.0,
         );
+        // |z|<1 主级数路径（mpmath 参考：polylog(2, 0.5) = 0.5822405264650125）
+        approx(scalar_of(s.polylog(2, 0.5).unwrap()), 0.5822405264650125);
         assert!(s.polylog(5, 0.5).is_err(), "polylog 阶数只支持 2/3");
         assert!(s.polylog(2, 1.5).is_err(), "|z| > 1 必须显式 Domain 拒绝");
         #[cfg(feature = "numerical")]
@@ -230,11 +232,11 @@ fn linear_algebra_trait_dispatch_covers_all_methods() {
                 }
                 other => panic!("expected Vector, got {other:?}"),
             }
-            // 行数与 b 长度不一致必须以维度类错误显性拒绝（i18n 键已登记）
+            // 行数与 b 长度不一致必须以维度类错误显性拒绝（按 ErrorKind 断言，不耦合文案）
             assert!(
                 l.lstsq(&la, &Vector::new(&[1.0, 2.0]))
                     .err()
-                    .is_some_and(|e| e.to_string().contains("row count")),
+                    .is_some_and(|e| e.kind == calnexus::ErrorKind::Domain),
                 "lstsq 行数不匹配必须报错"
             );
         }

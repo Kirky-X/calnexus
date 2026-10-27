@@ -67,7 +67,8 @@ pub fn eig(matrix: &DMatrix<f64>) -> Result<(Vec<f64>, DMatrix<f64>), CalcError>
 
 /// 实矩阵特征分解结果：特征值与对应特征向量（列序一致）。
 pub struct EigGeneral {
-    /// 特征值（按 `(re, im)` 升序）。
+    /// 特征值排序分路径：对称路径（委托 [`eig`]）按实部升序；
+    /// 一般路径按字典序 `(re, im)`（`total_cmp`）。
     pub values: Vec<Complex<f64>>,
     /// 特征向量：`vectors[i]` 对应 `values[i]`，长度 n。
     pub vectors: Vec<Vec<Complex<f64>>>,

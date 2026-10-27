@@ -288,7 +288,6 @@ msg-symbolic-bisection_requires_options = bisection requires options [a, b]
 msg-symbolic-brent_requires_options = brent requires options [a, b]
 msg-symbolic-diff_arg_count = diff() requires exactly 2 arguments, got { $actual }
 msg-symbolic-expected_number = expected number, got: { $node }
-msg-symbolic-expected_variable_name = expected variable name, got: { $node }
 msg-symbolic-expects_function_call = symbolic domain expects function call, got: { $node }
 msg-symbolic-function_not_supported = function not supported in symbolic expressions: { $name }
 msg-symbolic-integrate_arg_count = integrate() requires exactly 2 arguments, got { $actual }

@@ -139,6 +139,8 @@ fn from_rec(rec: &RecExpr<SymLang>) -> Option<SymbolicExpr> {
         };
         Some(expr)
     }
+    // egg `RecExpr` 不变量：子节点先于父节点追加（`add` 顺序即拓扑序），
+    // 根节点恒为末元素；`checked_sub` 同时防御空 rec（len==0 → None）。
     let root = Id::from(rec.as_ref().len().checked_sub(1)?);
     go(rec, root)
 }

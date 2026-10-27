@@ -288,7 +288,6 @@ msg-symbolic-bisection_requires_options = bisection 需要选项 [a, b]
 msg-symbolic-brent_requires_options = brent 需要选项 [a, b]
 msg-symbolic-diff_arg_count = diff() 需要 2 个参数，得到 { $actual }
 msg-symbolic-expected_number = 期望数字，得到: { $node }
-msg-symbolic-expected_variable_name = 期望变量名，得到: { $node }
 msg-symbolic-expects_function_call = 符号域期望函数调用，得到: { $node }
 msg-symbolic-function_not_supported = 符号表达式不支持此函数: { $name }
 msg-symbolic-integrate_arg_count = integrate() 需要 2 个参数，得到 { $actual }

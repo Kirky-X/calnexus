@@ -2,6 +2,7 @@
 name = "calnexus-fuzz"
 version = "0.0.0"
 publish = false
+# edition 2024 需 rustc >= 1.85，由 fuzz/rust-toolchain.toml 钉 nightly 保证
 edition = "2024"
 
 [package.metadata]

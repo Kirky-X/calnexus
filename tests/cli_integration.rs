@@ -1607,8 +1607,9 @@ fn numeric_frontier_functions_expose_all_output_surfaces() {
     let json = cmd.args(["--json", "erfc(0)"]).output().expect("json erfc");
     assert!(json.status.success());
     let text = String::from_utf8_lossy(&json.stdout);
-    assert!(
-        text.contains("\"result\":1") && text.contains("\"domain\":\"scientific\""),
-        "erfc(0) 应为 scientific 域的 1，实际: {text}"
-    );
+    // 结构化解析：不依赖字段顺序与空白
+    let obj: serde_json::Value =
+        serde_json::from_str(&text).expect("erfc(0) --json 输出必须是合法 JSON");
+    assert_eq!(obj["domain"], "scientific", "实际: {text}");
+    assert_eq!(obj["result"].as_f64(), Some(1.0), "实际: {text}");
 }

@@ -14,6 +14,8 @@ permissions:
 jobs:
   security:
     runs-on: ubuntu-latest
+    # trivy 全仓扫描 + gitleaks 全历史扫描挂起时不无限占用 runner
+    timeout-minutes: 20
     steps:
       # checkout 钉 SHA + fetch-depth: 0：浅克隆（默认 depth=1）下 gitleaks 算出的
       # `<head>^..<head>` 区间取不到父提交，直接报

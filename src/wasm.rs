@@ -13,6 +13,13 @@ use wasm_bindgen::prelude::*;
 
 use crate::core::{CacheManager, CalcError, ErrorKind, EvalContext};
 
+// 静态断言：CacheManager 须满足 Send + Sync（`static OnceLock<T>` 的隐式约束，
+// 亦是对 oxcache ByteWeightCache 线程安全边界的编译期钉子）。
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<CacheManager>();
+};
+
 /// 错误类别的 snake_case 名称（与 `ErrorKind` 变体一一对应）。
 fn kind_name(kind: ErrorKind) -> &'static str {
     match kind {

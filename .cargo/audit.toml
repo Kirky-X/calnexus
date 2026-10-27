@@ -22,7 +22,11 @@ enabled = false
 #   fxhash/instant（改用 rustc-hash + quanta）。egraph 迁移到 egg >= 0.10 后
 #   删除下面两条并重跑 `cargo audit --deny warnings` 确认全绿。
 [advisories]
+# 豁免逐条标明触发包（RUSTSEC ID 与 crate 一一对应；cargo-audit 的 ignore 仅支持
+# 字符串形态，包级作用域由注释承载，防止后人不知豁免缘由而盲目保留/删除）
 ignore = [
+    # fxhash：unmaintained（egg 0.9.5 间接引入）
     "RUSTSEC-2025-0057",
+    # instant：unmaintained（egg 0.9.5 间接引入）
     "RUSTSEC-2024-0384",
 ]
