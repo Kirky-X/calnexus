@@ -43,7 +43,7 @@
 | `numerical`     | `linalg.eig/eig_general/svd/lu/qr/solve/matrix_exp` | 数值线性代数分解（nalgebra f64）                                |
 | `unit`          | `applied.convert()`                                 | 8 量纲物理单位换算                                              |
 | `time`          | `applied.date/datetime/now/today/...`               | 13 个时间方法（表达式域含 14 个时间函数，jiff 0.2 + IANA tzdb） |
-| `fx`            | `applied.fx/fx_rate`                                | 汇率换算（frankfurter.dev API + 三级缓存）                      |
+| `fx`            | `applied.fx/fx_rate`                                | 汇率换算（frankfurter / ExchangeRate-API 双源 + 三级缓存）      |
 
 > 服务端 feature（`cli`/`http`/`mcp`/`server`/`icu`/`ratelimit`/`docs`/`observability`）见 [🏗️ 架构文档](ARCHITECTURE.md) 的 Feature Gate 策略一节。
 
@@ -492,7 +492,7 @@ let m2 = Matrix::try_from(result).unwrap();
 | ----------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | `time`      | `TimeDomain`、`applied()` 时间方法                                       | jiff 0.2 + 内嵌 IANA tzdb                                         |
 | `unit`      | `UnitDomain`、`applied().convert()`                                      | 8 量纲 + 温度仿射                                                 |
-| `fx`        | `FxDomain`、`applied().fx/fx_rate`                                       | frankfurter.dev + 三级缓存 + 熔断；`CALNEXUS_FX_*` 环境变量       |
+| `fx`        | `FxDomain`、`applied().fx/fx_rate`                                       | frankfurter / er-api 双源（`CALNEXUS_FX_PROVIDER`）+ 三级缓存 + 熔断；`CALNEXUS_FX_*` 环境变量 |
 | `numerical` | `linalg()` 数值分解方法                                                  | nalgebra f64 近似                                                 |
 | `server`    | `HttpServer` / `build_router` / `McpServer` / `build_mcp_server`         | HTTP + MCP 服务                                                   |
 | `icu`       | 影响 `I18n` 的 BCP-47 解析实现（`I18n` / `Lang` 类型始终可用，不受门控） | 启用 ICU4X 语言标签解析；未启用时 `from_str` 退化为简单字符串匹配 |

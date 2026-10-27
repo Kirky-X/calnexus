@@ -25,6 +25,7 @@ pub fn mock_rate_table() -> RateTable {
             ("JPY".to_string(), 160.0),
             ("GBP".to_string(), 0.85),
         ]),
+        source: "test-frankfurter".to_string(),
     }
 }
 
@@ -45,6 +46,7 @@ impl RateProvider for StaticProvider {
             base: self.table.base.clone(),
             date: self.table.date.clone(),
             rates: self.table.rates.clone(),
+            source: self.table.source.clone(),
         })
     }
 }

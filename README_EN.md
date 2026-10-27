@@ -184,7 +184,7 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 <tr><td colspan="3" style="background:#F8FAFC"><b>Optional computation domains</b></td></tr>
 <tr><td><code>time</code></td><td align="center">❌</td><td>Time domain: jiff 0.2 with bundled IANA tzdb, 14 functions</td></tr>
 <tr><td><code>unit</code></td><td align="center">❌</td><td>Physical unit conversion domain: 8 dimensions + affine temperature</td></tr>
-<tr><td><code>fx</code></td><td align="center">❌</td><td>Currency conversion domain: frankfurter.dev API + 3-level cache + network circuit breaker</td></tr>
+<tr><td><code>fx</code></td><td align="center">❌</td><td>Currency conversion domain: frankfurter / ExchangeRate-API dual sources (<code>CALNEXUS_FX_PROVIDER</code>=<code>frankfurter</code>|<code>erapi</code>|<code>auto</code>) + 3-level cache + network circuit breaker</td></tr>
 <tr><td><code>numerical</code></td><td align="center">❌</td><td>Numerical linear algebra decompositions (lu/qr/eig/svd/solve/matrix_exp, nalgebra f64)</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>Server</b></td></tr>
 <tr><td><code>http</code></td><td align="center">❌</td><td>HTTP API (sdforge http/graceful/health/context, axum)</td></tr>
@@ -196,6 +196,28 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 </table>
 
 </details>
+
+### 💱 FX data sources (`fx`)
+
+`fx` uses [frankfurter.dev](https://frankfurter.dev) by default (European Central Bank reference rates, roughly 30 major currencies); `CALNEXUS_FX_PROVIDER` switches the source:
+
+| Value | Behavior | Rate basis |
+|-------|----------|------------|
+| `frankfurter` (default) | frankfurter only | ECB reference rates, roughly 30 major currencies |
+| `erapi` | ExchangeRate-API open endpoint only (no key) | Aggregated source, 160+ currencies, with systematic small differences from ECB values |
+| `auto` | Fixed chain `frankfurter → erapi`, first success wins | Failover only when the primary source fails; when both fail the error aggregates each cause |
+
+Server responses from `fx_budget` / `fx_pricing` always carry a `rate_source` field, so `auto` mix-ups are auditable. The expression-level `fx()` / `fx_rate()` functions do not expose the source (scalar contract unchanged).
+
+| Environment variable | Default | Description |
+|----------------------|---------|-------------|
+| `CALNEXUS_FX_PROVIDER` | `frankfurter` | Data source: `frankfurter` / `erapi` / `auto` (invalid values fall back to `frankfurter`) |
+| `CALNEXUS_FX_TTL_HOURS` | 24 | FX snapshot TTL |
+| `CALNEXUS_FX_ALLOW_STALE` | — | Whether to serve an expired snapshot when the network fails |
+| `CALNEXUS_FX_BREAKER_THRESHOLD` | 3 | FX network circuit-breaker failure threshold |
+| `CALNEXUS_FX_BREAKER_COOLDOWN_SECS` | 30 | FX circuit-breaker cooldown (seconds) |
+
+> **Capacity guardrail checklist**: the `server` image ships without rate limiting; when exposed publicly, enable the `ratelimit` feature explicitly and set `CALNEXUS_RATELIMIT_LIMIT` / `CALNEXUS_RATELIMIT_WINDOW_SECS` for the instance capacity. Each FX upstream fetch times out after 5 seconds and the request-level guard is 30 seconds; the `auto` chain can consume two upstream timeouts in the worst case, so account for it when sizing the rate-limit window.
 
 ---
 

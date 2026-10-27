@@ -337,11 +337,11 @@ $ calnexus 'convert(0, "C", "F")'
 
 ### 汇率域（fx feature）
 
-`fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")`：经 frankfurter.dev 开放 API 拉取欧洲央行参考汇率，三级缓存（内存 → 文件 → 网络）+ 网络熔断（连续失败快速失败）。`fx` / `fx_rate` 为非确定性函数，旁路缓存。
+`fx(value, "FROM", "TO")` / `fx_rate("FROM", "TO")`：经 frankfurter.dev（欧洲央行 ECB 参考汇率，约 30 种主要货币）或 ExchangeRate-API 开放端点（聚合源，160+ 币种）拉取汇率，三级缓存（内存 → 文件 → 网络）+ 网络熔断（连续失败快速失败）。`CALNEXUS_FX_PROVIDER` 选择数据源：`frankfurter`（默认）/ `erapi` / `auto`（固定链序 `frankfurter → erapi`，仅主源失败时切备源）。`fx` / `fx_rate` 为非确定性函数，旁路缓存。
 
-> 汇率数据仅供参考，不构成交易建议。
+> 不同数据源同日数值存在系统性微小差异（聚合源 vs ECB 口径），`auto` 混用时可通过服务端响应的 `rate_source` 字段审计。汇率数据仅供参考，不构成交易建议。
 
-环境变量：`CALNEXUS_FX_TTL_HOURS`（快照有效期，默认 24）、`CALNEXUS_FX_ALLOW_STALE`（网络失败时是否使用过期快照）、`CALNEXUS_FX_BREAKER_THRESHOLD` / `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`（熔断阈值 / 冷却，默认 3 次 / 30 秒）。
+环境变量：`CALNEXUS_FX_PROVIDER`（数据源，默认 frankfurter；非法值回退 frankfurter）、`CALNEXUS_FX_TTL_HOURS`（快照有效期，默认 24）、`CALNEXUS_FX_ALLOW_STALE`（网络失败时是否使用过期快照）、`CALNEXUS_FX_BREAKER_THRESHOLD` / `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`（熔断阈值 / 冷却，默认 3 次 / 30 秒）。
 
 ### 数值线性代数（numerical feature）
 
@@ -374,6 +374,7 @@ $ calnexus 'lu([[4,3],[6,3]])'
 | `CALNEXUS_TIMEOUT` | — | 求值超时（秒），对应 `--timeout` |
 | `CALNEXUS_CACHE_SIZE` | 10000 条目（× 4KB ≈ 40MB） | 缓存预算，对应 `--cache-size`；库 API `CacheManager::new()` 默认 64MB 字节权重 |
 | `CALNEXUS_BIND_ADDR` | `127.0.0.1:3000` | HTTP 服务监听地址，对应 `--bind` |
+| `CALNEXUS_FX_PROVIDER` | `frankfurter` | fx 数据源：`frankfurter` / `erapi` / `auto`（非法值回退 `frankfurter`） |
 | `CALNEXUS_FX_TTL_HOURS` | 24 | fx 汇率快照有效期 |
 | `CALNEXUS_FX_ALLOW_STALE` | — | 网络失败时是否使用过期快照 |
 | `CALNEXUS_FX_BREAKER_THRESHOLD` | 3 | fx 网络熔断失败阈值 |

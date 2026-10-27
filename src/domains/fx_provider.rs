@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! 汇率数据提供者：RateProvider trait + FrankfurterProvider 实现。
-//! 三级缓存（L1 内存 → L2 文件 → 网络）经熔断包装，失败按 stale 策略显性返回。
+//! 汇率数据提供者：RateProvider trait + 纯抓取实现 + 缓存/熔断装饰器。
+//! 三级缓存（L1 内存 → L2 文件 → 网络）由 `CachedRateProvider` 统一承担，失败按 stale 策略显性返回。
 
 use std::collections::HashMap;
 use std::fmt;
@@ -14,12 +14,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::core::CalcError;
-use crate::math::fx::RateTable;
+use crate::math::fx::{RateTable, date_from_unix_days};
 use limiteron::sync::{CircuitCallError, SyncCircuitBreaker};
 use oxcache::sync::ByteWeightCache;
 
 /// Frankfurter API 固定端点（编译期常量，无 SSRF 面）。
 const FRANKFURTER_URL: &str = "https://api.frankfurter.dev/v1/latest?base=EUR";
+
+/// ExchangeRate-API 开放端点（免 key；EUR base 与 frankfurter 对齐，三角换算语义一致）。
+const EXCHANGE_RATE_API_URL: &str = "https://open.er-api.com/v6/latest/EUR";
 
 /// 默认 TTL：24 小时（秒）。
 const DEFAULT_TTL_SECONDS: u64 = 24 * 3600;
@@ -51,13 +54,20 @@ const FX_RATES_BUDGET_BYTES: u64 = 1024 * 1024;
 /// L1 单条准入阈值：256 KiB（超过即跳过写入，防异常大表撑爆预算）。
 const FX_RATES_MAX_ENTRY_BYTES: u64 = 256 * 1024;
 
-/// L1 常量估重（weigher）：汇率表单 key 场景取固定估值。
-const FX_RATES_ENTRY_WEIGHT: u64 = 4096;
-
 /// 汇率数据源 trait（可注入 mock 测试）。
 pub trait RateProvider: Send + Sync {
     /// 获取最新汇率表。
     fn rates(&self) -> Result<RateTable, CalcError>;
+
+    /// 数据源名称（failover 错误聚合与来源可观测）。
+    fn name(&self) -> &'static str {
+        "unknown"
+    }
+
+    /// 组合 provider（如 failover 链）可覆盖：按调用顺序返回全部源名称。
+    fn source_names(&self) -> Vec<&'static str> {
+        vec![self.name()]
+    }
 }
 
 /// Frankfurter API 响应体（仅提取所需字段，忽略 amount 等额外字段）。
@@ -68,23 +78,22 @@ struct FrankfurterResponse {
     rates: HashMap<String, f64>,
 }
 
-/// 测试注入的网络抓取闭包（`Box<dyn Fn>` 不满足 `Debug`，手动实现以保住外层 derive）。
-#[cfg(test)]
-struct TestFetcher(Box<dyn Fn() -> Result<RateTable, CalcError> + Send + Sync>);
-
-#[cfg(test)]
-impl fmt::Debug for TestFetcher {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TestFetcher")
-    }
+/// ExchangeRate-API 响应体（仅提取所需字段，忽略 time_last_update_utc 等额外字段）。
+#[derive(serde::Deserialize)]
+struct ExchangeRateApiResponse {
+    result: String,
+    base_code: String,
+    time_last_update_unix: u64,
+    rates: HashMap<String, f64>,
 }
 
-/// 缓存文件格式：RateTable + 抓取时间戳。
+/// 缓存文件格式（v2）：RateTable（含 source）+ 抓取时间戳。
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 struct CachedRateTable {
     base: String,
     date: String,
     rates: HashMap<String, f64>,
+    source: String,
     fetched_at: u64,
 }
 
@@ -94,40 +103,44 @@ impl From<CachedRateTable> for RateTable {
             base: c.base,
             date: c.date,
             rates: c.rates,
+            source: c.source,
         }
     }
 }
 
-/// FrankfurterProvider：生产环境汇率数据提供者（L1 内存 + L2 文件 + stale 策略 + 网络熔断）。
-pub struct FrankfurterProvider {
+/// CachedRateProvider：缓存与容错装饰器（L1 内存 + L2 文件 + 熔断 + stale 策略）。
+///
+/// 包装任意 `RateProvider`（单源或 failover 链）：缓存与熔断对整条链只生效一次。
+pub struct CachedRateProvider {
     /// 缓存文件路径（None 时降级为仅内存缓存）。
     cache_path: Option<PathBuf>,
     /// L1 内存缓存（单 key `"fx:rates"`，get_or_compute 单飞，失败不落缓存）。
     cache: ByteWeightCache<&'static str, RateTable, fn(&RateTable) -> u64>,
     /// 网络熔断器：连续失败达阈值后 Open 快速失败（调用点在单飞闭包内）。
     breaker: SyncCircuitBreaker,
-    /// 测试专用网络注入点（生产恒为 None → fetch_from_network）。
-    #[cfg(test)]
-    fetcher: Option<TestFetcher>,
+    /// 实际抓取实现（单源或 failover 链）。
+    inner: Box<dyn RateProvider>,
 }
 
-/// fx 表常量估重（单 key 固定估值；单条上限由 `with_max_entry_bytes` 准入把关）。
-fn rate_table_weight(_table: &RateTable) -> u64 {
-    FX_RATES_ENTRY_WEIGHT
+/// fx 表估重（weigher）：按条目数线性估算（每条目约 96 B + 固定头部），
+/// 使 `with_max_entry_bytes` 准入阈值对真实表规模有意义（166 币种 ≈ 16 KB）。
+fn rate_table_weight(table: &RateTable) -> u64 {
+    table.rates.len() as u64 * 96 + 256
 }
 
 /// 手动 Debug：`ByteWeightCache` 未实现 Debug，仅输出路径与条目数。
-impl fmt::Debug for FrankfurterProvider {
+impl fmt::Debug for CachedRateProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FrankfurterProvider")
+        f.debug_struct("CachedRateProvider")
             .field("cache_path", &self.cache_path)
             .field("cache_entries", &self.cache.entry_count())
             .field("breaker", &self.breaker)
+            .field("inner", &self.inner.name())
             .finish()
     }
 }
 
-impl FrankfurterProvider {
+impl CachedRateProvider {
     fn build_cache() -> ByteWeightCache<&'static str, RateTable, fn(&RateTable) -> u64> {
         ByteWeightCache::new(
             FX_RATES_BUDGET_BYTES,
@@ -136,49 +149,48 @@ impl FrankfurterProvider {
         .with_max_entry_bytes(FX_RATES_MAX_ENTRY_BYTES)
     }
 
-    /// 创建默认实例，缓存路径为 `dirs::cache_dir()/calnexus/fx_rates.json`。
-    pub fn new() -> Self {
-        let cfg = FxProviderConfig::from_env();
+    /// 创建默认实例：缓存路径为 `dirs::cache_dir()/calnexus/fx_rates.json`。
+    pub fn new(inner: Box<dyn RateProvider>) -> Self {
+        Self::with_config(inner, &FxProviderConfig::from_env())
+    }
+
+    /// 按显式配置装配（熔断参数取自 cfg，缓存路径取平台默认）。
+    pub fn with_config(inner: Box<dyn RateProvider>, cfg: &FxProviderConfig) -> Self {
         Self {
             cache_path: default_cache_path(),
             cache: Self::build_cache(),
             breaker: SyncCircuitBreaker::new(cfg.breaker_threshold(), cfg.breaker_cooldown()),
-            #[cfg(test)]
-            fetcher: None,
+            inner,
         }
     }
 
     /// 测试专用构造函数：指定缓存文件路径。
     #[cfg(test)]
-    fn with_cache_path(path: PathBuf) -> Self {
+    fn with_cache_path(inner: Box<dyn RateProvider>, path: PathBuf) -> Self {
         Self {
             cache_path: Some(path),
             cache: Self::build_cache(),
             breaker: SyncCircuitBreaker::new(DEFAULT_BREAKER_THRESHOLD, DEFAULT_BREAKER_COOLDOWN),
-            fetcher: None,
+            inner,
         }
     }
 
-    /// 测试专用构造函数：注入网络抓取闭包与熔断参数（不出网的确定性测试）。
+    /// 测试专用构造函数：注入内层 provider 与熔断参数（不出网的确定性测试）。
     #[cfg(test)]
-    fn with_fetcher(
-        fetcher: Box<dyn Fn() -> Result<RateTable, CalcError> + Send + Sync>,
-        threshold: u32,
-        cooldown: Duration,
-    ) -> Self {
+    fn with_inner(inner: Box<dyn RateProvider>, threshold: u32, cooldown: Duration) -> Self {
         Self {
             cache_path: None,
             cache: Self::build_cache(),
             breaker: SyncCircuitBreaker::new(threshold, cooldown),
-            fetcher: Some(TestFetcher(fetcher)),
+            inner,
         }
     }
 
-    /// 测试专用构造函数：缓存文件路径 + 注入抓取闭包（覆盖「L2 过期文件」场景，与真实网络解耦）。
+    /// 测试专用构造函数：缓存文件路径 + 注入内层 provider（覆盖「L2 过期文件」场景）。
     #[cfg(test)]
-    fn with_cache_path_and_fetcher(
+    fn with_cache_path_and_inner(
         path: PathBuf,
-        fetcher: Box<dyn Fn() -> Result<RateTable, CalcError> + Send + Sync>,
+        inner: Box<dyn RateProvider>,
         threshold: u32,
         cooldown: Duration,
     ) -> Self {
@@ -186,27 +198,18 @@ impl FrankfurterProvider {
             cache_path: Some(path),
             cache: Self::build_cache(),
             breaker: SyncCircuitBreaker::new(threshold, cooldown),
-            fetcher: Some(TestFetcher(fetcher)),
+            inner,
         }
     }
 
-    /// 网络抓取入口：生产走 `fetch_from_network`，测试走注入闭包。
+    /// 测试专用：内层 provider 的源名称序列（工厂装配断言）。
     #[cfg(test)]
-    fn fetch(&self) -> Result<RateTable, CalcError> {
-        if let Some(f) = &self.fetcher {
-            return (f.0)();
-        }
-        fetch_from_network()
+    fn inner_names(&self) -> Vec<&'static str> {
+        self.inner.source_names()
     }
 }
 
-impl Default for FrankfurterProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RateProvider for FrankfurterProvider {
+impl RateProvider for CachedRateProvider {
     fn rates(&self) -> Result<RateTable, CalcError> {
         // L1 命中直接返回；未命中时 get_or_compute 单飞执行 compute
         // （L2 读 → TTL 判定 → 熔断拉取 → 写回），失败不写缓存，下次调用重试。
@@ -229,11 +232,7 @@ impl RateProvider for FrankfurterProvider {
             };
 
             // 网络抓取经熔断器包装：连续失败达阈值后 Open 快速失败。
-            #[cfg(test)]
-            let fetched = self.breaker.call(|| self.fetch());
-            #[cfg(not(test))]
-            let fetched = self.breaker.call(fetch_from_network);
-            match fetched {
+            match self.breaker.call(|| self.inner.rates()) {
                 Ok(table) => {
                     // 写回文件缓存（best-effort，失败静默降级）
                     if let Some(path) = &self.cache_path {
@@ -258,6 +257,145 @@ impl RateProvider for FrankfurterProvider {
             }
         })
     }
+
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+
+    fn source_names(&self) -> Vec<&'static str> {
+        self.inner.source_names()
+    }
+}
+
+/// FrankfurterProvider：ECB 口径纯抓取实现（无状态、无缓存）。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FrankfurterProvider;
+
+impl RateProvider for FrankfurterProvider {
+    fn rates(&self) -> Result<RateTable, CalcError> {
+        fetch_from_network()
+    }
+
+    fn name(&self) -> &'static str {
+        "frankfurter"
+    }
+}
+
+/// ExchangeRateApiProvider：聚合源纯抓取实现（免 key，覆盖 160+ 币种）。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ExchangeRateApiProvider;
+
+impl RateProvider for ExchangeRateApiProvider {
+    fn rates(&self) -> Result<RateTable, CalcError> {
+        let body = fetch_body(EXCHANGE_RATE_API_URL)?;
+        parse_erapi_response(&body)
+    }
+
+    fn name(&self) -> &'static str {
+        "erapi"
+    }
+}
+
+/// 上游受控字段入错误消息前的清洗：仅保留可打印 ASCII；超 32 字符截断并以 `...` 标记（防日志注入）。
+fn sanitize_upstream_field(raw: &str) -> String {
+    let filtered: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_graphic() || *c == ' ')
+        .collect();
+    if filtered.chars().count() > 32 {
+        format!("{}...", filtered.chars().take(32).collect::<String>())
+    } else {
+        filtered
+    }
+}
+
+/// er-api 响应归一：`base_code`→base、`time_last_update_unix`→date、rates 直取。
+fn parse_erapi_response(body: &str) -> Result<RateTable, CalcError> {
+    let parsed: ExchangeRateApiResponse = serde_json::from_str(body).map_err(|e| {
+        // 三分类之二：响应 JSON 解析失败（含缺 base_code/rates）→ invalid_response
+        CalcError::dependency_unavailable("FX response parse failed")
+            .with_source(e.to_string())
+            .with_i18n("msg.fx.invalid_response", vec![])
+    })?;
+    if parsed.result != "success" {
+        return Err(CalcError::dependency_unavailable(format!(
+            "FX provider returned non-success result: {}",
+            sanitize_upstream_field(&parsed.result)
+        ))
+        .with_i18n("msg.fx.invalid_response", vec![]));
+    }
+    if parsed.rates.is_empty() {
+        return Err(
+            CalcError::dependency_unavailable("FX provider returned an empty rate table")
+                .with_i18n("msg.fx.invalid_response", vec![]),
+        );
+    }
+    Ok(RateTable {
+        base: parsed.base_code,
+        date: date_from_unix_days(parsed.time_last_update_unix),
+        rates: parsed.rates,
+        source: "erapi".to_string(),
+    })
+}
+
+/// failover 链：按固定顺序依次尝试，任一成功即返回；全部失败聚合各源原因。
+pub struct ChainRateProvider {
+    providers: Vec<Box<dyn RateProvider>>,
+}
+
+impl ChainRateProvider {
+    /// 固定顺序装配（顺序即代码，不随运行时状态变化）。
+    pub fn new(providers: Vec<Box<dyn RateProvider>>) -> Self {
+        Self { providers }
+    }
+}
+
+impl RateProvider for ChainRateProvider {
+    fn rates(&self) -> Result<RateTable, CalcError> {
+        let mut failures = Vec::with_capacity(self.providers.len());
+        for provider in &self.providers {
+            match provider.rates() {
+                Ok(table) => return Ok(table),
+                Err(e) => failures.push(format!("{}: {}", provider.name(), e.message)),
+            }
+        }
+        let details = failures.join("; ");
+        Err(
+            CalcError::dependency_unavailable(format!("all FX providers failed: {}", details))
+                .with_i18n(
+                    "msg.fx.all_providers_failed",
+                    vec![("details".to_string(), details)],
+                ),
+        )
+    }
+
+    fn name(&self) -> &'static str {
+        "auto"
+    }
+
+    fn source_names(&self) -> Vec<&'static str> {
+        self.providers
+            .iter()
+            .flat_map(|p| p.source_names())
+            .collect()
+    }
+}
+
+/// 唯一装配入口：按 `provider_name()` 选择内层 provider，外层统一包缓存/熔断装饰器。
+///
+/// - 未设/frankfurter：仅 frankfurter（默认路径，行为与变更前一致）
+/// - erapi：仅 er-api
+/// - auto：固定顺序 `[frankfurter, erapi]` failover 链
+pub fn build_provider(cfg: &FxProviderConfig) -> CachedRateProvider {
+    let inner: Box<dyn RateProvider> = match cfg.provider_name() {
+        "erapi" => Box::new(ExchangeRateApiProvider),
+        "auto" => Box::new(ChainRateProvider::new(vec![
+            Box::new(FrankfurterProvider),
+            Box::new(ExchangeRateApiProvider),
+        ])),
+        _ => Box::new(FrankfurterProvider),
+    };
+    CachedRateProvider::with_config(inner, cfg)
 }
 
 /// 默认缓存文件路径；平台无缓存目录时返回 None，降级为仅内存缓存。
@@ -289,6 +427,9 @@ pub struct FxProviderConfig {
     /// `CALNEXUS_FX_ALLOW_STALE`（仅 "1" 为 true）。
     #[serde(default, deserialize_with = "de_env_string")]
     pub allow_stale: Option<String>,
+    /// `CALNEXUS_FX_PROVIDER`（frankfurter/erapi/auto；非法或空回退 frankfurter）。
+    #[serde(default, deserialize_with = "de_env_string")]
+    pub provider: Option<String>,
 }
 
 /// 把 confers 推断的标量 env 值转回字符串：否则 "48" 被推断为整数、反序列化失败会被 `unwrap_or_default` 静默吞成默认值（env 失效）。
@@ -372,6 +513,15 @@ impl FxProviderConfig {
     /// stale 回退开关（仅 "1" 为 true）。
     pub fn allow_stale(&self) -> bool {
         parse_allow_stale(self.allow_stale.as_deref())
+    }
+
+    /// 选源名称：erapi/auto 原样通过，其余（未设/空/frankfurter/非法）回退 frankfurter。
+    pub fn provider_name(&self) -> &str {
+        match self.provider.as_deref() {
+            Some("erapi") => "erapi",
+            Some("auto") => "auto",
+            _ => "frankfurter",
+        }
     }
 }
 
@@ -460,6 +610,7 @@ enum CacheRead {
 }
 
 /// 读取缓存文件并反序列化。文件不存在返回 Missing，损坏返回 Corrupted（自愈为 miss）。
+/// v1 文件缺 `source` 字段 → 反序列化失败 → Corrupted（一次性重拉升级为 v2）。
 fn read_cache_file(path: &Path) -> CacheRead {
     match std::fs::read_to_string(path) {
         Err(_) => CacheRead::Missing,
@@ -476,6 +627,7 @@ fn write_cache_file(path: &Path, table: &RateTable, fetched_at: u64) -> std::io:
         base: table.base.clone(),
         date: table.date.clone(),
         rates: table.rates.clone(),
+        source: table.source.clone(),
         fetched_at,
     };
     let json = serde_json::to_string(&cached).map_err(std::io::Error::other)?;
@@ -511,9 +663,9 @@ fn write_cache_file(path: &Path, table: &RateTable, fetched_at: u64) -> std::io:
     }
 }
 
-/// 从 Frankfurter API 抓取最新汇率（URL 编译期固定，超时 5s）。
-fn fetch_from_network() -> Result<RateTable, CalcError> {
-    let response = ureq::get(FRANKFURTER_URL)
+/// 抓取固定端点响应体（超时 5s、仅 https、1MB 响应上限）。
+fn fetch_body(url: &str) -> Result<String, CalcError> {
+    let response = ureq::get(url)
         .config()
         .timeout_global(Some(HTTP_TIMEOUT))
         .https_only(true) // 拒绝降级到明文/重定向到 http
@@ -526,7 +678,7 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
         })?;
 
     // 响应体读取上限 1MB：源站被劫持/异常时防止内存膨胀
-    let body = response
+    response
         .into_body()
         .with_config()
         .limit(MAX_RESPONSE_BODY_BYTES)
@@ -536,7 +688,12 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
             CalcError::dependency_unavailable("FX response read failed")
                 .with_source(e.to_string())
                 .with_i18n("msg.fx.invalid_response", vec![])
-        })?;
+        })
+}
+
+/// 从 Frankfurter API 抓取最新汇率（URL 编译期固定）。
+fn fetch_from_network() -> Result<RateTable, CalcError> {
+    let body = fetch_body(FRANKFURTER_URL)?;
 
     let parsed: FrankfurterResponse = serde_json::from_str(&body).map_err(|e| {
         // 三分类之二：响应 JSON 解析失败 → invalid_response
@@ -549,6 +706,7 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
         base: parsed.base,
         date: parsed.date,
         rates: parsed.rates,
+        source: "frankfurter".to_string(),
     })
 }
 
@@ -561,6 +719,7 @@ mod tests {
         rates: HashMap<String, f64>,
         date: String,
         base: String,
+        source: String,
     }
 
     impl RateProvider for MockRateProvider {
@@ -569,8 +728,27 @@ mod tests {
                 base: self.base.clone(),
                 date: self.date.clone(),
                 rates: self.rates.clone(),
+                source: self.source.clone(),
             })
         }
+    }
+
+    /// 测试用闭包 provider（替代原 TestFetcher 注入点，装配在装饰器的 inner 上）。
+    struct MockFnProvider<F>(F);
+
+    impl<F> RateProvider for MockFnProvider<F>
+    where
+        F: Fn() -> Result<RateTable, CalcError> + Send + Sync,
+    {
+        fn rates(&self) -> Result<RateTable, CalcError> {
+            (self.0)()
+        }
+    }
+
+    fn boxed_fn(
+        f: impl Fn() -> Result<RateTable, CalcError> + Send + Sync + 'static,
+    ) -> Box<dyn RateProvider> {
+        Box::new(MockFnProvider(f))
     }
 
     fn mock_rates() -> HashMap<String, f64> {
@@ -587,6 +765,7 @@ mod tests {
             rates: mock_rates(),
             date: "2026-07-25".to_string(),
             base: "EUR".to_string(),
+            source: "frankfurter".to_string(),
         }
     }
 
@@ -730,6 +909,7 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-07-25".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
         };
         let fetched_at = current_unix_timestamp();
         write_cache_file(&path, &table, fetched_at).unwrap();
@@ -744,6 +924,7 @@ mod tests {
         assert_eq!(cached.base, "EUR");
         assert_eq!(cached.date, "2026-07-25");
         assert_eq!(cached.rates.len(), 4);
+        assert_eq!(cached.source, "frankfurter");
         assert_eq!(cached.fetched_at, fetched_at);
     }
 
@@ -761,6 +942,58 @@ mod tests {
     }
 
     #[test]
+    fn test_read_cache_file_v1_without_source_is_corrupted() {
+        // v1 文件缺 source 字段 → 反序列化失败 → Corrupted（自愈重拉）
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let v1 = serde_json::json!({
+            "base": "EUR",
+            "date": "2026-07-25",
+            "rates": {"USD": 1.08},
+            "fetched_at": 0u64,
+        });
+        std::fs::write(tmp.path(), v1.to_string()).unwrap();
+        assert!(matches!(read_cache_file(tmp.path()), CacheRead::Corrupted));
+    }
+
+    #[test]
+    fn test_v1_cache_self_heals_with_source() {
+        // v1 文件 → Corrupted → 重拉成功返回带 source 的表，并写回 v2
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let v1 = serde_json::json!({
+            "base": "EUR",
+            "date": "2026-07-25",
+            "rates": {"USD": 1.08},
+            "fetched_at": 0u64,
+        });
+        std::fs::write(tmp.path(), v1.to_string()).unwrap();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_inner = Arc::clone(&calls);
+        let provider = CachedRateProvider::with_cache_path_and_inner(
+            tmp.path().to_path_buf(),
+            boxed_fn(move || {
+                calls_inner.fetch_add(1, Ordering::SeqCst);
+                Ok(RateTable {
+                    base: "EUR".to_string(),
+                    date: "2026-10-28".to_string(),
+                    rates: mock_rates(),
+                    source: "erapi".to_string(),
+                })
+            }),
+            DEFAULT_BREAKER_THRESHOLD,
+            DEFAULT_BREAKER_COOLDOWN,
+        );
+
+        let table = provider.rates().expect("v1 cache should self-heal");
+        assert_eq!(table.source, "erapi");
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "应重拉一次");
+        match read_cache_file(tmp.path()) {
+            CacheRead::Loaded(c) => assert_eq!(c.source, "erapi", "重拉后应写回 v2"),
+            other => panic!("expected v2 cache, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_write_cache_file_creates_parent_dirs() {
         let tmp_dir = tempfile::tempdir().unwrap();
         let nested_path = tmp_dir.path().join("a").join("b").join("fx_rates.json");
@@ -769,6 +1002,7 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-07-25".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
         };
         write_cache_file(&nested_path, &table, 0).unwrap();
 
@@ -786,12 +1020,14 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-07-25".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
             fetched_at: 12345,
         };
         let table: RateTable = cached.into();
         assert_eq!(table.base, "EUR");
         assert_eq!(table.date, "2026-07-25");
         assert_eq!(table.rates.len(), 4);
+        assert_eq!(table.source, "frankfurter");
     }
 
     // ===== Stale 策略 =====
@@ -821,6 +1057,7 @@ mod tests {
             date: "2026-07-20".to_string(),
             rates: mock_rates(),
             fetched_at: 0,
+            source: "frankfurter".to_string(),
         };
         let result = apply_stale_policy(Some(&cached), false, false);
         let err = result.expect_err("expected error");
@@ -842,6 +1079,7 @@ mod tests {
             date: "2026-07-20".to_string(),
             rates: mock_rates(),
             fetched_at: 0,
+            source: "frankfurter".to_string(),
         };
         let result = apply_stale_policy(Some(&cached), true, false);
         let table = result.expect("expected Ok with stale data");
@@ -860,13 +1098,14 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-07-20".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
         };
         // 写入后将 fetched_at 置 0（必然过期）
         write_cache_file(tmp.path(), &table, 0).unwrap();
 
-        let provider = std::sync::Arc::new(FrankfurterProvider::with_cache_path_and_fetcher(
+        let provider = std::sync::Arc::new(CachedRateProvider::with_cache_path_and_inner(
             tmp.path().to_path_buf(),
-            Box::new(|| Err(CalcError::dependency_unavailable("synthetic fx outage"))),
+            boxed_fn(|| Err(CalcError::dependency_unavailable("synthetic fx outage"))),
             DEFAULT_BREAKER_THRESHOLD,
             DEFAULT_BREAKER_COOLDOWN,
         ));
@@ -902,12 +1141,13 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-07-20".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
         };
         write_cache_file(tmp.path(), &table, 0).unwrap(); // 置为必然过期
 
-        let provider = std::sync::Arc::new(FrankfurterProvider::with_cache_path_and_fetcher(
+        let provider = std::sync::Arc::new(CachedRateProvider::with_cache_path_and_inner(
             tmp.path().to_path_buf(),
-            Box::new(move || Ok(table.clone())),
+            boxed_fn(move || Ok(table.clone())),
             DEFAULT_BREAKER_THRESHOLD,
             DEFAULT_BREAKER_COOLDOWN,
         ));
@@ -940,8 +1180,8 @@ mod tests {
         // 阈值 2：前两次失败真实执行注入闭包（计数增长），第三次被熔断拒绝（计数停增）
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let counter = calls.clone();
-        let provider = FrankfurterProvider::with_fetcher(
-            Box::new(move || {
+        let provider = CachedRateProvider::with_inner(
+            boxed_fn(move || {
                 counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Err(CalcError::dependency_unavailable("synthetic fx outage"))
             }),
@@ -963,8 +1203,8 @@ mod tests {
         // 阈值 2 + 冷却 0：两次失败后打开，下一调用立即探针；探针成功回闭合
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let counter = calls.clone();
-        let provider = FrankfurterProvider::with_fetcher(
-            Box::new(move || {
+        let provider = CachedRateProvider::with_inner(
+            boxed_fn(move || {
                 let n = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if n < 2 {
                     Err(CalcError::dependency_unavailable("synthetic fx outage"))
@@ -973,6 +1213,7 @@ mod tests {
                         base: "EUR".to_string(),
                         date: "2026-09-15".to_string(),
                         rates: HashMap::new(),
+                        source: "frankfurter".to_string(),
                     })
                 }
             }),
@@ -1012,16 +1253,20 @@ mod tests {
     }
 
     #[test]
-    fn test_frankfurter_provider_with_cache_path_uses_provided_path() {
+    fn test_cached_provider_with_cache_path_uses_provided_path() {
         // 验证 with_cache_path 构造函数不 panic 且路径被使用
         let tmp = tempfile::NamedTempFile::new().unwrap();
-        let provider = FrankfurterProvider::with_cache_path(tmp.path().to_path_buf());
+        let provider = CachedRateProvider::with_cache_path(
+            Box::new(mock_provider()),
+            tmp.path().to_path_buf(),
+        );
 
         // 预写一份未过期的缓存文件
         let table = RateTable {
             base: "EUR".to_string(),
             date: "2026-07-25".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
         };
         let now = current_unix_timestamp();
         write_cache_file(tmp.path(), &table, now).unwrap();
@@ -1034,16 +1279,20 @@ mod tests {
     }
 
     #[test]
-    fn test_frankfurter_provider_in_memory_cache_hit() {
+    fn test_cached_provider_in_memory_cache_hit() {
         // L1 命中：第二次调用直接从内存缓存返回（不出网）
         let tmp = tempfile::NamedTempFile::new().unwrap();
-        let provider = FrankfurterProvider::with_cache_path(tmp.path().to_path_buf());
+        let provider = CachedRateProvider::with_cache_path(
+            Box::new(mock_provider()),
+            tmp.path().to_path_buf(),
+        );
 
         // 预写缓存文件
         let table = RateTable {
             base: "EUR".to_string(),
             date: "2026-07-25".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
         };
         let now = current_unix_timestamp();
         write_cache_file(tmp.path(), &table, now).unwrap();
@@ -1059,9 +1308,11 @@ mod tests {
     }
 
     #[test]
-    fn test_frankfurter_provider_default_impl() {
-        // 验证 Default trait
-        let _provider = FrankfurterProvider::default();
+    fn test_cached_provider_default_wraps_frankfurter() {
+        // 装饰器默认装配：inner 为 frankfurter（不出网构造）
+        let provider = CachedRateProvider::new(Box::new(FrankfurterProvider));
+        assert_eq!(provider.name(), "frankfurter");
+        assert_eq!(provider.source_names(), vec!["frankfurter"]);
     }
 
     #[test]
@@ -1080,14 +1331,15 @@ mod tests {
         static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
-        const KEYS: [&str; 4] = [
+        const KEYS: [&str; 5] = [
             "CALNEXUS_FX_TTL_HOURS",
             "CALNEXUS_FX_BREAKER_THRESHOLD",
             "CALNEXUS_FX_BREAKER_COOLDOWN_SECS",
             "CALNEXUS_FX_ALLOW_STALE",
+            "CALNEXUS_FX_PROVIDER",
         ];
 
-        // 未设任何 env：四字段访问器等于默认
+        // 未设任何 env：五字段访问器等于默认
         unsafe {
             for key in KEYS {
                 std::env::remove_var(key);
@@ -1098,6 +1350,7 @@ mod tests {
         assert_eq!(cfg.breaker_threshold(), DEFAULT_BREAKER_THRESHOLD);
         assert_eq!(cfg.breaker_cooldown(), DEFAULT_BREAKER_COOLDOWN);
         assert!(!cfg.allow_stale());
+        assert_eq!(cfg.provider_name(), "frankfurter");
 
         // 逐一设值：env_prefix 映射生效（整数与小数均覆盖）
         unsafe { std::env::set_var("CALNEXUS_FX_TTL_HOURS", "48") };
@@ -1121,10 +1374,23 @@ mod tests {
         assert!(FxProviderConfig::from_env().allow_stale());
         unsafe { std::env::remove_var("CALNEXUS_FX_ALLOW_STALE") };
 
+        // CALNEXUS_FX_PROVIDER：三值 + 非法回退 + remove 回默认
+        unsafe { std::env::set_var("CALNEXUS_FX_PROVIDER", "auto") };
+        assert_eq!(FxProviderConfig::from_env().provider_name(), "auto");
+        unsafe { std::env::set_var("CALNEXUS_FX_PROVIDER", "erapi") };
+        assert_eq!(FxProviderConfig::from_env().provider_name(), "erapi");
+        unsafe { std::env::set_var("CALNEXUS_FX_PROVIDER", "foo") };
+        assert_eq!(FxProviderConfig::from_env().provider_name(), "frankfurter");
+        unsafe { std::env::set_var("CALNEXUS_FX_PROVIDER", "") };
+        assert_eq!(FxProviderConfig::from_env().provider_name(), "frankfurter");
+        unsafe { std::env::remove_var("CALNEXUS_FX_PROVIDER") };
+        assert_eq!(FxProviderConfig::from_env().provider_name(), "frankfurter");
+
         // remove 后回默认（不留环境痕迹）
         let cfg = FxProviderConfig::from_env();
         assert_eq!(cfg.ttl_seconds(), 24 * 3600);
         assert!(!cfg.allow_stale());
+        assert_eq!(cfg.provider_name(), "frankfurter");
     }
 
     #[test]
@@ -1135,16 +1401,39 @@ mod tests {
         assert_eq!(cfg.breaker_threshold(), DEFAULT_BREAKER_THRESHOLD);
         assert_eq!(cfg.breaker_cooldown(), DEFAULT_BREAKER_COOLDOWN);
         assert!(!cfg.allow_stale());
+        assert_eq!(cfg.provider_name(), "frankfurter");
         let cfg = FxProviderConfig {
             ttl_hours: Some("0.5".to_string()),
             breaker_threshold: Some("0".to_string()),
             breaker_cooldown_secs: Some("0".to_string()),
             allow_stale: Some("1".to_string()),
+            provider: Some("erapi".to_string()),
         };
         assert_eq!(cfg.ttl_seconds(), 1800);
         assert_eq!(cfg.breaker_threshold(), DEFAULT_BREAKER_THRESHOLD); // <1 回退
         assert_eq!(cfg.breaker_cooldown(), Duration::ZERO); // 0=关闭快失败
         assert!(cfg.allow_stale());
+        assert_eq!(cfg.provider_name(), "erapi");
+    }
+
+    /// CALNEXUS_FX_PROVIDER 三值契约：未设/空/非法 → frankfurter；erapi/auto 原样通过。
+    #[test]
+    fn test_provider_name_contract() {
+        let cases: [(Option<&str>, &str); 6] = [
+            (None, "frankfurter"),
+            (Some(""), "frankfurter"),
+            (Some("frankfurter"), "frankfurter"),
+            (Some("erapi"), "erapi"),
+            (Some("auto"), "auto"),
+            (Some("foo"), "frankfurter"),
+        ];
+        for (raw, expected) in cases {
+            let cfg = FxProviderConfig {
+                provider: raw.map(str::to_string),
+                ..Default::default()
+            };
+            assert_eq!(cfg.provider_name(), expected, "raw={raw:?}");
+        }
     }
 
     // ===== L1 单飞（oxcache ByteWeightCache::get_or_compute） =====
@@ -1154,6 +1443,7 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-10-09".to_string(),
             rates: mock_rates(),
+            source: "frankfurter".to_string(),
         }
     }
 
@@ -1163,9 +1453,9 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let calls_in_fetcher = Arc::clone(&calls);
         let tmp = tempfile::NamedTempFile::new().unwrap();
-        let provider = std::sync::Arc::new(FrankfurterProvider::with_cache_path_and_fetcher(
+        let provider = std::sync::Arc::new(CachedRateProvider::with_cache_path_and_inner(
             tmp.path().to_path_buf(),
-            Box::new(move || {
+            boxed_fn(move || {
                 calls_in_fetcher.fetch_add(1, Ordering::SeqCst);
                 std::thread::sleep(Duration::from_millis(50)); // 拉长在途窗口
                 Ok(sample_rate_table())
@@ -1197,9 +1487,9 @@ mod tests {
         let attempts = Arc::new(AtomicUsize::new(0));
         let attempts_in_fetcher = Arc::clone(&attempts);
         let tmp = tempfile::NamedTempFile::new().unwrap();
-        let provider = FrankfurterProvider::with_cache_path_and_fetcher(
+        let provider = CachedRateProvider::with_cache_path_and_inner(
             tmp.path().to_path_buf(),
-            Box::new(move || {
+            boxed_fn(move || {
                 let n = attempts_in_fetcher.fetch_add(1, Ordering::SeqCst);
                 if n == 0 {
                     Err(CalcError::dependency_unavailable("boom"))
@@ -1225,8 +1515,8 @@ mod tests {
         // L1 命中：第二次 rates() 不再触发 fetcher（字节缓存生效）。
         let calls = Arc::new(AtomicUsize::new(0));
         let calls_in_fetcher = Arc::clone(&calls);
-        let provider = FrankfurterProvider::with_fetcher(
-            Box::new(move || {
+        let provider = CachedRateProvider::with_inner(
+            boxed_fn(move || {
                 calls_in_fetcher.fetch_add(1, Ordering::SeqCst);
                 Ok(sample_rate_table())
             }),
@@ -1237,5 +1527,236 @@ mod tests {
         let second = provider.rates().expect("second");
         assert_eq!(calls.load(Ordering::SeqCst), 1, "第二次应命中 L1 不再抓取");
         assert_eq!(first.rates.len(), second.rates.len());
+    }
+
+    // ===== ExchangeRateApiProvider 响应归一（注入 mock 响应体，不出网） =====
+
+    #[test]
+    fn test_erapi_parse_success_normalizes_fields() {
+        let body = r#"{
+            "result": "success",
+            "base_code": "EUR",
+            "time_last_update_unix": 1761234567,
+            "rates": {"USD": 1.08, "CNY": 7.85}
+        }"#;
+        let table = parse_erapi_response(body).expect("valid er-api response");
+        assert_eq!(table.base, "EUR");
+        assert_eq!(table.date, "2025-10-23");
+        assert_eq!(table.rates["USD"], 1.08);
+        assert_eq!(table.rates.len(), 2);
+        assert_eq!(table.source, "erapi");
+    }
+
+    #[test]
+    fn test_erapi_parse_non_success_is_invalid_response() {
+        let body = r#"{
+            "result": "error",
+            "base_code": "EUR",
+            "time_last_update_unix": 1761234567,
+            "rates": {}
+        }"#;
+        let err = parse_erapi_response(body).expect_err("result != success must fail");
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
+        assert_eq!(err.i18n_key, Some("msg.fx.invalid_response"));
+        // 上游受控字段经清洗入消息：换行/控制符被剥离
+        assert!(
+            !err.message.contains(['\n', '\r', '\x1b']),
+            "error message must not carry control chars: {:?}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn test_sanitize_upstream_field_strips_controls_and_truncates() {
+        // 控制字符与 ANSI 转义被剥离，可打印内容保留（未触上限不加载断标记）
+        assert_eq!(sanitize_upstream_field("err\nor\x1b[31m"), "error[31m");
+        // 超长截断到 32 字符并加 `...` 标记
+        let long = "x".repeat(50);
+        let sanitized = sanitize_upstream_field(&long);
+        assert_eq!(sanitized.chars().count(), 35); // 32 + "..."
+        assert!(sanitized.ends_with("..."));
+        // 恰好 32 字符不截断
+        assert_eq!(sanitize_upstream_field(&"x".repeat(32)), "x".repeat(32));
+    }
+
+    #[test]
+    fn test_erapi_parse_missing_base_code_is_invalid_response() {
+        let body = r#"{
+            "result": "success",
+            "time_last_update_unix": 1761234567,
+            "rates": {"USD": 1.08}
+        }"#;
+        let err = parse_erapi_response(body).expect_err("missing base_code must fail");
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
+        assert_eq!(err.i18n_key, Some("msg.fx.invalid_response"));
+    }
+
+    #[test]
+    fn test_erapi_parse_missing_rates_is_invalid_response() {
+        let body = r#"{
+            "result": "success",
+            "base_code": "EUR",
+            "time_last_update_unix": 1761234567
+        }"#;
+        let err = parse_erapi_response(body).expect_err("missing rates must fail");
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
+        assert_eq!(err.i18n_key, Some("msg.fx.invalid_response"));
+    }
+
+    #[test]
+    fn test_erapi_parse_160_currencies() {
+        let rates: serde_json::Map<String, serde_json::Value> = (0..160)
+            .map(|i| (format!("C{:03}", i), serde_json::Value::from(1.0)))
+            .collect();
+        let body = serde_json::json!({
+            "result": "success",
+            "base_code": "EUR",
+            "time_last_update_unix": 1761234567u64,
+            "rates": rates,
+        })
+        .to_string();
+        let table = parse_erapi_response(&body).expect("160-currency table should parse");
+        assert_eq!(table.rates.len(), 160);
+        assert_eq!(table.source, "erapi");
+    }
+
+    #[test]
+    fn test_erapi_provider_identity() {
+        let provider = ExchangeRateApiProvider;
+        assert_eq!(provider.name(), "erapi");
+        assert_eq!(provider.source_names(), vec!["erapi"]);
+    }
+
+    // ===== ChainRateProvider（failover 链，不出网） =====
+
+    /// 带名字与调用计数的 mock provider。
+    struct NamedMockProvider<F> {
+        name: &'static str,
+        calls: Arc<AtomicUsize>,
+        f: F,
+    }
+
+    impl<F> RateProvider for NamedMockProvider<F>
+    where
+        F: Fn() -> Result<RateTable, CalcError> + Send + Sync,
+    {
+        fn rates(&self) -> Result<RateTable, CalcError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            (self.f)()
+        }
+
+        fn name(&self) -> &'static str {
+            self.name
+        }
+    }
+
+    fn named(
+        name: &'static str,
+        calls: Arc<AtomicUsize>,
+        f: impl Fn() -> Result<RateTable, CalcError> + Send + Sync + 'static,
+    ) -> Box<dyn RateProvider> {
+        Box::new(NamedMockProvider { name, calls, f })
+    }
+
+    fn table_with_source(source: &str) -> RateTable {
+        RateTable {
+            base: "EUR".to_string(),
+            date: "2026-10-28".to_string(),
+            rates: mock_rates(),
+            source: source.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_chain_first_success_short_circuits() {
+        let first_calls = Arc::new(AtomicUsize::new(0));
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let chain = ChainRateProvider::new(vec![
+            named("frankfurter", Arc::clone(&first_calls), || {
+                Ok(table_with_source("frankfurter"))
+            }),
+            named("erapi", Arc::clone(&second_calls), || {
+                Ok(table_with_source("erapi"))
+            }),
+        ]);
+
+        let table = chain.rates().expect("first provider should succeed");
+        assert_eq!(table.source, "frankfurter");
+        assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            second_calls.load(Ordering::SeqCst),
+            0,
+            "首源成功后次源不得被调用"
+        );
+        assert_eq!(chain.source_names(), vec!["frankfurter", "erapi"]);
+    }
+
+    #[test]
+    fn test_chain_falls_back_to_second() {
+        let first_calls = Arc::new(AtomicUsize::new(0));
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let chain = ChainRateProvider::new(vec![
+            named("frankfurter", Arc::clone(&first_calls), || {
+                Err(CalcError::dependency_unavailable("net down"))
+            }),
+            named("erapi", Arc::clone(&second_calls), || {
+                Ok(table_with_source("erapi"))
+            }),
+        ]);
+
+        let table = chain.rates().expect("second provider should succeed");
+        assert_eq!(table.source, "erapi");
+        assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_chain_all_fail_aggregates_error() {
+        let chain = ChainRateProvider::new(vec![
+            named("frankfurter", Arc::new(AtomicUsize::new(0)), || {
+                Err(CalcError::dependency_unavailable("net down"))
+            }),
+            named("erapi", Arc::new(AtomicUsize::new(0)), || {
+                Err(CalcError::dependency_unavailable("parse boom"))
+            }),
+        ]);
+
+        let err = chain.rates().expect_err("both providers fail");
+        assert!(err.message.contains("frankfurter"), "msg: {}", err.message);
+        assert!(err.message.contains("erapi"), "msg: {}", err.message);
+        assert!(err.message.contains("net down"), "msg: {}", err.message);
+        assert!(err.message.contains("parse boom"), "msg: {}", err.message);
+        assert_eq!(err.i18n_key, Some("msg.fx.all_providers_failed"));
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
+    }
+
+    // ===== build_provider 工厂装配（不出网） =====
+
+    #[test]
+    fn test_build_provider_default_is_frankfurter() {
+        let provider = build_provider(&FxProviderConfig::default());
+        assert_eq!(provider.inner_names(), vec!["frankfurter"]);
+    }
+
+    #[test]
+    fn test_build_provider_erapi_is_single_source() {
+        let cfg = FxProviderConfig {
+            provider: Some("erapi".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(build_provider(&cfg).inner_names(), vec!["erapi"]);
+    }
+
+    #[test]
+    fn test_build_provider_auto_chain_order() {
+        let cfg = FxProviderConfig {
+            provider: Some("auto".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            build_provider(&cfg).inner_names(),
+            vec!["frankfurter", "erapi"],
+            "auto 链序固定为 frankfurter → erapi"
+        );
     }
 }

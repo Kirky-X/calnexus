@@ -5,11 +5,13 @@
 //! 基于 math::fx_scenario 纯函数 + FrankfurterProvider 汇率缓存；feature = "fx"。
 //! `spawn_blocking` 隔离同步 `RateProvider::rates()` 调用。
 
-use crate::domains::fx_provider::{FrankfurterProvider, RateProvider};
+use crate::domains::fx_provider::{FxProviderConfig, RateProvider, build_provider};
 use crate::math::fx_scenario::{budget_calculation, pricing_calculation};
+use crate::server::evaluate::REQUEST_TIMEOUT_SECS;
 use sdforge::error::ApiError;
 use sdforge::forge;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 // ============================================================
 // Request / Response DTOs
@@ -53,6 +55,8 @@ pub struct FxBudgetResponse {
     pub exchange_risk: ExchangeRiskResponse,
     /// 汇率快照日期（跨实例结果可审计）。
     pub rate_date: Option<String>,
+    /// 汇率数据源名称（来源可观测，恒为单源：取自 RateTable.source，"frankfurter" / "erapi"）。
+    pub rate_source: String,
 }
 
 /// 汇率风险区间响应。
@@ -100,6 +104,8 @@ pub struct FxPricingResponse {
     pub pricing: Vec<PricingItemResponse>,
     /// 汇率快照日期（跨实例结果可审计）。
     pub rate_date: Option<String>,
+    /// 汇率数据源名称（来源可观测，恒为单源：取自 RateTable.source，"frankfurter" / "erapi"）。
+    pub rate_source: String,
 }
 
 /// 单币种定价明细。
@@ -116,10 +122,10 @@ pub struct PricingItemResponse {
 // Provider 单例
 // ============================================================
 
-/// 进程级 FrankfurterProvider 单例（与 FxDomain 独立，共享底层缓存文件）。
-fn shared_provider() -> &'static FrankfurterProvider {
-    static PROVIDER: OnceLock<FrankfurterProvider> = OnceLock::new();
-    PROVIDER.get_or_init(FrankfurterProvider::new)
+/// 进程级汇率 provider 单例（与 FxDomain 独立，共享底层缓存文件）。
+fn shared_provider() -> Arc<dyn RateProvider> {
+    static PROVIDER: OnceLock<Arc<dyn RateProvider>> = OnceLock::new();
+    Arc::clone(PROVIDER.get_or_init(|| Arc::new(build_provider(&FxProviderConfig::from_env()))))
 }
 
 // ============================================================
@@ -240,6 +246,22 @@ impl FxPricingRequest {
     description = "Calculate study abroad budget with currency conversion. Args MUST be wrapped in a req object with fields: tuition, tuition_currency, home_currency, optional living_cost_monthly, duration_years, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns tuition/living/total in home currency plus a 3-percent exchange-rate risk range and rate_date (snapshot date). Errors: 400 InvalidInput (unknown currency), 503 ServiceUnavailable (FX upstream unreachable)."
 )]
 pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, ApiError> {
+    fx_budget_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await
+}
+
+/// 带超时的 fx_budget 实现（可测试入口）：超时→503，spawn_blocking panic→500。
+pub(crate) async fn fx_budget_with_timeout(
+    req: FxBudgetRequest,
+    timeout: Duration,
+) -> Result<FxBudgetResponse, ApiError> {
+    run_fx_budget(req, timeout, shared_provider()).await
+}
+
+async fn run_fx_budget(
+    req: FxBudgetRequest,
+    timeout: Duration,
+    provider: Arc<dyn RateProvider>,
+) -> Result<FxBudgetResponse, ApiError> {
     req.validate()?;
 
     // 语言协商：请求级 lang → I18n（缺省/未知回退英文）
@@ -252,8 +274,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
 
     // spawn_blocking 隔离同步 RateProvider 调用
     let i18n_in_task = i18n.clone();
-    let join_result = tokio::task::spawn_blocking(move || {
-        let provider = shared_provider();
+    let join_handle = tokio::task::spawn_blocking(move || {
         let table = provider.rates().map_err(|e| {
             // 保留底层错误源（503 语义）
             ApiError::service_unavailable_with_source(
@@ -263,6 +284,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
             )
         })?;
         let rate_date = Some(table.date.clone());
+        let rate_source = table.source.clone();
         budget_calculation(
             tuition,
             &tuition_currency,
@@ -271,7 +293,7 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
             &home_currency,
             &table,
         )
-        .map(|result| (result, rate_date))
+        .map(|result| (result, rate_date, rate_source))
         // CalcError 携 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
         .map_err(|e| {
             ApiError::invalid_input(
@@ -280,40 +302,49 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
                 None,
             )
         })
-    })
-    .await;
+    });
 
-    match join_result {
-        Ok(Ok((result, rate_date))) => Ok(FxBudgetResponse {
-            tuition_foreign: result.tuition_foreign,
-            tuition_currency: result.tuition_currency,
-            tuition_home: result.tuition_home,
-            home_currency: result.home_currency,
-            rate: result.rate,
-            duration_years: result.duration_years,
-            annual_tuition_home: result.annual_tuition_home,
-            living_monthly_home: result.living_monthly_home,
-            total_living_home: result.total_living_home,
-            total_cost_home: result.total_cost_home,
-            exchange_risk: ExchangeRiskResponse {
-                range: format!(
-                    "{:.0}~{:.0} {}",
-                    result.exchange_risk.low,
-                    result.exchange_risk.high,
-                    result.exchange_risk.currency
-                ),
-                // 用户可见文案经 i18n 目录 + 请求级语言协商
-                note: i18n.t("msg.fx.budget_risk_note").to_string(),
-            },
-            rate_date,
-        }),
-        Ok(Err(api_err)) => Err(api_err),
-        Err(join_err) => Err(ApiError::internal_with_source(
-            "fx_budget task failed",
-            "spawn_blocking",
-            join_err,
-        )),
-    }
+    // 请求级超时兜底：先向调用方返回 503（与 evaluate 同模式）；阻塞池线程本身由
+    // 上游 HTTP_TIMEOUT（5s，auto 链最坏两轮 ≈10s）自了结，本 timeout 不终止它
+    let (result, rate_date, rate_source) = match tokio::time::timeout(timeout, join_handle).await {
+        Ok(Ok(r)) => r?,
+        Ok(Err(join_err)) => {
+            return Err(ApiError::internal_with_source(
+                "fx_budget task failed",
+                "spawn_blocking",
+                join_err,
+            ));
+        }
+        Err(_) => {
+            return Err(ApiError::service_unavailable(
+                "fx_budget",
+                Some(timeout.as_secs()),
+            ));
+        }
+    };
+
+    Ok(FxBudgetResponse {
+        tuition_foreign: result.tuition_foreign,
+        tuition_currency: result.tuition_currency,
+        tuition_home: result.tuition_home,
+        home_currency: result.home_currency,
+        rate: result.rate,
+        duration_years: result.duration_years,
+        annual_tuition_home: result.annual_tuition_home,
+        living_monthly_home: result.living_monthly_home,
+        total_living_home: result.total_living_home,
+        total_cost_home: result.total_cost_home,
+        exchange_risk: ExchangeRiskResponse {
+            range: format!(
+                "{:.0}~{:.0} {}",
+                result.exchange_risk.low, result.exchange_risk.high, result.exchange_risk.currency
+            ),
+            // 用户可见文案经 i18n 目录 + 请求级语言协商
+            note: i18n.t("msg.fx.budget_risk_note").to_string(),
+        },
+        rate_date,
+        rate_source,
+    })
 }
 
 /// `POST /api/v1/fx_pricing` + MCP `fx_pricing`：按成本与目标利润率计算各币种安全售价。
@@ -326,6 +357,22 @@ pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, 
     description = "Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable)."
 )]
 pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingResponse, ApiError> {
+    fx_pricing_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await
+}
+
+/// 带超时的 fx_pricing 实现（可测试入口）：超时→503，spawn_blocking panic→500。
+pub(crate) async fn fx_pricing_with_timeout(
+    req: FxPricingRequest,
+    timeout: Duration,
+) -> Result<FxPricingResponse, ApiError> {
+    run_fx_pricing(req, timeout, shared_provider()).await
+}
+
+async fn run_fx_pricing(
+    req: FxPricingRequest,
+    timeout: Duration,
+    provider: Arc<dyn RateProvider>,
+) -> Result<FxPricingResponse, ApiError> {
     req.validate()?;
 
     // 语言协商：请求级 lang → I18n（缺省/未知回退英文）
@@ -341,8 +388,7 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
         .filter(|s| !s.is_empty())
         .collect();
 
-    let join_result = tokio::task::spawn_blocking(move || {
-        let provider = shared_provider();
+    let join_handle = tokio::task::spawn_blocking(move || {
         let table = provider.rates().map_err(|e| {
             // 保留底层错误源（503 语义）
             ApiError::service_unavailable_with_source(
@@ -352,6 +398,7 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
             )
         })?;
         let rate_date = Some(table.date.clone());
+        let rate_source = table.source.clone();
         let cur_refs: Vec<&str> = currencies.iter().map(|s| s.as_str()).collect();
         pricing_calculation(
             cost,
@@ -361,7 +408,7 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
             safety_buffer,
             &table,
         )
-        .map(|result| (result, rate_date))
+        .map(|result| (result, rate_date, rate_source))
         // CalcError 携 i18n_key 时按协商语言渲染 detail（en 逐字节不变）
         .map_err(|e| {
             ApiError::invalid_input(
@@ -370,35 +417,46 @@ pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingRespons
                 None,
             )
         })
-    })
-    .await;
+    });
 
-    match join_result {
-        Ok(Ok((result, rate_date))) => Ok(FxPricingResponse {
-            cost_cny: result.cost_cny,
-            target_profit_rate: profit_rate,
-            platform_rate,
-            safety_buffer,
-            pricing: result
-                .pricing
-                .into_iter()
-                .map(|item| PricingItemResponse {
-                    currency: item.currency,
-                    recommended_price: item.recommended_price,
-                    actual_profit_rate: item.actual_profit_rate,
-                    profit_cny: item.profit_cny,
-                    platform_fee_cny: item.platform_fee_cny,
-                })
-                .collect(),
-            rate_date,
-        }),
-        Ok(Err(api_err)) => Err(api_err),
-        Err(join_err) => Err(ApiError::internal_with_source(
-            "fx_pricing task failed",
-            "spawn_blocking",
-            join_err,
-        )),
-    }
+    // 请求级超时兜底：先向调用方返回 503（与 evaluate 同模式）；阻塞池线程本身由
+    // 上游 HTTP_TIMEOUT（5s，auto 链最坏两轮 ≈10s）自了结，本 timeout 不终止它
+    let (result, rate_date, rate_source) = match tokio::time::timeout(timeout, join_handle).await {
+        Ok(Ok(r)) => r?,
+        Ok(Err(join_err)) => {
+            return Err(ApiError::internal_with_source(
+                "fx_pricing task failed",
+                "spawn_blocking",
+                join_err,
+            ));
+        }
+        Err(_) => {
+            return Err(ApiError::service_unavailable(
+                "fx_pricing",
+                Some(timeout.as_secs()),
+            ));
+        }
+    };
+
+    Ok(FxPricingResponse {
+        cost_cny: result.cost_cny,
+        target_profit_rate: profit_rate,
+        platform_rate,
+        safety_buffer,
+        pricing: result
+            .pricing
+            .into_iter()
+            .map(|item| PricingItemResponse {
+                currency: item.currency,
+                recommended_price: item.recommended_price,
+                actual_profit_rate: item.actual_profit_rate,
+                profit_cny: item.profit_cny,
+                platform_fee_cny: item.platform_fee_cny,
+            })
+            .collect(),
+        rate_date,
+        rate_source,
+    })
 }
 
 // ============================================================
@@ -608,11 +666,13 @@ mod tests {
                 note: "test".into(),
             },
             rate_date: Some("2026-09-13".into()),
+            rate_source: "test-frankfurter".into(),
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""tuition_foreign":50000.0"#));
         assert!(json.contains(r#""tuition_currency":"USD""#));
         assert!(json.contains(r#""exchange_risk""#));
+        assert!(json.contains(r#""rate_source":"test-frankfurter""#));
     }
 
     #[test]
@@ -630,19 +690,175 @@ mod tests {
                 platform_fee_cny: 1.65,
             }],
             rate_date: Some("2026-09-13".into()),
+            rate_source: "test-frankfurter".into(),
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains(r#""cost_cny":50.0"#));
         assert!(json.contains(r#""recommended_price":10.99"#));
         assert!(json.contains(r#""currency":"USD""#));
+        assert!(json.contains(r#""rate_source":"test-frankfurter""#));
+    }
+
+    // === 成功响应 rate_source ===
+
+    /// 测试用静态 provider：返回固定汇率表（source 可注入）。
+    struct StaticProvider {
+        table: crate::math::fx::RateTable,
+    }
+
+    impl RateProvider for StaticProvider {
+        fn rates(&self) -> Result<crate::math::fx::RateTable, crate::core::CalcError> {
+            Ok(self.table.clone())
+        }
+
+        fn name(&self) -> &'static str {
+            "static"
+        }
+    }
+
+    fn static_provider(source: &str) -> Arc<dyn RateProvider> {
+        let mut rates = std::collections::HashMap::new();
+        rates.insert("USD".to_string(), 1.08);
+        rates.insert("CNY".to_string(), 7.85);
+        Arc::new(StaticProvider {
+            table: crate::math::fx::RateTable {
+                base: "EUR".into(),
+                date: "2026-09-13".into(),
+                rates,
+                source: source.into(),
+            },
+        })
+    }
+
+    #[tokio::test]
+    async fn test_fx_budget_response_rate_source_from_table() {
+        let req = FxBudgetRequest {
+            tuition: 50000.0,
+            tuition_currency: "USD".into(),
+            living_cost_monthly: Some(2000.0),
+            duration_years: 4,
+            home_currency: "CNY".into(),
+            lang: Some("en".into()),
+        };
+        let resp = run_fx_budget(
+            req,
+            Duration::from_secs(5),
+            static_provider("test-frankfurter"),
+        )
+        .await
+        .expect("static provider must succeed");
+        assert_eq!(resp.rate_source, "test-frankfurter");
+        assert_eq!(resp.rate_date.as_deref(), Some("2026-09-13"));
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains(r#""rate_source":"test-frankfurter""#));
+    }
+
+    #[tokio::test]
+    async fn test_fx_pricing_response_rate_source_from_table() {
+        let req = FxPricingRequest {
+            cost_cny: 50.0,
+            target_profit_rate: 0.3,
+            currencies: "USD,EUR".into(),
+            platform_rate: 0.15,
+            safety_buffer: 0.05,
+            lang: Some("en".into()),
+        };
+        let resp = run_fx_pricing(req, Duration::from_secs(5), static_provider("test-erapi"))
+            .await
+            .expect("static provider must succeed");
+        assert_eq!(resp.rate_source, "test-erapi");
+        assert_eq!(resp.rate_date.as_deref(), Some("2026-09-13"));
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains(r#""rate_source":"test-erapi""#));
+    }
+
+    // === 请求级超时 ===
+
+    /// 测试用慢 provider：睡过超时窗口后返回错误（模拟上游卡死）。
+    struct SlowProvider {
+        delay: Duration,
+    }
+
+    impl RateProvider for SlowProvider {
+        fn rates(&self) -> Result<crate::math::fx::RateTable, crate::core::CalcError> {
+            std::thread::sleep(self.delay);
+            Err(crate::core::CalcError::dependency_unavailable(
+                "upstream stalled",
+            ))
+        }
+
+        fn name(&self) -> &'static str {
+            "slow"
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fx_budget_timeout_returns_503() {
+        let req = FxBudgetRequest {
+            tuition: 50000.0,
+            tuition_currency: "USD".into(),
+            living_cost_monthly: None,
+            duration_years: 4,
+            home_currency: "CNY".into(),
+            lang: None,
+        };
+        let provider: Arc<dyn RateProvider> = Arc::new(SlowProvider {
+            delay: Duration::from_secs(5),
+        });
+        let err = run_fx_budget(req, Duration::from_secs(1), provider)
+            .await
+            .expect_err("slow provider must hit request timeout");
+        match err {
+            ApiError::ServiceUnavailable {
+                service,
+                retry_after,
+                ..
+            } => {
+                assert_eq!(service, "fx_budget");
+                assert_eq!(retry_after, Some(1));
+            }
+            other => panic!("期望 ServiceUnavailable，得到 {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fx_pricing_timeout_returns_503() {
+        let req = FxPricingRequest {
+            cost_cny: 50.0,
+            target_profit_rate: 0.3,
+            currencies: "USD,EUR".into(),
+            platform_rate: 0.15,
+            safety_buffer: 0.05,
+            lang: None,
+        };
+        let provider: Arc<dyn RateProvider> = Arc::new(SlowProvider {
+            delay: Duration::from_secs(5),
+        });
+        let err = run_fx_pricing(req, Duration::from_secs(1), provider)
+            .await
+            .expect_err("slow provider must hit request timeout");
+        match err {
+            ApiError::ServiceUnavailable {
+                service,
+                retry_after,
+                ..
+            } => {
+                assert_eq!(service, "fx_pricing");
+                assert_eq!(retry_after, Some(1));
+            }
+            other => panic!("期望 ServiceUnavailable，得到 {other:?}"),
+        }
     }
 
     // === shared_provider 单例 ===
 
     #[test]
     fn test_shared_provider_returns_same_instance() {
-        let p1 = shared_provider() as *const FrankfurterProvider;
-        let p2 = shared_provider() as *const FrankfurterProvider;
-        assert_eq!(p1, p2, "shared_provider should return same instance");
+        let p1 = shared_provider();
+        let p2 = shared_provider();
+        assert!(
+            Arc::ptr_eq(&p1, &p2),
+            "shared_provider should return same instance"
+        );
     }
 }

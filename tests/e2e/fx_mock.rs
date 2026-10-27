@@ -301,6 +301,7 @@ fn fx_rate_table_public_fields() {
         base: "USD".to_string(),
         date: "2026-09-15".to_string(),
         rates: [("EUR".to_string(), 0.9)].into_iter().collect(),
+        source: "test-frankfurter".to_string(),
     };
     assert!(approx_eq(
         fx::convert(90.0, "EUR", "USD", &table).unwrap(),

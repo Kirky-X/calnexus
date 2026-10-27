@@ -16,6 +16,8 @@ pub struct RateTable {
     pub date: String,
     /// 各币种对 base 的汇率。
     pub rates: HashMap<String, f64>,
+    /// 数据来源标识（"frankfurter" | "erapi"），用于混源可观测。
+    pub source: String,
 }
 
 /// 汇率换算：经 base 三角计算；同币种原样返回，base 汇率视为 1.0，未知币种报 Domain。
@@ -40,6 +42,31 @@ pub fn get_rate(code: &str, table: &RateTable) -> Result<f64, CalcError> {
         .get(code)
         .copied()
         .ok_or_else(|| unknown_currency_error(code, table))
+}
+
+/// Unix 秒 → UTC 日期字符串（YYYY-MM-DD）。
+///
+/// civil-from-days 算法（Howard Hinnant 公版实现），无新增依赖；用于 er-api 的
+/// `time_last_update_unix` 归一。
+pub(crate) fn date_from_unix_days(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let (year, month, day) = civil_from_days(days);
+    format!("{:04}-{:02}-{:02}", year, month, day)
+}
+
+/// 1970-01-01 起的天数 → (年, 月, 日)，含闰年规则。
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146096]
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let year = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let month = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if month <= 2 { year + 1 } else { year };
+    (year, month as u32, day)
 }
 
 /// 构造“未知币种”错误，消息含支持币种数量。
@@ -71,6 +98,7 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-07-25".to_string(),
             rates,
+            source: "frankfurter".to_string(),
         }
     }
 
@@ -150,6 +178,7 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-07-25".to_string(),
             rates: HashMap::new(),
+            source: "frankfurter".to_string(),
         };
         let err = unknown_currency_error("XYZ", &table);
         assert!(err.message.contains("1 currencies"));
@@ -164,6 +193,7 @@ mod tests {
         assert_eq!(cloned.base, table.base);
         assert_eq!(cloned.date, table.date);
         assert_eq!(cloned.rates.len(), table.rates.len());
+        assert_eq!(cloned.source, table.source);
     }
 
     #[test]
@@ -171,5 +201,36 @@ mod tests {
         let table = eur_table();
         let s = format!("{:?}", table);
         assert!(s.contains("EUR"));
+    }
+
+    // ===== date_from_unix_days（er-api 日期归一） =====
+
+    #[test]
+    fn test_date_from_unix_days_epoch() {
+        assert_eq!(date_from_unix_days(0), "1970-01-01");
+    }
+
+    #[test]
+    fn test_date_from_unix_days_leap_day() {
+        // 2024-02-29T00:00:00Z
+        assert_eq!(date_from_unix_days(1_709_164_800), "2024-02-29");
+    }
+
+    #[test]
+    fn test_date_from_unix_days_year_end() {
+        // 2023-12-31T00:00:00Z（跨年边界前一日）
+        assert_eq!(date_from_unix_days(1_703_980_800), "2023-12-31");
+    }
+
+    #[test]
+    fn test_date_from_unix_days_year_start() {
+        // 2024-01-01T00:00:00Z
+        assert_eq!(date_from_unix_days(1_704_067_200), "2024-01-01");
+    }
+
+    #[test]
+    fn test_date_from_unix_days_known_timestamp() {
+        // 1761234567 → 2025-10-23T07:49:27Z
+        assert_eq!(date_from_unix_days(1_761_234_567), "2025-10-23");
     }
 }

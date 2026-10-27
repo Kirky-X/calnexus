@@ -184,7 +184,7 @@ $ calnexus --json '2+3'
 <tr><td colspan="3" style="background:#F8FAFC"><b>可选计算域</b></td></tr>
 <tr><td><code>time</code></td><td align="center">❌</td><td>时间计算域，jiff 0.2 + 内嵌 IANA tzdb，14 个函数</td></tr>
 <tr><td><code>unit</code></td><td align="center">❌</td><td>物理单位换算域，8 量纲 + 温度仿射</td></tr>
-<tr><td><code>fx</code></td><td align="center">❌</td><td>汇率换算域，frankfurter.dev API + 三级缓存 + 网络熔断</td></tr>
+<tr><td><code>fx</code></td><td align="center">❌</td><td>汇率换算域，frankfurter / ExchangeRate-API 双源（<code>CALNEXUS_FX_PROVIDER</code>=<code>frankfurter</code>|<code>erapi</code>|<code>auto</code>）+ 三级缓存 + 网络熔断</td></tr>
 <tr><td><code>numerical</code></td><td align="center">❌</td><td>数值线性代数分解（lu/qr/eig/svd/solve/matrix_exp，nalgebra f64）</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>服务端</b></td></tr>
 <tr><td><code>http</code></td><td align="center">❌</td><td>HTTP API（sdforge http/graceful/health/context，axum）</td></tr>
@@ -196,6 +196,28 @@ $ calnexus --json '2+3'
 </table>
 
 </details>
+
+### 💱 汇率数据源（`fx`）
+
+`fx` 默认走 [frankfurter.dev](https://frankfurter.dev)（欧洲央行 ECB 参考汇率，覆盖约 30 种主要货币）；`CALNEXUS_FX_PROVIDER` 可切换数据源：
+
+| 取值 | 行为 | 口径 |
+|------|------|------|
+| `frankfurter`（默认） | 仅 frankfurter | ECB 参考汇率，覆盖约 30 种主要货币 |
+| `erapi` | 仅 ExchangeRate-API 开放端点（免 key） | 聚合源，覆盖 160+ 币种，与 ECB 数值存在系统性微小差异 |
+| `auto` | 固定链序 `frankfurter → erapi`，首源成功即返回 | 仅主源失败时切备源；全部失败时聚合报错（逐项列出原因） |
+
+服务端 `fx_budget` / `fx_pricing` 响应恒带 `rate_source` 字段；`auto` 混源可据此审计。表达式面 `fx()` / `fx_rate()` 不携带来源（标量契约不变）。
+
+| 环境变量 | 默认 | 说明 |
+|----------|------|------|
+| `CALNEXUS_FX_PROVIDER` | `frankfurter` | 数据源：`frankfurter` / `erapi` / `auto`（非法值回退 `frankfurter`） |
+| `CALNEXUS_FX_TTL_HOURS` | 24 | 汇率快照有效期 |
+| `CALNEXUS_FX_ALLOW_STALE` | — | 网络失败时是否使用过期快照 |
+| `CALNEXUS_FX_BREAKER_THRESHOLD` | 3 | fx 网络熔断失败阈值 |
+| `CALNEXUS_FX_BREAKER_COOLDOWN_SECS` | 30 | fx 熔断冷却时长（秒） |
+
+> **容量护栏部署清单**：`server` 镜像默认不含限流；对外暴露时需显式启用 `ratelimit` feature，并按实例容量设置 `CALNEXUS_RATELIMIT_LIMIT` / `CALNEXUS_RATELIMIT_WINDOW_SECS`。fx 上游单次抓取超时 5 秒、请求级兜底 30 秒；`auto` 链最坏耗时为两轮上游超时，评估限流窗口时需计入。
 
 ---
 

@@ -100,6 +100,7 @@ msg-domain-unsupported_function = unsupported function in { $domain } domain: { 
 msg-domain-expected_variable_name = expected variable name, got: { $node }
 msg-domain-unsupported_node = { $domain } domain does not support this node type: { $node }
 msg-function_arg_count = Function { $name } expects { $expected } args, got { $actual }
+msg-fx-all_providers_failed = All exchange-rate providers failed: { $details }
 msg-fx-budget_risk_note = Estimated using a ±3% exchange-rate fluctuation band; converting in batches is recommended to reduce risk.
 msg-fx-cache_unreadable = Exchange rate service is unreachable. Check your network connection and try again, or set CALNEXUS_FX_ALLOW_STALE=1 to use the last cached snapshot.
 msg-fx-circuit_open = The exchange-rate service failed repeatedly and the circuit breaker is open. Try again later, or set CALNEXUS_FX_ALLOW_STALE=1 to use the last cached snapshot.

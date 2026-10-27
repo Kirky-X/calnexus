@@ -100,6 +100,7 @@ msg-domain-unsupported_function = { $domain } 域不支持此函数: { $name }
 msg-domain-expected_variable_name = 期望变量名，得到: { $node }
 msg-domain-unsupported_node = { $domain } 域不支持此节点类型: { $node }
 msg-function_arg_count = 函数 { $name } 期望 { $expected } 个参数, 实际 { $actual }
+msg-fx-all_providers_failed = 所有汇率数据源均不可用: { $details }
 msg-fx-budget_risk_note = 基于±3%汇率波动估算，建议分批换汇降低风险
 msg-fx-cache_unreadable = 汇率服务不可达。请检查网络连接后重试，或设置 CALNEXUS_FX_ALLOW_STALE=1 以使用上次缓存的汇率快照。
 msg-fx-circuit_open = 汇率服务连续失败，已熔断暂停访问。请稍后重试，或设置 CALNEXUS_FX_ALLOW_STALE=1 以使用上次缓存的汇率快照。

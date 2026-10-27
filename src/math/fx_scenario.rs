@@ -228,6 +228,7 @@ mod tests {
             base: "EUR".to_string(),
             date: "2026-08-10".to_string(),
             rates,
+            source: "frankfurter".to_string(),
         }
     }
 

@@ -11,7 +11,7 @@ use super::common::{
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, BinaryOp, CalcError, EvalContext, EvalResult, UnaryOp};
 
-use super::fx_provider::{FrankfurterProvider, RateProvider};
+use super::fx_provider::{FxProviderConfig, RateProvider, build_provider};
 use crate::math::fx as math_fx;
 
 /// fx 域函数白名单：仅 fx/fx_rate 触发路由，避免 mod/abs 误路由。
@@ -34,7 +34,7 @@ impl FxDomain {
 
 impl Default for FxDomain {
     fn default() -> Self {
-        Self::new(Box::new(FrankfurterProvider::new()))
+        Self::new(Box::new(build_provider(&FxProviderConfig::from_env())))
     }
 }
 
@@ -332,6 +332,7 @@ mod tests {
         rates: HashMap<String, f64>,
         date: String,
         base: String,
+        source: String,
     }
 
     impl RateProvider for MockRateProvider {
@@ -340,6 +341,7 @@ mod tests {
                 base: self.base.clone(),
                 date: self.date.clone(),
                 rates: self.rates.clone(),
+                source: self.source.clone(),
             })
         }
     }
@@ -355,6 +357,7 @@ mod tests {
             rates,
             date: "2026-07-25".to_string(),
             base: "EUR".to_string(),
+            source: "frankfurter".to_string(),
         }
     }
 

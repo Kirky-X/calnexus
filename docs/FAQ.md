@@ -83,7 +83,7 @@ Rust 1.97.1 及以上（MSRV，CI 有对应 MSRV 任务守护）。核心库无�
 
 ### ❓ 汇率数据来自哪里？断网时行为如何？
 
-来自 frankfurter.dev（欧洲央行参考汇率），经三级缓存（内存 → 文件 → 网络）。断网时优先使用本地文件快照（受 `CALNEXUS_FX_TTL_HOURS` 约束，默认 24 小时）；设置 `CALNEXUS_FX_ALLOW_STALE` 后可接受过期快照；连续失败达到 `CALNEXUS_FX_BREAKER_THRESHOLD`（默认 3 次）触发熔断，冷却 `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`（默认 30 秒）。汇率仅供参考。
+来自 frankfurter.dev（欧洲央行参考汇率，约 30 种主要货币）或 ExchangeRate-API 开放端点（聚合源，160+ 币种；`CALNEXUS_FX_PROVIDER=erapi`），经三级缓存（内存 → 文件 → 网络）。不同源数值存在系统性微小差异，`auto` 混源时服务端响应以 `rate_source` 标识实际来源。断网时优先使用本地文件快照（受 `CALNEXUS_FX_TTL_HOURS` 约束，默认 24 小时）；设置 `CALNEXUS_FX_ALLOW_STALE` 后可接受过期快照；连续失败达到 `CALNEXUS_FX_BREAKER_THRESHOLD`（默认 3 次）触发熔断，冷却 `CALNEXUS_FX_BREAKER_COOLDOWN_SECS`（默认 30 秒）。汇率仅供参考。
 
 ### ❓ REPL 支持哪些命令？
 

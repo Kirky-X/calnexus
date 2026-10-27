@@ -197,16 +197,16 @@ impl<'a> AppliedMathImpl<'a> {
 
     #[cfg(feature = "fx")]
     pub fn fx(&self, amount: f64, from: &str, to: &str) -> Result<EvalResult, CalcError> {
-        use crate::domains::fx_provider::{FrankfurterProvider, RateProvider};
-        let provider = FrankfurterProvider::default();
+        use crate::domains::fx_provider::{FxProviderConfig, RateProvider, build_provider};
+        let provider = build_provider(&FxProviderConfig::from_env());
         let table = provider.rates()?;
         crate::math::fx::convert(amount, from, to, &table).map(EvalResult::Scalar)
     }
 
     #[cfg(feature = "fx")]
     pub fn fx_rate(&self, from: &str, to: &str) -> Result<EvalResult, CalcError> {
-        use crate::domains::fx_provider::{FrankfurterProvider, RateProvider};
-        let provider = FrankfurterProvider::default();
+        use crate::domains::fx_provider::{FxProviderConfig, RateProvider, build_provider};
+        let provider = build_provider(&FxProviderConfig::from_env());
         let table = provider.rates()?;
         let rate_from = crate::math::fx::get_rate(from, &table)?;
         let rate_to = crate::math::fx::get_rate(to, &table)?;

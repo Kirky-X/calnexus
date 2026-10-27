@@ -137,8 +137,8 @@ Claude Desktop 的 `claude_desktop_config.json`：
 |------|------------------|------|
 | `evaluate` | `expr`（必填）、`vars`（可选）、`precision`（可选）、`lang`（可选） | `{result, domain, cache}` |
 | `list_functions` | 无（`{"req": {}}`） | 按域分组的函数目录（含 feature 门控域可见性） |
-| `fx_budget` * | `tuition`、`tuition_currency`、`home_currency`、`living_cost_monthly`?、`duration_years` | 本币费用 + ±3% 风险区间 + `rate_date` |
-| `fx_pricing` * | `cost_cny`、`target_profit_rate`、`currencies`、`platform_rate`?、`safety_buffer`? | 各币种建议售价 + `rate_date` |
+| `fx_budget` * | `tuition`、`tuition_currency`、`home_currency`、`living_cost_monthly`?、`duration_years` | 本币费用 + ±3% 风险区间 + `rate_date` + `rate_source` |
+| `fx_pricing` * | `cost_cny`、`target_profit_rate`、`currencies`、`platform_rate`?、`safety_buffer`? | 各币种建议售价 + `rate_date` + `rate_source` |
 
 \* 需 `fx` feature 构建。
 

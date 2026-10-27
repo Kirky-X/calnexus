@@ -153,7 +153,7 @@ flowchart TD
 | `SymbolicDomain` | 30 | — | 符号微分/积分/化简/极限/泰勒 |
 | `TimeDomain` | 30 | `time` | 日期/时间构造、间隔算术、多格式解析（jiff 0.2 + IANA tzdb） |
 | `UnitDomain` | 30 | `unit` | 8 量纲物理单位换算 + 温度仿射 |
-| `FxDomain` | 30 | `fx` | 汇率换算（frankfurter.dev API + 三级缓存） |
+| `FxDomain` | 30 | `fx` | 汇率换算（frankfurter / ExchangeRate-API 双源 + 三级缓存；`CALNEXUS_FX_PROVIDER` 三值） |
 
 **工厂函数**位于 `domains/factory.rs`（规则 25 合规：`mod.rs` 仅含声明与 re-export）：
 
@@ -222,7 +222,7 @@ flowchart LR
 | `icu` | ICU4X 国际化 | 本地化错误消息 |
 | `time` | `domains/time.rs` | 时间计算（jiff 0.2 + IANA tzdb，14 函数） |
 | `unit` | `math/unit.rs` / `math/unit_table.rs` → `domains/unit.rs` | 8 量纲物理单位换算 + 温度仿射 |
-| `fx` | `math/fx.rs` → `domains/fx.rs` / `fx_provider.rs` | 汇率换算（frankfurter.dev API + 三级缓存） |
+| `fx` | `math/fx.rs` → `domains/fx.rs` / `fx_provider.rs` | 汇率换算（frankfurter / er-api 双源、`auto` failover、三级缓存 + 网络熔断） |
 | `numerical` | `math/numerical.rs` → `domains/numerical.rs` + `api/linalg.rs` | 数值线性代数分解（eig/SVD/LU/QR/solve/matrix_exp，nalgebra f64） |
 | `ratelimit` | `server/ratelimit.rs` | HTTP 限流（sdforge ratelimit-http 契约） |
 | `docs` | sdforge/docs | OpenAPI + Swagger UI |
@@ -304,6 +304,9 @@ sequenceDiagram
 | **ADR-004** | mathexpr 解析器 | ✅ 已采纳 | 需安全高性能表达式解析 | mathexpr 或自研 Pratt | 不支持复数/矩阵，需扩展 | 2026-06-28 |
 | **ADR-005** | 内置符号计算引擎 | ✅ 已采纳 | rssn 社区争议 + 转向 FFI | 内置符号计算实现 | 无第三方依赖风险 | 2026-06-28 |
 | **ADR-006** | 单 crate 分层架构 | ✅ 已采纳 | 库与 CLI 统一发布 | 单 crate + 分层模块（core/domains/math/api） | 简化构建，降低复杂度 | 2026-06-28 |
+| **ADR-007** | fx 缓存装饰器与抓取实现分离（design D1） | ✅ 已采纳 | 单一 provider 同时承担缓存/熔断/stale/抓取，无法接入第二源 | `CachedRateProvider` 包装 `Box<dyn RateProvider>`；缓存与熔断对整条链生效一次 | 新增数据源只需实现纯抓取；每 TTL 至多一轮真实抓取 | 2026-10-28 |
+| **ADR-008** | 单 env 三值选源（design D4） | ✅ 已采纳 | 需要 160+ 币种覆盖，同时保留 ECB 口径偏好 | `CALNEXUS_FX_PROVIDER`=`frankfurter`/`erapi`/`auto`；非法值回退 `frankfurter`；`auto` 固定链序 | 覆盖提升；配置面仅一个变量；全失败时聚合错误便于排障 | 2026-10-28 |
+| **ADR-009** | 固定链序与来源可观测（design D7） | ✅ 已采纳 | 不同源同日数值存在系统性差异，禁止静默混用 | 不记忆上次成功源，每 TTL 重新从主源尝试；`RateTable.source` 参与缓存与响应 | failover 窗口内可观测为备源口径；下游可审计混源 | 2026-10-28 |
 
 ### ADR-001：进程内 L1-only 缓存（v0.1.5 修订）
 
@@ -324,6 +327,24 @@ sequenceDiagram
 **上下文**：需同时交付 Rust 库与 CLI 二进制，并以 feature gate 控制可选模块。
 
 **决策**：单 crate + 分层模块（`core/`、`math/`、`domains/`、`api/`、`cli.rs`、`repl.rs`、`batch.rs`、`server/`、`output/`）。理由：单一 crate 简化构建发布；feature gate 保证 `cargo add calnexus` 不引入 CLI 依赖；分层保持清晰依赖方向。后果：全部模块共享版本号，分层规则靠代码审查保证（`mod.rs` 纪律）。
+
+### ADR-007：fx 缓存装饰器与抓取实现分离（design D1）
+
+**上下文**：原 `FrankfurterProvider` 同时承担 L1/L2 缓存、熔断、stale 策略与网络抓取五重职责，接入第二数据源只能复制整套缓存栈（DRY 违背 + 每源各自抓取）。
+
+**决策**：抽出 `CachedRateProvider` 装饰器（`inner: Box<dyn RateProvider>`），缓存/熔断/stale 整体上移；`FrankfurterProvider` / `ExchangeRateApiProvider` 缩为无状态纯抓取；`auto` 的 `ChainRateProvider` 位于装饰器内侧，缓存与熔断对整条链只生效一次。理由：保持「每 TTL 至多一轮真实抓取」的额度语义，新源只需约 60 行抓取与解析代码。后果：链路最坏耗时为各源超时之和（见 README 容量护栏清单）。
+
+### ADR-008：单环境变量三值选源（design D4）
+
+**上下文**：需要覆盖 160+ 币种，同时保留 ECB 口径偏好；列表式配置会把链序决策暴露给用户且难测试。
+
+**决策**：`CALNEXUS_FX_PROVIDER` 三值：未设/`frankfurter` → 仅 frankfurter（与旧行为逐字节兼容）、`erapi` → 仅 ExchangeRate-API、`auto` → 固定链序 `[frankfurter, erapi]`；非法值回退 `frankfurter`。双源全失败时聚合错误，逐项列出 `<provider>: <原因>`，并走既有 stale 策略。后果：配置面最小化；链序固定在代码中，用户无法重排。
+
+### ADR-009：固定链序与混源可观测（design D7）
+
+**上下文**：实测同日 USD→CNY，ECB 口径 6.6702、聚合源 6.684864，静默混用会让下游无法解释数值跳变。
+
+**决策**：`auto` 不做「粘性记住上次成功源」——同一 TTL 窗口正常恒为单源，failover 后下一窗口重新从主源尝试；`RateTable.source` 写入缓存格式 v2（缺 source 的 v1 文件判 `Corrupted` 自愈重拉），服务端 `fx_budget` / `fx_pricing` 响应恒带 `rate_source`。后果：主源故障窗口内的结果明确标记为备源口径，混源可审计；表达式面 `fx()` / `fx_rate()` 保持标量契约，不携带来源。
 
 ---
 

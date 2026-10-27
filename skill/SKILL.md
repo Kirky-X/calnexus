@@ -45,7 +45,7 @@ cargo install --path . --features cli
 | `numerical` | 数值线性代数分解 | 表达式 `lu`/`qr`/`eig`/`svd`/`solve`（nalgebra f64）；门面另有 `matrix_exp` |
 | `time` | 时间计算域 | `date` / `datetime` / `timestamp` / `date_diff` / `date_add` / `weekday` 等 14 函数（jiff 0.2 + 内嵌 IANA tzdb） |
 | `unit` | 物理单位换算 | `convert(value, "from", "to")`，8 量纲 + 温度仿射换算 |
-| `fx` | 汇率换算 | `fx(value, "FROM", "TO")`、`fx_rate("FROM", "TO")`（frankfurter.dev + 三级缓存 + 熔断） |
+| `fx` | 汇率换算 | `fx(value, "FROM", "TO")`、`fx_rate("FROM", "TO")`（frankfurter / ExchangeRate-API 双源 + 三级缓存 + 熔断；`CALNEXUS_FX_PROVIDER`=`frankfurter`/`erapi`/`auto`） |
 | `icu` | ICU4X 国际化 | BCP-47 语言标签解析（中英双语错误消息经 Fluent 内嵌、始终可用，与本 feature 无关） |
 | `http` | HTTP API | `POST /api/v1/evaluate`、`POST /api/v1/list_functions`；`GET /health` `/ready` `/live` `/metrics`（sdforge、axum） |
 | `mcp` | MCP 工具 | `evaluate` + `list_functions`（stdio，sdforge） |
@@ -56,6 +56,8 @@ cargo install --path . --features cli
 | `observability` | tracing 日志 | server 模式 EnvFilter 消费 `RUST_LOG` |
 
 默认 `default = []`，按需启用。
+
+fx 数据源由 `CALNEXUS_FX_PROVIDER` 控制：`frankfurter`（默认，ECB 参考汇率，约 30 种货币）/ `erapi`（聚合源，160+ 币种，数值与 ECB 存在系统性微小差异）/ `auto`（固定链序 `frankfurter → erapi`，仅主源失败时切换，全失败聚合报错）。服务端 `fx_budget` / `fx_pricing` 响应恒带 `rate_source`，`auto` 混源可审计。
 
 ## 快速使用
 
