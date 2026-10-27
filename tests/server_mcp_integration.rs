@@ -85,7 +85,10 @@ fn test_mcp_tool_evaluate_precision() {
 fn test_mcp_tool_evaluate_calc_error_invalid_input() {
     let server = build_mcp_server();
     let result = server
-        .call_tool_internal("evaluate", Some(json!({"req": {"expr": "2++3", "lang": "en"}})))
+        .call_tool_internal(
+            "evaluate",
+            Some(json!({"req": {"expr": "2++3", "lang": "en"}})),
+        )
         .expect("evaluate tool should be registered");
 
     assert_eq!(
