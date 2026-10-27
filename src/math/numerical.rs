@@ -175,6 +175,12 @@ fn null_vector_complex(matrix: &DMatrix<Complex<f64>>) -> Vec<Complex<f64>> {
             break;
         }
     }
+    // 满秩即无零空间方向：此时自由变量回退到 n-1 会产出一个与矩阵无关的
+    // 伪向量（实测 A·v 明显非零），归一化后仍是错的「特征向量」。
+    // 返回零向量作为哨兵，由调用方按残差判定是否可用。
+    if pivot_cols.len() == n {
+        return vec![Complex::new(0.0, 0.0); n];
+    }
     let mut y = vec![Complex::new(0.0, 0.0); n];
     let free = (0..n).find(|c| !pivot_cols.contains(c)).unwrap_or(n - 1);
     y[free] = Complex::new(1.0, 0.0);
@@ -341,24 +347,37 @@ pub fn lstsq(a: &DMatrix<f64>, b: &DVector<f64>) -> Result<DVector<f64>, CalcErr
             ),
         );
     }
-    let (q, r) = qr(a)?;
-    let n = r.ncols();
-    let diag_max = (0..n).map(|i| r[(i, i)].abs()).fold(0.0_f64, f64::max);
-    let tol = 1e-12 * diag_max.max(1.0);
-    let rank_deficient = (0..n).any(|i| r[(i, i)].abs() <= tol);
-    if !rank_deficient {
-        let qtb = q.transpose() * b;
-        let mut x = DVector::<f64>::zeros(n);
-        for i in (0..n).rev() {
-            let mut sum = qtb[i];
-            for j in (i + 1)..n {
-                sum -= r[(i, j)] * x[j];
+    // QR 回代要求 R 是指向解空间的上三角：仅当 m >= n 成立（R 为 m×n，
+    // 对角线元素 i<n 全部落在前 n 行内）。欠定系统 m < n 时 R 只有 m 行，
+    // r[(i,i)] 与 qtb[i] 在 i>=m 越界 panic，且最小范数解本就需 SVD，
+    // 故直接跳过 QR 走下方 SVD 伪逆。
+    // tol 在两条分支共用：秩判定的尺度取 QR 路径的可视对角，欠定时退化为
+    // 全矩阵最大绝对值，避免依赖不可用的 R 对角线。
+    let m = a.nrows();
+    let n = a.ncols();
+    let tol = if m >= n {
+        let (q, r) = qr(a)?;
+        let diag_max = (0..n).map(|i| r[(i, i)].abs()).fold(0.0_f64, f64::max);
+        let tol = 1e-12 * diag_max.max(1.0);
+        let rank_deficient = (0..n).any(|i| r[(i, i)].abs() <= tol);
+        if !rank_deficient {
+            let qtb = q.transpose() * b;
+            let mut x = DVector::<f64>::zeros(n);
+            for i in (0..n).rev() {
+                let mut sum = qtb[i];
+                for j in (i + 1)..n {
+                    sum -= r[(i, j)] * x[j];
+                }
+                x[i] = sum / r[(i, i)];
             }
-            x[i] = sum / r[(i, i)];
+            require_finite(x.iter().copied())?;
+            return Ok(x);
         }
-        require_finite(x.iter().copied())?;
-        return Ok(x);
-    }
+        tol
+    } else {
+        let scale = a.iter().fold(0.0_f64, |acc, v| acc.max(v.abs()));
+        1e-12 * scale.max(1.0)
+    };
     let (u, s, vt) = svd(a)?;
     let mut x = DVector::<f64>::zeros(a.ncols());
     for i in 0..s.len() {
@@ -803,5 +822,18 @@ mod tests {
         let a = DMatrix::from_row_slice(2, 2, &[1.0, 0.0, 0.0, 1.0]);
         let b = DVector::from_vec(vec![1.0]);
         assert!(matches!(lstsq(&a, &b), Err(e) if e.kind == ErrorKind::Domain));
+    }
+
+    /// 欠定系统（m < n）：QR 的 R 只有 m 行，回代索引 i>=m 会越界 panic。
+    /// 该路径必须绕过 QR 走 SVD，返回长度 = n 的有限最小范数解。
+    #[test]
+    fn lstsq_underdetermined_does_not_panic() {
+        let a = DMatrix::from_row_slice(2, 3, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let b = DVector::from_vec(vec![1.0, 2.0]);
+        let x = lstsq(&a, &b).expect("欠定系统应返回最小范数解");
+        assert_eq!(x.len(), 3, "解长度必须等于未知数个数 n");
+        assert!(x.iter().all(|v| v.is_finite()), "x={x:?}");
+        let residual = (a * x.clone() - b).norm();
+        assert!(residual < 1e-9, "residual={residual}");
     }
 }
