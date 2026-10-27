@@ -92,7 +92,8 @@ async fn test_http_evaluate_cache_miss() {
 /// 计算错误（1/0）→ 400 code=BAD_REQUEST，message 含 ErrorKind 前缀。
 #[tokio::test]
 async fn test_http_evaluate_calc_error_invalid_input() {
-    let (status, body) = send_request(json!({"expr": "1/0"})).await;
+    // lang=en 钉定：message 的 ErrorKind 前缀文本随语言渲染，与真机系统区域解耦
+    let (status, body) = send_request(json!({"expr": "1/0", "lang": "en"})).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "BAD_REQUEST");

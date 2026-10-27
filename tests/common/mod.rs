@@ -12,8 +12,13 @@ use calnexus::{
 };
 
 /// 构建 calnexus CLI Command（cargo-bin）。
+///
+/// 钉定 `CALNEXUS_LANG=en`：使用方断言文本按英文编写，与真机系统区域解耦
+/// （zh 机器上 sys-locale 回退会输出中文导致断言失败；CI 与本地同一口径）。
 pub fn calnexus_cli() -> Command {
-    Command::cargo_bin("calnexus").expect("calnexus binary not found")
+    let mut cmd = Command::cargo_bin("calnexus").expect("calnexus binary not found");
+    cmd.env("CALNEXUS_LANG", "en");
+    cmd
 }
 
 /// 构建默认路由器：注册全部 11 个域（按优先级降序注册）。

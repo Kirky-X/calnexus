@@ -162,13 +162,15 @@ mod tests {
         panic!("probe: intentional panic for panic-hook i18n verification");
     }
 
-    /// 端到端验证 panic hook 文案随 LANG 切换（zh_CN.UTF-8 中文、C 英文）。
+    /// 端到端验证 panic hook 文案随语言检测切换（zh_CN.UTF-8 中文、CALNEXUS_LANG=en 英文）。
     ///
     /// 须以子进程运行（检测结果进程内 `OnceLock` 缓存，同进程无法切换语言）。
+    /// 英文侧经 `CALNEXUS_LANG` 显式钉定：`LANG=C` 的落点取决于真机系统区域
+    /// （zh 机器回落到 zh），不具跨机器确定性，仅断言输出已本地化。
     #[test]
     fn test_panic_hook_outputs_localized_message() {
         let exe = std::env::current_exe().expect("current_exe");
-        let run_probe = |lang: &str| -> String {
+        let run_probe = |lang_key: &str, lang: &str| -> String {
             let out = std::process::Command::new(&exe)
                 .args([
                     "--exact",
@@ -177,17 +179,18 @@ mod tests {
                     "--nocapture",
                 ])
                 .env("CALNEXUS_PANIC_PROBE", "1")
-                // 清空检测链前两级（空值被检测链跳过），只经 LC_MESSAGES/LANG 注入
+                // 清空检测链前两级（空值被检测链跳过），只经注入键控制落点
                 .env("CALNEXUS_LANG", "")
                 .env("LC_ALL", "")
                 .env("LC_MESSAGES", "")
-                .env("LANG", lang)
+                .env("LANG", "")
+                .env(lang_key, lang)
                 .output()
                 .expect("spawn panic probe child");
             String::from_utf8_lossy(&out.stderr).into_owned()
         };
 
-        let zh = run_probe("zh_CN.UTF-8");
+        let zh = run_probe("LANG", "zh_CN.UTF-8");
         assert!(
             zh.contains("calnexus: 内部错误（panic）"),
             "zh panic hook prefix missing, stderr:\n{zh}"
@@ -201,7 +204,7 @@ mod tests {
             "zh run must not emit hardcoded English, stderr:\n{zh}"
         );
 
-        let en = run_probe("C");
+        let en = run_probe("CALNEXUS_LANG", "en");
         assert!(
             en.contains("calnexus: internal error (panic)"),
             "en panic hook prefix missing, stderr:\n{en}"
@@ -209,6 +212,20 @@ mod tests {
         assert!(
             en.contains("calnexus: please report this bug with the backtrace above"),
             "en panic hook report line missing, stderr:\n{en}"
+        );
+
+        // LANG=C 的 POSIX 回退落点随真机系统区域（en 机器得 en、zh 机器得 zh），
+        // 仅断言输出来自目录（已本地化），不钉具体语言
+        let c_locale = run_probe("LANG", "C");
+        assert!(
+            c_locale.contains("calnexus: internal error (panic)")
+                || c_locale.contains("calnexus: 内部错误（panic）"),
+            "C locale must yield a localized panic prefix, stderr:\n{c_locale}"
+        );
+        assert!(
+            c_locale.contains("请携带上方 backtrace 报告此问题")
+                || c_locale.contains("please report this bug with the backtrace above"),
+            "C locale must yield a localized report line, stderr:\n{c_locale}"
         );
     }
 }

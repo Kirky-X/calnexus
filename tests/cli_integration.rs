@@ -1149,7 +1149,7 @@ fn it_cli_latex_eval_error_exit_1() {
 #[test]
 fn test_explain_parse_error_exit_1() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    cmd.args(["--explain", "2++3"])
+    cmd.args(["--explain", "--lang", "en", "2++3"])
         .assert()
         .failure()
         .code(1)
@@ -1159,7 +1159,7 @@ fn test_explain_parse_error_exit_1() {
 #[test]
 fn test_explain_div_zero_hint() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    cmd.args(["--explain", "1/0"])
+    cmd.args(["--explain", "--lang", "en", "1/0"])
         .assert()
         .failure()
         .code(1)
@@ -1220,7 +1220,7 @@ fn test_success_exit_0() {
 #[test]
 fn test_explain_domain_hint() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    cmd.args(["--explain", "asin(2)"])
+    cmd.args(["--explain", "--lang", "en", "asin(2)"])
         .assert()
         .failure()
         .code(1)
@@ -1560,7 +1560,10 @@ fn parse_error_text_mode_shows_caret() {
 #[test]
 fn undefined_symbol_hint_suggests_cli_var_flag() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
-    let output = cmd.arg("x+1").output().expect("failed to execute");
+    let output = cmd
+        .args(["--lang", "en", "x+1"])
+        .output()
+        .expect("failed to execute");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("--var x=<value>"),

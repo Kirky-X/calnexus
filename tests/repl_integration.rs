@@ -3,6 +3,10 @@
 
 //! 通过 pty 驱动 `calnexus --repl` 的集成测试（30s 超时）。
 
+// expectrl OsSession 依赖 pty：Windows ConPTY 环境下提示符稳定不可达（10/10 超时），
+// 门控到 unix（CI ubuntu 与 WSL 开发侧保持全覆盖）。
+#![cfg(unix)]
+
 use expectrl::process::Healthcheck;
 use expectrl::session::OsSession;
 use expectrl::{Expect, Session};

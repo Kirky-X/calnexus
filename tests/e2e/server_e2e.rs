@@ -102,7 +102,8 @@ async fn http_health_and_metrics_endpoints() {
 #[tokio::test]
 async fn http_error_contract_and_validation() {
     // 计算错误 → 400 code=BAD_REQUEST，message 带 ErrorKind 前缀
-    let (status, body) = post_json("/api/v1/evaluate", json!({"expr": "1/0"})).await;
+    // lang=en 钉定：ErrorKind 前缀随语言渲染，与真机系统区域解耦
+    let (status, body) = post_json("/api/v1/evaluate", json!({"expr": "1/0", "lang": "en"})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "BAD_REQUEST");
     let msg = body["message"].as_str().unwrap_or("");

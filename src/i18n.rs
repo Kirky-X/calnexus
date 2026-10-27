@@ -87,6 +87,15 @@ pub(crate) fn detect_locale() -> Lang {
 
 /// 检测链纯函数：env 读取经 `lookup` 注入，便于无环境副作用的测试。
 fn detect_from(lookup: impl Fn(&str) -> Option<String>) -> Lang {
+    detect_from_with_sys(lookup, sys_locale::get_locale)
+}
+
+/// 同 `detect_from`，系统区域探测步可注入：「回退到 En」的断言依赖该步结果，
+/// 不注入则在系统区域为 zh 的机器上必然失败。
+fn detect_from_with_sys(
+    lookup: impl Fn(&str) -> Option<String>,
+    sys_lookup: impl Fn() -> Option<String>,
+) -> Lang {
     // 1. 项目覆盖变量（大写项目名）
     if let Some(value) = lookup("CALNEXUS_LANG")
         && let Some(lang) = normalize_env_value(&value)
@@ -102,7 +111,7 @@ fn detect_from(lookup: impl Fn(&str) -> Option<String>) -> Lang {
         }
     }
     // 3. sys-locale 系统探测
-    if let Some(locale) = sys_locale::get_locale()
+    if let Some(locale) = sys_lookup()
         && let Some(lang) = normalize_env_value(&locale)
     {
         return lang;
@@ -744,23 +753,61 @@ mod tests {
 
     #[test]
     fn test_detect_fr_fr_falls_back_to_en() {
-        assert_eq!(detect_from(env_of(&[("LANG", "fr_FR")])), Lang::En);
+        // sys-locale 注入 None：断言与真机区域设置解耦
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "fr_FR")]), || None),
+            Lang::En
+        );
     }
 
     #[test]
     fn test_detect_c_locale_falls_back_to_en() {
-        assert_eq!(detect_from(env_of(&[("LANG", "C")])), Lang::En);
-        assert_eq!(detect_from(env_of(&[("LANG", "POSIX")])), Lang::En);
-        assert_eq!(detect_from(env_of(&[("LANG", "C.UTF-8")])), Lang::En);
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "C")]), || None),
+            Lang::En
+        );
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "POSIX")]), || None),
+            Lang::En
+        );
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "C.UTF-8")]), || None),
+            Lang::En
+        );
     }
 
     #[test]
     fn test_detect_empty_and_malformed_fall_back_to_en() {
-        assert_eq!(detect_from(env_of(&[("LANG", "")])), Lang::En);
-        assert_eq!(detect_from(env_of(&[("LANG", "   ")])), Lang::En);
-        assert_eq!(detect_from(env_of(&[("LANG", "!!!")])), Lang::En);
-        assert_eq!(detect_from(env_of(&[("LANG", "zhongwen")])), Lang::En);
-        assert_eq!(detect_from(env_of(&[])), Lang::En);
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "")]), || None),
+            Lang::En
+        );
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "   ")]), || None),
+            Lang::En
+        );
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "!!!")]), || None),
+            Lang::En
+        );
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "zhongwen")]), || None),
+            Lang::En
+        );
+        assert_eq!(detect_from_with_sys(env_of(&[]), || None), Lang::En);
+    }
+
+    #[test]
+    fn test_detect_sys_locale_used_when_env_unparseable() {
+        // env 均不可解析时系统区域生效（注入固定值钉住该步接线）
+        assert_eq!(
+            detect_from_with_sys(env_of(&[("LANG", "C")]), || Some("zh-CN".to_string())),
+            Lang::Zh
+        );
+        assert_eq!(
+            detect_from_with_sys(env_of(&[]), || Some("en-US".to_string())),
+            Lang::En
+        );
     }
 
     #[test]
