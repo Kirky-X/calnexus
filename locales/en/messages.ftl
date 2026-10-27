@@ -261,6 +261,9 @@ msg-solvers-brent_not_converged = brent: did not converge after { $max_iter } it
 msg-solvers-brent_same_sign = brent: f({ $a }) and f({ $b }) have the same sign
 msg-solvers-newton_derivative_zero = newton_raphson: derivative is zero at x={ $x }
 msg-solvers-newton_not_converged = newton_raphson: did not converge after { $max_iter } iterations
+msg-solvers-secant_not_converged = secant: did not converge after { $max_iter } iterations
+msg-solvers-secant_zero_denominator = secant: zero denominator at x={ $x }
+msg-solvers-simpson_depth = adaptive_simpson: maximum recursion depth reached
 msg-statistics-arg_count = { $name }() requires { $expected } arguments, got { $actual }
 msg-statistics-expected_scalar_argument = expected scalar argument
 msg-statistics-factorial_not_supported = factorial not supported in statistics domain

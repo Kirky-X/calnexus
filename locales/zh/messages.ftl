@@ -261,6 +261,9 @@ msg-solvers-brent_not_converged = brent: 迭代 { $max_iter } 次后未收敛
 msg-solvers-brent_same_sign = brent: f({ $a }) 与 f({ $b }) 同号
 msg-solvers-newton_derivative_zero = newton_raphson: 在 x={ $x } 处导数为零
 msg-solvers-newton_not_converged = newton_raphson: 迭代 { $max_iter } 次后未收敛
+msg-solvers-secant_not_converged = secant: 迭代 { $max_iter } 次后未收敛
+msg-solvers-secant_zero_denominator = secant: 在 x={ $x } 处分母为零
+msg-solvers-simpson_depth = adaptive_simpson: 达到最大递归深度
 msg-statistics-arg_count = { $name }() 需要 { $expected } 个参数，得到 { $actual }
 msg-statistics-expected_scalar_argument = 期望标量参数
 msg-statistics-factorial_not_supported = 统计域不支持阶乘运算
