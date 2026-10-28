@@ -871,4 +871,48 @@ mod tests {
         let ast = AstNode::BigNumber("123".to_string());
         assert!(!contains_fx_function(&ast));
     }
+
+    // ===== 一元包围与错误契约（覆盖率补测） =====
+
+    #[test]
+    fn test_unary_neg_on_fx_result() {
+        let v = eval_scalar("-fx(1, \"USD\", \"CNY\")").unwrap();
+        assert!((v + 7.85 / 1.08).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_unary_abs_on_negated_fx_result() {
+        let v = eval_scalar("abs(-fx(1, \"USD\", \"CNY\"))").unwrap();
+        assert!((v - 7.85 / 1.08).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_nonwhitelisted_function_inside_fx_errors() {
+        // fx 白名单外函数混入实参 → 前置守卫显性拒绝（Domain）
+        let err = eval("fx(sin(0), \"USD\", \"CNY\")").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Domain);
+        assert!(err.message.contains("sin"), "msg: {}", err.message);
+    }
+
+    #[test]
+    fn test_mod_wrapper_arg_count_error() {
+        let err = eval("fx(mod(1), \"USD\", \"CNY\")").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Domain);
+        assert!(
+            err.message.contains("mod() requires exactly 2"),
+            "msg: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn test_abs_wrapper_arg_count_error() {
+        let err = eval("fx(abs(1, 2), \"USD\", \"CNY\")").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Domain);
+        assert!(
+            err.message.contains("abs() requires exactly 1"),
+            "msg: {}",
+            err.message
+        );
+    }
 }

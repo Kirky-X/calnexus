@@ -1759,4 +1759,84 @@ mod tests {
             "auto 链序固定为 frankfurter → erapi"
         );
     }
+
+    // ===== 覆盖率补测：配置 serde 非字符串源、元数据与解析边界 =====
+
+    #[test]
+    fn test_fx_config_deserialize_from_typed_values() {
+        // 配置文件源（数值/布尔字面量）走 de_env_string 的 visit_u64/visit_f64/visit_bool 分支
+        let cfg: FxProviderConfig = serde_json::from_str(
+            r#"{"ttl_hours": 48, "breaker_threshold": 2, "breaker_cooldown_secs": 2, "allow_stale": true}"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.ttl_seconds(), 48 * 3600);
+        assert_eq!(cfg.breaker_threshold(), 2);
+        assert_eq!(cfg.breaker_cooldown(), Duration::from_secs(2));
+        // 三态契约：bool true 归一为 "true"，非 "1"，仍为 false
+        assert!(!cfg.allow_stale());
+    }
+
+    #[test]
+    fn test_fx_config_deserialize_float_ttl() {
+        // 小数 ttl 走 visit_f64（cooldown 解析器为 u64，浮点非法回退默认的语义另有钉）
+        let cfg: FxProviderConfig = serde_json::from_str(r#"{"ttl_hours": 0.5}"#).unwrap();
+        assert_eq!(cfg.ttl_seconds(), 1800);
+    }
+
+    #[test]
+    fn test_fx_config_deserialize_null_and_missing() {
+        // null → visit_unit → None → 默认；字段缺省同理
+        let cfg: FxProviderConfig = serde_json::from_str(r#"{"ttl_hours": null}"#).unwrap();
+        assert_eq!(cfg.ttl_seconds(), 24 * 3600);
+        let cfg2: FxProviderConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(cfg2.ttl_seconds(), 24 * 3600);
+        assert!(!cfg2.allow_stale());
+    }
+
+    #[test]
+    fn test_cached_rate_provider_debug_impl() {
+        let cfg = FxProviderConfig::default();
+        let text = format!("{:?}", build_provider(&cfg));
+        assert!(text.contains("CachedRateProvider"), "debug: {text}");
+    }
+
+    #[test]
+    fn test_chain_provider_metadata() {
+        let chain = ChainRateProvider::new(vec![
+            Box::new(FrankfurterProvider),
+            Box::new(ExchangeRateApiProvider),
+        ]);
+        assert_eq!(chain.name(), "auto");
+        assert_eq!(chain.source_names(), vec!["frankfurter", "erapi"]);
+    }
+
+    #[test]
+    fn test_rate_provider_default_name() {
+        // 未覆写 name() 的实现走 trait 默认（failover 聚合时的兜底标识）
+        struct Anonymous;
+        impl RateProvider for Anonymous {
+            fn rates(&self) -> Result<RateTable, CalcError> {
+                Ok(RateTable {
+                    base: "EUR".to_string(),
+                    date: "2026-01-01".to_string(),
+                    rates: HashMap::new(),
+                    source: "anonymous".to_string(),
+                })
+            }
+        }
+        assert_eq!(Anonymous.name(), "unknown");
+    }
+
+    #[test]
+    fn test_erapi_parse_empty_rates_is_invalid_response() {
+        let body = r#"{
+            "result": "success",
+            "base_code": "EUR",
+            "time_last_update_unix": 1761234567,
+            "rates": {}
+        }"#;
+        let err = parse_erapi_response(body).expect_err("空汇率表必须显性拒绝");
+        assert_eq!(err.kind, crate::core::ErrorKind::DependencyUnavailable);
+        assert_eq!(err.i18n_key, Some("msg.fx.invalid_response"));
+    }
 }

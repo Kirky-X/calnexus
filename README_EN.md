@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo.png" alt="CalNexus Logo" height="240">
 
-[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![docs.rs](https://img.shields.io/docsrs/calnexus?style=for-the-badge)](https://docs.rs/calnexus) [![downloads](https://img.shields.io/crates/d/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![CI](https://img.shields.io/github/actions/workflow/status/kirky-x/calnexus/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![coverage](https://img.shields.io/badge/coverage-90.4%25%20(llvm--cov%20lines)-brightgreen?style=for-the-badge)](https://github.com/kirky-x/calnexus) [![license](https://img.shields.io/crates/l/calnexus?style=for-the-badge)](LICENSE)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![docs.rs](https://img.shields.io/docsrs/calnexus?style=for-the-badge)](https://docs.rs/calnexus) [![downloads](https://img.shields.io/crates/d/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![CI](https://img.shields.io/github/actions/workflow/status/kirky-x/calnexus/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![coverage](https://img.shields.io/badge/coverage-94.9%25%20(llvm--cov%20lines)-brightgreen?style=for-the-badge)](https://github.com/kirky-x/calnexus) [![license](https://img.shields.io/crates/l/calnexus?style=for-the-badge)](LICENSE)
 
 [中文](README.md) | **English**
 
@@ -342,7 +342,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 Test Scale
 
-Current working tree (after v0.2.0-rc.2): grep statistics count 3133 `#[test]` / `#[tokio::test]` functions in total — 2557 unit tests (inline in `src/`), 576 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 90% line coverage (llvm-cov, measured with `--features cli,time,unit,fx`; currently 90.4%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+Current working tree (after v0.2.0-rc.3): grep statistics count 3180 `#[test]` / `#[tokio::test]` functions in total — 2603 unit tests (inline in `src/`), 577 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 95% line coverage (llvm-cov `--fail-under-lines 95`, measured with `--features cli,time,unit,fx`; currently 94.9%), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
 
 ---
 

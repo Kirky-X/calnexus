@@ -149,20 +149,20 @@ calnexus --serve-mcp                          # MCP（stdio）
 | 域 | 优先级 | 函数（表达式面，经路由实测） |
 | --- | --- | --- |
 | Arithmetic | 10 | `+ - * / ^ mod abs factorial` |
-| Scientific | 20 | `sin cos tan asin acos atan ln log(x,base) log10 log2 exp sinh cosh tanh gamma erf` |
+| Scientific | 20 | `sin cos tan asin acos atan ln log(x,base) log10 log2 exp sinh cosh tanh gamma erf erfc lgamma polylog(s,z) besselj bessely besseli besselk beta zeta airy_ai airy_bi root integral` |
 | Statistics | 20 | `mean median variance std sum min max count` |
 | Precision | 25 | `precision(N, expr)` BigRational |
 | NumberTheory | 25 | `gcd lcm is_prime prime_sieve mod_inverse mod_pow euler_phi` |
 | Combinatorics | 25 | `P(n,k) C(n,k) catalan stirling` |
 | Polynomial | 25 | `poly_add poly_sub poly_mul poly_div poly_eval poly_diff poly_integrate roots factor` |
 | Complex | 30 | 复数字面量 `3+4i`；`complex(a,b) conj arg abs` |
-| Matrix | 30 | `det transpose inverse identity` + `lu qr eig svd solve`（`numerical` feature） |
+| Matrix | 30 | `det transpose inverse identity` + `lu qr eig eig_general svd solve`（`numerical` feature） |
 | Vector | 30 | `dot cross norm angle normalize scalar_triple cosine_similarity euclidean manhattan project reflect outer lerp` + Hadamard 积 `[a,b]*[c,d]` |
 | Symbolic | 30 | `diff integrate simplify limit taylor` |
 | Time（`time`） | 30 | `date datetime timestamp from_timestamp date_diff date_add weekday day_of_year is_leap_year now today` 等 14 函数 |
 | Unit（`unit`） | 30 | `convert(value, "from", "to")` |
 | FX（`fx`） | 30 | `fx(value, "FROM", "TO")`、`fx_rate("FROM", "TO")` |
-| Numerical（`numerical`） | — | 经 Matrix 域委托 `lu qr eig svd solve`（无独立域） |
+| Numerical（`numerical`） | — | 经 Matrix 域委托 `lu qr eig eig_general svd solve`（无独立域）；`derivative`/`lstsq` 为 trait API 面方法（`LinearAlgebra`），不经表达式路由 |
 
 路由策略：按优先级降序遍历，首个 `supports()` 命中即路由。`calnexus --list-functions` 输出运行时函数目录（按域分组）；目录由各域路由白名单常量派生，与实际路由一致（防漂移测试钉死）。
 
@@ -184,14 +184,14 @@ parse → AstCanonicalizer → CacheManager → DomainRouter → CalculationDoma
 ## 测试与质量
 
 ```bash
-cargo test --all-features                              # 全量测试（约 3000 用例）
-cargo test --all-features --test e2e                   # E2E 场景套件（tests/e2e/，五类核心场景 145 用例）
+cargo test --all-features                              # 全量测试（约 3200 用例）
+cargo test --all-features --test e2e                   # E2E 场景套件（tests/e2e/，五类核心场景 158 用例）
 cargo clippy --all-features --all-targets -- -D warnings  # 零警告
 calnexus --list-functions                              # 运行时函数目录（按域分组）
 cargo bench --features cli                             # criterion 基准
 ```
 
-CI 矩阵：clippy 三腿（`cli` / `cli,server` / all）+ test 六腿（`cli` / `cli,time,unit,fx` / `cli,server` / `cli,server,fx` / `cli,numerical` / all）+ 单 feature check。覆盖率门禁为行覆盖率 ≥ 90%（llvm-cov，`--features "cli,time,unit,fx"` 口径，实测 90.4%）。测试用例权威口径见 README「测试规模」节（以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准，当前工作区 3040 个）。
+CI 矩阵：clippy 三腿（`cli` / `cli,server` / all）+ test 六腿（`cli` / `cli,time,unit,fx` / `cli,server` / `cli,server,fx` / `cli,numerical` / all）+ 单 feature check。覆盖率门禁为行覆盖率 ≥ 95%（llvm-cov `--fail-under-lines 95`，`--features "cli,time,unit,fx"` 口径）。测试用例权威口径见 README「测试规模」节（以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准，当前工作区 3180 个）。
 
 ## 详细参考
 
