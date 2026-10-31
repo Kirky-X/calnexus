@@ -26,7 +26,11 @@ const TERM: &str = "xterm-256color";
 fn spawn_repl() -> OsSession {
     let bin = assert_cmd::cargo::cargo_bin("calnexus");
     let mut cmd = std::process::Command::new(bin);
-    cmd.arg("--repl").env("TERM", TERM);
+    // 语言钉定 En：REPL 输出文案（repl.bye/错误消息）随宿主语区本地化，
+    // 断言串为英文——中文语区宿主上会整批假失败（同 TERM 的钉定理由）
+    cmd.arg("--repl")
+        .env("TERM", TERM)
+        .env("CALNEXUS_LANG", "en");
     Session::spawn(cmd).expect("failed to spawn calnexus --repl")
 }
 
