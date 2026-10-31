@@ -46,7 +46,7 @@ egraph = ["dep:egg"]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层：oxcache byte-weight（同步字节预算）+ serialization（L1 weigher 估重）
-oxcache = { version = "0.5.0-rc.10", default-features = false, features = ["byte-weight", "serialization"] }
+oxcache = { version = "0.5.0-rc.12", default-features = false, features = ["byte-weight", "serialization"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
 # 哈希
@@ -68,7 +68,7 @@ num-rational = { version = "0.4", default-features = false, features = ["std", "
 num-integer = { version = "0.1", default-features = false, features = ["std"] }
 num-traits = { version = "0.2", default-features = false, features = ["std"] }
 # CLI 依赖（clap 通过 sdforge/cli 间接启用，features 由 sdforge 管理）
-rustyline = { version = "18.0", default-features = false, features = ["derive"], optional = true }
+rustyline = { version = "19.0", default-features = false, features = ["derive"], optional = true }
 rayon = { version = "1.12", default-features = false, optional = true }
 # ICU4X 国际化
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
@@ -79,7 +79,7 @@ unic-langid = { version = "0.9", default-features = false }
 # 系统语言探测：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en
 sys-locale = { version = "0.3", default-features = false }
 # sdforge: CLI/HTTP/MCP 接口封装层
-sdforge = { version = "0.5.0-rc.9", default-features = false, optional = true }
+sdforge = { version = "0.5.0-rc.10", default-features = false, optional = true }
 # axum: HTTP 框架（仅 http；Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（EvalResult::Json + server 共用）
@@ -91,7 +91,7 @@ async-trait = { version = "0.1", default-features = false, optional = true }
 # tracing: observability 支持（server 模式结构化日志；仅 observability feature 启用）
 tracing = { version = "0.1", default-features = false, optional = true }
 # 生产日志（observability）：inklog 接管，CLI 纯构建保持 tokio-free
-inklog = { version = "0.3.0-rc.10", default-features = false, optional = true }
+inklog = { version = "0.3.0-rc.12", default-features = false, optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
@@ -99,13 +99,13 @@ ureq = { version = "3.4", default-features = false, features = ["rustls"], optio
 # dirs: 跨平台缓存目录（仅 fx；7.x 稳定，仅用 cache_dir）
 dirs = { version = "7.0", default-features = false, optional = true }
 # limiteron: 同步限流原语（sync 特性：熔断 + 固定窗口；fx/ratelimit 共用）
-limiteron = { version = "0.3.0-rc.8", default-features = false, features = ["sync"], optional = true }
+limiteron = { version = "0.3.0-rc.10", default-features = false, features = ["sync"], optional = true }
 # confers: 声明式配置（fx 域 CALNEXUS_FX_* 经 env_prefix 映射；无 dotenvy/toml）
 confers = { version = "0.6.0-rc.11", default-features = false, optional = true }
 # wasm-bindgen: wasm32 导出层（仅 wasm-api feature 启用）
 wasm-bindgen = { version = "0.2", default-features = false, optional = true }
 # egg: E-graph equality saturation（仅 egraph feature 启用）
-egg = { version = "0.9", default-features = false, optional = true }
+egg = { version = "0.11", default-features = false, optional = true }
 
 # SIGPIPE 恢复默认处置：`| head` 提前关管道时静默终止而非 EPIPE panic（仅 unix）
 [target.'cfg(unix)'.dependencies]
