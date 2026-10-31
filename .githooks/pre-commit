@@ -70,7 +70,7 @@ if [ -f fuzz/Cargo.toml ]; then
     fuzz_fmt_out="$(cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check 2>&1)"
     fuzz_fmt_rc=$?
 else
-    fuzz_fmt_out="fuzz/Cargo.toml 不存在，跳过 fuzz workspace 格式校验"
+    fuzz_fmt_out="fuzz/Cargo.toml absent, skipping fuzz workspace format check"
 fi
 if [ "$fmt_rc" -eq 0 ] && [ "$fuzz_fmt_rc" -eq 0 ]; then
     pass "formatting is clean"
