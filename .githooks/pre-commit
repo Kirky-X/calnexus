@@ -60,10 +60,18 @@ echo "----------------------------------------"
 step "Check 1/10: cargo fmt --all -- --check"
 fmt_out="$(cargo fmt --all -- --check 2>&1)"
 fmt_rc=$?
-# fuzz/ 是独立 workspace（独立 Cargo.toml + 独立 rust-toolchain），格式单独校验。
-# 不用 `+stable`：那会绕过版本钉住，使本地与 CI（ci.yml 的 Rustfmt job 已钉 1.97.1）口径不一致。
-fuzz_fmt_out="$(cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check 2>&1)"
-fuzz_fmt_rc=$?
+# fuzz/ is a standalone workspace (separate Cargo.toml + rust-toolchain), so its
+# formatting is checked separately. Do not use `+stable`: that would bypass the
+# pinned toolchain and drift from CI (ci.yml pins Rustfmt 1.97.1).
+# Clones without fuzz/ (sparse checkout / trimmed copy) skip that leg instead of
+# failing the whole hook.
+fuzz_fmt_rc=0
+if [ -f fuzz/Cargo.toml ]; then
+    fuzz_fmt_out="$(cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check 2>&1)"
+    fuzz_fmt_rc=$?
+else
+    fuzz_fmt_out="fuzz/Cargo.toml 不存在，跳过 fuzz workspace 格式校验"
+fi
 if [ "$fmt_rc" -eq 0 ] && [ "$fuzz_fmt_rc" -eq 0 ]; then
     pass "formatting is clean"
 else

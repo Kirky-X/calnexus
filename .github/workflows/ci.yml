@@ -58,8 +58,11 @@ jobs:
       - name: Run clippy (${{ matrix.features }})
         run: |
           if [ "${{ matrix.features }}" = "all" ]; then
-            # wasm-api 仅 wasm32 可用（非 wasm 启用会 compile_error），从 all 腿排除
-            cargo clippy --features "cli,server,time,unit,fx,numerical,ratelimit,docs,observability,icu,egraph" --all-targets -- -D warnings
+            # wasm-api 仅 wasm32 可用（非 wasm 启用会 compile_error），从 all 腿排除；
+            # default 同理（all 腿显式列举 feature，不带 default）。
+            # http/mcp 必须在列表内：feature-matrix 只跑 cargo hack check（编译），
+            # clippy 仅在本腿执行——漏列即这两个 feature 的 lint 缺口。
+            cargo clippy --features "cli,server,time,unit,fx,numerical,ratelimit,docs,observability,icu,egraph,http,mcp" --all-targets -- -D warnings
           else
             cargo clippy --features ${{ matrix.features }} --all-targets -- -D warnings
           fi
@@ -143,7 +146,7 @@ jobs:
       - name: Build (cli)
         run: cargo build --lib --bins --target wasm32-unknown-unknown --features cli
       - name: Build (cli,wasm-api)
-        run: cargo build --lib --target wasm32-unknown-unknown --features cli,wasm-api
+        run: cargo build --lib --bins --target wasm32-unknown-unknown --features cli,wasm-api
       - name: Clippy (wasm32, cli)
         run: cargo clippy --target wasm32-unknown-unknown --features cli -- -D warnings
 
