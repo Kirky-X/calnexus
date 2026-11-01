@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-rc.4] - 2026-11-01
+
 ### Changed
 
 - `fuzz/` crate edition 2021 → 2024（与主 crate 对齐）：rustfmt style edition 随之为 2024，导入排序与全仓一致；CI 与本地 pre-commit 门禁新增 `fuzz/` 独立 workspace 的格式校验，防止风格再次分裂
