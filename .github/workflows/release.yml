@@ -112,12 +112,21 @@ jobs:
         run: |
           # crates.io 偶发 5xx / 索引延迟会把「未发布」误判而触发重复 publish 失败：
           # 对 5xx 退避重试，其余状态码（含 200/403/404）一次判定。
-          # 网络层失败（DNS/超时）时 curl 写出 "000"——同样重试；重试耗尽仍为 "000"
-          # 则 fail-closed 报错退出，不把「状态未知」当成「未发布」继续去 publish。
+          # curl 网络层失败时 `-w "%{http_code}"` 写出 "000" 且退出码非零——
+          # 不用 `|| echo "000"`：curl 非 0 退出时 -w 已输出 000，`|| echo` 会追加
+          # 第二个 000 产生多行 "000\n000"，使 `[[ != "000" ]]` 恒 true 导致 fail-closed
+          # 被穿透（OCR 补扫发现）。改用 `${PIPESTATUS[0]}` 检测 curl 退出码来补写。
           CODE=""
           for _ in 1 2 3 4; do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" -H 'User-Agent: kirky-x-release-verify' \
-              "https://crates.io/api/v1/crates/calnexus/${VERSION}" || echo "000")
+            curl -s -o /dev/null -w "%{http_code}" -H 'User-Agent: kirky-x-release-verify' \
+              "https://crates.io/api/v1/crates/calnexus/${VERSION}" > /tmp/.cr_code 2>/dev/null
+            CURL_RC=$?
+            CODE=$(cat /tmp/.cr_code)
+            if [ "$CURL_RC" -ne 0 ] && [ "$CODE" = "000" ]; then
+              CODE="000"
+            elif [ "$CURL_RC" -ne 0 ]; then
+              CODE="000"
+            fi
             echo "calnexus ${VERSION}: HTTP ${CODE}"
             [[ "$CODE" != 5* && "$CODE" != "000" ]] && break
             sleep 15
