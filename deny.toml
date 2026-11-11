@@ -14,7 +14,11 @@ targets = [
 [advisories]
 version = 2
 ignore = [
-    # { id = "RUSTSEC-0000-0000", reason = "说明理由" }
+    # pin-utils：unmaintained 标记（非漏洞）。仅 dev 依赖链引入：
+    # expectrl 0.9.0（REPL 集成测试）→ {ptyprocess, nix 0.26} → pin-utils，
+    # 不进任何生产 feature 的依赖图；expectrl 0.9.0 已是 crates.io 最新版，
+    # 无上游补丁。退出条件与逐条理由见 .cargo/audit.toml 同 ID 注释块。
+    { id = "RUSTSEC-2026-0441", reason = "dev-only chain via expectrl/ptyprocess/nix; no upstream fix, expectrl 0.9.0 is latest" },
 ]
 
 [licenses]

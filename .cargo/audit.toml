@@ -29,4 +29,18 @@ ignore = [
     "RUSTSEC-2025-0057",
     # instant：unmaintained（egg 0.9.5 间接引入）
     "RUSTSEC-2024-0384",
+    # pin-utils：unmaintained（仅 dev 依赖链引入，见下方注释块）
+    "RUSTSEC-2026-0441",
 ]
+
+# RUSTSEC-2026-0441 (pin-utils 0.1.1)：
+# • 性质：`unmaintained`（停止维护）状态标记，不是漏洞；advisory 无 patched
+#   版本区间，不存在"升级即修复"的选项。
+# • 命中路径（Cargo.lock 可复现）：dev-dependencies 的 expectrl 0.9.0 →
+#   {ptyprocess 0.5.0, nix 0.26.4} → pin-utils 0.1.1。expectrl 用于 REPL
+#   集成测试（pty 驱动），不出现在任何生产 feature 的依赖图中；pin-utils
+#   也因此不会进入发布产物。
+# • 为何不升级：expectrl 0.9.0 已是 crates.io 最新版（上游未迁移 nix 新版），
+#   无上游补丁可跟进。
+# • 退出条件：expectrl 发布改用新版 nix（>= 0.27，移除 pin-utils）的版本后，
+#   删除上面一条并重跑 `cargo audit --deny warnings` 确认全绿。

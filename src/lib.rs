@@ -19,6 +19,9 @@ mod core;
 pub mod domains;
 mod function_catalog;
 mod i18n;
+/// trait-kit AsyncKit 集成层（feature `kit` 门控；核心 trait 不经此层重写）。
+#[cfg(feature = "kit")]
+pub mod integrations;
 /// 数学纯函数层（内部 API，非 Semver 承诺；领域逻辑经 `crate::domains` 暴露）。
 pub mod math;
 mod output;
