@@ -28,7 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check fuzz workspace formatting
@@ -54,7 +54,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Run clippy (${{ matrix.features }})
         run: |
           if [ "${{ matrix.features }}" = "all" ]; then
@@ -85,7 +85,7 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Run tests (${{ matrix.features }})
         run: |
           if [ "${{ matrix.features }}" = "all" ]; then
@@ -112,7 +112,7 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Check with MSRV
         # wasm-api 仅 wasm32 可用，MSRV 检查排除
         run: cargo check --features "cli,server,time,unit,fx,numerical,ratelimit,docs,observability,icu,egraph"
@@ -125,7 +125,7 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Build release
         run: cargo build --release --features cli
 
@@ -140,7 +140,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Build (no default features)
         run: cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features
       - name: Build (cli)
@@ -160,7 +160,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
