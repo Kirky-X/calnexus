@@ -92,7 +92,7 @@ jobs:
 
       # 安全 M-2：发布前 SAST 扫描（规则24：0 CRITICAL 才允许继续）
       - name: Install cargo-audit
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-audit
 
