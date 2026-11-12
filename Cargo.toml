@@ -79,7 +79,7 @@ sys-locale = { version = "0.3", default-features = false }
 # sdforge: CLI/HTTP/MCP 接口封装层 + i18n 宿主注册基座（消息目录唯一存储）。
 # 非可选：base/wasm 构建同样需要消息翻译（core/types friendly 等调用点），
 # 裸编译面仅 serde/log/macros/fluent 内嵌目录，wasm32 可编译。
-sdforge = { version = "0.5.0-rc.10", default-features = false }
+sdforge = { version = "0.5.0-rc.11", default-features = false }
 # axum: HTTP 框架（仅 http；Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（EvalResult::Json + server 共用）
@@ -101,14 +101,14 @@ dirs = { version = "7.0", default-features = false, optional = true }
 # limiteron: 同步限流原语（sync 特性：熔断 + 固定窗口；fx/ratelimit 共用）
 limiteron = { version = "0.3.0-rc.10", default-features = false, features = ["sync"], optional = true }
 # confers: 声明式配置（fx 域 CALNEXUS_FX_* 经 env_prefix 映射；无 dotenvy/toml）
-confers = { version = "0.6.0-rc.11", default-features = false, optional = true }
+confers = { version = "0.6.0-rc.13", default-features = false, optional = true }
 # wasm-bindgen: wasm32 导出层（仅 wasm-api feature 启用）
 wasm-bindgen = { version = "0.2", default-features = false, optional = true }
 # egg: E-graph equality saturation（仅 egraph feature 启用）
 egg = { version = "0.11", default-features = false, optional = true }
 # trait-kit: AsyncKit 依赖注入（仅 kit feature 启用；async 为 AsyncAutoBuilder 必需，
 # i18n 为 I18nFormatter 的 ICU 数字/日期/复数/排序格式化）
-trait-kit = { version = "0.5.0-rc.13", default-features = false, features = ["async", "i18n"], optional = true }
+trait-kit = { version = "0.5.0-rc.14", default-features = false, features = ["async", "i18n"], optional = true }
 
 # SIGPIPE 恢复默认处置：`| head` 提前关管道时静默终止而非 EPIPE panic（仅 unix）
 [target.'cfg(unix)'.dependencies]
