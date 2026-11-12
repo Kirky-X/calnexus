@@ -15,13 +15,13 @@ readme = "README.md"
 [features]
 default = []
 # CLI: 命令行界面 + REPL + 批处理（clap 通过 sdforge/cli 间接启用）
-cli = ["dep:sdforge", "sdforge/cli", "dep:rustyline", "dep:rayon"]
+cli = ["sdforge/cli", "dep:rustyline", "dep:rayon"]
 # ICU4X: 国际化错误消息（中英双语）
 icu = ["dep:icu"]
 # HTTP: HTTP API + sdforge 健康探针（/health /ready /live）与请求标识传播
-http = ["dep:tokio", "dep:sdforge", "sdforge/http", "sdforge/graceful", "sdforge/health", "sdforge/context", "sdforge/metrics", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
+http = ["dep:tokio", "sdforge/http", "sdforge/graceful", "sdforge/health", "sdforge/context", "sdforge/metrics", "dep:axum", "dep:async-trait", "tokio/rt-multi-thread", "tokio/net", "tokio/io-util", "tokio/time", "tokio/signal"]
 # MCP: Model Context Protocol 接口（基于 sdforge/mcp）
-mcp = ["dep:tokio", "dep:sdforge", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
+mcp = ["dep:tokio", "sdforge/mcp", "dep:anyhow", "tokio/rt-multi-thread", "tokio/io-util", "tokio/time"]
 # Time: 时间计算（日期差、时间戳、格式解析，feature 门控）
 time = ["dep:jiff"]
 # Unit: 物理单位换算（8 量纲，feature 门控）
@@ -32,9 +32,9 @@ fx = ["dep:ureq", "dep:dirs", "dep:limiteron", "dep:confers"]
 numerical = []
 server = ["http", "mcp"]
 # Ratelimit: HTTP 固定窗口限流（sdforge/ratelimit-http；CALNEXUS_RATELIMIT_* 可配）
-ratelimit = ["dep:sdforge", "sdforge/ratelimit-http", "dep:limiteron"]
+ratelimit = ["sdforge/ratelimit-http", "dep:limiteron"]
 # Docs: OpenAPI + Swagger UI 自动生成（sdforge/docs）
-docs = ["dep:sdforge", "sdforge/docs"]
+docs = ["sdforge/docs"]
 # Observability: tracing/inklog 日志（server 模式，RUST_LOG；tokio 由 http/mcp 提供）
 observability = ["dep:tracing", "dep:inklog"]
 # wasm-api: wasm-bindgen 导出层（仅 wasm32 目标；非 wasm 启用会编译期报错）
@@ -72,16 +72,14 @@ num-traits = { version = "0.2", default-features = false, features = ["std"] }
 # CLI 依赖（clap 通过 sdforge/cli 间接启用，features 由 sdforge 管理）
 rustyline = { version = "19.0", default-features = false, features = ["derive"], optional = true }
 rayon = { version = "1.12", default-features = false, optional = true }
-# ICU4X 国际化
+# ICU4X 国际化：BCP-47 语言标签解析（--lang / HTTP lang 字段）
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
-# Fluent 消息束：locales/{en,zh}/messages.ftl 经 include_str! 内嵌（concurrent 可入 static）
-fluent-bundle = { version = "0.16", default-features = false }
-# Fluent 语言标识（束构建用 LanguageIdentifier；default = []，无需额外特性）
-unic-langid = { version = "0.9", default-features = false }
 # 系统语言探测：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en
 sys-locale = { version = "0.3", default-features = false }
-# sdforge: CLI/HTTP/MCP 接口封装层
-sdforge = { version = "0.5.0-rc.10", default-features = false, optional = true }
+# sdforge: CLI/HTTP/MCP 接口封装层 + i18n 宿主注册基座（消息目录唯一存储）。
+# 非可选：base/wasm 构建同样需要消息翻译（core/types friendly 等调用点），
+# 裸编译面仅 serde/log/macros/fluent 内嵌目录，wasm32 可编译。
+sdforge = { version = "0.5.0-rc.10", default-features = false }
 # axum: HTTP 框架（仅 http；Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（EvalResult::Json + server 共用）

@@ -1,14 +1,13 @@
 // Copyright (c) 2026 Kirky.X🌠
 // SPDX-License-Identifier: MIT
 
-//! ICU4X 国际化模块：中英双语 Fluent 消息目录。
+//! ICU4X 国际化模块：中英双语消息目录（sdforge::i18n 宿主注册基座）。
 //!
-//! `icu` feature 仅控制 BCP-47 语言标签的解析实现；未知键返回键名本身（fail-loud）。
+//! 消息真源仍是 `locales/{en,zh}/messages.ftl`（编译期内嵌）；目录经启动期
+//! 解析注册进 sdforge 宿主注册表（库层唯一 i18n 基座，宿主注册优先于内置
+//! 目录）。`icu` feature 仅控制 BCP-47 语言标签的解析实现；未知键返回键名
+//! 本身（fail-loud，不 panic）。
 use std::sync::OnceLock;
-
-use fluent_bundle::concurrent::FluentBundle;
-use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
-use unic_langid::LanguageIdentifier;
 
 /// 支持的语言。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -58,11 +57,19 @@ impl I18n {
 
     /// 查询参数化消息目录（`{ $name }` 占位符）。
     ///
-    /// 查找顺序：当前语言束 → 英文束 → 键名本身；缺参按 Fluent 语义回显 `{$name}`。
+    /// 查找顺序（sdforge `translate_for`）：当前语言宿主注册 → 英文宿主注册 →
+    /// 键名本身；缺参按 Fluent 语义回显紧凑 `{$name}`（注册模板即紧凑形态）。
     pub fn tf(&self, key: &str, args: &[(&str, &str)]) -> String {
-        format_from_bundle(self.lang, key, args)
-            .or_else(|| format_from_bundle(Lang::En, key, args))
-            .unwrap_or_else(|| key.to_string())
+        ensure_registered();
+        let locale = match self.lang {
+            Lang::En => "en",
+            Lang::Zh => "zh",
+        };
+        let owned: Vec<(&str, String)> = args
+            .iter()
+            .map(|(name, value)| (*name, (*value).to_string()))
+            .collect();
+        sdforge::i18n::translate_for(locale, key, &owned)
     }
 }
 
@@ -140,7 +147,7 @@ fn normalize_env_value(raw: &str) -> Option<Lang> {
 }
 
 // ============================================================================
-// Fluent 双束
+// 消息目录（sdforge::i18n 宿主注册）
 // ============================================================================
 
 /// 英文目录（编译期内嵌磁盘文件，不可能失同步）。
@@ -148,47 +155,120 @@ const EN_FTL: &str = include_str!("../locales/en/messages.ftl");
 /// 中文目录（编译期内嵌磁盘文件，不可能失同步）。
 const ZH_FTL: &str = include_str!("../locales/zh/messages.ftl");
 
-/// 缓存并发 Fluent 束（线程安全，首访问构建一次）。
-static EN_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
-static ZH_BUNDLE: OnceLock<FluentBundle<FluentResource>> = OnceLock::new();
+/// 注册单次执行守卫（注册幂等，守卫只为省去重复解析）。
+static REGISTERED: OnceLock<()> = OnceLock::new();
 
-/// 目录键归一化：对外键为点分形式，FTL 标识符不允许 `.`，查表前映射为 `-`。
-fn fluent_id(key: &str) -> String {
-    key.replace('.', "-")
+/// 把双 locale FTL 目录注册进 sdforge 宿主注册表（单次执行，幂等）。
+///
+/// sdforge 查找顺序：宿主注册（最高优先）→ 内置 en 目录 → 键本身；本仓全量
+/// 键经宿主注册后，查找行为为「当前语言 → en → 键名本身」，与切换前的双束
+/// 实现一致。键位还原：FTL 标识符不允许 `.`，本仓约定调用面点分键 ↔ FTL
+/// dash 标识符一一对应（见 FTL 头注释），注册前 dash 还原为点分。
+pub fn ensure_registered() {
+    REGISTERED.get_or_init(|| {
+        register_locale("en", EN_FTL);
+        register_locale("zh", ZH_FTL);
+    });
 }
 
-/// 从指定语言的束渲染消息；键缺失返回 `None`（由调用方回退，不 panic）。
-fn format_from_bundle(lang: Lang, key: &str, args: &[(&str, &str)]) -> Option<String> {
-    let bundle = match lang {
-        Lang::Zh => ZH_BUNDLE.get_or_init(|| build_bundle(ZH_FTL, "zh")),
-        Lang::En => EN_BUNDLE.get_or_init(|| build_bundle(EN_FTL, "en")),
-    };
-    let msg = bundle.get_message(&fluent_id(key))?;
-    let pattern = msg.value()?;
-    let mut fluent_args = FluentArgs::new();
-    for (name, value) in args {
-        fluent_args.set(*name, FluentValue::from(*value));
+/// 注册单 locale 目录条目。
+fn register_locale(locale: &str, ftl: &'static str) {
+    for (id, value) in parse_entries(ftl) {
+        sdforge::i18n::register_translation(locale, &id.replace('-', "."), &value);
     }
-    let mut errors = vec![];
-    Some(
-        bundle
-            .format_pattern(pattern, Some(&fluent_args), &mut errors)
-            .to_string(),
-    )
 }
 
-/// 构建 concurrent 束：FTL 解析失败降级保留未解析资源；关闭 Unicode 隔离符输出。
-fn build_bundle(ftl: &'static str, langid: &'static str) -> FluentBundle<FluentResource> {
-    let resource = FluentResource::try_new(ftl.to_string()).unwrap_or_else(|e| e.0);
-    let langid: LanguageIdentifier = langid
-        .parse()
-        .unwrap_or_else(|_| "en".parse().expect("'en' is a valid language identifier"));
-    let mut bundle = FluentBundle::new_concurrent(vec![langid]);
-    bundle.set_use_isolating(false);
-    bundle
-        .add_resource(resource)
-        .expect("FTL resources should add without conflict");
-    bundle
+/// 解析单行 `key = value` 条目（跳过空行/`#` 注释），值端经 [`template_value`]
+/// 桥接归一为 sdforge 模板。目录约定纯单行形态（守卫测试保证），无多行延续值。
+fn parse_entries(ftl: &'static str) -> impl Iterator<Item = (&'static str, String)> {
+    ftl.lines().filter_map(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return None;
+        }
+        let (id, raw_value) = trimmed.split_once('=')?;
+        let id = id.trim();
+        if id.is_empty() {
+            return None;
+        }
+        Some((id, template_value(raw_value)))
+    })
+}
+
+/// FTL 值 → sdforge 注册模板，两处桥接归一：
+///
+/// 1. 全包字符串字面量 `{ "..." }` 还原为字面文本：FTL 引号字符串保留首尾
+///    空白（如 `label-cached_suffix = { " (cached)" }` 的前导空格），字面量
+///    内部不做占位符处理（Fluent 语义：字面量内容原样输出）。
+/// 2. 其余值把 `{ $name }` 占位符规范为紧凑 `{$name}`：sdforge 缺参时原样
+///    回显模板占位符，紧凑形态与 Fluent 缺参回显形态一致，保证切换前后渲染
+///    逐字节等价（sdforge kit 桥接 `host_to_kit_template` 同款归一）。
+fn template_value(raw: &str) -> String {
+    let value = raw.trim();
+    if let Some(inner) = unwrap_string_literal(value) {
+        return inner;
+    }
+    compact_placeholders(value)
+}
+
+/// 全包字符串字面量还原：`{ "..." }` → 内部文本（`\"`→`"`、`\\`→`\` 转义还原）。
+fn unwrap_string_literal(value: &str) -> Option<String> {
+    let inner = value.strip_prefix("{ \"")?.strip_suffix("\" }")?;
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('"') => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    Some(out)
+}
+
+/// 占位符紧凑化：`{ $name }` → `{$name}`；非 `$` 占位符的大括号原样保留
+/// （推进一格继续扫描，花括号内容不丢——sdforge `format_template` 同语义）。
+fn compact_placeholders(value: &str) -> String {
+    if !value.contains('{') {
+        return value.to_string();
+    }
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(open) = rest.find('{') {
+        let Some(close_rel) = rest[open..].find('}') else {
+            // 无闭合大括号：余文原样保留（目录守卫保证不出现）。
+            out.push_str(rest);
+            return out;
+        };
+        let inner = rest[open + 1..open + close_rel].trim();
+        let placeholder = inner
+            .strip_prefix('$')
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
+        match placeholder {
+            Some(name) => {
+                out.push_str(&rest[..open]);
+                out.push_str("{$");
+                out.push_str(name);
+                out.push('}');
+                rest = &rest[open + close_rel + 1..];
+            }
+            None => {
+                out.push_str(&rest[..open + 1]);
+                rest = &rest[open + 1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// 全局 `t()`：供无法持有 `I18n` 实例的位置使用（语言经检测链缓存）。
@@ -601,11 +681,11 @@ mod tests {
         );
     }
 
-    /// 占位符缺参：Fluent 语义原样回显 `{$name}`。
+    /// 缺参回显：注册模板为紧凑形态，sdforge 缺参原样回显 → 与 Fluent 语义一致。
     #[test]
     fn test_tf_missing_placeholder_preserved() {
         let i18n = I18n::new(Lang::En);
-        // 只提供 name，缺失 expected/actual —— Fluent 回显 {$expected}/{$actual}
+        // 只提供 name，缺失 expected/actual —— 回显 {$expected}/{$actual}
         assert_eq!(
             i18n.tf("msg.function_arg_count", &[("name", "sin")]),
             "Function sin expects {$expected} args, got {$actual}"
@@ -897,27 +977,64 @@ mod tests {
         assert_eq!(normalize_env_value("zh_CN@pinyin"), Some(Lang::Zh));
     }
 
-    // ===== Fluent 束直测（不触碰全局 locale 状态）=====
+    // ===== sdforge 宿主注册直测（显式 locale，不触碰全局 locale 状态）=====
 
+    /// 注册幂等：重复调用后宿主注册内容不变（键值集合逐一核对）。
     #[test]
-    fn test_bundle_direct_en_simple() {
-        assert_eq!(
-            format_from_bundle(Lang::En, "repl.welcome", &[]),
-            Some("CalNexus REPL — type :help for commands, :quit to exit".to_string())
-        );
+    fn test_register_idempotent_and_verbatim() {
+        ensure_registered();
+        ensure_registered();
+        for (locale, ftl) in [("en", EN_FTL), ("zh", ZH_FTL)] {
+            for (id, value) in parse_entries(ftl) {
+                let key = id.replace('-', ".");
+                let rendered = sdforge::i18n::translate_for(locale, &key, &[]);
+                assert_eq!(
+                    rendered, value,
+                    "sdforge registry must serve ({locale}, {key}) verbatim"
+                );
+            }
+        }
     }
 
+    /// 字符串字面量桥接：FTL `{ "..." }` 还原为字面文本（前导空格保留）。
     #[test]
-    fn test_bundle_direct_zh_simple() {
+    fn test_string_literal_unwrapped() {
         assert_eq!(
-            format_from_bundle(Lang::Zh, "repl.bye", &[]),
-            Some("再见".to_string())
+            unwrap_string_literal("{ \" (cached)\" }"),
+            Some(" (cached)".to_string())
         );
+        assert_eq!(
+            unwrap_string_literal("{ \"a\\\\b\" }"),
+            Some("a\\b".to_string())
+        );
+        assert_eq!(
+            unwrap_string_literal("{ \"a\\\"b\" }"),
+            Some("a\"b".to_string())
+        );
+        assert_eq!(unwrap_string_literal("no literal"), None);
     }
 
+    /// 占位符紧凑化：模板注册形态 `{ $name }` → `{$name}`；非 `$` 大括号保留。
     #[test]
-    fn test_bundle_direct_unknown_key_returns_none() {
-        assert_eq!(format_from_bundle(Lang::En, "nonexistent-key", &[]), None);
+    fn test_compact_placeholders() {
+        assert_eq!(compact_placeholders("a { $x } b"), "a {$x} b");
+        assert_eq!(compact_placeholders("no brace"), "no brace");
+        assert_eq!(compact_placeholders("{name} literal"), "{name} literal");
+        assert_eq!(compact_placeholders("{ $a } and { $b }"), "{$a} and {$b}");
+    }
+
+    /// 未知键经 sdforge 终端回退返回键本身（显式 locale 查询路径）。
+    #[test]
+    fn test_translate_for_unknown_key_returns_key() {
+        ensure_registered();
+        assert_eq!(
+            sdforge::i18n::translate_for("en", "nonexistent-key", &[]),
+            "nonexistent-key"
+        );
+        assert_eq!(
+            sdforge::i18n::translate_for("zh", "no.such.key", &[]),
+            "no.such.key"
+        );
     }
 
     // ===== global_t（panic hook 路径，不 panic）=====
