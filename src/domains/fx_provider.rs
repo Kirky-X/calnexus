@@ -714,6 +714,14 @@ fn fetch_from_network() -> Result<RateTable, CalcError> {
 mod tests {
     use super::*;
 
+    /// CALNEXUS_FX_* 进程级环境变量的跨测试互斥：CI 并行腿下，写者（env mapping contract
+    /// 测试 set/remove 五个 fx env 键）与读者（rates() 内 read_allow_stale()/ttl_seconds()
+    /// 的默认值依赖）线程重叠时，stale/TTL 语义被进程级 env 污染——实测
+    /// test_fetch_lock_concurrent_consistency 因此在 CI 并行腿出现「恒失败 fetcher 却
+    /// 拿到 Ok(stale 表)」的误判（本地 --test-threads=1 串行永不重叠，故仅 CI 复现）。
+    /// 所有依赖 fx env 的测试必须整程持锁；锁只拦同模块测试线程，闭包子线程不取锁无死锁。
+    static FX_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// 测试用 mock provider：返回预设的汇率表。
     struct MockRateProvider {
         rates: HashMap<String, f64>,
@@ -1093,6 +1101,9 @@ mod tests {
     #[test]
     fn test_fetch_lock_concurrent_consistency() {
         // 过期缓存 + 恒失败 fetcher 下 8 线程并发 rates()：全部得到 DependencyUnavailable，无 panic。
+        // 整程持 FX_ENV_LOCK：rates() 失败路径经 read_allow_stale() 读进程级 env，
+        // 防并行写者开启 stale 策略导致误 Ok（CI 并行腿实录）。
+        let _env = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let table = RateTable {
             base: "EUR".to_string(),
@@ -1136,6 +1147,8 @@ mod tests {
     #[test]
     fn test_fetch_lock_concurrent_success_consistency() {
         // 成功侧镜像：部分线程真实抓取并写回 L1/L2，并发下所有线程必须看到同一张表（同 base/date/rates）。
+        // 整程持 FX_ENV_LOCK：rates() 的 TTL/allow_stale 读进程级 env，防并行写者污染。
+        let _env = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let table = RateTable {
             base: "EUR".to_string(),
@@ -1178,6 +1191,8 @@ mod tests {
     #[test]
     fn test_breaker_opens_after_consecutive_fetch_failures() {
         // 阈值 2：前两次失败真实执行注入闭包（计数增长），第三次被熔断拒绝（计数停增）
+        // 整程持 FX_ENV_LOCK：rates() 失败路径读进程级 env（allow_stale），防并行写者污染。
+        let _env = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let counter = calls.clone();
         let provider = CachedRateProvider::with_inner(
@@ -1201,6 +1216,8 @@ mod tests {
     #[test]
     fn test_breaker_recovers_via_half_open_probe_success() {
         // 阈值 2 + 冷却 0：两次失败后打开，下一调用立即探针；探针成功回闭合
+        // 整程持 FX_ENV_LOCK：rates() 失败路径读进程级 env（allow_stale），防并行写者污染。
+        let _env = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let counter = calls.clone();
         let provider = CachedRateProvider::with_inner(
@@ -1255,6 +1272,8 @@ mod tests {
     #[test]
     fn test_cached_provider_with_cache_path_uses_provided_path() {
         // 验证 with_cache_path 构造函数不 panic 且路径被使用
+        // 整程持 FX_ENV_LOCK：L2 TTL 判定读进程级 env（TTL_HOURS），防并行写者污染。
+        let _env = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let provider = CachedRateProvider::with_cache_path(
             Box::new(mock_provider()),
@@ -1281,6 +1300,8 @@ mod tests {
     #[test]
     fn test_cached_provider_in_memory_cache_hit() {
         // L1 命中：第二次调用直接从内存缓存返回（不出网）
+        // 整程持 FX_ENV_LOCK：L2 TTL 判定读进程级 env（TTL_HOURS），防并行写者污染。
+        let _env = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let provider = CachedRateProvider::with_cache_path(
             Box::new(mock_provider()),
@@ -1310,6 +1331,8 @@ mod tests {
     #[test]
     fn test_cached_provider_default_wraps_frankfurter() {
         // 装饰器默认装配：inner 为 frankfurter（不出网构造）
+        // 整程持 FX_ENV_LOCK：provider 选择读进程级 env（PROVIDER），防并行写者改变装配面。
+        let _env = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let provider = CachedRateProvider::new(Box::new(FrankfurterProvider));
         assert_eq!(provider.name(), "frankfurter");
         assert_eq!(provider.source_names(), vec!["frankfurter"]);
@@ -1328,8 +1351,8 @@ mod tests {
     /// confers env 接线契约：未设取默认、设值生效、remove 回默认；env_prefix 接线的唯一直接保护，纯解析测试无法暴露该故障。
     #[test]
     fn test_fx_config_env_mapping_contract() {
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // 唯一 env 写者：与全部读者共用模块级 FX_ENV_LOCK（原测试内局部锁对并行读者无保护）。
+        let _guard = FX_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         const KEYS: [&str; 5] = [
             "CALNEXUS_FX_TTL_HOURS",

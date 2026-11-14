@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 自研依赖 rc → 稳定定版，正式发布。公共 API 与 `--json` 契约（`v:1`）相对 0.2.0-rc.4 无变化。
 
+### Fixed
+
+- CI 并行腿 fx 测试竞态：`CALNEXUS_FX_*` 为进程级环境变量，env mapping contract 测试（写者）与 `rates()` 路径读者（`read_allow_stale()`/`ttl_seconds()` 默认值依赖）在并行调度重叠时相互污染——实测 `test_fetch_lock_concurrent_consistency` 在 CI 出现「恒失败 fetcher 却拿到 Ok(stale 表)」误判（本地 `--test-threads=1` 串行不可复现）。模块级 `FX_ENV_LOCK` 互斥：全部依赖 fx env 的测试整程持锁
+
 ### Changed
 
 - 自研依赖全部转为 minor 精度并落定稳定版（发布编排对齐要求）：`oxcache 0.5.0-rc.12 → 0.5`（发布 0.5.0）、`sdforge 0.5.0-rc.11 → 0.5`（发布 0.5.0）、`inklog 0.3.0-rc.12 → 0.3`（发布 0.3.0）、`limiteron 0.3.0-rc.10 → 0.3`（发布 0.3.1）、`confers 0.6.0-rc.13 → 0.6`（发布 0.6.0）、`trait-kit 0.5.0-rc.14 → 0.5`（发布 0.5.0）；无 dbnexus 直依赖；无跨 major 变更，无 `--precise` 回退
