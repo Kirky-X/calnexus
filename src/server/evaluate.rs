@@ -256,8 +256,12 @@ mod tests {
         assert!(resp.cache == "hit" || resp.cache == "miss");
     }
 
-    /// 零超时（1ns）→ 503；用 CPU 密集表达式避免缓存命中致测试不稳定。
-    #[tokio::test]
+    /// 零超时（Duration::ZERO）→ 503；用 CPU 密集表达式避免缓存命中致测试不稳定。
+    /// start_paused 虚拟时钟保证确定性：auto-advance 在真实任务完成前先触发 timer
+    /// （真实时钟下 tokio 定时器亚毫秒 deadline 取整到下一 1ms tick，且 Timeout 先 poll
+    /// inner——全量串行负载下 tick 处理延迟会超过 eval 耗时，阻塞任务先行完成使 503
+    /// 漏判为成功；实测隔离 20/20 过、全量 3/3 挂，属机器速度/负载依赖竞态）。
+    #[tokio::test(start_paused = true)]
     async fn test_evaluate_with_timeout_returns_service_unavailable_on_zero_timeout() {
         let req = EvaluateRequest {
             expr: "precision(10000, factorial(10000))".into(),
@@ -265,7 +269,7 @@ mod tests {
             precision: None,
             lang: None,
         };
-        let result = evaluate_with_timeout(req, Duration::from_nanos(1)).await;
+        let result = evaluate_with_timeout(req, Duration::ZERO).await;
         assert!(result.is_err());
         match result.unwrap_err() {
             ApiError::ServiceUnavailable { service, .. } => {

@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo.png" alt="CalNexus Logo" height="240">
 
-[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![docs.rs](https://img.shields.io/docsrs/calnexus?style=for-the-badge)](https://docs.rs/calnexus) [![downloads](https://img.shields.io/crates/d/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![CI](https://img.shields.io/github/actions/workflow/status/kirky-x/calnexus/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![coverage](https://img.shields.io/badge/coverage-94.9%25%20(llvm--cov%20lines)-brightgreen?style=for-the-badge)](https://github.com/kirky-x/calnexus) [![license](https://img.shields.io/crates/l/calnexus?style=for-the-badge)](LICENSE)
+[![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![docs.rs](https://img.shields.io/docsrs/calnexus?style=for-the-badge)](https://docs.rs/calnexus) [![downloads](https://img.shields.io/crates/d/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![CI](https://img.shields.io/github/actions/workflow/status/kirky-x/calnexus/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![coverage](https://img.shields.io/badge/coverage-95.9%25%20(llvm--cov%20lines)-brightgreen?style=for-the-badge)](https://github.com/kirky-x/calnexus) [![license](https://img.shields.io/crates/l/calnexus?style=for-the-badge)](LICENSE)
 
 **中文** | [English](README_EN.md)
 
@@ -342,7 +342,7 @@ cargo fuzz run parser_fuzz
 
 ### 📊 测试规模
 
-当前工作区（v0.2.0-rc.3 后）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3180 个，其中单元测试 2603（`src/` 内联）、集成与 E2E 共 577（`tests/`，其中 E2E 场景套件 158）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 95%（llvm-cov `--fail-under-lines 95`，`--features cli,time,unit,fx` 口径，实测 94.9%），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
+当前工作区（v0.2.0）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3191 个，其中单元测试 2608（`src/` 内联）、集成与 E2E 共 583（`tests/`，其中 E2E 场景套件 158）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 95%（llvm-cov `--fail-under-lines 95`，`--features cli,time,unit,fx` 口径，实测 95.9%（29332 行 / 1214 未覆盖，llvm-cov 行覆盖，高于 95% 门禁与上版 95.57% 基线）），CI 执行。逐套件场景穷举见 [🧪 测试场景矩阵](docs/TEST_SCENARIOS.md)。
 
 ---
 
@@ -439,7 +439,7 @@ CalNexus 是无网络（`fx` 上游除外）、无不可信文件 I/O、无插�
 
 | 版本 | 日期 | 要点 |
 |------|------|------|
-| 0.2.0-rc.1 | 待发布 | i18n 迁移 Fluent、日志栈切换 inklog、E2E 场景套件、依赖全面切换 crates.io、许可补充 Commons Clause（详见 [CHANGELOG](docs/CHANGELOG.md) Unreleased） |
+| 0.2.0 | 2026-11-14 | i18n 迁移 Fluent、日志栈切换 inklog、E2E 场景套件、依赖全面切换 crates.io 并落定稳定版、许可补充 Commons Clause（详见 [CHANGELOG](docs/CHANGELOG.md) 0.2.0） |
 | 0.1.4 | 2026-07-26 | Release pipeline 闭环：`cargo publish` 自动化 + 发布前安全门禁（`cargo audit`、版本校验、dry-run 验证） |
 | 0.1.3 | 2026-07-26 | 新增时间 / 单位 / 汇率三个可选计算域与 8 个向量运算；非确定性函数缓存旁路 |
 | 0.1.2 | 2026-07-21 | 20 项文档-代码一致性修复；解析与规范化边界行为修复（NaN 全序、`0^0`、连续运算符校验） |

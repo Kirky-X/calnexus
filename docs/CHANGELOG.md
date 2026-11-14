@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-14
+
+自研依赖 rc → 稳定定版，正式发布。公共 API 与 `--json` 契约（`v:1`）相对 0.2.0-rc.4 无变化。
+
+### Changed
+
+- 自研依赖全部转为 minor 精度并落定稳定版（发布编排对齐要求）：`oxcache 0.5.0-rc.12 → 0.5`（发布 0.5.0）、`sdforge 0.5.0-rc.11 → 0.5`（发布 0.5.0）、`inklog 0.3.0-rc.12 → 0.3`（发布 0.3.0）、`limiteron 0.3.0-rc.10 → 0.3`（发布 0.3.1）、`confers 0.6.0-rc.13 → 0.6`（发布 0.6.0）、`trait-kit 0.5.0-rc.14 → 0.5`（发布 0.5.0）；无 dbnexus 直依赖；无跨 major 变更，无 `--precise` 回退
+
+### Ci
+
+- CI 基建依赖 bump（dependabot，5 项）：`softprops/action-gh-release 3.0.4`、`Swatinem/rust-cache 2.9.3`、`zizmorcore/zizmor-action 0.8.1`、`github/codeql-action`（init/autobuild 前进到 9b32540）；`.github/workflows/security.yml` gitleaks v3 补传 `GITHUB_TOKEN`、`ci.yml` all 腿补 http/mcp clippy 覆盖与 wasm32 补 `--bins`、release.yml 发布状态校验网络失败 fail-closed
+
 ## [0.2.0-rc.4] - 2026-11-01
 
 ### Changed

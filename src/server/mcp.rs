@@ -55,6 +55,13 @@ impl McpServer {
     }
 
     /// 内部 async 启动逻辑：`init_all_plugins()` + `with_server_info` + `serve_stdio`。
+    ///
+    /// 已知上游行为（sdforge 0.5.0 src/mcp/server.rs `with_server_info`，rc.11 起即如此，
+    /// 非本仓依赖升级引入）：注册面非空时 name/version 取首个 tool 的元数据，传入的
+    /// `server_name`/`CARGO_PKG_VERSION` 被静默忽略——wire 上 serverInfo 显示
+    /// `fx_pricing/1`（fx 特性下首个 tool）而非 `calnexus-mcp/<pkg-version>`。
+    /// tool 注册/调用面（list_tools/call_tool）不受影响；修复须上游改构造器或提供
+    /// 构造后 setter，解锁前提 = sdforge 新版本 + 本仓 bump（仓库边界外，登记于发布报告）。
     async fn start_inner(&self) -> Result<(), ServerError> {
         sdforge::init_all_plugins();
         let server = SdForgeMcpServer::with_server_info(

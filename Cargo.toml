@@ -1,10 +1,10 @@
 [package]
 name = "calnexus"
-version = "0.2.0-rc.4"
+version = "0.2.0"
 edition = "2024"
 authors = ["Kirky-X <Kirky-X@outlook.com>"]
 license = "MIT"
-# MSRV 与 base 生态一致基线对齐（sdforge 0.5.0-rc 系要求 1.97.1；CI msrv 任务同步）
+# MSRV 与 base 生态一致基线对齐（sdforge 0.5.0 要求 1.97.1；CI msrv 任务同步）
 rust-version = "1.97.1"
 description = "A command-line math expression evaluator with 11 core and 3 optional (time/unit/fx) computation domains plus a numerical-linalg feature, symbolic calculus, REPL, batch processing, HTTP and MCP servers"
 keywords = ["math", "calculator", "symbolic", "repl", "cli"]
@@ -48,7 +48,7 @@ kit = ["dep:trait-kit"]
 # 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层：oxcache byte-weight（同步字节预算）+ serialization（L1 weigher 估重）
-oxcache = { version = "0.5.0-rc.12", default-features = false, features = ["byte-weight", "serialization"] }
+oxcache = { version = "0.5", default-features = false, features = ["byte-weight", "serialization"] }
 # 错误派生
 thiserror = { version = "2.0", default-features = false }
 # 哈希
@@ -79,7 +79,7 @@ sys-locale = { version = "0.3", default-features = false }
 # sdforge: CLI/HTTP/MCP 接口封装层 + i18n 宿主注册基座（消息目录唯一存储）。
 # 非可选：base/wasm 构建同样需要消息翻译（core/types friendly 等调用点），
 # 裸编译面仅 serde/log/macros/fluent 内嵌目录，wasm32 可编译。
-sdforge = { version = "0.5.0-rc.11", default-features = false }
+sdforge = { version = "0.5", default-features = false }
 # axum: HTTP 框架（仅 http；Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
 # serde_json: JSON 序列化（EvalResult::Json + server 共用）
@@ -91,7 +91,7 @@ async-trait = { version = "0.1", default-features = false, optional = true }
 # tracing: observability 支持（server 模式结构化日志；仅 observability feature 启用）
 tracing = { version = "0.1", default-features = false, optional = true }
 # 生产日志（observability）：inklog 接管，CLI 纯构建保持 tokio-free
-inklog = { version = "0.3.0-rc.12", default-features = false, optional = true }
+inklog = { version = "0.3", default-features = false, optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
@@ -99,16 +99,16 @@ ureq = { version = "3.4", default-features = false, features = ["rustls"], optio
 # dirs: 跨平台缓存目录（仅 fx；7.x 稳定，仅用 cache_dir）
 dirs = { version = "7.0", default-features = false, optional = true }
 # limiteron: 同步限流原语（sync 特性：熔断 + 固定窗口；fx/ratelimit 共用）
-limiteron = { version = "0.3.0-rc.10", default-features = false, features = ["sync"], optional = true }
+limiteron = { version = "0.3", default-features = false, features = ["sync"], optional = true }
 # confers: 声明式配置（fx 域 CALNEXUS_FX_* 经 env_prefix 映射；无 dotenvy/toml）
-confers = { version = "0.6.0-rc.13", default-features = false, optional = true }
+confers = { version = "0.6", default-features = false, optional = true }
 # wasm-bindgen: wasm32 导出层（仅 wasm-api feature 启用）
 wasm-bindgen = { version = "0.2", default-features = false, optional = true }
 # egg: E-graph equality saturation（仅 egraph feature 启用）
 egg = { version = "0.11", default-features = false, optional = true }
 # trait-kit: AsyncKit 依赖注入（仅 kit feature 启用；async 为 AsyncAutoBuilder 必需，
 # i18n 为 I18nFormatter 的 ICU 数字/日期/复数/排序格式化）
-trait-kit = { version = "0.5.0-rc.14", default-features = false, features = ["async", "i18n"], optional = true }
+trait-kit = { version = "0.5", default-features = false, features = ["async", "i18n"], optional = true }
 
 # SIGPIPE 恢复默认处置：`| head` 提前关管道时静默终止而非 EPIPE panic（仅 unix）
 [target.'cfg(unix)'.dependencies]
@@ -126,8 +126,9 @@ expectrl = { version = "0.9", default-features = false }
 # tower: HTTP 集成测试用（ServiceExt::oneshot 测试 axum Router）
 tower = { version = "0.5", default-features = false, features = ["util"] }
 http-body-util = { version = "0.1", default-features = false }
-# tokio（dev）：kit 集成测试的 #[tokio::test] 运行时（正常依赖中 tokio 为 optional）
-tokio = { version = "1.53", default-features = false, features = ["rt", "macros"] }
+# tokio（dev）：kit 集成测试的 #[tokio::test] 运行时（正常依赖中 tokio 为 optional）；
+# test-util 供 #[tokio::test(start_paused)] 虚拟时钟确定性测试（evaluate 零超时竞态用）
+tokio = { version = "1.53", default-features = false, features = ["rt", "macros", "test-util"] }
 
 [lints.rust]
 # check-cfg: #[forge] 会 emit openapi/observability cfg，本 crate 未启用，声明以消除 warning
