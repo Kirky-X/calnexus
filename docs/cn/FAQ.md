@@ -59,7 +59,7 @@ cargo add calnexus                        # 库（零依赖核心）
 | REST / MCP 服务 | `server`（+ `ratelimit`、`observability`、`docs` 按需） |
 | 中英双语错误消息 | `icu` |
 
-完整功能矩阵见 README 的 [🎨 特性标志](../README.md#-特性标志)。
+完整功能矩阵见 [🏗️ 架构文档 · 特性标志速查](ARCHITECTURE.md#-特性标志速查)。
 
 ### ❓ 系统要求是什么？
 

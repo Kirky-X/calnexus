@@ -25,6 +25,8 @@
 - [附录 A：循环依赖修复策略（P2）](#附录-a循环依赖修复策略p2)
 - [附录 B：复杂度治理（P2）](#附录-b复杂度治理p2)
 - [附录 C：v0.1.5 架构变更记录](#附录-cv015-架构变更记录)
+- [🎨 特性标志速查](#-特性标志速查)
+- [🌟 核心依赖](#-核心依赖)
 
 ---
 
@@ -453,3 +455,102 @@ v015-comprehensive-optimization（2026-09）：
 6. **公共 API**：`evaluate_with_router` 路由器可注入；`pub use server::*` 具名化；math/domains 标注内部 API 边界；统一函数目录 `function_catalog`（REPL 补全 / `--list-functions` / MCP `list_functions` 单一事实源）。
 7. **规格流程**：openspec/ 已收敛并入 `specmark/specs/`（27 个能力域），**specmark 为唯一 SDD 流程**。
 8. **sdforge 基座吸收（手写基础设施迁移）**：优雅关闭切换 `sdforge::http::serve_with_graceful_shutdown` + `default_shutdown_signal`；`/health` `/ready` 切换 `sdforge::health::readyz_handler`（checks 数组契约，cache 经 `register_async_readiness_check_fn` 注册：spawn_blocking 隔离 moka 维护 + 5s 超时判不健康）、`/live` 切换 `healthz_handler`；请求标识切换 `sdforge::context::context_middleware`（+W3C traceparent 提取 trace_id 回写 `X-Trace-ID`，task-local 上下文）。`ratelimit` feature 接通：`src/server/ratelimit.rs` 固定窗口 per-IP 策略实现 sdforge `HttpRequestRateLimiter` 契约，经 Clone 桥接层挂载，`CALNEXUS_RATELIMIT_LIMIT/WINDOW_SECS` 可配，探针/metrics 豁免限流。
+
+---
+
+## 🎨 特性标志速查
+
+> 本节内容自 README「🎨 特性标志」节迁入，作为特性组合与功能矩阵的参考页。
+
+### 📦 推荐组合
+
+<details>
+<summary>📋 表格</summary>
+
+| 组合 | 安装方式 / 特性 | 适用场景 |
+|------|----------------|----------|
+| 最小库 | `cargo add calnexus`（`default = []`） | 嵌入式引擎，零额外依赖 |
+| CLI | `cargo install calnexus --features cli` | 命令行 / REPL / 批量 |
+| CLI 全域 | `cargo install calnexus --features cli,time,unit,fx` | 加时间 / 单位 / 汇率域 |
+| CLI + 数值 | `cargo install calnexus --features cli,numerical` | 数值线性代数 |
+| 双语 CLI | `cargo install calnexus --features cli,icu` | 中英双语错误消息（始终内置）；`icu` 提供标准 BCP-47 语言标签解析 |
+| HTTP 服务 | `cargo install calnexus --features server` | REST + MCP 双协议服务 |
+| 生产服务 | `cargo install calnexus --features server,ratelimit,docs,observability` | 限流 + Swagger UI + 结构化日志 |
+| 全量 | `cargo install calnexus --all-features` | 完整能力集 |
+
+</details>
+
+### 📋 功能矩阵
+
+下表逐项对应 `Cargo.toml` 的 `[features]` 定义，`default = []`。
+
+<details>
+<summary>📋 表格</summary>
+
+<table style="width:100%; border-collapse: collapse">
+<tr><th style="text-align:left">特性</th><th style="text-align:center">默认</th><th style="text-align:left">说明</th></tr>
+<tr><td colspan="3" style="background:#F8FAFC"><b>核心库</b></td></tr>
+<tr><td><code>default</code></td><td align="center">✅</td><td>零依赖核心：解析、规范化、14 域路由、缓存，可作嵌入式引擎</td></tr>
+<tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X BCP-47 语言标签解析（中英双语错误消息经 Fluent 内嵌、始终可用，不受此 feature 门控）</td></tr>
+<tr><td colspan="3" style="background:#F8FAFC"><b>CLI 与交互</b></td></tr>
+<tr><td><code>cli</code></td><td align="center">❌</td><td>CLI / REPL / 批量（clap、rustyline、rayon，经 sdforge/cli 间接启用）</td></tr>
+<tr><td colspan="3" style="background:#F8FAFC"><b>可选计算域</b></td></tr>
+<tr><td><code>time</code></td><td align="center">❌</td><td>时间计算域，jiff 0.2 + 内嵌 IANA tzdb，14 个函数</td></tr>
+<tr><td><code>unit</code></td><td align="center">❌</td><td>物理单位换算域，8 量纲 + 温度仿射</td></tr>
+<tr><td><code>fx</code></td><td align="center">❌</td><td>汇率换算域，frankfurter / ExchangeRate-API 双源（<code>CALNEXUS_FX_PROVIDER</code>=<code>frankfurter</code>|<code>erapi</code>|<code>auto</code>）+ 三级缓存 + 网络熔断</td></tr>
+<tr><td><code>numerical</code></td><td align="center">❌</td><td>数值线性代数分解（lu/qr/eig/svd/solve/matrix_exp，nalgebra f64）</td></tr>
+<tr><td colspan="3" style="background:#F8FAFC"><b>服务端</b></td></tr>
+<tr><td><code>http</code></td><td align="center">❌</td><td>HTTP API（sdforge http/graceful/health/context，axum）</td></tr>
+<tr><td><code>mcp</code></td><td align="center">❌</td><td>MCP stdio 服务（sdforge/mcp）</td></tr>
+<tr><td><code>server</code></td><td align="center">❌</td><td><code>http</code> + <code>mcp</code> 聚合</td></tr>
+<tr><td><code>ratelimit</code></td><td align="center">❌</td><td>HTTP 限流中间件（固定窗口 per-IP，<code>CALNEXUS_RATELIMIT_*</code> 可配，探针豁免）</td></tr>
+<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI（<code>/swagger-ui/</code>，带尾斜杠；<code>/api-docs/openapi.json</code> 暂为空 spec，见服务模式指南）</td></tr>
+<tr><td><code>observability</code></td><td align="center">❌</td><td>tracing 结构化日志（EnvFilter 消费 <code>RUST_LOG</code>）</td></tr>
+</table>
+
+</details>
+
+### 💱 汇率数据源（`fx`）
+
+`fx` 默认走 [frankfurter.dev](https://frankfurter.dev)（欧洲央行 ECB 参考汇率，覆盖约 30 种主要货币）；`CALNEXUS_FX_PROVIDER` 可切换数据源：
+
+| 取值 | 行为 | 口径 |
+|------|------|------|
+| `frankfurter`（默认） | 仅 frankfurter | ECB 参考汇率，覆盖约 30 种主要货币 |
+| `erapi` | 仅 ExchangeRate-API 开放端点（免 key） | 聚合源，覆盖 160+ 币种，与 ECB 数值存在系统性微小差异 |
+| `auto` | 固定链序 `frankfurter → erapi`，首源成功即返回 | 仅主源失败时切备源；全部失败时聚合报错（逐项列出原因） |
+
+服务端 `fx_budget` / `fx_pricing` 响应恒带 `rate_source` 字段；`auto` 混源可据此审计。表达式面 `fx()` / `fx_rate()` 不携带来源（标量契约不变）。
+
+| 环境变量 | 默认 | 说明 |
+|----------|------|------|
+| `CALNEXUS_FX_PROVIDER` | `frankfurter` | 数据源：`frankfurter` / `erapi` / `auto`（非法值回退 `frankfurter`） |
+| `CALNEXUS_FX_TTL_HOURS` | 24 | 汇率快照有效期 |
+| `CALNEXUS_FX_ALLOW_STALE` | — | 网络失败时是否使用过期快照 |
+| `CALNEXUS_FX_BREAKER_THRESHOLD` | 3 | fx 网络熔断失败阈值 |
+| `CALNEXUS_FX_BREAKER_COOLDOWN_SECS` | 30 | fx 熔断冷却时长（秒） |
+
+> **容量护栏部署清单**：`server` 镜像默认不含限流；对外暴露时需显式启用 `ratelimit` feature，并按实例容量设置 `CALNEXUS_RATELIMIT_LIMIT` / `CALNEXUS_RATELIMIT_WINDOW_SECS`。fx 上游单次抓取超时 5 秒、请求级兜底 30 秒；`auto` 链最坏耗时为两轮上游超时，评估限流窗口时需计入。
+
+---
+
+## 🌟 核心依赖
+
+CalNexus 站在以下优秀开源项目的肩膀上：
+
+<details>
+<summary>📋 表格</summary>
+
+| 依赖 | 用途 |
+|------|------|
+| [mathexpr](https://crates.io/crates/mathexpr) | 表达式解析基础 |
+| [oxcache](https://crates.io/crates/oxcache) | 自研高性能缓存库（`byte-weight` 同步字节权重缓存，机制层封装 moka::sync） |
+| [clap](https://github.com/clap-rs/clap) | CLI 参数解析（经 sdforge/cli 间接启用） |
+| [rustyline](https://github.com/kkawakam/rustyline) | REPL 行编辑与 Tab 补全 |
+| [rayon](https://github.com/rayon-rs/rayon) | 数据并行批量求值 |
+| [jiff](https://github.com/BurntSushi/jiff) | 日期时间与 IANA 时区（`time` feature） |
+| [nalgebra](https://github.com/dimforge/nalgebra) | 数值线性代数（`numerical` feature） |
+| [sdforge](https://crates.io/crates/sdforge) | CLI / HTTP / MCP 接口封装层 |
+| [criterion](https://github.com/bheisler/criterion.rs) | 基准测试 |
+
+</details>

@@ -347,3 +347,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.2]: https://github.com/kirky-x/calnexus/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/kirky-x/calnexus/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kirky-x/calnexus/releases/tag/v0.1.0
+
+---
+
+## 🗺️ 开发路线图
+
+> 本节内容自 README「🗺️ 开发路线图」节迁入。
+
+<details>
+<summary>📋 表格</summary>
+
+<table style="width:100%; border-collapse: collapse">
+<tr><th style="text-align:center">状态</th><th style="text-align:left">方向</th><th style="text-align:left">条目</th></tr>
+<tr><td align="center">✅</td><td>核心引擎（v0.1.0）</td><td>11 计算域、符号微积分、REPL、批量处理、任意精度、JSON 输出、隐式乘法</td></tr>
+<tr><td align="center">✅</td><td>可选域与服务化（v0.1.3-v0.1.5）</td><td>时间 / 单位 / 汇率域、HTTP + MCP 双协议、探针分离、限流、可观测性、多平台发布与容器镜像</td></tr>
+<tr><td align="center">✅</td><td>缓存引擎现代化</td><td>oxcache byte-weight 缓存（moka 内核）、single-flight、字节权重预算、BLAKE3 键、大结果准入阈值</td></tr>
+<tr><td align="center">✅</td><td>WebAssembly (wasm32) 支持</td><td>core 与 cli 特性构建进入 CI 门禁：<code>cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features</code> 与 <code>--features cli</code>。wasm 下使用 oxcache 真实 L1 缓存（ByteWeightCache）；<code>wasm-api</code> 可导出 <code>evaluate</code>/<code>list_functions</code> 供浏览器/Node 调用（仅构建门禁，运行时行为不承诺）；<code>fx</code>/<code>http</code>/<code>mcp</code>/<code>icu</code>/<code>time</code>/<code>unit</code> 特性组合不在支持范围</td></tr>
+<tr><td align="center">✅</td><td>数值能力增强（v0.2.0-rc.3）</td><td>特殊函数补齐 <code>erfc</code>/<code>lgamma</code>/<code>polylog</code>，数值分析 <code>derivative</code>（中心差分 + Richardson）、<code>lstsq</code>（QR + SVD 伪逆回退）；与 <code>root</code>/<code>integral</code>、Bessel/Airy/<code>beta</code>/<code>zeta</code> 同批进入域路由、函数目录与 trait API</td></tr>
+</table>
+
+</details>

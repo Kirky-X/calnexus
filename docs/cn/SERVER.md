@@ -19,6 +19,7 @@
   - [发现可用函数](#发现可用函数)
 - [🚨 错误语义（SLO 友好）](#-错误语义slo-友好)
 - [📚 相关文档](#-相关文档)
+- [📈 /metrics 输出契约](#metrics-输出契约)
 
 ---
 
@@ -182,3 +183,11 @@ CLI 侧退出码（`ErrorKind::exit_code()` 契约）：**1** = 计算错误、*
 - [🔒 安全文档](SECURITY.md) — 服务化安全最佳实践
 - [📘 API 参考](API_REFERENCE.md) — 错误契约与 `ErrorKind` 全表
 - [🏗️ 架构文档](ARCHITECTURE.md) — server 模块与数据流
+
+---
+
+## 📈 /metrics 输出契约
+
+> 本节内容自 README「🌐 服务模式」节迁入。
+
+`/metrics` 契约：Prometheus 文本含缓存三族 `calnexus_cache_{hits,misses,entries}`（含 `# HELP` / `# TYPE` 注释行）+ `sdforge_http_requests_total{route,method,status}` 计数族 + `sdforge_http_request_duration_seconds` 时延直方图族；`?format=json` 调试分支恰含 `hits` / `misses` / `entry_count` / `http_route_count` 四键。route 标签取请求 path（非路由模板），含 id 的高基数 REST 路径会放大序列——本地/内网部署注意。

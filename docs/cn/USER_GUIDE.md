@@ -35,6 +35,7 @@
 - [⚙️ 环境变量](#-环境变量)
 - [🧰 故障排查](#-故障排查)
 - [📚 相关文档](#-相关文档)
+- [💻 求值示例](#-求值示例)
 
 ---
 
@@ -75,7 +76,7 @@ cd calnexus
 cargo install --path . --features cli
 ```
 
-时间 / 单位 / 汇率域需额外 feature：`cargo install calnexus --features cli,time,unit,fx`。全部 feature 组合见 README 的 [🎨 特性标志](../README.md#-特性标志)。
+时间 / 单位 / 汇率域需额外 feature：`cargo install calnexus --features cli,time,unit,fx`。全部 feature 组合见 [🏗️ 架构文档 · 特性标志速查](ARCHITECTURE.md#-特性标志速查)。
 
 ### 💡 第一步
 
@@ -399,3 +400,34 @@ $ calnexus 'lu([[4,3],[6,3]])'
 - [❓ FAQ](FAQ.md) — 常见问题解答
 - [🖥️ 服务模式指南](SERVER.md) — 服务模式部署与 MCP 接入
 - [📋 更新日志](CHANGELOG.md) — 版本变更记录
+
+---
+
+## 💻 求值示例
+
+<details>
+<summary>📄 代码 · bash</summary>
+
+```bash
+# 基础与科学函数
+$ calnexus 'sin(pi/2)'
+1
+$ calnexus 'gcd(12, 18)'
+6
+
+# 任意精度（BigRational）
+$ calnexus 'precision(50, 1/3)'
+0.33333333333333333333333333333333333333333333333333
+
+# 符号微积分
+$ calnexus 'limit(sin(x)/x, x, 0)'
+1
+$ calnexus 'taylor(exp(x), x, 3)'
+1+x+0.5*x^2+0.16666666666666666*x^3
+
+# 隐式乘法
+$ calnexus --var x=3 '2x'
+6
+```
+
+</details>
