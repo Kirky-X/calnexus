@@ -1,7 +1,7 @@
 # 🧪 CalNexus 测试场景矩阵
 
 > 适用版本：calnexus **0.1.4 + [Unreleased]**（Rust 1.97.1 / edition 2024）
-> 用途：穷举现有测试套件的场景矩阵，作为回归验收与覆盖对照的单一事实源。原《测试方案》（`docs/TEST.md` v0.2.0，2026-06-28）中仍然有效的方法论（测试策略、覆盖率目标、通过标准、缺陷分级）已合并至本文档，原文已归档为 [docs/archive/TEST.md](archive/TEST.md)。
+> 用途：穷举现有测试套件的场景矩阵，作为回归验收与覆盖对照的单一事实源。原《测试方案》（`docs/TEST.md` v0.2.0，2026-06-28）中仍然有效的方法论（测试策略、覆盖率目标、通过标准、缺陷分级）已合并至本文档，原文已归档为 [docs/archive/TEST.md](../archive/TEST.md)。
 > 编写依据（只读核对）：`Cargo.toml` 的 `[features]` 与 `[[test]]` 注册表、`src/` 内联 `#[cfg(test)]` 模块、`tests/` 12 个集成测试文件、`tests/e2e/` 9 个场景模块、`fuzz/` 7 个目标、`benches/` 4 组基准、`.github/workflows/ci.yml`。
 > 所有引用的测试名均经 grep 核实存在；数量口径：`grep -rE "#\[(tokio::)?test\]" src/ tests/ --include="*.rs" | wc -l`（截至本文档更新时为 **3040**）。
 
@@ -93,7 +93,7 @@ graph TD
 | **其他域** | Complex、Matrix、Statistics、Symbolic、Precision、Vector、Polynomial | **≥ 80%** |
 | **整体** | crate 全量 | **≥ 90%**（CI `cargo llvm-cov --fail-under-lines 90` 门禁；最近实测 90.4%） |
 
-- 覆盖率工具为 **cargo-llvm-cov**（唯一门禁；tarpaulin 配置已删除，见 `docs/CHANGELOG.md` [Unreleased] Removed）。
+- 覆盖率工具为 **cargo-llvm-cov**（唯一门禁；tarpaulin 配置已删除，见 `docs/cn/CHANGELOG.md` [Unreleased] Removed）。
 - 相对 v0.1（HTTP 微服务形态）的策略变化：删除 Docker Compose / k6 / K8s 压测，回到 Rust 生态本位的「单元 + 属性 + 模糊」三件套，并叠加进程级 CLI/REPL 集成与纯进程内 E2E 场景套件。
 
 ---
@@ -661,4 +661,4 @@ cargo fuzz run parser_fuzz
 | [⚡ 性能指南](PERFORMANCE.md) | 基准口径与基线数据 |
 | [🔒 安全文档](SECURITY.md) | 漏洞报告与安全设计 |
 | [📋 更新日志](CHANGELOG.md) | 版本变更记录 |
-| [🗄️ 历史测试方案](archive/TEST.md) | v0.2 测试方案原文（已归档，方法论并入本文档） |
+| [🗄️ 历史测试方案](../archive/TEST.md) | v0.2 测试方案原文（已归档，方法论并入本文档） |

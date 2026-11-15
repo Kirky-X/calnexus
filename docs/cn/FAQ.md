@@ -29,7 +29,7 @@ linux x86_64/aarch64（musl 静态）、macOS x86_64/aarch64、windows x86_64 �
 
 ### ❓ 项目采用什么许可证？
 
-MIT + Commons Clause（商业使用需单独授权）。详见 [LICENSE](../LICENSE)。
+MIT + Commons Clause（商业使用需单独授权）。详见 [LICENSE](../../LICENSE)。
 
 ### ❓ 如何参与贡献？
 

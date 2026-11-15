@@ -191,19 +191,19 @@ calnexus --list-functions                              # 运行时函数目录�
 cargo bench --features cli                             # criterion 基准
 ```
 
-CI 矩阵：clippy 三腿（`cli` / `cli,server` / all）+ test 六腿（`cli` / `cli,time,unit,fx` / `cli,server` / `cli,server,fx` / `cli,numerical` / all）+ 单 feature check。覆盖率门禁为行覆盖率 ≥ 95%（llvm-cov `--fail-under-lines 95`，`--features "cli,time,unit,fx"` 口径）。测试用例权威口径见 README「测试规模」节（以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准，当前工作区 3180 个）。
+CI 矩阵：clippy 三腿（`cli` / `cli,server` / all）+ test 六腿（`cli` / `cli,time,unit,fx` / `cli,server` / `cli,server,fx` / `cli,numerical` / all）+ 单 feature check。覆盖率门禁为行覆盖率 ≥ 95%（llvm-cov `--fail-under-lines 95`，`--features "cli,time,unit,fx"` 口径）。测试用例权威口径见 [docs/cn/TEST_SCENARIOS.md](../docs/cn/TEST_SCENARIOS.md)（以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准）。
 
 ## 详细参考
 
 | 文档 | 内容 |
 | --- | --- |
-| [README.md](../README.md) | 完整使用文档（中文） |
-| [README_EN.md](../README_EN.md) | English documentation |
-| [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) | 架构设计、模块说明与架构决策记录（ADR） |
-| [docs/TEST_SCENARIOS.md](../docs/TEST_SCENARIOS.md) | 逐套件测试场景矩阵 |
-| [docs/CHANGELOG.md](../docs/CHANGELOG.md) | 版本变更记录 |
-| [docs/CONTRIBUTING.md](../docs/CONTRIBUTING.md) | 贡献流程 |
-| [docs/SECURITY.md](../docs/SECURITY.md) | 安全策略 |
+| [README_CN.md](../README_CN.md) | 完整使用文档（中文） |
+| [README.md](../README.md) | English documentation |
+| [docs/cn/ARCHITECTURE.md](../docs/cn/ARCHITECTURE.md) | 架构设计、模块说明与架构决策记录（ADR） |
+| [docs/cn/TEST_SCENARIOS.md](../docs/cn/TEST_SCENARIOS.md) | 逐套件测试场景矩阵 |
+| [docs/cn/CHANGELOG.md](../docs/cn/CHANGELOG.md) | 版本变更记录 |
+| [docs/cn/CONTRIBUTING.md](../docs/cn/CONTRIBUTING.md) | 贡献流程 |
+| [docs/cn/SECURITY.md](../docs/cn/SECURITY.md) | 安全策略 |
 | [docs/archive/](../docs/archive/) | 历史过程文档归档（PRD、研究分析） |
 | [LICENSE](../LICENSE) | MIT 许可证 |
 

@@ -1,7 +1,7 @@
 # 📖 CalNexus 用户指南
 
 > 本文档是 CalNexus 的完整使用教程，覆盖从安装到进阶的全部 CLI 能力。
-> 快速概览请回到 [README](../README.md)，程序化调用请参阅 [📘 API 参考](API_REFERENCE.md)。
+> 快速概览请回到 [README](../../README_CN.md)，程序化调用请参阅 [📘 API 参考](API_REFERENCE.md)。
 
 ## 📋 目录
 
@@ -178,7 +178,7 @@ $ calnexus --precision 30 '1/3'
 
 ### JSON 输出契约
 
-`--json` 输出版本化结构（`"v":1`，JSON Schema 见 [`docs/schema/result-v1.json`](schema/result-v1.json)）：
+`--json` 输出版本化结构（`"v":1`，JSON Schema 见 [`docs/schema/result-v1.json`](../schema/result-v1.json)）：
 
 ```bash
 $ calnexus --json '2+3'
