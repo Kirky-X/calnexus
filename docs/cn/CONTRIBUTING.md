@@ -32,7 +32,7 @@ CalNexus 是一个用 Rust 编写的命令行数学表达式求值器：11 个�
 | 方式 | 入口 |
 |------|------|
 | 🐛 报告 Bug | [创建 Issue](https://github.com/kirky-x/calnexus/issues/new)（附复现步骤、`calnexus` 版本与操作系统信息；符号演算/精度 bug 请附最小复现表达式） |
-| 💡 功能建议 | [发起讨论](https://github.com/kirky-x/calnexus/discussions) |
+| 💡 功能建议 | [提交 Issue](https://github.com/kirky-x/calnexus/issues/new)（本仓未启用 Discussions，功能建议与 Bug 统一走 Issue，标题以「功能建议:」前缀区分） |
 | 🔧 提交代码 | 按下文流程 Fork 并提交 PR |
 
 ---
@@ -233,4 +233,4 @@ git push origin feat/support-complex-numbers
 - [🔒 安全文档](SECURITY.md) — 漏洞报告流程
 - [行为准则](CODE_OF_CONDUCT.md) — 社区规范
 
-有问题？欢迎开 [Discussion](https://github.com/kirky-x/calnexus/discussions) 或 [Issue](https://github.com/kirky-x/calnexus/issues)。Happy hacking! 🦀
+有问题？欢迎开 [Issue](https://github.com/kirky-x/calnexus/issues)（本仓未启用 Discussions）。Happy hacking! 🦀

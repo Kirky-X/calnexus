@@ -339,7 +339,10 @@ A one-shot full optimization after a six-dimension architecture audit (security 
 - Cache layer (`CacheManager` + `CanonicalForm` canonical keys)
 - Timeout mechanism (`EvalContext.timeout` + `check_elapsed` at key nodes)
 
-[unreleased]: https://github.com/kirky-x/calnexus/compare/v0.2.0-rc.2...HEAD
+[unreleased]: https://github.com/kirky-x/calnexus/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kirky-x/calnexus/compare/v0.2.0-rc.4...v0.2.0
+[0.2.0-rc.4]: https://github.com/kirky-x/calnexus/compare/v0.2.0-rc.3...v0.2.0-rc.4
+[0.2.0-rc.3]: https://github.com/kirky-x/calnexus/compare/v0.2.0-rc.2...v0.2.0-rc.3
 [0.2.0-rc.2]: https://github.com/kirky-x/calnexus/compare/v0.2.0-rc.1...v0.2.0-rc.2
 [0.2.0-rc.1]: https://github.com/kirky-x/calnexus/compare/v0.1.4...v0.2.0-rc.1
 [0.1.4]: https://github.com/kirky-x/calnexus/compare/v0.1.3...v0.1.4

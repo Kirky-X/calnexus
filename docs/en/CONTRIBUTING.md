@@ -32,7 +32,7 @@ CalNexus is a command-line math expression evaluator written in Rust: 11 core co
 | Way | Entry point |
 |------|------|
 | 🐛 Report a bug | [Open an Issue](https://github.com/kirky-x/calnexus/issues/new) (include reproduction steps, your `calnexus` version, and OS information; for symbolic-calculus/precision bugs attach a minimal reproducing expression) |
-| 💡 Suggest a feature | [Start a discussion](https://github.com/kirky-x/calnexus/discussions) |
+| 💡 Suggest a feature | [Open an Issue](https://github.com/kirky-x/calnexus/issues/new) (Discussions are not enabled in this repo; feature suggestions and bugs both go through Issues — prefix the title with "Feature:") |
 | 🔧 Submit code | Follow the workflow below — fork and open a PR |
 
 ---
@@ -233,4 +233,4 @@ git push origin feat/support-complex-numbers
 - [🔒 Security](SECURITY.md) — Vulnerability reporting process
 - [Code of Conduct](CODE_OF_CONDUCT.md) — Community standards
 
-Questions? Open a [Discussion](https://github.com/kirky-x/calnexus/discussions) or an [Issue](https://github.com/kirky-x/calnexus/issues). Happy hacking! 🦀
+Questions? Open an [Issue](https://github.com/kirky-x/calnexus/issues) (Discussions are not enabled in this repo). Happy hacking! 🦀

@@ -10,15 +10,17 @@
 - [🎯 Reading Conventions](#-reading-conventions)
 - [🗺️ Overview: Feature Domains × Test Locations](#-overview-feature-domains--test-locations)
 - [🔬 Test Strategy and Coverage Goals](#-test-strategy-and-coverage-goals)
-- [🧱 Unit Tests (`src/` inline, 2497)](#-unit-tests-src-inline-2497)
-- [🔧 Integration Tests (`tests/`, 398)](#-integration-tests-tests-398)
-  - [Core Pipeline Integration (integration.rs, 132)](#core-pipeline-integration-integrationrs-132)
-  - [CLI Integration (cli_integration.rs, 133)](#cli-integration-cli_integrationrs-133)
+- [🧱 Unit Tests (`src/` inline, 2607)](#-unit-tests-src-inline-2607)
+- [🔧 Integration Tests (`tests/`, 425)](#-integration-tests-tests-425)
+  - [Core Pipeline Integration (integration.rs, 137)](#core-pipeline-integration-integrationrs-137)
+  - [CLI Integration (cli_integration.rs, 134)](#cli-integration-cli_integrationrs-134)
   - [REPL Interaction Integration (repl_integration.rs, 8)](#repl-interaction-integration-repl_integrationrs-8)
   - [Facade API Integration (api_integration.rs, 17)](#facade-api-integration-api_integrationrs-17)
-  - [Optional Domain Integration (time_unit_fx / numerical, 16)](#optional-domain-integration-time_unit_fx--numerical-16)
+  - [Optional Domain Integration (time_unit_fx / numerical, 20)](#optional-domain-integration-time_unit_fx--numerical-20)
   - [Server Integration (server_http / server_mcp, 34)](#server-integration-server_http--server_mcp-34)
-- [🌐 E2E Scenario Suite (`tests/e2e/`, 145)](#-e2e-scenario-suite-testse2e-145)
+  - [API Trait Dispatch Integration (api_trait_dispatch.rs, 8)](#api-trait-dispatch-integration-api_trait_dispatchrs-8)
+  - [kit Module Integration (kit_module_test.rs, 6)](#kit-module-integration-kit_module_testrs-6-required-features--kit)
+- [🌐 E2E Scenario Suite (`tests/e2e/`, 158)](#-e2e-scenario-suite-testse2e-158)
   - [S1 Happy Paths (happy_path.rs, 29)](#s1-happy-paths-happy_pathrs-29)
   - [S2 Boundary Conditions (edge_cases.rs, 25)](#s2-boundary-conditions-edge_casesrs-25)
   - [S3 Error Paths (error_paths.rs, 13)](#s3-error-paths-error_pathsrs-13)
@@ -28,6 +30,7 @@
   - [S7 Security and Robustness (security.rs, 9)](#s7-security-and-robustness-securityrs-9)
   - [S8 HTTP/MCP/ratelimit/docs (server_e2e.rs, 9, `#[cfg(feature = "server")]`)](#s8-httpmcpratelimitdocs-server_e2ers-9-cfgfeature--server)
   - [S9 CLI/Batch Gaps (cli_e2e.rs, 12, `#[cfg(feature = "cli")]`)](#s9-clibatch-gaps-cli_e2ers-12-cfgfeature--cli)
+  - [S10 Domain Dispatch (domain_dispatch.rs, 12)](#s10-domain-dispatch-domain_dispatchrs-12)
 - [⚡ Property Tests (proptest, 12)](#-property-tests-proptest-12)
 - [📸 Snapshot Tests (insta, 22)](#-snapshot-tests-insta-22)
 - [🛡️ Security Tests (security_tests.rs, 18)](#-security-tests-security_testsrs-18)
@@ -55,22 +58,23 @@
 
 | Layer | Location | Count | Notes |
 |------|------|-----:|------|
-| Unit tests | `src/core/` inline | 403 | evaluator, canonicalizer, cache, router and other core pieces |
-| Unit tests | `src/domains/` inline | 1267 | 11 core domains + optional domain evaluation |
-| Unit tests | `src/math/` inline | 471 | Math function layer |
-| Unit tests | `src/server/` inline | 90 | http / mcp / ratelimit |
+| Unit tests | `src/core/` inline | 408 | evaluator, canonicalizer, cache, router and other core pieces |
+| Unit tests | `src/domains/` inline | 1299 | 11 core domains + optional domain evaluation |
+| Unit tests | `src/math/` inline | 528 | Math function layer |
+| Unit tests | `src/server/` inline | 93 | http / mcp / ratelimit |
 | Unit tests | `src/output/` inline | 130 | Text / JSON / LaTeX / canonical / steps output |
-| Unit tests | `src/api/` inline | 12 | `CalNexus` facade and direct API |
-| Unit tests | Entry layer (`src/*.rs`: main / cli / repl / batch / i18n / function_catalog / lib) | 125 | CLI parsing, REPL, batch, bilingual messages, panic-hook pipeline fallback |
-| Integration tests | `tests/` (12 files, explicitly registered via `[[test]]`) | 398 | Subprocess (assert_cmd), interaction (expectrl), tower oneshot |
-| E2E scenarios | `tests/e2e/` (9 scenario modules) | 146 | Five core scenario classes + cache/security/server/CLI gaps |
+| Unit tests | `src/api/` inline | 15 | `CalNexus` facade and direct API |
+| Unit tests | `src/integrations/` inline | 4 | kit integration module |
+| Unit tests | Entry layer (`src/*.rs`: main / cli / repl / batch / i18n / function_catalog / lib) | 130 | CLI parsing, REPL, batch, bilingual messages, panic-hook pipeline fallback |
+| Integration tests | `tests/` (14 files: 12 explicitly registered via `[[test]]` plus `api_integration` / `api_trait_dispatch` auto-discovered) | 425 | Subprocess (assert_cmd), interaction (expectrl), tower oneshot |
+| E2E scenarios | `tests/e2e/` (10 scenario modules) | 158 | Five core scenario classes + cache/security/server/CLI gaps |
 | Property tests | `tests/property_tests.rs` | 12 | proptest invariants |
 | Snapshot tests | `tests/snapshot_tests.rs` | 22 | insta, all CLI-reachable output variants |
 | Security tests | `tests/security_tests.rs` | 18 | DoS vectors and boundary attacks |
 | Performance regression | `tests/performance_tests.rs` | 6 | criterion baseline comparison and thresholds |
-| Total | `grep -rE "#\[(tokio::)?test\]" src/ tests/` | **3042** | Plus 7 fuzz targets, 4 criterion suites, and doctests run by `cargo test` |
+| Total | `grep -rE "#\[(tokio::)?test\]" src/ tests/` | **3190** | Plus 7 fuzz targets, 4 criterion suites, and doctests run by `cargo test` |
 
-> The 544 in `tests/` = 398 top-level integration + 146 E2E; the `required-features` declarations of each `[[test]]` entry are in `Cargo.toml` (e.g. `server_http_integration` needs `server`, `time_unit_fx_integration` needs `cli,time,unit,fx`).
+> The 583 in `tests/` = 425 top-level integration + 158 E2E; the `required-features` declarations of each `[[test]]` entry are in `Cargo.toml` (e.g. `server_http_integration` needs `server`, `time_unit_fx_integration` needs `cli,time,unit,fx`).
 
 ---
 
@@ -79,8 +83,8 @@
 ```mermaid
 graph TD
     A[Fuzz testing cargo-fuzz 7 targets] --> B[Property tests proptest 12]
-    B --> C[Integration / E2E tests/ 544 cases]
-    C --> D[Unit tests src/ inline 2498 cases]
+    B --> C[Integration / E2E tests/ 583 cases]
+    C --> D[Unit tests src/ inline 2607 cases]
 
     style A fill:#ffcdd2,stroke:#c62828
     style B fill:#fff3e0,stroke:#ef6c00
@@ -92,33 +96,34 @@ graph TD
 | :--- | :--- | :--- |
 | **Core domains** | Parser, Canonicalizer, DomainRouter, Cache, Arithmetic, Scientific, NumberTheory, Combinatorics | **100%** |
 | **Other domains** | Complex, Matrix, Statistics, Symbolic, Precision, Vector, Polynomial | **≥ 80%** |
-| **Overall** | whole crate | **≥ 90%** (CI gate `cargo llvm-cov --fail-under-lines 90`; most recently measured 90.4%) |
+| **Overall** | whole crate | **≥ 95%** (CI gate `cargo llvm-cov --fail-under-lines 95`; most recently measured 95.9%) |
 
 - The coverage tool is **cargo-llvm-cov** (the only gate; the tarpaulin configuration was removed, see `docs/cn/CHANGELOG.md` [Unreleased] Removed).
 - Strategy changes relative to v0.1 (the HTTP microservice form): removed Docker Compose / k6 / K8s load tests, returning to the Rust-native "unit + property + fuzz" trio, plus process-level CLI/REPL integration and in-process-only E2E scenario suites.
 
 ---
 
-## 🧱 Unit Tests (`src/` inline, 2538)
+## 🧱 Unit Tests (`src/` inline, 2607)
 
 Unit tests live in each module's `#[cfg(test)] mod tests` and compile with the feature gates. Per-directory statistics:
 
 | Directory | Cases | Coverage focus |
 |------|-------:|----------|
-| `src/domains/` | 1267 | Function-level behavior of the 11 core domains + time/unit/fx/numerical domains, error classification, domain routing `supports()` |
-| `src/math/` | 471 | Math function layer implementation (gamma/erf/combinatorics/polynomial/numerical decompositions and other low-level pure functions) |
-| `src/core/` | 403 | evaluator five-stage pipeline, AST canonicalization (constant folding/commutative sorting), cache keys and single-flight, routing priority |
+| `src/domains/` | 1299 | Function-level behavior of the 11 core domains + time/unit/fx/numerical domains, error classification, domain routing `supports()` |
+| `src/math/` | 528 | Math function layer implementation (gamma/erf/combinatorics/polynomial/numerical decompositions and other low-level pure functions) |
+| `src/core/` | 408 | evaluator five-stage pipeline, AST canonicalization (constant folding/commutative sorting), cache keys and single-flight, routing priority |
 | `src/output/` | 130 | Text / JSON (`"v":1` contract) / LaTeX / canonical / steps — the five formatters |
-| `src/server/` | 90 | HTTP routing and error mapping, fixed-window rate limiting, language negotiation, metrics export |
-| Entry layer `src/*.rs` | 124 | CLI argument parsing and exclusivity, REPL commands, batch file reading, i18n message catalog, function catalog |
-| `src/api/` | 12 | `CalNexus` facade (direct API) and variable-binding state |
-| **Total** | **2497** | Methodology: `grep -rE "#\[(tokio::)?test\]" src/ --include="*.rs" \| wc -l` |
+| `src/server/` | 93 | HTTP routing and error mapping, fixed-window rate limiting, language negotiation, metrics export |
+| Entry layer `src/*.rs` | 130 | CLI argument parsing and exclusivity, REPL commands, batch file reading, i18n message catalog, function catalog |
+| `src/api/` | 15 | `CalNexus` facade (direct API) and variable-binding state |
+| `src/integrations/` | 4 | trait-kit AsyncKit dependency-injection integration module |
+| **Total** | **2607** | Methodology: `grep -rE "#\[(tokio::)?test\]" src/ --include="*.rs" \| wc -l` |
 
 ---
 
-## 🔧 Integration Tests (`tests/`, 417)
+## 🔧 Integration Tests (`tests/`, 425)
 
-### Core Pipeline Integration (integration.rs, 132)
+### Core Pipeline Integration (integration.rs, 137)
 
 | Scenario group | Count | Cases (prefix / examples) |
 |--------|-----:|---------------------|
@@ -139,33 +144,35 @@ Unit tests live in each module's `#[cfg(test)] mod tests` and compile with the f
 | Implicit multiplication (v0.1 regression) | 3 | `test_v10_implicit_mult_2x`, `test_v10_implicit_mult_paren` etc. |
 | Polynomial division and roots (v0.1 regression) | 6 | `test_v10_poly_div_exact`, `test_v10_roots_quartic_repeated` etc. |
 | Public API stability | 3 | `test_public_api_unchanged_after_move`, `test_all_ten_domains_routed`, `test_symbolic_domain_accessible_via_domains` |
+| Special functions and numerical analysis end to end | 5 | `test_special_functions_end_to_end`, `test_special_function_domains_end_to_end`, `test_list_functions_includes_special_functions`, `test_root_and_integral_end_to_end`, `test_root_and_integral_error_paths` |
 
-### CLI Integration (cli_integration.rs, 133)
+### CLI Integration (cli_integration.rs, 134)
 
 assert_cmd invokes the real binary as a subprocess, focusing on output contracts and exit codes (0 success / 1 computation error / 2 usage error / 3 timeout or dependency unavailable).
 
 | Scenario group | Count | Cases (prefix / examples) |
 |--------|-----:|---------------------|
 | Basic evaluation and stdin | 8 | `test_basic_addition`, `test_stdin_scientific_expression`, `test_no_args_piped_stdin`, `test_empty_stdin_exit_code` etc. |
-| JSON output contract | 15 | `test_json_arithmetic`, `test_json_error_output_exit_1`, `test_json_mode_var_error_output_format` etc. `test_json_*` / `test_json_mode_*` |
-| Variable binding | 8 | `test_single_var_arithmetic`, `test_three_variables`, `test_invalid_var_missing_equals_exit_code` etc. |
+| JSON output contract | 9 | `test_json_arithmetic`, `test_json_error_output_exit_1`, `test_json_mode_var_error_output_format` etc. `test_json_*` |
+| Variable binding | 7 | `test_single_var_arithmetic`, `test_three_variables`, `test_invalid_var_missing_equals_exit_code` etc. |
 | Usage / help / exit codes | 11 | `test_unknown_flag_exit_code`, `test_long_help_flag`, `test_success_exit_0`, `test_lang_invalid_value_exit_2` etc. |
 | Precision flag | 5 | `test_precision_flag_zero_decimals`, `test_precision_function_call_json` etc. |
-| BigNumber / BigRational output | 5 | `test_bigint_addition_output`, `test_bigrational_output_fraction_form` etc. |
-| Complex / matrix output | 4 | `test_complex_output_standard`, `test_matrix_output_1x3` etc. |
-| Statistics CLI | 5 | `test_statistics_mean_cli`, `test_statistics_stdin_pipeline` etc. |
-| Number theory / combinatorics CLI | 7 | `test_cli_number_theory_prime_sieve`, `test_cli_combinatorics_stdin` etc. |
+| BigNumber / BigRational output | 7 | `test_bigint_addition_output`, `test_bigrational_output_fraction_form` etc. |
+| Complex / matrix output | 6 | `test_complex_output_standard`, `test_matrix_output_1x3` etc. |
+| Statistics CLI | 6 | `test_statistics_mean_cli`, `test_statistics_stdin_pipeline` etc. |
+| Number theory / combinatorics CLI | 8 | `test_cli_number_theory_prime_sieve`, `test_cli_combinatorics_stdin` etc. |
 | Vector CLI | 4 | `test_cli_vector_dot`, `test_cli_vector_dimension_mismatch_error` etc. |
 | Polynomial CLI | 9 | `test_cli_polynomial_roots_real`, `test_polynomial_general_coef_high_degree` etc. |
-| REPL (subprocess form) | 12 | `test_cli_repl_let_and_use`, `test_repl_complex_format_result`, `test_repl_polynomial_format_result` etc. |
+| REPL (subprocess form) | 14 | `test_cli_repl_let_and_use`, `test_repl_complex_format_result`, `test_repl_polynomial_format_result` etc. |
 | Batch processing | 5 | `test_cli_batch_basic`, `test_cli_batch_comment_skipped`, `test_cli_batch_nonexistent_file` etc. |
-| Formatted output and exclusivity | 8 | `it_cli_003_latex_output`, `it_cli_009_canonical_output`, `it_cli_010_steps_output`, `it_cli_latex_json_conflict_exit_2`, `test_batch_precision_conflict_exit_2` etc. |
+| Formatted output and exclusivity | 7 | `it_cli_003_latex_output`, `it_cli_009_canonical_output`, `it_cli_010_steps_output`, `it_cli_latex_json_conflict_exit_2`, `test_batch_precision_conflict_exit_2` etc. |
 | Formatting error paths | 5 | `it_cli_latex_parse_error_exit_1`, `it_cli_steps_div_zero_exit_1` etc. |
 | `--explain` and `--lang` | 7 | `test_explain_div_zero_hint`, `test_explain_domain_hint`, `test_lang_zh_parse_error` etc. |
 | Symbolic calculus CLI | 4 | `test_cli_symbolic_diff_power`, `test_cli_symbolic_limit` etc. |
 | serve flag conflicts and gating | 5 | `test_serve_http_conflicts_serve_mcp`, `test_serve_http_without_server_feature` etc. |
 | `--timeout` / `--cache-size` / `--bind` | 4 | `timeout_flag_slow_expression_exits_3`, `timeout_env_var_fallback_and_validation`, `cache_size_flag_accepted_and_validated`, `bind_flag_serve_http_listens_on_custom_port` |
 | Output experience (caret / hint) | 2 | `parse_error_text_mode_shows_caret`, `undefined_symbol_hint_suggests_cli_var_flag` |
+| Numeric frontier output surfaces | 1 | `numeric_frontier_functions_expose_all_output_surfaces` |
 
 ### REPL Interaction Integration (repl_integration.rs, 8)
 
@@ -196,7 +203,7 @@ Programmatic-call verification of the direct API (`CalNexus` facade, bypassing t
 | Statistics | `test_stats_mean`, `test_stats_std` |
 | Variable state | `test_set_var_get_var`, `test_clear_vars`, `test_default_instance` |
 
-### Optional Domain Integration (time_unit_fx / numerical, 16)
+### Optional Domain Integration (time_unit_fx / numerical, 20)
 
 `time_unit_fx_integration.rs` (10, `required-features = ["cli","time","unit","fx"]`):
 
@@ -213,13 +220,17 @@ Programmatic-call verification of the direct API (`CalNexus` facade, bypassing t
 | `test_now_cache_bypass_end_to_end` | Nondeterministic function cache bypass |
 | `test_str_in_binary_op_returns_domain_error` | String operand in binary op raises a domain error |
 
-`numerical_linalg_test.rs` (6, `required-features = ["cli","numerical"]`):
+`numerical_linalg_test.rs` (10, `required-features = ["cli","numerical"]`):
 
 | Case | Scenario |
 |------|------|
 | `lu_end_to_end_returns_json_with_lup` | LU decomposition (with row swaps) |
 | `qr_end_to_end_returns_json_with_qr` | QR decomposition |
-| `eig_end_to_end_returns_json_with_values_and_vectors` | Eigenvalues / eigenvectors |
+| `eig_end_to_end_returns_json_with_values_and_vectors` | Eigenvalues / eigenvectors (symmetric) |
+| `eig_general_end_to_end_returns_complex_values` | General-matrix eigenvalues (complex) |
+| `eig_general_symmetric_still_returns_zero_imaginary` | Symmetric matrices keep zero imaginary parts |
+| `eig_general_vectors_satisfy_definition_end_to_end` | Eigenvectors verified against the definition |
+| `eig_non_symmetric_still_errors_with_hint` | `eig` on a non-symmetric matrix errors, hinting at `eig_general` |
 | `svd_end_to_end_returns_json_with_usvt` | SVD decomposition |
 | `solve_end_to_end_returns_vector_satisfying_ax_eq_b` | Linear system solving |
 | `precision_wrapping_numerical_end_to_end_errors` | Precision mode wrapping a numerical decomposition errors |
@@ -247,11 +258,39 @@ Programmatic-call verification of the direct API (`CalNexus` facade, bypassing t
 | list_functions tool | `test_list_functions_tool_callable`, `test_list_functions_feature_gated_domains` |
 | Language negotiation | `test_mcp_evaluate_zh_lang_localized_error`, `test_mcp_evaluate_default_lang_english_error` |
 
+### API Trait Dispatch Integration (api_trait_dispatch.rs, 8)
+
+Method-by-method enumeration of the direct API trait-dispatch surface:
+
+| Case | Scenario |
+|------|------|
+| `scalar_math_trait_dispatch_covers_all_methods` | `ScalarMath`, all methods dispatched |
+| `linear_algebra_trait_dispatch_covers_all_methods` | `LinearAlgebra`, all methods dispatched |
+| `data_analysis_trait_dispatch_covers_all_methods` | `DataAnalysis`, all methods dispatched |
+| `symbolic_math_trait_dispatch_covers_all_methods` | `SymbolicMath`, all methods dispatched |
+| `applied_math_trait_dispatch_covers_time_methods` | `AppliedMath` time methods (`time`-gated) |
+| `applied_math_trait_dispatch_converts_units` | `AppliedMath` unit conversion (`unit`-gated) |
+| `applied_math_trait_dispatch_fx_network_tolerant` | `AppliedMath` fx conversion (`fx`-gated, network-tolerant) |
+| `wrapper_try_from_rejects_mismatched_variants` | Wrapper `TryFrom` rejects mismatched variants |
+
+### kit Module Integration (kit_module_test.rs, 6, `required-features = ["kit"]`)
+
+AsyncKit dependency-injection wiring for `src/integrations/kit` (`#[tokio::test]`):
+
+| Case | Scenario |
+|------|------|
+| `build_and_require_all_modules_happy_path` | Full-module registration and wiring happy path |
+| `kit_config_preset_variables_visible_through_handles` | Preset variables visible through handles |
+| `require_unregistered_module_fails_explicitly` | Requiring an unregistered module fails explicitly |
+| `build_fails_when_dependency_not_registered` | Build fails when a dependency is missing |
+| `calc_error_propagates_through_handle` | Computation errors propagate through the handle |
+| `domain_module_dependencies_declared` | Domain-module dependency declarations complete |
+
 ---
 
 ## 🌐 E2E Scenario Suite (`tests/e2e/`, 158)
 
-Organized into nine scenario classes (see the module table in `tests/e2e/main.rs`); the suite has no `required-features` and compiles under every feature combination; commit record in git log `f247fd9`.
+Organized into 10 scenario modules (see the module declarations in `tests/e2e/main.rs`); the suite has no `required-features` and compiles under every feature combination; commit record in git log `f247fd9`.
 
 ### S1 Happy Paths (happy_path.rs, 29)
 
@@ -441,6 +480,25 @@ Each optional feature verifies both sides — "enabled side routes correctly + d
 | `cli_usage_exit_2_for_invalid_var_format` | Invalid variable format exits 2 |
 | `cli_stdout_pipe_closed_downstream_dies_quietly` | Downstream pipe closes early: SIGPIPE silent termination, no false internal-bug report |
 
+### S10 Domain Dispatch (domain_dispatch.rs, 12)
+
+Domain dispatch and error branches for optional domains (time / unit / number theory / statistics), end to end:
+
+| Case | Scenario |
+|------|------|
+| `statistics_distribution_functions_end_to_end` | Statistics distribution functions end to end |
+| `statistics_distribution_low_frequency_parameters` | Distribution functions with low-frequency parameters |
+| `statistics_distribution_degenerate_inputs_error` | Degenerate inputs raise errors |
+| `statistics_test_and_correlation_error_branches` | Test/correlation analysis error branches |
+| `statistics_domain_structure_error_branches` | Statistics domain structure error branches |
+| `number_theory_error_branches_end_to_end` | Number theory error branches end to end |
+| `number_theory_prime_sieve_overflow_errors` | Prime sieve overflow errors |
+| `unit_domain_unknown_function_rejected` | Unknown functions rejected by the unit domain |
+| `time_arithmetic_units_end_to_end` | Time arithmetic units end to end |
+| `time_format_pipeline_end_to_end` | Time formatting pipeline |
+| `time_parse_multi_format_end_to_end` | Multi-format time parsing |
+| `time_domain_error_branches` | Time domain error branches |
+
 ---
 
 ## ⚡ Property Tests (proptest, 12)
@@ -585,7 +643,7 @@ cargo check --all-features
 cargo build --release --features cli
 
 # Coverage gate: at least 90% line coverage (llvm-cov)
-cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 90 --summary-only
+cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 95 --summary-only
 
 # Running a single test file (local debugging)
 cargo test --all-features --test e2e
@@ -670,4 +728,4 @@ Dependency security gates (`.github/workflows/audit.yml`, weekly schedule Monday
 
 > This section was migrated from the README's "🧪 Testing · Test Scale" section as a v0.2.0 snapshot; for the latest numbers see the waterline figures at the top of this document.
 
-Current working tree (v0.2.0): grep statistics count 3191 `#[test]` / `#[tokio::test]` functions in total — 2608 unit tests (inline in `src/`), 583 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 95% line coverage (llvm-cov `--fail-under-lines 95`, measured with `--features cli,time,unit,fx`; currently 95.9% (29332 lines / 1214 uncovered, llvm-cov lines, above the 95% gate and the previous 95.57% baseline)), enforced in CI. For the per-suite exhaustive scenario listing see the sections above in this document.
+Current working tree (v0.2.0): grep statistics count 3190 `#[test]` / `#[tokio::test]` functions in total — 2607 unit tests (inline in `src/`), 583 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 95% line coverage (llvm-cov `--fail-under-lines 95`, measured with `--features cli,time,unit,fx`; currently 95.9% (29332 lines / 1214 uncovered, llvm-cov lines, above the 95% gate and the previous 95.57% baseline)), enforced in CI. For the per-suite exhaustive scenario listing see the sections above in this document.

@@ -181,7 +181,7 @@ HTTP 端点清单与语言协商、Docker / Kubernetes 部署、可观测性与 
 
 ### 🎯 测试策略
 
-测试金字塔覆盖九层：`src/` 内联单元测试、按形态组织的集成测试（`tests/`：integration、cli_integration、repl_integration、server_http_integration、server_mcp_integration、api_integration、time_unit_fx_integration、numerical_linalg_test）、`tests/e2e` 场景套件（无 `required-features`，内部 `#[cfg]` 门控启用/禁用两侧用例）、属性测试（proptest）、快照测试（insta）、安全测试（DoS 向量与边界攻击）、模糊测试（`fuzz/`，7 个 cargo-fuzz 目标）、Criterion 基准（`benches/`，4 组）与公开 API 文档测试。逐套件场景穷举、文件映射与通过标准见 [🧪 测试场景矩阵](docs/cn/TEST_SCENARIOS.md)。
+测试金字塔覆盖九层：`src/` 内联单元测试、按形态组织的集成测试（`tests/`：integration、cli_integration、repl_integration、server_http_integration、server_mcp_integration、api_integration、api_trait_dispatch、time_unit_fx_integration、numerical_linalg_test、kit_module_test、performance_tests）、`tests/e2e` 场景套件（无 `required-features`，内部 `#[cfg]` 门控启用/禁用两侧用例）、属性测试（proptest）、快照测试（insta）、安全测试（DoS 向量与边界攻击）、模糊测试（`fuzz/`，7 个 cargo-fuzz 目标）、Criterion 基准（`benches/`，4 组）与公开 API 文档测试。逐套件场景穷举、文件映射与通过标准见 [🧪 测试场景矩阵](docs/cn/TEST_SCENARIOS.md)。
 
 运行命令（与 CI 一致）见 [🧪 测试场景矩阵 · 执行命令](docs/cn/TEST_SCENARIOS.md#-执行命令与-ci-一致)，当前测试规模快照（v0.2.0）见 [🧪 测试场景矩阵 · 测试规模](docs/cn/TEST_SCENARIOS.md#-测试规模v020)。
 

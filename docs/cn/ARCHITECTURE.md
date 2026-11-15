@@ -383,7 +383,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     CORE["core/evaluator.rs<br/>调用 domains::build_default_router()"]
-    FACTORY["domains/factory.rs<br/>注册 11 个域"]
+    FACTORY["domains/factory.rs<br/>注册 14 个域（11 核心 + 3 可选）"]
     DOMAINS["domains/*<br/>实现 CalculationDomain"]
     CORE -- "抽象调用" --> FACTORY
     FACTORY --> DOMAINS
@@ -447,7 +447,7 @@ v0.1.5 重构完成时点的测试规模（历史记录；当前规模见 README
 
 v015-comprehensive-optimization（2026-09）：
 
-1. **缓存引擎重构**：oxcache 封装退役，`CacheManager` 直连 `moka::sync`——`try_get_with` 生产级 single-flight（并发相同键恰一次求值、错误原样传播），字节权重预算（默认 64MB）+ 256KB 大结果准入阈值，`Arc<EvalResult>` 命中零拷贝，单次 BLAKE3 键。连带消除 JSON 序列化存储、临时 tokio runtime 与 hex 键分配。（后注：当前实现经 crates.io 的 oxcache 0.5.0-rc.8 `ByteWeightCache` 提供同等机制，但其 `get`/`get_or_compute` 返回克隆值——命中为克隆而非 `Arc` 零拷贝；本文各处缓存表述以此为准。）
+1. **缓存引擎重构**：oxcache 封装退役，`CacheManager` 直连 `moka::sync`——`try_get_with` 生产级 single-flight（并发相同键恰一次求值、错误原样传播），字节权重预算（默认 64MB）+ 256KB 大结果准入阈值，`Arc<EvalResult>` 命中零拷贝，单次 BLAKE3 键。连带消除 JSON 序列化存储、临时 tokio runtime 与 hex 键分配。（后注：当前实现经 crates.io 的 oxcache 0.5.0 `ByteWeightCache` 提供同等机制，但其 `get`/`get_or_compute` 返回克隆值——命中为克隆而非 `Arc` 零拷贝；本文各处缓存表述以此为准。）
 2. **HTTP 路由显式注册**：`#[forge]` inventory 注册在 rlib/测试二进制下会被链接器 GC 静默丢弃（生产 404），HTTP 路由改为 `build_router()` 显式挂载（单一事实源）；`#[forge]` 保留 MCP tool 注册与 schema 推导职责。
 3. **递归深度防护闭环**：括号字面量递归 thread-local RAII 守卫、mathexpr 前迭代括号预检、canonicalizer 深度守卫；fuzz 目标覆盖真实深度域。
 4. **错误语义服务化**：`ErrorKind::DependencyUnavailable`（exit_code=3）→ HTTP 503，与客户端 400 严格区分；`/ready`/`/live`/`/health` 三探针语义分离。
@@ -492,6 +492,9 @@ v015-comprehensive-optimization（2026-09）：
 <tr><td colspan="3" style="background:#F8FAFC"><b>核心库</b></td></tr>
 <tr><td><code>default</code></td><td align="center">✅</td><td>零依赖核心：解析、规范化、14 域路由、缓存，可作嵌入式引擎</td></tr>
 <tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X BCP-47 语言标签解析（中英双语错误消息经 Fluent 内嵌、始终可用，不受此 feature 门控）</td></tr>
+<tr><td><code>wasm-api</code></td><td align="center">❌</td><td>wasm-bindgen 导出层（仅 wasm32 目标；非 wasm 启用会编译期报错）</td></tr>
+<tr><td><code>egraph</code></td><td align="center">❌</td><td>基于 egg 的 equality saturation 化简（默认关闭）</td></tr>
+<tr><td><code>kit</code></td><td align="center">❌</td><td>trait-kit AsyncKit 依赖注入集成模块（<code>src/integrations/kit</code>；核心 trait 不重写）</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>CLI 与交互</b></td></tr>
 <tr><td><code>cli</code></td><td align="center">❌</td><td>CLI / REPL / 批量（clap、rustyline、rayon，经 sdforge/cli 间接启用）</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>可选计算域</b></td></tr>

@@ -10,15 +10,17 @@
 - [🎯 阅读约定](#-阅读约定)
 - [🗺️ 总览：功能域 × 测试位置](#-总览功能域--测试位置)
 - [🔬 测试策略与覆盖率目标](#-测试策略与覆盖率目标)
-- [🧱 单元测试（`src/` 内联，2497）](#-单元测试src-内联2497)
-- [🔧 集成测试（`tests/`，398）](#-集成测试tests398)
-  - [核心流水线集成（integration.rs，132）](#核心流水线集成integrationrs132)
-  - [CLI 集成（cli_integration.rs，133）](#cli-集成cli_integrationrs133)
+- [🧱 单元测试（`src/` 内联，2607）](#-单元测试src-内联2607)
+- [🔧 集成测试（`tests/`，425）](#-集成测试tests425)
+  - [核心流水线集成（integration.rs，137）](#核心流水线集成integrationrs137)
+  - [CLI 集成（cli_integration.rs，134）](#cli-集成cli_integrationrs134)
   - [REPL 交互集成（repl_integration.rs，8）](#repl-交互集成repl_integrationrs8)
   - [门面 API 集成（api_integration.rs，17）](#门面-api-集成api_integrationrs17)
-  - [可选域集成（time_unit_fx / numerical，16）](#可选域集成time_unit_fx--numerical16)
+  - [可选域集成（time_unit_fx / numerical，20）](#可选域集成time_unit_fx--numerical20)
   - [服务端集成（server_http / server_mcp，34）](#服务端集成server_http--server_mcp34)
-- [🌐 E2E 场景套件（`tests/e2e/`，145）](#-e2e-场景套件testse2e145)
+  - [API trait 分发集成（api_trait_dispatch.rs，8）](#api-trait-分发集成api_trait_dispatchrs8)
+  - [kit 模块集成（kit_module_test.rs，6）](#kit-模块集成kit_module_testrs6required-features--kit)
+- [🌐 E2E 场景套件（`tests/e2e/`，158）](#-e2e-场景套件testse2e158)
   - [S1 正常路径（happy_path.rs，29）](#s1-正常路径happy_pathrs29)
   - [S2 边界条件（edge_cases.rs，25）](#s2-边界条件edge_casesrs25)
   - [S3 异常路径（error_paths.rs，13）](#s3-异常路径error_pathsrs13)
@@ -28,6 +30,7 @@
   - [S7 安全与健壮性（security.rs，9）](#s7-安全与健壮性securityrs9)
   - [S8 HTTP/MCP/ratelimit/docs（server_e2e.rs，9）](#s8-httpmcpratelimitdocsserver_e2ers9cfgfeature--server)
   - [S9 CLI/批处理缺口（cli_e2e.rs，12）](#s9-cli批处理缺口cli_e2ers12cfgfeature--cli)
+  - [S10 域分发（domain_dispatch.rs，12）](#s10-域分发domain_dispatchrs12)
 - [⚡ 属性测试（proptest，12）](#-属性测试proptest12)
 - [📸 快照测试（insta，22）](#-快照测试insta22)
 - [🛡️ 安全测试（security_tests.rs，18）](#-安全测试security_testsrs18)
@@ -55,22 +58,23 @@
 
 | 层级 | 位置 | 数量 | 说明 |
 |------|------|-----:|------|
-| 单元测试 | `src/core/` 内联 | 403 | evaluator、canonicalizer、cache、router 等核心 |
-| 单元测试 | `src/domains/` 内联 | 1267 | 11 核心域 + 可选域求值 |
-| 单元测试 | `src/math/` 内联 | 471 | 数学函数层 |
-| 单元测试 | `src/server/` 内联 | 90 | http / mcp / ratelimit |
+| 单元测试 | `src/core/` 内联 | 408 | evaluator、canonicalizer、cache、router 等核心 |
+| 单元测试 | `src/domains/` 内联 | 1299 | 11 核心域 + 可选域求值 |
+| 单元测试 | `src/math/` 内联 | 528 | 数学函数层 |
+| 单元测试 | `src/server/` 内联 | 93 | http / mcp / ratelimit |
 | 单元测试 | `src/output/` 内联 | 130 | 文本 / JSON / LaTeX / 规范形式 / 步骤输出 |
-| 单元测试 | `src/api/` 内联 | 12 | `CalNexus` 门面与直接 API |
-| 单元测试 | 入口层（`src/*.rs`：main / cli / repl / batch / i18n / function_catalog / lib） | 125 | CLI 解析、REPL、批量、双语消息、panic hook 管道兜底 |
-| 集成测试 | `tests/`（12 个文件，`[[test]]` 显式注册） | 398 | 子进程（assert_cmd）、交互（expectrl）、tower oneshot |
-| E2E 场景 | `tests/e2e/`（9 个场景模块） | 146 | 五类核心场景 + 缓存/安全/服务端/CLI 缺口 |
+| 单元测试 | `src/api/` 内联 | 15 | `CalNexus` 门面与直接 API |
+| 单元测试 | `src/integrations/` 内联 | 4 | kit 集成模块 |
+| 单元测试 | 入口层（`src/*.rs`：main / cli / repl / batch / i18n / function_catalog / lib） | 130 | CLI 解析、REPL、批量、双语消息、panic hook 管道兜底 |
+| 集成测试 | `tests/`（14 个文件：12 个 `[[test]]` 显式注册 + `api_integration` / `api_trait_dispatch` 自动发现） | 425 | 子进程（assert_cmd）、交互（expectrl）、tower oneshot |
+| E2E 场景 | `tests/e2e/`（10 个场景模块） | 158 | 五类核心场景 + 缓存/安全/服务端/CLI 缺口 |
 | 属性测试 | `tests/property_tests.rs` | 12 | proptest 不变量 |
 | 快照测试 | `tests/snapshot_tests.rs` | 22 | insta，全部 CLI 可达输出变体 |
 | 安全测试 | `tests/security_tests.rs` | 18 | DoS 向量与边界攻击 |
 | 性能回归 | `tests/performance_tests.rs` | 6 | criterion 基线对比与阈值 |
-| 合计 | `grep -rE "#\[(tokio::)?test\]" src/ tests/` | **3042** | 另有模糊目标 7 个、criterion 基准 4 组、doctest 随 `cargo test` 执行 |
+| 合计 | `grep -rE "#\[(tokio::)?test\]" src/ tests/` | **3190** | 另有模糊目标 7 个、criterion 基准 4 组、doctest 随 `cargo test` 执行 |
 
-> `tests/` 内 544 = 顶层集成 398 + E2E 146；各文件 `[[test]]` 的 `required-features` 声明见 `Cargo.toml`（如 `server_http_integration` 需 `server`，`time_unit_fx_integration` 需 `cli,time,unit,fx`）。
+> `tests/` 内 583 = 顶层集成 425 + E2E 158；各文件 `[[test]]` 的 `required-features` 声明见 `Cargo.toml`（如 `server_http_integration` 需 `server`，`time_unit_fx_integration` 需 `cli,time,unit,fx`）。
 
 ---
 
@@ -79,8 +83,8 @@
 ```mermaid
 graph TD
     A[模糊测试 cargo-fuzz 7 目标] --> B[属性测试 proptest 12 条]
-    B --> C[集成 / E2E tests/ 544 用例]
-    C --> D[单元测试 src/ 内联 2498 用例]
+    B --> C[集成 / E2E tests/ 583 用例]
+    C --> D[单元测试 src/ 内联 2607 用例]
 
     style A fill:#ffcdd2,stroke:#c62828
     style B fill:#fff3e0,stroke:#ef6c00
@@ -92,33 +96,34 @@ graph TD
 | :--- | :--- | :--- |
 | **核心域** | Parser、Canonicalizer、DomainRouter、Cache、Arithmetic、Scientific、NumberTheory、Combinatorics | **100%** |
 | **其他域** | Complex、Matrix、Statistics、Symbolic、Precision、Vector、Polynomial | **≥ 80%** |
-| **整体** | crate 全量 | **≥ 90%**（CI `cargo llvm-cov --fail-under-lines 90` 门禁；最近实测 90.4%） |
+| **整体** | crate 全量 | **≥ 95%**（CI `cargo llvm-cov --fail-under-lines 95` 门禁；最近实测 95.9%） |
 
 - 覆盖率工具为 **cargo-llvm-cov**（唯一门禁；tarpaulin 配置已删除，见 `docs/cn/CHANGELOG.md` [Unreleased] Removed）。
 - 相对 v0.1（HTTP 微服务形态）的策略变化：删除 Docker Compose / k6 / K8s 压测，回到 Rust 生态本位的「单元 + 属性 + 模糊」三件套，并叠加进程级 CLI/REPL 集成与纯进程内 E2E 场景套件。
 
 ---
 
-## 🧱 单元测试（`src/` 内联，2538）
+## 🧱 单元测试（`src/` 内联，2607）
 
 单元测试位于各模块 `#[cfg(test)] mod tests`，随特性门控编译。按目录统计：
 
 | 目录 | 用例数 | 覆盖重点 |
 |------|-------:|----------|
-| `src/domains/` | 1267 | 11 核心计算域 + 时间/单位/汇率/数值域的函数级行为、错误分类、域路由 `supports()` |
-| `src/math/` | 471 | 数学函数层实现（ gamma/erf/组合数/多项式/数值分解等底层纯函数） |
-| `src/core/` | 403 | evaluator 五阶段流水线、AST 规范化（常量折叠/交换律排序）、缓存键与 single-flight、路由优先级 |
+| `src/domains/` | 1299 | 11 核心计算域 + 时间/单位/汇率/数值域的函数级行为、错误分类、域路由 `supports()` |
+| `src/math/` | 528 | 数学函数层实现（ gamma/erf/组合数/多项式/数值分解等底层纯函数） |
+| `src/core/` | 408 | evaluator 五阶段流水线、AST 规范化（常量折叠/交换律排序）、缓存键与 single-flight、路由优先级 |
 | `src/output/` | 130 | 文本 / JSON（`"v":1` 契约）/ LaTeX / 规范形式 / 步骤五种格式化器 |
-| `src/server/` | 90 | HTTP 路由与错误映射、限流固定窗口、语言协商、指标导出 |
-| 入口层 `src/*.rs` | 124 | CLI 参数解析与互斥、REPL 命令、批量文件读取、i18n 消息目录、函数目录 |
-| `src/api/` | 12 | `CalNexus` 门面（直接 API）与变量绑定状态 |
-| **合计** | **2497** | 口径：`grep -rE "#\[(tokio::)?test\]" src/ --include="*.rs" \| wc -l` |
+| `src/server/` | 93 | HTTP 路由与错误映射、限流固定窗口、语言协商、指标导出 |
+| 入口层 `src/*.rs` | 130 | CLI 参数解析与互斥、REPL 命令、批量文件读取、i18n 消息目录、函数目录 |
+| `src/api/` | 15 | `CalNexus` 门面（直接 API）与变量绑定状态 |
+| `src/integrations/` | 4 | trait-kit AsyncKit 依赖注入集成模块 |
+| **合计** | **2607** | 口径：`grep -rE "#\[(tokio::)?test\]" src/ --include="*.rs" \| wc -l` |
 
 ---
 
-## 🔧 集成测试（`tests/`，417）
+## 🔧 集成测试（`tests/`，425）
 
-### 核心流水线集成（integration.rs，132）
+### 核心流水线集成（integration.rs，137）
 
 | 场景组 | 数量 | 用例（前缀 / 列举） |
 |--------|-----:|---------------------|
@@ -139,33 +144,35 @@ graph TD
 | 隐式乘法（v0.1 回归） | 3 | `test_v10_implicit_mult_2x`、`test_v10_implicit_mult_paren` 等 |
 | 多项式除法与求根（v0.1 回归） | 6 | `test_v10_poly_div_exact`、`test_v10_roots_quartic_repeated` 等 |
 | 公共 API 稳定性 | 3 | `test_public_api_unchanged_after_move`、`test_all_ten_domains_routed`、`test_symbolic_domain_accessible_via_domains` |
+| 特殊函数与数值分析端到端 | 5 | `test_special_functions_end_to_end`、`test_special_function_domains_end_to_end`、`test_list_functions_includes_special_functions`、`test_root_and_integral_end_to_end`、`test_root_and_integral_error_paths` |
 
-### CLI 集成（cli_integration.rs，133）
+### CLI 集成（cli_integration.rs，134）
 
 assert_cmd 子进程调用真实二进制，重点验证输出契约与退出码（0 成功 / 1 计算错误 / 2 用法错误 / 3 超时或依赖不可用）。
 
 | 场景组 | 数量 | 用例（前缀 / 列举） |
 |--------|-----:|---------------------|
 | 基础求值与 stdin | 8 | `test_basic_addition`、`test_stdin_scientific_expression`、`test_no_args_piped_stdin`、`test_empty_stdin_exit_code` 等 |
-| JSON 输出契约 | 15 | `test_json_arithmetic`、`test_json_error_output_exit_1`、`test_json_mode_var_error_output_format` 等 `test_json_*` / `test_json_mode_*` |
-| 变量绑定 | 8 | `test_single_var_arithmetic`、`test_three_variables`、`test_invalid_var_missing_equals_exit_code` 等 |
+| JSON 输出契约 | 9 | `test_json_arithmetic`、`test_json_error_output_exit_1`、`test_json_mode_var_error_output_format` 等 `test_json_*` |
+| 变量绑定 | 7 | `test_single_var_arithmetic`、`test_three_variables`、`test_invalid_var_missing_equals_exit_code` 等 |
 | 用法 / 帮助 / 退出码 | 11 | `test_unknown_flag_exit_code`、`test_long_help_flag`、`test_success_exit_0`、`test_lang_invalid_value_exit_2` 等 |
 | 精度旗标 | 5 | `test_precision_flag_zero_decimals`、`test_precision_function_call_json` 等 |
-| 大数与有理数输出 | 5 | `test_bigint_addition_output`、`test_bigrational_output_fraction_form` 等 |
-| 复数 / 矩阵输出 | 4 | `test_complex_output_standard`、`test_matrix_output_1x3` 等 |
-| 统计 CLI | 5 | `test_statistics_mean_cli`、`test_statistics_stdin_pipeline` 等 |
-| 数论 / 组合 CLI | 7 | `test_cli_number_theory_prime_sieve`、`test_cli_combinatorics_stdin` 等 |
+| 大数与有理数输出 | 7 | `test_bigint_addition_output`、`test_bigrational_output_fraction_form` 等 |
+| 复数 / 矩阵输出 | 6 | `test_complex_output_standard`、`test_matrix_output_1x3` 等 |
+| 统计 CLI | 6 | `test_statistics_mean_cli`、`test_statistics_stdin_pipeline` 等 |
+| 数论 / 组合 CLI | 8 | `test_cli_number_theory_prime_sieve`、`test_cli_combinatorics_stdin` 等 |
 | 向量 CLI | 4 | `test_cli_vector_dot`、`test_cli_vector_dimension_mismatch_error` 等 |
 | 多项式 CLI | 9 | `test_cli_polynomial_roots_real`、`test_polynomial_general_coef_high_degree` 等 |
-| REPL（子进程形态） | 12 | `test_cli_repl_let_and_use`、`test_repl_complex_format_result`、`test_repl_polynomial_format_result` 等 |
+| REPL（子进程形态） | 14 | `test_cli_repl_let_and_use`、`test_repl_complex_format_result`、`test_repl_polynomial_format_result` 等 |
 | 批量处理 | 5 | `test_cli_batch_basic`、`test_cli_batch_comment_skipped`、`test_cli_batch_nonexistent_file` 等 |
-| 格式化输出与互斥 | 8 | `it_cli_003_latex_output`、`it_cli_009_canonical_output`、`it_cli_010_steps_output`、`it_cli_latex_json_conflict_exit_2`、`test_batch_precision_conflict_exit_2` 等 |
+| 格式化输出与互斥 | 7 | `it_cli_003_latex_output`、`it_cli_009_canonical_output`、`it_cli_010_steps_output`、`it_cli_latex_json_conflict_exit_2`、`test_batch_precision_conflict_exit_2` 等 |
 | 格式化错误路径 | 5 | `it_cli_latex_parse_error_exit_1`、`it_cli_steps_div_zero_exit_1` 等 |
 | `--explain` 与 `--lang` | 7 | `test_explain_div_zero_hint`、`test_explain_domain_hint`、`test_lang_zh_parse_error` 等 |
 | 符号演算 CLI | 4 | `test_cli_symbolic_diff_power`、`test_cli_symbolic_limit` 等 |
 | serve 旗标冲突与门控 | 5 | `test_serve_http_conflicts_serve_mcp`、`test_serve_http_without_server_feature` 等 |
 | `--timeout` / `--cache-size` / `--bind` | 4 | `timeout_flag_slow_expression_exits_3`、`timeout_env_var_fallback_and_validation`、`cache_size_flag_accepted_and_validated`、`bind_flag_serve_http_listens_on_custom_port` |
 | 输出体验（caret / hint） | 2 | `parse_error_text_mode_shows_caret`、`undefined_symbol_hint_suggests_cli_var_flag` |
+| 数值前沿输出面 | 1 | `numeric_frontier_functions_expose_all_output_surfaces` |
 
 ### REPL 交互集成（repl_integration.rs，8）
 
@@ -196,7 +203,7 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 | 统计 | `test_stats_mean`、`test_stats_std` |
 | 变量状态 | `test_set_var_get_var`、`test_clear_vars`、`test_default_instance` |
 
-### 可选域集成（time_unit_fx / numerical，16）
+### 可选域集成（time_unit_fx / numerical，20）
 
 `time_unit_fx_integration.rs`（10，`required-features = ["cli","time","unit","fx"]`）：
 
@@ -213,13 +220,17 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 | `test_now_cache_bypass_end_to_end` | 非确定性函数缓存旁路 |
 | `test_str_in_binary_op_returns_domain_error` | 字符串参与二元运算报域错误 |
 
-`numerical_linalg_test.rs`（6，`required-features = ["cli","numerical"]`）：
+`numerical_linalg_test.rs`（10，`required-features = ["cli","numerical"]`）：
 
 | 用例 | 场景 |
 |------|------|
 | `lu_end_to_end_returns_json_with_lup` | LU 分解（含行交换） |
 | `qr_end_to_end_returns_json_with_qr` | QR 分解 |
-| `eig_end_to_end_returns_json_with_values_and_vectors` | 特征值 / 特征向量 |
+| `eig_end_to_end_returns_json_with_values_and_vectors` | 特征值 / 特征向量（对称） |
+| `eig_general_end_to_end_returns_complex_values` | 一般矩阵特征值（复数） |
+| `eig_general_symmetric_still_returns_zero_imaginary` | 对称矩阵虚部恒零 |
+| `eig_general_vectors_satisfy_definition_end_to_end` | 特征向量满足定义校验 |
+| `eig_non_symmetric_still_errors_with_hint` | 非对称矩阵用 `eig` 报错，提示改用 `eig_general` |
 | `svd_end_to_end_returns_json_with_usvt` | SVD 分解 |
 | `solve_end_to_end_returns_vector_satisfying_ax_eq_b` | 线性方程组求解 |
 | `precision_wrapping_numerical_end_to_end_errors` | 精度模式包裹数值分解报错 |
@@ -247,11 +258,39 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 | list_functions 工具 | `test_list_functions_tool_callable`、`test_list_functions_feature_gated_domains` |
 | 语言协商 | `test_mcp_evaluate_zh_lang_localized_error`、`test_mcp_evaluate_default_lang_english_error` |
 
+### API trait 分发集成（api_trait_dispatch.rs，8）
+
+按 trait 逐方法穷举直接 API 的 trait 分发面：
+
+| 用例 | 场景 |
+|------|------|
+| `scalar_math_trait_dispatch_covers_all_methods` | `ScalarMath` 全方法分发 |
+| `linear_algebra_trait_dispatch_covers_all_methods` | `LinearAlgebra` 全方法分发 |
+| `data_analysis_trait_dispatch_covers_all_methods` | `DataAnalysis` 全方法分发 |
+| `symbolic_math_trait_dispatch_covers_all_methods` | `SymbolicMath` 全方法分发 |
+| `applied_math_trait_dispatch_covers_time_methods` | `AppliedMath` 时间方法分发（`time` 门控） |
+| `applied_math_trait_dispatch_converts_units` | `AppliedMath` 单位换算分发（`unit` 门控） |
+| `applied_math_trait_dispatch_fx_network_tolerant` | `AppliedMath` 汇率分发（`fx` 门控，网络容忍） |
+| `wrapper_try_from_rejects_mismatched_variants` | 包装类型 `TryFrom` 拒绝不匹配变体 |
+
+### kit 模块集成（kit_module_test.rs，6，`required-features = ["kit"]`）
+
+`src/integrations/kit` 的 AsyncKit 依赖注入装配验证（`#[tokio::test]`）：
+
+| 用例 | 场景 |
+|------|------|
+| `build_and_require_all_modules_happy_path` | 全模块注册与装配主路径 |
+| `kit_config_preset_variables_visible_through_handles` | 预置变量经 handle 可见 |
+| `require_unregistered_module_fails_explicitly` | 未注册模块显式失败 |
+| `build_fails_when_dependency_not_registered` | 依赖缺失时 build 失败 |
+| `calc_error_propagates_through_handle` | 计算错误经 handle 传播 |
+| `domain_module_dependencies_declared` | 域模块依赖声明完整 |
+
 ---
 
 ## 🌐 E2E 场景套件（`tests/e2e/`，158）
 
-按九类场景组织（见 `tests/e2e/main.rs` 模块表），套件无 `required-features`，一切 feature 组合下编译；提交记录见 git log `f247fd9`。
+按 10 个场景模块组织（见 `tests/e2e/main.rs` 模块声明），套件无 `required-features`，一切 feature 组合下编译；提交记录见 git log `f247fd9`。
 
 ### S1 正常路径（happy_path.rs，29）
 
@@ -441,6 +480,25 @@ expectrl 驱动伪终端交互（`it_cli_017`~`it_cli_023` 沿用测试方案用
 | `cli_usage_exit_2_for_invalid_var_format` | 非法变量格式退出 2 |
 | `cli_stdout_pipe_closed_downstream_dies_quietly` | 管道下游提前关闭：SIGPIPE 静默终止，不误报内部 bug |
 
+### S10 域分发（domain_dispatch.rs，12）
+
+可选域（time / unit / 数论 / 统计）的域分发与错误分支端到端：
+
+| 用例 | 场景 |
+|------|------|
+| `statistics_distribution_functions_end_to_end` | 统计分布函数端到端 |
+| `statistics_distribution_low_frequency_parameters` | 分布函数低频参数 |
+| `statistics_distribution_degenerate_inputs_error` | 退化输入报错 |
+| `statistics_test_and_correlation_error_branches` | 检验与相关分析错误分支 |
+| `statistics_domain_structure_error_branches` | 统计域结构错误分支 |
+| `number_theory_error_branches_end_to_end` | 数论错误分支端到端 |
+| `number_theory_prime_sieve_overflow_errors` | 素数筛溢出报错 |
+| `unit_domain_unknown_function_rejected` | unit 域未知函数拒绝 |
+| `time_arithmetic_units_end_to_end` | 时间算术单位端到端 |
+| `time_format_pipeline_end_to_end` | 时间格式化流水线 |
+| `time_parse_multi_format_end_to_end` | 多格式时间解析 |
+| `time_domain_error_branches` | 时间域错误分支 |
+
 ---
 
 ## ⚡ 属性测试（proptest，12）
@@ -585,7 +643,7 @@ cargo check --all-features
 cargo build --release --features cli
 
 # 覆盖率门禁：行覆盖率不低于 90%（llvm-cov）
-cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 90 --summary-only
+cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 95 --summary-only
 
 # 运行单个测试文件（本地调试）
 cargo test --all-features --test e2e
@@ -670,4 +728,4 @@ cargo fuzz run parser_fuzz
 
 > 本节内容自 README「🧪 测试 · 测试规模」节迁入，为 v0.2.0 时点快照；最新口径以本文档开头的水线数字为准。
 
-当前工作区（v0.2.0）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3191 个，其中单元测试 2608（`src/` 内联）、集成与 E2E 共 583（`tests/`，其中 E2E 场景套件 158）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 95%（llvm-cov `--fail-under-lines 95`，`--features cli,time,unit,fx` 口径，实测 95.9%（29332 行 / 1214 未覆盖，llvm-cov 行覆盖，高于 95% 门禁与上版 95.57% 基线）），CI 执行。逐套件场景穷举见本文档上文各节。
+当前工作区（v0.2.0）：`#[test]` / `#[tokio::test]` 函数的 grep 统计共 3190 个，其中单元测试 2607（`src/` 内联）、集成与 E2E 共 583（`tests/`，其中 E2E 场景套件 158）、模糊测试目标 7 个、Criterion 基准 4 组；分解数字随版本演进会漂移，权威口径以 `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l` 为准。覆盖率门禁为行覆盖率不低于 95%（llvm-cov `--fail-under-lines 95`，`--features cli,time,unit,fx` 口径，实测 95.9%（29332 行 / 1214 未覆盖，llvm-cov 行覆盖，高于 95% 门禁与上版 95.57% 基线）），CI 执行。逐套件场景穷举见本文档上文各节。

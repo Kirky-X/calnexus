@@ -383,7 +383,7 @@ The **responsibility migration** strategy was adopted: registration duties moved
 ```mermaid
 flowchart LR
     CORE["core/evaluator.rs<br/>calls domains::build_default_router()"]
-    FACTORY["domains/factory.rs<br/>registers 11 domains"]
+    FACTORY["domains/factory.rs<br/>registers 14 domains (11 core + 3 optional)"]
     DOMAINS["domains/*<br/>implements CalculationDomain"]
     CORE -- "abstract call" --> FACTORY
     FACTORY --> DOMAINS
@@ -447,7 +447,7 @@ Test scale at the time the v0.1.5 refactor completed (historical record; for the
 
 v015-comprehensive-optimization (2026-09):
 
-1. **Cache engine refactoring**: the oxcache wrapper was retired and `CacheManager` connected directly to `moka::sync` — production-grade `try_get_with` single-flight (exactly one evaluation per concurrent identical key, errors propagated as-is), byte-weight budget (64MB default) + 256KB large-result admission threshold, `Arc<EvalResult>` zero-copy hits, single-pass BLAKE3 keys. This also eliminated JSON-serialized storage, the temporary tokio runtime, and hex key allocations. (Note: the current implementation provides the same mechanics via oxcache 0.5.0-rc.8 `ByteWeightCache` from crates.io, but its `get`/`get_or_compute` return cloned values — hits are clones rather than `Arc` zero-copy; all cache statements in this document follow that.)
+1. **Cache engine refactoring**: the oxcache wrapper was retired and `CacheManager` connected directly to `moka::sync` — production-grade `try_get_with` single-flight (exactly one evaluation per concurrent identical key, errors propagated as-is), byte-weight budget (64MB default) + 256KB large-result admission threshold, `Arc<EvalResult>` zero-copy hits, single-pass BLAKE3 keys. This also eliminated JSON-serialized storage, the temporary tokio runtime, and hex key allocations. (Note: the current implementation provides the same mechanics via oxcache 0.5.0 `ByteWeightCache` from crates.io, but its `get`/`get_or_compute` return cloned values — hits are clones rather than `Arc` zero-copy; all cache statements in this document follow that.)
 2. **Explicit HTTP route registration**: `#[forge]` inventory registration is silently dropped by the linker GC under rlib/test binaries (production 404s), so HTTP routes are now mounted explicitly via `build_router()` (single source of truth); `#[forge]` keeps MCP tool registration and schema derivation.
 3. **Closed recursion-depth protection loop**: thread-local RAII guard for bracket-literal recursion, iterative bracket pre-check before mathexpr, canonicalizer depth guard; fuzz targets cover the real depth domain.
 4. **Server-grade error semantics**: `ErrorKind::DependencyUnavailable` (exit_code=3) → HTTP 503, strictly distinguished from client 400; `/ready`/`/live`/`/health` probes have separated semantics.
@@ -492,6 +492,9 @@ The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
 <tr><td colspan="3" style="background:#F8FAFC"><b>Core library</b></td></tr>
 <tr><td><code>default</code></td><td align="center">✅</td><td>Zero-dependency core: parsing, canonicalization, 14-domain routing, cache — usable as an embedded engine</td></tr>
 <tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X BCP-47 locale-tag parsing (EN/ZH error messages are always available via embedded Fluent catalogs, not gated by this feature)</td></tr>
+<tr><td><code>wasm-api</code></td><td align="center">❌</td><td>wasm-bindgen export layer (wasm32 targets only; enabling it for non-wasm targets fails at compile time)</td></tr>
+<tr><td><code>egraph</code></td><td align="center">❌</td><td>egg-based equality-saturation simplification (off by default)</td></tr>
+<tr><td><code>kit</code></td><td align="center">❌</td><td>trait-kit AsyncKit dependency-injection integration module (<code>src/integrations/kit</code>; core traits are not rewritten)</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>CLI &amp; interaction</b></td></tr>
 <tr><td><code>cli</code></td><td align="center">❌</td><td>CLI / REPL / batch (clap, rustyline, rayon; enabled indirectly via sdforge/cli)</td></tr>
 <tr><td colspan="3" style="background:#F8FAFC"><b>Optional computation domains</b></td></tr>
