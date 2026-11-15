@@ -1,10 +1,10 @@
+English | [中文](README_CN.md)
+
 <div align="center">
 
 <img src="docs/assets/logo.png" alt="CalNexus Logo" height="240">
 
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-edded?logo=rust&style=for-the-badge)](https://www.rust-lang.org/) [![Rustc 1.97.1+](https://img.shields.io/badge/Rustc-1.97.1+-orange.svg?style=for-the-badge)](https://www.rust-lang.org/) [![crates.io](https://img.shields.io/crates/v/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![docs.rs](https://img.shields.io/docsrs/calnexus?style=for-the-badge)](https://docs.rs/calnexus) [![downloads](https://img.shields.io/crates/d/calnexus?style=for-the-badge)](https://crates.io/crates/calnexus) [![CI](https://img.shields.io/github/actions/workflow/status/kirky-x/calnexus/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/kirky-x/calnexus/actions/workflows/ci.yml) [![coverage](https://img.shields.io/badge/coverage-95.9%25%20(llvm--cov%20lines)-brightgreen?style=for-the-badge)](https://github.com/kirky-x/calnexus) [![license](https://img.shields.io/crates/l/calnexus?style=for-the-badge)](LICENSE)
-
-[中文](README.md) | **English**
 
 **Production-grade command-line math expression evaluator in Rust — 14 computation domains behind one entry point**
 
@@ -40,7 +40,6 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 
 - [✨ Features](#-features)
 - [🚀 Quick Start](#-quick-start)
-- [🎨 Feature Flags](#-feature-flags)
 - [📚 Documentation](#-documentation)
 - [💻 Examples](#-examples)
 - [🌐 Server Mode](#-server-mode)
@@ -85,7 +84,7 @@ The `DomainRouter` matches by priority and dispatches on the first hit; parsing,
 </tr>
 </table>
 
-Beyond the core capabilities listed above, LaTeX / steps / canonical formatters, bilingual (EN/ZH) error messages (embedded Fluent catalogs, always available regardless of the `icu` feature), a runtime function catalog (`--list-functions`), multi-platform prebuilt binaries, and container images are also available; see the [🎨 Feature Flags](#-feature-flags) section for the full mapping to `Cargo.toml`'s `[features]`.
+Beyond the core capabilities listed above, LaTeX / steps / canonical formatters, bilingual (EN/ZH) error messages (embedded Fluent catalogs, always available regardless of the `icu` feature), a runtime function catalog (`--list-functions`), multi-platform prebuilt binaries, and container images are also available; see [🏗️ Architecture · Feature Flags Quick Reference](docs/en/ARCHITECTURE.md#-feature-flags-quick-reference) for the full mapping to `Cargo.toml`'s `[features]`.
 
 ---
 
@@ -102,20 +101,9 @@ cargo install calnexus --features cli
 
 </details>
 
-Requires Rust 1.97.1 or later (MSRV, matching the CI MSRV job). The core library has `default = []` with zero dependencies; enable `cli` for the command-line experience. Install commands for every feature combo (optional domains, numerical linear algebra, HTTP server, etc.) are unified in the [🎨 Feature Flags](#-feature-flags) section below.
+Requires Rust 1.97.1 or later (MSRV, matching the CI MSRV job). The core library has `default = []` with zero dependencies; enable `cli` for the command-line experience. Install commands for every feature combo (optional domains, numerical linear algebra, HTTP server, etc.) are unified in [🏗️ Architecture · Feature Flags Quick Reference](docs/en/ARCHITECTURE.md#-feature-flags-quick-reference).
 
-Prebuilt multi-platform binaries (linux x86_64/aarch64 musl static, macOS x86_64/aarch64, windows x86_64, with SHA256SUMS) are available from [GitHub Releases](https://github.com/kirky-x/calnexus/releases), or build from source; the wasm32 target supports library/binary builds for the core and `cli` features (CI-gated), but has no L1 cache and does not promise runtime usability:
-
-<details>
-<summary>📄 Code · bash</summary>
-
-```bash
-git clone https://github.com/kirky-x/calnexus.git
-cd calnexus
-cargo install --path . --features cli
-```
-
-</details>
+Prebuilt binaries and building from source are covered in [📖 User Guide · Installation](docs/en/USER_GUIDE.md#-installation); the wasm32 support scope is in [❓ FAQ · Troubleshooting](docs/en/FAQ.md#-troubleshooting).
 
 ### 💡 Minimal Example
 
@@ -137,87 +125,7 @@ $ calnexus --json '2+3'
 
 </details>
 
-### 🧭 Core Concepts
-
-- **Domain routing**: each of the 14 computation domains implements the `CalculationDomain` trait; `DomainRouter` dispatches by priority — the first `supports()` hit wins.
-- **Evaluation pipeline**: `parse → canonicalize → cache → route → evaluate`; the BLAKE3 hash of the canonicalized AST is the cache key.
-- **Three modes**: single expression, REPL (`:let` / `:vars` / `:quit`, Tab completion), batch (`--batch`, rayon-parallel).
-- **Feature gating**: optional domains and server capabilities are independent features; builds contain only what you enable, and the core library can be zero-dependency.
-- **Versioned JSON contract**: `--json` output carries `"v":1`; see [`docs/schema/result-v1.json`](docs/schema/result-v1.json) for the schema.
-
----
-
-## 🎨 Feature Flags
-
-### 📦 Recommended Combos
-
-<details>
-<summary>📋 Table</summary>
-
-| Combo | Install / features | Use case |
-|-------|--------------------|----------|
-| Minimal library | `cargo add calnexus` (`default = []`) | Embedded engine, zero extra deps |
-| CLI | `cargo install calnexus --features cli` | Command line / REPL / batch |
-| CLI + all domains | `cargo install calnexus --features cli,time,unit,fx` | Adds time / unit / fx domains |
-| CLI + numerical | `cargo install calnexus --features cli,numerical` | Numerical linear algebra |
-| Bilingual CLI | `cargo install calnexus --features cli,icu` | EN/ZH error messages always built in; `icu` adds standard BCP-47 locale-tag parsing |
-| HTTP server | `cargo install calnexus --features server` | REST + MCP dual-protocol service |
-| Production server | `cargo install calnexus --features server,ratelimit,docs,observability` | Rate limiting + Swagger UI + structured logs |
-| Full | `cargo install calnexus --all-features` | Everything |
-
-</details>
-
-### 📋 Feature Matrix
-
-The table below mirrors `Cargo.toml`'s `[features]` definition; `default = []`.
-
-<details>
-<summary>📋 Table</summary>
-
-<table style="width:100%; border-collapse: collapse">
-<tr><th style="text-align:left">Feature</th><th style="text-align:center">Default</th><th style="text-align:left">Description</th></tr>
-<tr><td colspan="3" style="background:#F8FAFC"><b>Core library</b></td></tr>
-<tr><td><code>default</code></td><td align="center">✅</td><td>Zero-dependency core: parsing, canonicalization, 14-domain routing, cache — usable as an embedded engine</td></tr>
-<tr><td><code>icu</code></td><td align="center">❌</td><td>ICU4X BCP-47 locale-tag parsing (EN/ZH error messages are always available via embedded Fluent catalogs, not gated by this feature)</td></tr>
-<tr><td colspan="3" style="background:#F8FAFC"><b>CLI & interaction</b></td></tr>
-<tr><td><code>cli</code></td><td align="center">❌</td><td>CLI / REPL / batch (clap, rustyline, rayon; enabled indirectly via sdforge/cli)</td></tr>
-<tr><td colspan="3" style="background:#F8FAFC"><b>Optional computation domains</b></td></tr>
-<tr><td><code>time</code></td><td align="center">❌</td><td>Time domain: jiff 0.2 with bundled IANA tzdb, 14 functions</td></tr>
-<tr><td><code>unit</code></td><td align="center">❌</td><td>Physical unit conversion domain: 8 dimensions + affine temperature</td></tr>
-<tr><td><code>fx</code></td><td align="center">❌</td><td>Currency conversion domain: frankfurter / ExchangeRate-API dual sources (<code>CALNEXUS_FX_PROVIDER</code>=<code>frankfurter</code>|<code>erapi</code>|<code>auto</code>) + 3-level cache + network circuit breaker</td></tr>
-<tr><td><code>numerical</code></td><td align="center">❌</td><td>Numerical linear algebra decompositions (lu/qr/eig/svd/solve/matrix_exp, nalgebra f64)</td></tr>
-<tr><td colspan="3" style="background:#F8FAFC"><b>Server</b></td></tr>
-<tr><td><code>http</code></td><td align="center">❌</td><td>HTTP API (sdforge http/graceful/health/context, axum)</td></tr>
-<tr><td><code>mcp</code></td><td align="center">❌</td><td>MCP stdio server (sdforge/mcp)</td></tr>
-<tr><td><code>server</code></td><td align="center">❌</td><td>Aggregates <code>http</code> + <code>mcp</code></td></tr>
-<tr><td><code>ratelimit</code></td><td align="center">❌</td><td>HTTP rate-limiting middleware (fixed window per-IP, <code>CALNEXUS_RATELIMIT_*</code> configurable, probes exempt)</td></tr>
-<tr><td><code>docs</code></td><td align="center">❌</td><td>OpenAPI + Swagger UI (<code>/swagger-ui/</code>, trailing slash required; <code>/api-docs/openapi.json</code> carries an empty spec for now — see the Server Guide)</td></tr>
-<tr><td><code>observability</code></td><td align="center">❌</td><td>tracing structured logs (EnvFilter consuming <code>RUST_LOG</code>)</td></tr>
-</table>
-
-</details>
-
-### 💱 FX data sources (`fx`)
-
-`fx` uses [frankfurter.dev](https://frankfurter.dev) by default (European Central Bank reference rates, roughly 30 major currencies); `CALNEXUS_FX_PROVIDER` switches the source:
-
-| Value | Behavior | Rate basis |
-|-------|----------|------------|
-| `frankfurter` (default) | frankfurter only | ECB reference rates, roughly 30 major currencies |
-| `erapi` | ExchangeRate-API open endpoint only (no key) | Aggregated source, 160+ currencies, with systematic small differences from ECB values |
-| `auto` | Fixed chain `frankfurter → erapi`, first success wins | Failover only when the primary source fails; when both fail the error aggregates each cause |
-
-Server responses from `fx_budget` / `fx_pricing` always carry a `rate_source` field, so `auto` mix-ups are auditable. The expression-level `fx()` / `fx_rate()` functions do not expose the source (scalar contract unchanged).
-
-| Environment variable | Default | Description |
-|----------------------|---------|-------------|
-| `CALNEXUS_FX_PROVIDER` | `frankfurter` | Data source: `frankfurter` / `erapi` / `auto` (invalid values fall back to `frankfurter`) |
-| `CALNEXUS_FX_TTL_HOURS` | 24 | FX snapshot TTL |
-| `CALNEXUS_FX_ALLOW_STALE` | — | Whether to serve an expired snapshot when the network fails |
-| `CALNEXUS_FX_BREAKER_THRESHOLD` | 3 | FX network circuit-breaker failure threshold |
-| `CALNEXUS_FX_BREAKER_COOLDOWN_SECS` | 30 | FX circuit-breaker cooldown (seconds) |
-
-> **Capacity guardrail checklist**: the `server` image ships without rate limiting; when exposed publicly, enable the `ratelimit` feature explicitly and set `CALNEXUS_RATELIMIT_LIMIT` / `CALNEXUS_RATELIMIT_WINDOW_SECS` for the instance capacity. Each FX upstream fetch times out after 5 seconds and the request-level guard is 30 seconds; the `auto` chain can consume two upstream timeouts in the worst case, so account for it when sizing the rate-limit window.
+For the core concepts (domain routing, the evaluation pipeline, the three execution modes, feature gating, and the JSON contract) see [📖 User Guide · Core Concepts](docs/en/USER_GUIDE.md#-core-concepts).
 
 ---
 
@@ -228,79 +136,44 @@ Server responses from `fx_budget` / `fx_pricing` always carry a `rate_source` fi
 
 | Document | Description |
 |----------|-------------|
-| [📖 User Guide](docs/USER_GUIDE.md) | Complete tutorial from installation to advanced usage |
-| [📘 API Reference](docs/API_REFERENCE.md) | Expression evaluation API and direct API (`CalNexus` facade) |
-| [🏗️ Architecture](docs/ARCHITECTURE.md) | Design principles, module layout, and data flow |
-| [📈 Performance Guide](docs/PERFORMANCE.md) | Benchmark data, measurement methodology, and tuning tips |
-| [🔒 Security](docs/SECURITY.md) | Security design, best practices, and vulnerability handling |
-| [❓ FAQ](docs/FAQ.md) | Frequently asked questions |
-| [🖥️ Server Guide](docs/SERVER.md) | HTTP deployment, observability, and MCP integration |
-| [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md) | Exhaustive scenario matrix of the test suites (unit/integration/E2E/property/fuzz/bench) |
-| [📋 Changelog](docs/CHANGELOG.md) | Release notes for every version |
-| [🤝 Contributing](docs/CONTRIBUTING.md) | How to contribute to the project |
+| [📖 User Guide](docs/en/USER_GUIDE.md) | Complete tutorial from installation to advanced usage |
+| [📘 API Reference](docs/en/API_REFERENCE.md) | Expression evaluation API and direct API (`CalNexus` facade) |
+| [🏗️ Architecture](docs/en/ARCHITECTURE.md) | Design principles, module layout, and data flow |
+| [📈 Performance Guide](docs/en/PERFORMANCE.md) | Benchmark data, measurement methodology, and tuning tips |
+| [🔒 Security](docs/en/SECURITY.md) | Security design, best practices, and vulnerability handling |
+| [❓ FAQ](docs/en/FAQ.md) | Frequently asked questions |
+| [🖥️ Server Guide](docs/en/SERVER.md) | HTTP deployment, observability, and MCP integration |
+| [🧪 Test Scenario Matrix](docs/en/TEST_SCENARIOS.md) | Exhaustive scenario matrix of the test suites (unit/integration/E2E/property/fuzz/bench) |
+| [📋 Changelog](docs/en/CHANGELOG.md) | Release notes for every version |
+| [🤝 Contributing](docs/en/CONTRIBUTING.md) | How to contribute to the project |
 | [📦 Online API docs](https://docs.rs/calnexus) | Latest docs.rs-generated documentation |
 | [📦 crates.io](https://crates.io/crates/calnexus) | Publication page |
 
 </details>
 
-Design & process documents: [Code of Conduct](docs/CODE_OF_CONDUCT.md) · [archived process documents](docs/archive/) (PRD, test plan v0.2, research analysis)
+Design & process documents: [Code of Conduct](docs/en/CODE_OF_CONDUCT.md)
 
 ---
 
 ## 💻 Examples
 
-Evaluation examples are provided as inline command-line invocations — copy them into a terminal and run. The ones below cover arithmetic, scientific functions, number theory, arbitrary precision, symbolic calculus, and implicit multiplication; for full REPL sessions (`:let` / `:vars` / Tab completion), rayon-parallel batch runs (`--batch`), and the functions and usage of the optional domains (time / unit / fx / numerical linear algebra), see the [📖 User Guide](docs/USER_GUIDE.md) and the [📖 User Guide · Domain Guide](docs/USER_GUIDE.md#-计算域指南).
-
-### 🖥️ Evaluation Examples
-
-<details>
-<summary>📄 Code · bash</summary>
-
-```bash
-# Basics and scientific functions
-$ calnexus 'sin(pi/2)'
-1
-$ calnexus 'gcd(12, 18)'
-6
-
-# Arbitrary precision (BigRational)
-$ calnexus 'precision(50, 1/3)'
-0.33333333333333333333333333333333333333333333333333
-
-# Symbolic calculus
-$ calnexus 'limit(sin(x)/x, x, 0)'
-1
-$ calnexus 'taylor(exp(x), x, 3)'
-1+x+0.5*x^2+0.16666666666666666*x^3
-
-# Implicit multiplication
-$ calnexus --var x=3 '2x'
-6
-```
-
-</details>
+Evaluation examples are provided as inline command-line invocations — copy them into a terminal and run. The ones below cover arithmetic, scientific functions, number theory, arbitrary precision, symbolic calculus, and implicit multiplication; for full REPL sessions (`:let` / `:vars` / Tab completion), rayon-parallel batch runs (`--batch`), and the functions and usage of the optional domains (time / unit / fx / numerical linear algebra), see the [📖 User Guide](docs/en/USER_GUIDE.md) and the [📖 User Guide · Domain Guide](docs/en/USER_GUIDE.md#-domain-guide).
 
 ### 🧰 CLI Flags
 
-The behavior, output formats, and exit-code conventions of all flags — `--repl`, `--batch`, `--var`, `--precision`, `--timeout`, `--cache-size`, `--json`, `--latex` / `--canonical` / `--steps`, `--explain`, `--lang`, `--list-functions`, `--serve-http` / `--serve-mcp`, `--bind` — are documented in [📖 User Guide · CLI Usage](docs/USER_GUIDE.md#-cli-使用), or run `calnexus --help`.
+The behavior, output formats, and exit-code conventions of all flags — `--repl`, `--batch`, `--var`, `--precision`, `--timeout`, `--cache-size`, `--json`, `--latex` / `--canonical` / `--steps`, `--explain`, `--lang`, `--list-functions`, `--serve-http` / `--serve-mcp`, `--bind` — are documented in [📖 User Guide · CLI Usage](docs/en/USER_GUIDE.md#-cli-usage), or run `calnexus --help`.
 
 ---
 
 ## 🌐 Server Mode
 
-Enabled with `--features server` (`server = http + mcp`): `calnexus --serve-http` serves the REST evaluation API plus the `/health`, `/live`, `/ready`, and `/metrics` operational endpoints (default `127.0.0.1:3000`, configurable via `--bind`); `calnexus --serve-mcp` exposes the `evaluate` and `list_functions` tools over stdio (the `fx` build additionally registers `fx_budget` / `fx_pricing`), ready for Claude Desktop, Cursor, and other MCP clients.
-
-`/metrics` contract: the Prometheus text carries the three cache families `calnexus_cache_{hits,misses,entries}` (with `# HELP` / `# TYPE` comment lines) plus the `sdforge_http_requests_total{route,method,status}` counter family and the `sdforge_http_request_duration_seconds` latency histogram family; the `?format=json` debug branch carries exactly the four keys `hits` / `misses` / `entry_count` / `http_route_count`. The `route` label takes the request path (not the route template), so high-cardinality REST paths containing ids will multiply the series — relevant for local/intranet deployments.
-
-The endpoint list and language negotiation, Docker / Kubernetes deployment, observability and `ratelimit` throttling, MCP client configuration and argument conventions, error semantics (400 / 422 / 503 and the CLI exit-code contract), and graceful shutdown are covered in the [🖥️ Server Guide](docs/SERVER.md).
+The endpoint list and language negotiation, Docker / Kubernetes deployment, observability and `ratelimit` throttling, MCP client configuration and argument conventions, error semantics (400 / 422 / 503 and the CLI exit-code contract), and graceful shutdown are covered in the [🖥️ Server Guide](docs/en/SERVER.md).
 
 ---
 
 ## 🏗️ Architecture
 
-CalNexus uses a five-layer architecture (entry → orchestration → computation domains → math functions → core infrastructure) with strictly top-down dependencies; with no features enabled the core library is dependency-free and embeddable. The core evaluation path: mathexpr parsing (implicit multiplication) → `AstCanonicalizer` normalization (constant folding, commutative sorting, S-expression canonical form) → `CacheManager` lookup (single-pass BLAKE3 key) → `DomainRouter` priority dispatch → the matching `CalculationDomain` evaluates, with cache hits collapsed through `try_get_with` single-flight and returned as a cloned `EvalResult` (no serialization round-trip).
-
-The per-layer responsibilities and module list, mermaid architecture and evaluation-sequence diagrams, interface-isolation traits, security and performance design, and the ADR decision records are documented in the [🏗️ Architecture Document](docs/ARCHITECTURE.md).
+The per-layer responsibilities and module list, mermaid architecture and evaluation-sequence diagrams, interface-isolation traits, security and performance design, and the ADR decision records are documented in the [🏗️ Architecture Document](docs/en/ARCHITECTURE.md).
 
 ---
 
@@ -308,47 +181,15 @@ The per-layer responsibilities and module list, mermaid architecture and evaluat
 
 ### 🎯 Test Strategy
 
-The test pyramid covers nine layers: inline unit tests in `src/`, integration tests organized by shape (`tests/`: integration, cli_integration, repl_integration, server_http_integration, server_mcp_integration, api_integration, time_unit_fx_integration, numerical_linalg_test), the `tests/e2e` scenario suite (no `required-features`; internal `#[cfg]` gates cover both the enabled and disabled sides), property tests (proptest), snapshot tests (insta), security tests (DoS vectors and boundary attacks), fuzz testing (`fuzz/`, 7 cargo-fuzz targets), Criterion benchmarks (`benches/`, 4 suites), and doc tests of public APIs. The per-suite exhaustive scenario matrix, file mapping, and pass criteria are in the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+The test pyramid covers nine layers: inline unit tests in `src/`, integration tests organized by shape (`tests/`: integration, cli_integration, repl_integration, server_http_integration, server_mcp_integration, api_integration, time_unit_fx_integration, numerical_linalg_test), the `tests/e2e` scenario suite (no `required-features`; internal `#[cfg]` gates cover both the enabled and disabled sides), property tests (proptest), snapshot tests (insta), security tests (DoS vectors and boundary attacks), fuzz testing (`fuzz/`, 7 cargo-fuzz targets), Criterion benchmarks (`benches/`, 4 suites), and doc tests of public APIs. The per-suite exhaustive scenario matrix, file mapping, and pass criteria are in the [🧪 Test Scenario Matrix](docs/en/TEST_SCENARIOS.md).
 
-### ▶️ Run Commands (matching CI)
-
-<details>
-<summary>📄 Code · bash</summary>
-
-```bash
-# Full test run (CI matrix has six legs: cli / cli,time,unit,fx / cli,server / cli,server,fx / cli,numerical / all)
-cargo test --all-features
-
-# Per-leg runs
-cargo test --features cli,time,unit,fx    # full suite with optional domains
-cargo test --features server              # HTTP/MCP integration
-cargo test --features "cli,numerical"     # numerical linear algebra
-
-# Lint and format gates (clippy matrix: cli / cli,server / all)
-cargo clippy --all-features --all-targets -- -D warnings
-cargo fmt --all -- --check
-
-# Coverage gate: at least 90% line coverage (llvm-cov)
-cargo llvm-cov --features "cli,time,unit,fx" --fail-under-lines 90 --summary-only
-
-# Benchmarks
-cargo bench --features cli
-
-# Fuzz testing (from the fuzz/ directory)
-cargo fuzz run parser_fuzz
-```
-
-</details>
-
-### 📊 Test Scale
-
-Current working tree (v0.2.0): grep statistics count 3191 `#[test]` / `#[tokio::test]` functions in total — 2608 unit tests (inline in `src/`), 583 integration & E2E tests (`tests/`, of which the E2E scenario suite has 158), 7 fuzz targets, and 4 Criterion benchmark suites; per-suite numbers drift over time, and the authoritative count is `grep -rE "#\[(tokio::)?test\]" src/ tests/ | wc -l`. The coverage gate is at least 95% line coverage (llvm-cov `--fail-under-lines 95`, measured with `--features cli,time,unit,fx`; currently 95.9% (29332 lines / 1214 uncovered, llvm-cov lines, above the 95% gate and the previous 95.57% baseline)), enforced in CI. For a per-suite exhaustive scenario listing see the [🧪 Test Scenario Matrix](docs/TEST_SCENARIOS.md).
+Run commands (matching CI) are in [🧪 Test Scenario Matrix · Run Commands](docs/en/TEST_SCENARIOS.md#-run-commands-matching-ci); the current test-scale snapshot (v0.2.0) is in [🧪 Test Scenario Matrix · Test Scale](docs/en/TEST_SCENARIOS.md#-test-scale-v020).
 
 ---
 
 ## 📊 Performance
 
-Baselines were collected locally on a development machine (WSL2, linux 6.6) using criterion median estimates: cache hits sit in the low-microsecond range independent of expression complexity (`2+3` ≈ 0.90 µs), roughly a 12x win over the full pipeline (`2+3` ≈ 10.7 µs), with parsing and canonicalization in the sub-microsecond range; real-world performance depends on expression complexity and hardware — reproduce with `cargo bench --features cli`. The full baseline tables and measurement methodology are in [📈 Performance Guide · Baselines](docs/PERFORMANCE.md#-基线数据); design points such as serialization-free hits, single-flight, the byte-weight budget, the large-result admission threshold, and nondeterministic bypass are in [📈 Performance Guide · Cache Design](docs/PERFORMANCE.md#-缓存设计).
+Baselines were collected locally on a development machine (WSL2, linux 6.6) using criterion median estimates: cache hits sit in the low-microsecond range independent of expression complexity (`2+3` ≈ 0.90 µs), roughly a 12x win over the full pipeline (`2+3` ≈ 10.7 µs), with parsing and canonicalization in the sub-microsecond range; real-world performance depends on expression complexity and hardware — reproduce with `cargo bench --features cli`. The full baseline tables and measurement methodology are in [📈 Performance Guide · Baselines](docs/en/PERFORMANCE.md#-baseline-data); design points such as serialization-free hits, single-flight, the byte-weight budget, the large-result admission threshold, and nondeterministic bypass are in [📈 Performance Guide · Cache Design](docs/en/PERFORMANCE.md#-cache-design).
 
 ---
 
@@ -356,95 +197,29 @@ Baselines were collected locally on a development machine (WSL2, linux 6.6) usin
 
 ### 🛡️ Security Design
 
-CalNexus is an evaluator with no network access (except the `fx` upstream), no untrusted file I/O, and no plugin loading — the practical attack surface is minimal. Active defenses center on a closed recursion-depth protection loop (`MAX_AST_DEPTH=256` + iterative pre-check + RAII guards), request resource limits, parser error sanitization, and fx upstream hardening. Code-level mechanism details are in [🏗️ Architecture Document · Security Design](docs/ARCHITECTURE.md#-安全设计); the supported-versions table, vulnerability process, and hardening best practices are in the [🔒 Security Document](docs/SECURITY.md).
-
-### ⛓️ Supply Chain & Gates
-
-`cargo audit` (weekly scheduled workflow + pre-release gate), `cargo deny check`, CodeQL static analysis, and the 9-check pre-commit hook run both in CI and via local Git hooks; the full list is in [🔒 Security Document · Dependency Security](docs/SECURITY.md#依赖安全).
+CalNexus is an evaluator with no network access (except the `fx` upstream), no untrusted file I/O, and no plugin loading — the practical attack surface is minimal. Active defenses center on a closed recursion-depth protection loop (`MAX_AST_DEPTH=256` + iterative pre-check + RAII guards), request resource limits, parser error sanitization, and fx upstream hardening. Code-level mechanism details are in [🏗️ Architecture Document · Security Design](docs/en/ARCHITECTURE.md#-security-design); the supported-versions table, vulnerability process, and hardening best practices are in the [🔒 Security Document](docs/en/SECURITY.md).
 
 ### 🚨 Reporting a Vulnerability
 
-Please do **not** report security vulnerabilities through public issues. Use the GitHub [Security Advisories](https://github.com/kirky-x/calnexus/security/policy) private disclosure channel as the primary route (fall back to email Kirky-X@outlook.com, handled by Kirky.X, only if that channel is unavailable). We commit to acknowledging within 48 hours and providing an initial assessment within 7 days. Full policy in [SECURITY.md](docs/SECURITY.md).
+Please do **not** report security vulnerabilities through public issues. Use the GitHub [Security Advisories](https://github.com/kirky-x/calnexus/security/policy) private disclosure channel as the primary route (fall back to email Kirky-X@outlook.com, handled by Kirky.X, only if that channel is unavailable). We commit to acknowledging within 48 hours and providing an initial assessment within 7 days. Full policy in [SECURITY.md](docs/en/SECURITY.md).
 
 ---
 
 ## 🗺️ Roadmap
 
-<details>
-<summary>📋 Table</summary>
-
-<table style="width:100%; border-collapse: collapse">
-<tr><th style="text-align:center">Status</th><th style="text-align:left">Direction</th><th style="text-align:left">Items</th></tr>
-<tr><td align="center">✅</td><td>Core engine (v0.1.0)</td><td>11 computation domains, symbolic calculus, REPL, batch processing, arbitrary precision, JSON output, implicit multiplication</td></tr>
-<tr><td align="center">✅</td><td>Optional domains & server (v0.1.3-v0.1.5)</td><td>Time / unit / fx domains, HTTP + MCP dual protocol, probe separation, rate limiting, observability, multi-platform releases & container images</td></tr>
-<tr><td align="center">✅</td><td>Cache engine modernization</td><td>oxcache byte-weight cache (moka core), single-flight, byte-weight budget, BLAKE3 keys, large-result admission threshold</td></tr>
-<tr><td align="center">✅</td><td>WebAssembly (wasm32) support</td><td>Core and `cli` builds are CI-gated: <code>cargo build --lib --bins --target wasm32-unknown-unknown --no-default-features</code> and <code>--features cli</code>. wasm uses oxcache's real L1 cache (ByteWeightCache); <code>wasm-api</code> exports <code>evaluate</code>/<code>list_functions</code> for browser/Node (build-gated only, runtime behavior not promised); the <code>fx</code>/<code>http</code>/<code>mcp</code>/<code>icu</code>/<code>time</code>/<code>unit</code> feature combos are out of scope</td></tr>
-<tr><td align="center">✅</td><td>Numerical capability growth (v0.2.0-rc.3)</td><td>Special functions <code>erfc</code>/<code>lgamma</code>/<code>polylog</code>, numerics <code>derivative</code> (central differences + Richardson) and <code>lstsq</code> (QR with SVD pseudo-inverse fallback), alongside <code>root</code>/<code>integral</code> and the Bessel/Airy/<code>beta</code>/<code>zeta</code> family — wired into domain routing, the function catalog and the trait API; further frontier items tracked in the <a href="docs/archive/RESEARCH_ANALYSIS.md">research analysis</a></td></tr>
-</table>
-
-</details>
+Delivered milestones are in the [📋 Changelog · Development Roadmap](docs/en/CHANGELOG.md#-development-roadmap).
 
 ---
 
 ## 🤝 Contributing
 
-For the detailed workflow and coding standards see the [🤝 Contributing Guide](docs/CONTRIBUTING.md).
-
-### 🛠️ Development Environment
-
-The toolchain requires Rust 1.97.1+ (baseline pinned by the CI MSRV job); before committing run `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`; `.githooks/pre-commit` provides 9 checks, enabled via `git config core.hooksPath .githooks`; commit messages follow Conventional Commits (`feat`, `fix`, `docs`, etc.). For full environment setup steps see the [🤝 Contributing Guide · Environment Setup](docs/CONTRIBUTING.md#-环境准备).
-
-### 💖 Ways to Contribute
-
-<table style="width:100%; border-collapse: collapse">
-<tr>
-<td width="33%" align="center" style="padding: 16px">
-
-### 🐛 Report a Bug
-
-Found a problem?<br>
-<a href="https://github.com/kirky-x/calnexus/issues/new">Open an Issue</a>
-
-</td>
-<td width="33%" align="center" style="padding: 16px">
-
-### 💡 Suggest a Feature
-
-Have an idea?<br>
-<a href="https://github.com/kirky-x/calnexus/issues/new">Open an Issue</a><br>
-<span style="color:#64748B">Discussions are not enabled on this repo — please submit via Issue</span>
-
-</td>
-<td width="33%" align="center" style="padding: 16px">
-
-### 🔧 Submit a PR
-
-Want to contribute code?<br>
-<a href="https://github.com/kirky-x/calnexus/pulls">Fork & Open a PR</a>
-
-</td>
-</tr>
-</table>
-
-When filing an issue, please include reproduction steps, your `calnexus` version, and OS information; for symbolic-calculus / precision bugs attach a minimal reproducing expression.
+For the detailed workflow and coding standards see the [🤝 Contributing Guide](docs/en/CONTRIBUTING.md).
 
 ---
 
 ## 📋 Changelog
 
-Full version history in the [📋 Changelog](docs/CHANGELOG.md) (following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), semantic versioning).
-
-<details>
-<summary>📋 Table</summary>
-
-| Version | Date | Highlights |
-|---------|------|------------|
-| 0.2.0 | 2026-11-14 | Fluent i18n migration, logging switched to inklog, E2E scenario suite, dependencies moved to crates.io and pinned to stable, Commons Clause license condition (see the [CHANGELOG](docs/CHANGELOG.md) 0.2.0 section) |
-| 0.1.4 | 2026-07-26 | Release pipeline closed loop: automated `cargo publish` + pre-release security gates (`cargo audit`, version verification, dry-run validation) |
-| 0.1.3 | 2026-07-26 | Added time / unit / fx optional domains and 8 vector operations; nondeterministic function cache bypass |
-| 0.1.2 | 2026-07-21 | 20 doc-code consistency fixes; parser & canonicalizer boundary fixes (NaN total order, `0^0`, consecutive-operator validation) |
-
-</details>
+Full version history in the [📋 Changelog](docs/en/CHANGELOG.md) (following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), semantic versioning).
 
 ---
 
@@ -456,26 +231,7 @@ This project is licensed under the [MIT License](LICENSE) with the additional [C
 
 ## 🙏 Acknowledgments
 
-### 🌟 Core Dependencies
-
-CalNexus stands on the shoulders of these excellent open-source projects:
-
-<details>
-<summary>📋 Table</summary>
-
-| Dependency | Purpose |
-|------------|---------|
-| [mathexpr](https://crates.io/crates/mathexpr) | Expression parsing foundation |
-| [oxcache](https://crates.io/crates/oxcache) | In-house high-performance cache library (`byte-weight` sync byte-weight cache, wrapping moka::sync) |
-| [clap](https://github.com/clap-rs/clap) | CLI argument parsing (indirect via sdforge/cli) |
-| [rustyline](https://github.com/kkawakam/rustyline) | REPL line editing and Tab completion |
-| [rayon](https://github.com/rayon-rs/rayon) | Data-parallel batch evaluation |
-| [jiff](https://github.com/BurntSushi/jiff) | Date/time and IANA time zones (`time` feature) |
-| [nalgebra](https://github.com/dimforge/nalgebra) | Numerical linear algebra (`numerical` feature) |
-| [sdforge](https://crates.io/crates/sdforge) | CLI / HTTP / MCP interface facade |
-| [criterion](https://github.com/bheisler/criterion.rs) | Benchmarking |
-
-</details>
+The core dependency list is in [🏗️ Architecture · Core Dependencies](docs/en/ARCHITECTURE.md#-core-dependencies).
 
 ### 💝 Special Thanks
 
@@ -492,7 +248,7 @@ Thanks to the Rust community and all [contributors](https://github.com/kirky-x/c
 <span style="color:#64748B">Report problems and bugs</span>
 </td>
 <td align="center" width="33%">
-<a href="docs/FAQ.md"><b style="color:#1E40AF">📖 FAQ</b></a><br>
+<a href="docs/en/FAQ.md"><b style="color:#1E40AF">📖 FAQ</b></a><br>
 <span style="color:#64748B">Browse the docs for answers (Discussions not enabled)</span>
 </td>
 <td align="center" width="33%">
