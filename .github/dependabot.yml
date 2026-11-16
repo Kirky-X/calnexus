@@ -5,8 +5,18 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # patch 级版本更新关闭自动 PR（2026-11-16）
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-patch"
   # Rust 依赖周更
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "weekly"
+    # patch 级版本更新关闭自动 PR（2026-11-16）
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-patch"
