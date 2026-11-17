@@ -45,19 +45,14 @@ egraph = ["dep:egg"]
 kit = ["dep:trait-kit"]
 
 [dependencies]
-# 解析器
 mathexpr = { version = "0.1", default-features = false }
 # 缓存层：oxcache byte-weight（同步字节预算）+ serialization（L1 weigher 估重）
 oxcache = { version = "0.5", default-features = false, features = ["byte-weight", "serialization"] }
-# 错误派生
 thiserror = { version = "2.0", default-features = false }
-# 哈希
 blake3 = { version = "1.8", default-features = false, features = ["std"] }
-# 序列化
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
 # tokio 运行时（仅 http/mcp 的 server 模块；optional 避免 wasm32 特性限制编译错误）
 tokio = { version = "1.53", default-features = false, features = ["rt"], optional = true }
-# 正则表达式
 regex = { version = "1.13", default-features = false, features = ["std", "unicode-perl"] }
 # libm: 纯 Rust fdlibm 移植（J/Y Bessel 族，零传递依赖，wasm 可用）
 libm = { version = "0.2", default-features = false }
@@ -76,9 +71,8 @@ rayon = { version = "1.12", default-features = false, optional = true }
 icu = { version = "2.3", default-features = false, features = ["compiled_data"], optional = true }
 # 系统语言探测：CALNEXUS_LANG → LC_ALL → LC_MESSAGES → LANG → sys-locale → en
 sys-locale = { version = "0.3", default-features = false }
-# sdforge: CLI/HTTP/MCP 接口封装层 + i18n 宿主注册基座（消息目录唯一存储）。
-# 非可选：base/wasm 构建同样需要消息翻译（core/types friendly 等调用点），
-# 裸编译面仅 serde/log/macros/fluent 内嵌目录，wasm32 可编译。
+# sdforge: CLI/HTTP/MCP 接口封装 + i18n 宿主注册（消息目录唯一存储）
+# 非可选，base/wasm 构建也需消息翻译；裸编译面 serde/log/macros/fluent，wasm32 可编译
 sdforge = { version = "0.5", default-features = false }
 # axum: HTTP 框架（仅 http；Router 类型用于 build_router）
 axum = { version = "0.8", default-features = false, optional = true }
@@ -106,8 +100,7 @@ confers = { version = "0.6", default-features = false, optional = true }
 wasm-bindgen = { version = "0.2", default-features = false, optional = true }
 # egg: E-graph equality saturation（仅 egraph feature 启用）
 egg = { version = "0.11", default-features = false, optional = true }
-# trait-kit: AsyncKit 依赖注入（仅 kit feature 启用；async 为 AsyncAutoBuilder 必需，
-# i18n 为 I18nFormatter 的 ICU 数字/日期/复数/排序格式化）
+# trait-kit: AsyncKit 依赖注入（仅 kit feature 启用；async 为 AsyncAutoBuilder 必需，i18n 为 I18nFormatter 的 ICU 数字/日期/复数/排序格式化）
 trait-kit = { version = "0.5", default-features = false, features = ["async", "i18n"], optional = true }
 
 # SIGPIPE 恢复默认处置：`| head` 提前关管道时静默终止而非 EPIPE panic（仅 unix）
@@ -126,8 +119,7 @@ expectrl = { version = "0.9", default-features = false }
 # tower: HTTP 集成测试用（ServiceExt::oneshot 测试 axum Router）
 tower = { version = "0.5", default-features = false, features = ["util"] }
 http-body-util = { version = "0.1", default-features = false }
-# tokio（dev）：kit 集成测试的 #[tokio::test] 运行时（正常依赖中 tokio 为 optional）；
-# test-util 供 #[tokio::test(start_paused)] 虚拟时钟确定性测试（evaluate 零超时竞态用）
+# tokio(dev)：kit 集成测试 #[tokio::test] 运行时（正常依赖中 optional）；test-util 供 start_paused 虚拟时钟测试
 tokio = { version = "1.53", default-features = false, features = ["rt", "macros", "test-util"] }
 
 [lints.rust]
