@@ -7,9 +7,7 @@ use calnexus::{I18n, Lang};
 
 use crate::common::eval_ok;
 
-// ---------------------------------------------------------------------------
 // time
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "time")]
 #[test]
@@ -28,9 +26,7 @@ fn gate_time_disabled_falls_back_to_routing_error() {
     assert!(err.message.contains("date"), "got {err}");
 }
 
-// ---------------------------------------------------------------------------
 // unit
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "unit")]
 #[test]
@@ -48,9 +44,7 @@ fn gate_unit_disabled_falls_back_to_routing_error() {
     assert!(err.message.contains("convert"), "got {err}");
 }
 
-// ---------------------------------------------------------------------------
 // fx
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "fx")]
 #[test]
@@ -80,9 +74,7 @@ fn gate_fx_disabled_falls_back_to_routing_error() {
     assert!(err.message.contains("fx_rate"), "got {err}");
 }
 
-// ---------------------------------------------------------------------------
 // numerical（经 LinearAlgebra trait 与表达式双通道）
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "numerical")]
 #[test]
@@ -110,9 +102,7 @@ fn gate_numerical_disabled_expression_unrouted() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // icu —— BCP-47 解析：两实现对齐与已知分歧
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gate_icu_common_tags_agree() {
@@ -140,9 +130,7 @@ fn gate_icu_simple_split_tolerates_trailing_separator() {
     assert_eq!(I18n::from_str("zh-").lang(), Lang::Zh);
 }
 
-// ---------------------------------------------------------------------------
 // server 聚合特性 = http + mcp
-// ---------------------------------------------------------------------------
 
 #[cfg(feature = "server")]
 #[test]
@@ -161,9 +149,7 @@ fn gate_http_without_mcp_builds_router() {
     let _router = calnexus::build_router();
 }
 
-// ---------------------------------------------------------------------------
 // format_bigrational 双路径可见性
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gate_format_bigrational_reachable() {
@@ -181,9 +167,7 @@ fn gate_format_bigrational_reachable() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // 门面 trait 面完整存在性（编译期断言经真实调用消费）
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gate_facade_accessors_all_constructible() {
@@ -213,9 +197,7 @@ fn gate_facade_accessors_all_constructible() {
     let _eq: CalNexus = Default::default();
 }
 
-// ---------------------------------------------------------------------------
 // 求值结果域归属随门控变化的正交性
-// ---------------------------------------------------------------------------
 
 #[test]
 fn gate_core_domains_always_available() {

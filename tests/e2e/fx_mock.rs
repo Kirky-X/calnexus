@@ -20,9 +20,7 @@ fn scalar_of(r: &EvalResult) -> f64 {
     }
 }
 
-// ---------------------------------------------------------------------------
 // MockFxDomain × evaluate_with_router 全链路
-// ---------------------------------------------------------------------------
 
 #[test]
 fn fx_pipeline_expression_conversion() {
@@ -122,9 +120,7 @@ fn fx_pipeline_nondeterministic_bypasses_cache() {
     assert!(!router.is_nondeterministic(&canonical));
 }
 
-// ---------------------------------------------------------------------------
 // math::fx 纯函数层
-// ---------------------------------------------------------------------------
 
 #[test]
 fn fx_math_layer_convert_and_rate() {
@@ -174,9 +170,7 @@ fn fx_rate_provider_trait_objects() {
     assert!(approx_eq(table.rates["CNY"], 7.8));
 }
 
-// ---------------------------------------------------------------------------
 // math::fx_scenario 场景层（预算 / 定价）
-// ---------------------------------------------------------------------------
 
 #[test]
 fn fx_scenario_budget_happy() {
@@ -290,9 +284,7 @@ fn fx_scenario_pricing_validation() {
     assert!(err.message.contains("FOO"), "got {err}");
 }
 
-// ---------------------------------------------------------------------------
 // RateTable 公开结构契约
-// ---------------------------------------------------------------------------
 
 #[test]
 fn fx_rate_table_public_fields() {

@@ -1,5 +1,5 @@
 ---
-name: calnexus-dev
+name: calnexus
 description: CalNexus 项目使用指南。当需要了解如何构建、运行、使用 CalNexus 计算引擎的 CLI/REPL/批量/服务模式，或查询支持的计算域与函数时使用。
 ---
 

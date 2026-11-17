@@ -45,9 +45,7 @@ async fn get(uri: &str) -> (StatusCode, Value) {
     send(&build_router(), req).await
 }
 
-// ---------------------------------------------------------------------------
 // HTTP 端点矩阵
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn http_evaluate_and_list_functions() {
@@ -198,9 +196,7 @@ async fn http_docs_feature_serves_swagger_ui() {
     assert_eq!(status, StatusCode::OK);
 }
 
-// ---------------------------------------------------------------------------
 // MCP 工具面
-// ---------------------------------------------------------------------------
 
 fn tool_text(result: sdforge::rmcp::model::CallToolResult) -> (bool, Value) {
     use sdforge::rmcp::model::ContentBlock;
@@ -283,9 +279,7 @@ fn mcp_fx_tools_network_tolerant() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // ratelimit feature —— 子进程隔离验证 429
-// ---------------------------------------------------------------------------
 
 #[cfg(all(feature = "cli", feature = "http", feature = "ratelimit"))]
 #[test]

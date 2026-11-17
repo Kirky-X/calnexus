@@ -31,7 +31,7 @@ define_language! {
     }
 }
 
-/// 饱和迭代上限（安全边界，见 spec R-symbolic-simplification-103）。
+/// 饱和迭代上限（安全边界）。
 const ITER_LIMIT: usize = 8;
 /// E-graph 节点上限（安全边界）。
 const NODE_LIMIT: usize = 10_000;

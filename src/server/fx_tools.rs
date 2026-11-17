@@ -13,9 +13,7 @@ use sdforge::forge;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-// ============================================================
 // Request / Response DTOs
-// ============================================================
 
 /// `POST /api/v1/fx_budget` + MCP `fx_budget` tool 请求。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -118,9 +116,7 @@ pub struct PricingItemResponse {
     pub platform_fee_cny: f64,
 }
 
-// ============================================================
 // Provider 单例
-// ============================================================
 
 /// 进程级汇率 provider 单例（与 FxDomain 独立，共享底层缓存文件）。
 fn shared_provider() -> Arc<dyn RateProvider> {
@@ -128,9 +124,7 @@ fn shared_provider() -> Arc<dyn RateProvider> {
     Arc::clone(PROVIDER.get_or_init(|| Arc::new(build_provider(&FxProviderConfig::from_env()))))
 }
 
-// ============================================================
 // Request 校验
-// ============================================================
 
 impl FxBudgetRequest {
     /// 校验请求参数约束。
@@ -232,9 +226,7 @@ impl FxPricingRequest {
     }
 }
 
-// ============================================================
 // #[forge] handlers
-// ============================================================
 
 /// `POST /api/v1/fx_budget` + MCP `fx_budget`：留学预算换算本币并给出 ±3% 汇率风险区间。
 #[forge(
@@ -459,9 +451,7 @@ async fn run_fx_pricing(
     })
 }
 
-// ============================================================
 // Tests
-// ============================================================
 
 #[cfg(test)]
 mod tests {
