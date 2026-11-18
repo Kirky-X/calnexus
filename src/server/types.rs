@@ -62,23 +62,43 @@ impl EvaluateRequest {
     // ApiError 体积为框架设计；校验错误路径罕见，Box 化会迫使所有 `validate()?` 调用点解包
     #[allow(clippy::result_large_err)]
     pub fn validate(&self) -> Result<(), ApiError> {
+        // 语言协商先于校验：校验错误须按请求语言返回，而非恒为英文。
+        let i18n = super::lang::resolve_i18n(self.lang.as_deref());
         // expr 字段校验（空串 / 超长 / null 字节均为 DoS / 注入向量）
         if self.expr.is_empty() {
-            return Err(ApiError::validation("expr", "expression must not be empty"));
+            return Err(ApiError::validation(
+                "expr",
+                i18n.t("server.validation.expr_empty"),
+            ));
         }
         if self.expr.len() > MAX_EXPR_LEN {
             return Err(ApiError::validation(
                 "expr",
-                format!("length {} exceeds limit {}", self.expr.len(), MAX_EXPR_LEN),
+                i18n.tf(
+                    "server.validation.expr_too_long",
+                    &[
+                        ("len", &self.expr.len().to_string()),
+                        ("max", &MAX_EXPR_LEN.to_string()),
+                    ],
+                ),
             ));
         }
         if self.expr.bytes().any(|b| b == 0) {
-            return Err(ApiError::validation("expr", "null bytes not allowed"));
+            return Err(ApiError::validation(
+                "expr",
+                i18n.t("server.validation.expr_null_bytes"),
+            ));
         }
         if self.vars.len() > MAX_VARS {
             return Err(ApiError::validation(
                 "vars",
-                format!("size {} exceeds limit {}", self.vars.len(), MAX_VARS),
+                i18n.tf(
+                    "server.validation.vars_too_many",
+                    &[
+                        ("len", &self.vars.len().to_string()),
+                        ("max", &MAX_VARS.to_string()),
+                    ],
+                ),
             ));
         }
         // vars 键名校验：超长/含 null 字节为内存攻击 / 注入向量（与 expr 校验对齐）
@@ -86,17 +106,19 @@ impl EvaluateRequest {
             if name.len() > MAX_VAR_NAME_LEN {
                 return Err(ApiError::validation(
                     "vars",
-                    format!(
-                        "var name length {} exceeds limit {}",
-                        name.len(),
-                        MAX_VAR_NAME_LEN
+                    i18n.tf(
+                        "server.validation.var_name_too_long",
+                        &[
+                            ("len", &name.len().to_string()),
+                            ("max", &MAX_VAR_NAME_LEN.to_string()),
+                        ],
                     ),
                 ));
             }
             if name.bytes().any(|b| b == 0) {
                 return Err(ApiError::validation(
                     "vars",
-                    "var name null bytes not allowed",
+                    i18n.t("server.validation.var_name_null_bytes"),
                 ));
             }
         }
@@ -104,7 +126,7 @@ impl EvaluateRequest {
         if self.vars.values().any(|v| !v.is_finite()) {
             return Err(ApiError::validation(
                 "vars",
-                "values must be finite (NaN/Infinity not allowed)",
+                i18n.t("server.validation.values_not_finite"),
             ));
         }
         if let Some(p) = self.precision
@@ -112,7 +134,13 @@ impl EvaluateRequest {
         {
             return Err(ApiError::validation(
                 "precision",
-                format!("{} exceeds limit {}", p, MAX_PRECISION),
+                i18n.tf(
+                    "server.validation.precision_exceeds",
+                    &[
+                        ("value", &p.to_string()),
+                        ("max", &MAX_PRECISION.to_string()),
+                    ],
+                ),
             ));
         }
         Ok(())

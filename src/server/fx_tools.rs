@@ -127,15 +127,20 @@ fn shared_provider() -> Arc<dyn RateProvider> {
 // Request 校验
 
 impl FxBudgetRequest {
-    /// 校验请求参数约束。
+    /// 校验请求参数约束（文案按请求 `lang` 协商语言渲染）。
     fn validate(&self) -> Result<(), ApiError> {
+        // 语言协商先于校验：校验错误须按请求语言返回，而非恒为英文。
+        let i18n = super::lang::resolve_i18n(self.lang.as_deref());
         if self.tuition <= 0.0 {
-            return Err(ApiError::validation("tuition", "tuition must be positive"));
+            return Err(ApiError::validation(
+                "tuition",
+                i18n.t("msg.fxscenario.tuition_positive"),
+            ));
         }
         if self.duration_years == 0 || self.duration_years > 10 {
             return Err(ApiError::validation(
                 "duration_years",
-                "duration_years must be between 1 and 10",
+                i18n.t("msg.fxscenario.duration_range"),
             ));
         }
         if self.tuition_currency.len() != 3
@@ -146,7 +151,7 @@ impl FxBudgetRequest {
         {
             return Err(ApiError::validation(
                 "tuition_currency",
-                "must be a 3-letter ISO 4217 currency code",
+                i18n.t("server.validation.currency_code"),
             ));
         }
         if self.home_currency.len() != 3
@@ -154,7 +159,7 @@ impl FxBudgetRequest {
         {
             return Err(ApiError::validation(
                 "home_currency",
-                "must be a 3-letter ISO 4217 currency code",
+                i18n.t("server.validation.currency_code"),
             ));
         }
         if let Some(living) = self.living_cost_monthly
@@ -162,7 +167,7 @@ impl FxBudgetRequest {
         {
             return Err(ApiError::validation(
                 "living_cost_monthly",
-                "living_cost_monthly must be non-negative",
+                i18n.t("server.validation.living_cost_negative"),
             ));
         }
         Ok(())
@@ -170,30 +175,32 @@ impl FxBudgetRequest {
 }
 
 impl FxPricingRequest {
-    /// 校验请求参数约束。
+    /// 校验请求参数约束（文案按请求 `lang` 协商语言渲染）。
     fn validate(&self) -> Result<(), ApiError> {
+        // 语言协商先于校验：校验错误须按请求语言返回，而非恒为英文。
+        let i18n = super::lang::resolve_i18n(self.lang.as_deref());
         if self.cost_cny <= 0.0 {
             return Err(ApiError::validation(
                 "cost_cny",
-                "cost_cny must be positive",
+                i18n.t("msg.fxscenario.cost_positive"),
             ));
         }
         if self.target_profit_rate <= 0.0 || self.target_profit_rate >= 1.0 {
             return Err(ApiError::validation(
                 "target_profit_rate",
-                "target_profit_rate must be between 0 and 1 (exclusive)",
+                i18n.t("msg.fxscenario.profit_rate_range"),
             ));
         }
         if self.platform_rate < 0.0 || self.platform_rate >= 1.0 {
             return Err(ApiError::validation(
                 "platform_rate",
-                "platform_rate must be in [0, 1)",
+                i18n.t("msg.fxscenario.platform_rate_range"),
             ));
         }
         if self.safety_buffer < 0.0 || self.safety_buffer > 0.5 {
             return Err(ApiError::validation(
                 "safety_buffer",
-                "safety_buffer must be in [0, 0.5]",
+                i18n.t("msg.fxscenario.safety_buffer_range"),
             ));
         }
         let currencies: Vec<&str> = self
@@ -205,20 +212,20 @@ impl FxPricingRequest {
         if currencies.is_empty() {
             return Err(ApiError::validation(
                 "currencies",
-                "currencies list must not be empty",
+                i18n.t("msg.fxscenario.currencies_empty"),
             ));
         }
         if currencies.len() > 10 {
             return Err(ApiError::validation(
                 "currencies",
-                "currencies list must not exceed 10 items",
+                i18n.t("msg.fxscenario.currencies_too_many"),
             ));
         }
         for cur in &currencies {
             if cur.len() != 3 || !cur.chars().all(|c| c.is_ascii_alphabetic()) {
                 return Err(ApiError::validation(
                     "currencies",
-                    format!("'{}' is not a valid 3-letter ISO 4217 currency code", cur),
+                    i18n.tf("server.validation.currency_code_item", &[("code", *cur)]),
                 ));
             }
         }
@@ -235,7 +242,8 @@ impl FxPricingRequest {
     path = "/fx_budget",
     method = "POST",
     tool_name = "fx_budget",
-    description = "Calculate study abroad budget with currency conversion. Args MUST be wrapped in a req object with fields: tuition, tuition_currency, home_currency, optional living_cost_monthly, duration_years, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns tuition/living/total in home currency plus a 3-percent exchange-rate risk range and rate_date (snapshot date). Errors: 400 InvalidInput (unknown currency), 503 ServiceUnavailable (FX upstream unreachable)."
+    description = "Calculate study abroad budget with currency conversion. Args MUST be wrapped in a req object with fields: tuition, tuition_currency, home_currency, optional living_cost_monthly, duration_years, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns tuition/living/total in home currency plus a 3-percent exchange-rate risk range and rate_date (snapshot date). Errors: 400 InvalidInput (unknown currency), 503 ServiceUnavailable (FX upstream unreachable).",
+    i18n_key = "endpoint.fx_budget.description"
 )]
 pub(crate) async fn fx_budget(req: FxBudgetRequest) -> Result<FxBudgetResponse, ApiError> {
     fx_budget_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await
@@ -254,10 +262,9 @@ async fn run_fx_budget(
     timeout: Duration,
     provider: Arc<dyn RateProvider>,
 ) -> Result<FxBudgetResponse, ApiError> {
-    req.validate()?;
-
-    // 语言协商：请求级 lang → I18n（缺省/未知回退英文）
+    // 语言协商先于校验：校验错误须按请求语言返回（缺省/未知回退英文）
     let i18n = super::lang::resolve_i18n(req.lang.as_deref());
+    req.validate()?;
     let tuition = req.tuition;
     let tuition_currency = req.tuition_currency.clone();
     let living_cost = req.living_cost_monthly;
@@ -346,7 +353,8 @@ async fn run_fx_budget(
     path = "/fx_pricing",
     method = "POST",
     tool_name = "fx_pricing",
-    description = "Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable)."
+    description = "Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable).",
+    i18n_key = "endpoint.fx_pricing.description"
 )]
 pub(crate) async fn fx_pricing(req: FxPricingRequest) -> Result<FxPricingResponse, ApiError> {
     fx_pricing_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await
@@ -365,10 +373,9 @@ async fn run_fx_pricing(
     timeout: Duration,
     provider: Arc<dyn RateProvider>,
 ) -> Result<FxPricingResponse, ApiError> {
-    req.validate()?;
-
-    // 语言协商：请求级 lang → I18n（缺省/未知回退英文）
+    // 语言协商先于校验：校验错误须按请求语言返回（缺省/未知回退英文）
     let i18n = super::lang::resolve_i18n(req.lang.as_deref());
+    req.validate()?;
     let cost = req.cost_cny;
     let profit_rate = req.target_profit_rate;
     let platform_rate = req.platform_rate;

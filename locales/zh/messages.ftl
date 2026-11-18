@@ -422,3 +422,39 @@ cli-help_bind = HTTP 服务绑定地址（默认 127.0.0.1:3000；环境变量 C
 cli-help_list_functions = 按域分组列出全部可用函数后退出
 cli-help_serve_http = 启动 HTTP 服务模式（POST /api/v1/evaluate）。需启用 server 特性。
 cli-help_serve_mcp = 启动 MCP 服务模式（evaluate 工具，stdio 传输）。需启用 server 特性。
+
+# ---------------------------------------------------------------------------
+# 服务端请求校验 / 基础设施 / kit 集成 / wasm / MCP 工具描述（硬编码回迁）。
+# ---------------------------------------------------------------------------
+
+# 请求级校验（按请求 lang 协商后渲染）
+server-validation-currency_code = 必须是 3 字母 ISO 4217 币种代码
+server-validation-currency_code_item = '{ $code }' 不是有效的 3 字母 ISO 4217 币种代码
+server-validation-living_cost_negative = living_cost_monthly 必须为非负数
+server-validation-expr_empty = 表达式不能为空
+server-validation-expr_too_long = 长度 { $len } 超过上限 { $max }
+server-validation-expr_null_bytes = 不允许 null 字节
+server-validation-vars_too_many = 数量 { $len } 超过上限 { $max }
+server-validation-var_name_too_long = 变量名长度 { $len } 超过上限 { $max }
+server-validation-var_name_null_bytes = 变量名不允许 null 字节
+server-validation-values_not_finite = 值必须为有限数（不允许 NaN/Infinity）
+server-validation-precision_exceeds = { $value } 超过上限 { $max }
+
+# 基础设施启动错误（进程级语言检测）
+server-runtime_create_failed = 创建 tokio 运行时失败: { $error }
+server-bind_failed = 绑定 { $addr } 失败: { $error }
+server-serve_failed = 服务错误: { $error }
+server-stdio_serve_failed = stdio 服务错误: { $error }
+
+# wasm 导出层错误
+wasm-expression_empty = 表达式不能为空
+
+# kit 集成错误
+kit-locale_invalid = 非法 locale { $locale }: { $error }
+kit-require_failed = 获取 calnexus 模块失败: { $error }
+
+# MCP/HTTP 工具描述（#[forge] i18n_key 元数据）
+endpoint-evaluate-description = 求数学表达式的值。参数必须包裹在 req 对象中：req.expr 为表达式字符串，req.vars 为可选变量绑定，req.precision 可选，req.lang 为可选响应语言（BCP-47 标签，默认 'en'，支持 'zh'）。限制：expr 最多 4096 字符，vars 最多 1024 键，precision 最多 10000。返回 result、domain、cache。错误：HTTP 400 code=BAD_REQUEST（InvalidInput：语法/求值错误），422 code=UNPROCESSABLE_ENTITY（ValidationError：超出限制，响应含 field），503 code=UNAVAILABLE（ServiceUnavailable：超时/上游故障）。MCP 错误携带 ApiError 类型名。
+endpoint-fx_budget-description = 计算留学预算并进行货币换算。参数必须包裹在 req 对象中，字段：tuition、tuition_currency、home_currency、可选 living_cost_monthly、duration_years、可选 lang（响应语言，BCP-47 标签，默认 'en'，支持 'zh'）。返回以本币计的学费/生活费/总额、±3% 汇率风险区间与 rate_date（快照日期）。错误：400 InvalidInput（未知币种），503 ServiceUnavailable（汇率上游不可达）。
+endpoint-fx_pricing-description = 跨境电商多币种定价。参数必须包裹在 req 对象中，字段：cost_cny、target_profit_rate、currencies（逗号分隔）、可选 platform_rate、safety_buffer、可选 lang（响应语言，BCP-47 标签，默认 'en'，支持 'zh'）。返回各币种建议售价及平台费用，并附 rate_date（快照日期）。错误：400 InvalidInput，503 ServiceUnavailable（汇率上游不可达）。
+endpoint-list_functions-description = 按域列出当前构建支持的全部数学函数。建议首先调用此工具以发现可用函数（time/unit/fx 等按 feature 门控，仅在启用时出现）。

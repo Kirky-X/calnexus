@@ -5,6 +5,7 @@
 //! `evaluate` tool 由 `#[forge]` 宏声明（evaluate.rs）。
 
 use super::ServerError;
+use crate::i18n::I18n;
 use sdforge::mcp::SdForgeMcpServer;
 
 /// 构建 MCP server：`init_all_plugins()` 确保 `#[forge]` 注册的 tool 被 `mcp::build()` 收集。
@@ -50,7 +51,12 @@ impl McpServer {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .map_err(|e| ServerError::Mcp(format!("failed to create tokio runtime: {}", e)))?;
+            .map_err(|e| {
+                ServerError::Mcp(
+                    I18n::from_detected()
+                        .tf("server.runtime_create_failed", &[("error", &e.to_string())]),
+                )
+            })?;
         runtime.block_on(async move { self.start_inner().await })
     }
 
@@ -68,9 +74,11 @@ impl McpServer {
             self.server_name.clone(),
             env!("CARGO_PKG_VERSION").to_string(),
         );
-        sdforge::mcp::serve_stdio(server)
-            .await
-            .map_err(|e| ServerError::Mcp(format!("stdio serve error: {}", e)))?;
+        sdforge::mcp::serve_stdio(server).await.map_err(|e| {
+            ServerError::Mcp(
+                I18n::from_detected().tf("server.stdio_serve_failed", &[("error", &e.to_string())]),
+            )
+        })?;
         Ok(())
     }
 }

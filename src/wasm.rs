@@ -12,6 +12,7 @@ compile_error!("wasm-api is only supported on the wasm32 target");
 use wasm_bindgen::prelude::*;
 
 use crate::core::{CacheManager, CalcError, ErrorKind, EvalContext};
+use crate::i18n::I18n;
 
 // 静态断言：CacheManager 须满足 Send + Sync（`static OnceLock<T>` 的隐式约束，
 // 亦是对 oxcache ByteWeightCache 线程安全边界的编译期钉子）。
@@ -69,7 +70,7 @@ pub fn evaluate(expr: &str) -> Result<String, JsValue> {
         return Err(JsValue::from_str(&error_payload(
             2,
             "usage",
-            "expression must not be empty",
+            &I18n::from_detected().t("wasm.expression_empty"),
         )));
     }
     match crate::core::evaluate(expr, &EvalContext::new(), None, shared_cache()) {

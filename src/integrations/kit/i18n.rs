@@ -96,7 +96,17 @@ impl AsyncAutoBuilder for I18nModule {
                 config.locale.as_str()
             };
             let formatter = I18nFormatter::new(locale).map_err(|e| {
-                CalcError::new(ErrorKind::Eval, format!("invalid locale {locale:?}: {e}"))
+                CalcError::new(
+                    ErrorKind::Eval,
+                    format!("invalid locale {locale:?}: {e}"),
+                )
+                .with_i18n(
+                    "kit.locale_invalid",
+                    vec![
+                        ("locale".to_string(), locale.to_string()),
+                        ("error".to_string(), e.to_string()),
+                    ],
+                )
             })?;
             Ok(I18nHandle { formatter })
         })

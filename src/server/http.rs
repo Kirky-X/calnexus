@@ -288,7 +288,12 @@ impl HttpServer {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .map_err(|e| ServerError::Http(format!("failed to create tokio runtime: {}", e)))?;
+            .map_err(|e| {
+                ServerError::Http(
+                    I18n::from_detected()
+                        .tf("server.runtime_create_failed", &[("error", &e.to_string())]),
+                )
+            })?;
         let result = runtime.block_on(self.start_inner());
         // inklog sink worker 寄生本 runtime 且库无 shutdown API，runtime 析构会死等；跳过析构
         std::mem::forget(runtime);
@@ -300,7 +305,13 @@ impl HttpServer {
         // bind 先于日志初始化：bind 失败不触碰日志单例（避免 worker 寄生致退出死等）
         let listener = tokio::net::TcpListener::bind(&self.addr)
             .await
-            .map_err(|e| ServerError::Http(format!("failed to bind {}: {}", self.addr, e)))?;
+            .map_err(|e| {
+                // 该文案对外契约固定英文，经 FTL 键集中管理；其余启动错误随系统语言
+                ServerError::Http(I18n::default().tf(
+                    "server.bind_failed",
+                    &[("addr", &self.addr), ("error", &e.to_string())],
+                ))
+            })?;
         // 日志初始化：ConfigError 视为已初始化幂等成功，其余错误上抛不静默降级
         #[cfg(feature = "observability")]
         match crate::server::init_observability().await {
@@ -323,7 +334,11 @@ impl HttpServer {
             sdforge::http::GracefulShutdownConfig::with_drain_timeout(DRAIN_TIMEOUT),
         )
         .await
-        .map_err(|e| ServerError::Http(format!("server error: {}", e)))?;
+        .map_err(|e| {
+            ServerError::Http(
+                I18n::from_detected().tf("server.serve_failed", &[("error", &e.to_string())]),
+            )
+        })?;
         Ok(())
     }
 }

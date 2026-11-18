@@ -26,7 +26,8 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 30;
     path = "/evaluate",
     method = "POST",
     tool_name = "evaluate",
-    description = "Evaluate a math expression. Args MUST be wrapped in a req object: req.expr is the expression string, req.vars holds optional variable bindings, req.precision is optional, req.lang is optional response language (BCP-47 tag, 'en' default, 'zh' supported). Limits: expr up to 4096 chars, vars up to 1024 keys, precision up to 10000. Returns result, domain, cache. Errors: HTTP 400 code=BAD_REQUEST (InvalidInput: syntax/eval), 422 code=UNPROCESSABLE_ENTITY (ValidationError: limit exceeded, body carries field), 503 code=UNAVAILABLE (ServiceUnavailable: timeout/upstream). MCP errors carry the ApiError type names."
+    description = "Evaluate a math expression. Args MUST be wrapped in a req object: req.expr is the expression string, req.vars holds optional variable bindings, req.precision is optional, req.lang is optional response language (BCP-47 tag, 'en' default, 'zh' supported). Limits: expr up to 4096 chars, vars up to 1024 keys, precision up to 10000. Returns result, domain, cache. Errors: HTTP 400 code=BAD_REQUEST (InvalidInput: syntax/eval), 422 code=UNPROCESSABLE_ENTITY (ValidationError: limit exceeded, body carries field), 503 code=UNAVAILABLE (ServiceUnavailable: timeout/upstream). MCP errors carry the ApiError type names.",
+    i18n_key = "endpoint.evaluate.description"
 )]
 pub(crate) async fn evaluate(req: EvaluateRequest) -> Result<EvaluateResponse, ApiError> {
     evaluate_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await
@@ -37,9 +38,9 @@ pub(crate) async fn evaluate_with_timeout(
     req: EvaluateRequest,
     timeout: Duration,
 ) -> Result<EvaluateResponse, ApiError> {
-    req.validate()?;
-    // 语言协商：req.lang → I18n（缺省/未知值回退英文）
+    // 语言协商先于校验：校验错误须按请求语言返回（缺省/未知值回退英文）
     let i18n = resolve_i18n(req.lang.as_deref());
+    req.validate()?;
     let ctx = req.to_eval_context();
     let precision = req.precision;
     let expr = req.expr.clone();

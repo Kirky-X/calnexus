@@ -116,9 +116,12 @@ impl AsyncAutoBuilder for ScalarMathModule {
         kit: &'a AsyncKit,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
         Box::pin(async move {
-            let cn = kit
-                .require::<CalNexusModule>()
-                .map_err(|e| CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")))?;
+            let cn = kit.require::<CalNexusModule>().map_err(|e| {
+                CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")).with_i18n(
+                    "kit.require_failed",
+                    vec![("error".to_string(), e.to_string())],
+                )
+            })?;
             Ok(ScalarMathHandle { cn })
         })
     }
@@ -163,9 +166,12 @@ impl AsyncAutoBuilder for LinearAlgebraModule {
         kit: &'a AsyncKit,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
         Box::pin(async move {
-            let cn = kit
-                .require::<CalNexusModule>()
-                .map_err(|e| CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")))?;
+            let cn = kit.require::<CalNexusModule>().map_err(|e| {
+                CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")).with_i18n(
+                    "kit.require_failed",
+                    vec![("error".to_string(), e.to_string())],
+                )
+            })?;
             Ok(LinearAlgebraHandle { cn })
         })
     }
@@ -210,9 +216,12 @@ impl AsyncAutoBuilder for DataAnalysisModule {
         kit: &'a AsyncKit,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
         Box::pin(async move {
-            let cn = kit
-                .require::<CalNexusModule>()
-                .map_err(|e| CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")))?;
+            let cn = kit.require::<CalNexusModule>().map_err(|e| {
+                CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")).with_i18n(
+                    "kit.require_failed",
+                    vec![("error".to_string(), e.to_string())],
+                )
+            })?;
             Ok(DataAnalysisHandle { cn })
         })
     }
@@ -257,9 +266,12 @@ impl AsyncAutoBuilder for SymbolicMathModule {
         kit: &'a AsyncKit,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
         Box::pin(async move {
-            let cn = kit
-                .require::<CalNexusModule>()
-                .map_err(|e| CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")))?;
+            let cn = kit.require::<CalNexusModule>().map_err(|e| {
+                CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")).with_i18n(
+                    "kit.require_failed",
+                    vec![("error".to_string(), e.to_string())],
+                )
+            })?;
             Ok(SymbolicMathHandle { cn })
         })
     }
@@ -305,9 +317,12 @@ impl AsyncAutoBuilder for AppliedMathModule {
         kit: &'a AsyncKit,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Capability, Self::Error>> + Send + 'a>> {
         Box::pin(async move {
-            let cn = kit
-                .require::<CalNexusModule>()
-                .map_err(|e| CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")))?;
+            let cn = kit.require::<CalNexusModule>().map_err(|e| {
+                CalcError::new(ErrorKind::Eval, format!("require calnexus: {e}")).with_i18n(
+                    "kit.require_failed",
+                    vec![("error".to_string(), e.to_string())],
+                )
+            })?;
             Ok(AppliedMathHandle { cn })
         })
     }

@@ -34,7 +34,8 @@ pub struct ListFunctionsResponse {
     path = "/list_functions",
     method = "POST",
     tool_name = "list_functions",
-    description = "List all available math functions grouped by domain. Call this first to discover which functions the current build supports (feature-gated domains like time/unit/fx appear only when enabled)."
+    description = "List all available math functions grouped by domain. Call this first to discover which functions the current build supports (feature-gated domains like time/unit/fx appear only when enabled).",
+    i18n_key = "endpoint.list_functions.description"
 )]
 pub(crate) async fn list_functions(
     req: ListFunctionsRequest,

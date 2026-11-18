@@ -422,3 +422,39 @@ cli-help_bind = HTTP server bind address (default 127.0.0.1:3000; env: CALNEXUS_
 cli-help_list_functions = List all available functions grouped by domain, then exit
 cli-help_serve_http = Start HTTP server mode (POST /api/v1/evaluate). Requires the server feature.
 cli-help_serve_mcp = Start MCP server mode (evaluate tool, stdio transport). Requires the server feature.
+
+# ---------------------------------------------------------------------------
+# 服务端请求校验 / 基础设施 / kit 集成 / wasm / MCP 工具描述（硬编码回迁）。
+# ---------------------------------------------------------------------------
+
+# 请求级校验（按请求 lang 协商后渲染）
+server-validation-currency_code = must be a 3-letter ISO 4217 currency code
+server-validation-currency_code_item = '{ $code }' is not a valid 3-letter ISO 4217 currency code
+server-validation-living_cost_negative = living_cost_monthly must be non-negative
+server-validation-expr_empty = expression must not be empty
+server-validation-expr_too_long = length { $len } exceeds limit { $max }
+server-validation-expr_null_bytes = null bytes not allowed
+server-validation-vars_too_many = size { $len } exceeds limit { $max }
+server-validation-var_name_too_long = var name length { $len } exceeds limit { $max }
+server-validation-var_name_null_bytes = var name null bytes not allowed
+server-validation-values_not_finite = values must be finite (NaN/Infinity not allowed)
+server-validation-precision_exceeds = { $value } exceeds limit { $max }
+
+# 基础设施启动错误（进程级语言检测）
+server-runtime_create_failed = failed to create tokio runtime: { $error }
+server-bind_failed = failed to bind { $addr }: { $error }
+server-serve_failed = server error: { $error }
+server-stdio_serve_failed = stdio serve error: { $error }
+
+# wasm 导出层错误
+wasm-expression_empty = expression must not be empty
+
+# kit 集成错误
+kit-locale_invalid = invalid locale { $locale }: { $error }
+kit-require_failed = require calnexus: { $error }
+
+# MCP/HTTP 工具描述（#[forge] i18n_key 元数据）
+endpoint-evaluate-description = Evaluate a math expression. Args MUST be wrapped in a req object: req.expr is the expression string, req.vars holds optional variable bindings, req.precision is optional, req.lang is optional response language (BCP-47 tag, 'en' default, 'zh' supported). Limits: expr up to 4096 chars, vars up to 1024 keys, precision up to 10000. Returns result, domain, cache. Errors: HTTP 400 code=BAD_REQUEST (InvalidInput: syntax/eval), 422 code=UNPROCESSABLE_ENTITY (ValidationError: limit exceeded, body carries field), 503 code=UNAVAILABLE (ServiceUnavailable: timeout/upstream). MCP errors carry the ApiError type names.
+endpoint-fx_budget-description = Calculate study abroad budget with currency conversion. Args MUST be wrapped in a req object with fields: tuition, tuition_currency, home_currency, optional living_cost_monthly, duration_years, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns tuition/living/total in home currency plus a 3-percent exchange-rate risk range and rate_date (snapshot date). Errors: 400 InvalidInput (unknown currency), 503 ServiceUnavailable (FX upstream unreachable).
+endpoint-fx_pricing-description = Cross-border e-commerce multi-currency pricing. Args MUST be wrapped in a req object with fields: cost_cny, target_profit_rate, currencies (comma separated), optional platform_rate, safety_buffer, optional lang (response language, BCP-47 tag, 'en' default, 'zh' supported). Returns per-currency recommended prices with platform fees, plus rate_date (snapshot date). Errors: 400 InvalidInput, 503 ServiceUnavailable (FX upstream unreachable).
+endpoint-list_functions-description = List all available math functions grouped by domain. Call this first to discover which functions the current build supports (feature-gated domains like time/unit/fx appear only when enabled).
