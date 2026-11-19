@@ -5,5 +5,6 @@
 //! 确定性 RNG 与题目生成器按子模块组织。
 
 mod arithmetic;
+mod calculus;
 mod number_theory;
 mod rng;
