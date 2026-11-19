@@ -15,6 +15,7 @@ pub mod number_theory;
 pub mod polynomial;
 pub mod precision;
 pub mod scientific;
+pub mod solve;
 pub mod solvers;
 pub mod statistics;
 pub mod symbolic;
