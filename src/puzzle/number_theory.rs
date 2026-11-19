@@ -10,6 +10,7 @@ use super::rng::SplitMix64;
 
 /// 数论谜题：半素数 n = p × q，附试除轨迹。
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // 复验字段由单元测试消费
 pub struct NumberTheoryPuzzle {
     pub n: u64,
     pub p: u64,

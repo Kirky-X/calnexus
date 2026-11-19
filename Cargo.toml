@@ -196,7 +196,7 @@ required-features = ["cli", "numerical"]
 
 [[test]]
 name = "plot_puzzle_integration"
-required-features = ["cli", "plot"]
+required-features = ["cli", "plot", "puzzle"]
 
 [[test]]
 name = "kit_module_test"

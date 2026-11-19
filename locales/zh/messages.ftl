@@ -22,6 +22,7 @@ cli-invalid_bind_addr = 无效的 CALNEXUS_BIND_ADDR：{ $reason }
 cli-invalid_cache_size_env = 无效的 CALNEXUS_CACHE_SIZE '{ $value }'：应为正整数
 cli-invalid_timeout_env = 无效的 CALNEXUS_TIMEOUT '{ $value }'：应为秒数（如 0.1）
 cli-invalid_x_range = x 范围无效，应为 a:b 且端点有限并满足 a < b
+cli-invalid_puzzle_level = 谜题难度必须为 0-3
 cli-invalid_var = 无效的 --var '{ $value }'，应为 NAME=VALUE
 cli-invalid_var_value = 无效的 --var 值 '{ $value }': { $error }
 cli-stdin_read_failed = 从 stdin 读取失败

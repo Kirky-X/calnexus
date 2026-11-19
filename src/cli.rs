@@ -39,6 +39,28 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["json"])]
     explain: bool,
 
+    /// Generate a math puzzle: number-theory | arithmetic | calculus
+    #[cfg(all(feature = "puzzle", not(feature = "plot")))]
+    #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(["number-theory", "arithmetic", "calculus"]),
+          conflicts_with_all = ["batch", "repl"])]
+    puzzle: Option<String>,
+
+    /// Generate a math puzzle: number-theory | arithmetic | calculus
+    #[cfg(all(feature = "puzzle", feature = "plot"))]
+    #[arg(long = "puzzle", value_parser = clap::builder::PossibleValuesParser::new(["number-theory", "arithmetic", "calculus"]),
+          conflicts_with_all = ["plot", "heatmap", "batch", "repl"])]
+    puzzle_plot_build: Option<String>,
+
+    /// Puzzle difficulty level 0-3 (default 1)
+    #[cfg(feature = "puzzle")]
+    #[arg(long, default_value = "1")]
+    puzzle_level: u8,
+
+    /// Deterministic seed for puzzle generation (default 0)
+    #[cfg(feature = "puzzle")]
+    #[arg(long, default_value = "0")]
+    seed: u64,
+
     /// Plot the expression as a Braille curve (requires `plot` feature)
     #[cfg(feature = "plot")]
     #[arg(long, conflicts_with_all = ["json", "batch", "repl", "latex", "canonical", "steps", "precision"])]
@@ -149,6 +171,16 @@ pub fn run() -> i32 {
     // --list-functions：运行时函数目录
     if cli.list_functions {
         return run_list_functions();
+    }
+
+    #[cfg(feature = "puzzle")]
+    #[cfg(all(feature = "puzzle", feature = "plot"))]
+    let puzzle_arg = cli.puzzle_plot_build.as_ref();
+    #[cfg(all(feature = "puzzle", not(feature = "plot")))]
+    let puzzle_arg = cli.puzzle.as_ref();
+    #[cfg(feature = "puzzle")]
+    if let Some(kind) = puzzle_arg {
+        return run_puzzle_mode(kind, cli.puzzle_level, cli.seed, cli.json, &cli, &i18n);
     }
 
     // --repl 模式：启动交互式 REPL
@@ -587,6 +619,50 @@ fn resolve_bind(i18n: &crate::i18n::I18n, cli_value: Option<String>) -> Result<S
             Err(_) => Ok(DEFAULT_BIND.to_string()),
         },
     }
+}
+
+/// `--puzzle` 执行流：生成题目并输出 human/JSON 双态。
+#[cfg(feature = "puzzle")]
+fn run_puzzle_mode(
+    kind: &str,
+    level: u8,
+    seed: u64,
+    json: bool,
+    cli: &Cli,
+    i18n: &crate::i18n::I18n,
+) -> i32 {
+    if level > 3 {
+        return handle_error(
+            &CalcError::usage("puzzle level must be 0-3".to_string())
+                .with_i18n("cli.invalid_puzzle_level", vec![]),
+            cli,
+            i18n,
+        );
+    }
+    let puzzle = match crate::puzzle::generate(kind, level, seed) {
+        Ok(p) => p,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "v": 1,
+                "kind": puzzle.kind,
+                "question": puzzle.question,
+                "answer": puzzle.answer,
+                "steps": puzzle.steps,
+            })
+        );
+    } else {
+        println!("Question: {}", puzzle.question);
+        println!("Answer: {}", puzzle.answer);
+        println!("Steps:");
+        for step in &puzzle.steps {
+            println!("  {step}");
+        }
+    }
+    0
 }
 
 /// 收集表达式首个自由变量名（排除数学常量 pi/e）。

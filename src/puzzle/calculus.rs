@@ -9,6 +9,7 @@ use super::rng::SplitMix64;
 
 /// 微积分谜题：多项式题面 + 升幂系数答案 + 逐项法则说明。
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // 复验字段由单元测试消费
 pub struct CalculusPuzzle {
     pub question: String,
     pub answer: String,

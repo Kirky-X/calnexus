@@ -66,3 +66,38 @@ fn test_heatmap_rejects_scalar() {
     let mut cmd = Command::cargo_bin("calnexus").unwrap();
     cmd.arg("--heatmap").arg("42").assert().failure().code(1);
 }
+
+#[test]
+fn test_puzzle_output_contains_question_and_answer() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let out = cmd
+        .arg("--puzzle")
+        .arg("number-theory")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(out).unwrap();
+    assert!(stdout.contains("Question:"), "{stdout}");
+    assert!(stdout.contains("Answer:"), "{stdout}");
+}
+
+#[test]
+fn test_puzzle_seed_is_byte_deterministic() {
+    let run = || {
+        let mut cmd = Command::cargo_bin("calnexus").unwrap();
+        let out = cmd
+            .arg("--puzzle")
+            .arg("number-theory")
+            .arg("--seed")
+            .arg("42")
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        out
+    };
+    assert_eq!(run(), run());
+}
