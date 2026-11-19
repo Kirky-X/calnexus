@@ -47,6 +47,8 @@ pub(crate) const STATISTICS_FUNCTIONS: &[&str] = &[
     // 相关系数
     "pearson",
     "spearman",
+    // 回归
+    "ols",
 ];
 
 /// Statistics 计算域，priority=20，输入为 List 节点。
@@ -159,6 +161,46 @@ impl StatisticsDomain {
         args: &[AstNode],
         ctx: &EvalContext,
     ) -> Result<EvalResult, CalcError> {
+        if !STATISTICS_FUNCTIONS.contains(&name) {
+            return Err(unsupported_function_error("statistics", name));
+        }
+
+        // ols(y, X)：X 为列向量列表；底层 lstsq 需要 numerical feature。
+        if name == "ols" {
+            #[cfg(not(feature = "numerical"))]
+            {
+                return Err(
+                    CalcError::domain("ols requires the numerical feature".to_string())
+                        .with_i18n("msg.statistics.requires_numerical_feature", vec![]),
+                );
+            }
+            #[cfg(feature = "numerical")]
+            {
+                if args.len() != 2 {
+                    return Err(CalcError::domain("ols expects 2 arguments".to_string())
+                        .with_i18n("msg.statistics.ols_dimension_mismatch", vec![]));
+                }
+                let y = self.extract_list(&args[0], ctx)?;
+                // X 可为列向量列表，也可为矩阵字面量（按行给出的设计矩阵）。
+                let column_nodes: Vec<AstNode> = match &args[1] {
+                    AstNode::List(columns) => columns.clone(),
+                    AstNode::Matrix(rows) => {
+                        rows.iter().map(|row| AstNode::List(row.clone())).collect()
+                    }
+                    _ => {
+                        return Err(CalcError::domain(
+                            "ols X must be a list of columns".to_string(),
+                        )
+                        .with_i18n("msg.statistics.ols_dimension_mismatch", vec![]));
+                    }
+                };
+                let x = column_nodes
+                    .iter()
+                    .map(|col| self.extract_list(col, ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(EvalResult::Json(math_stats::ols(&y, &x)?));
+            }
+        }
         if !STATISTICS_FUNCTIONS.contains(&name) {
             return Err(unsupported_function_error("statistics", name));
         }

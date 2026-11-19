@@ -284,6 +284,7 @@ msg-solvers-newton_not_converged = newton_raphson: 迭代 { $max_iter } 次后�
 msg-solvers-secant_not_converged = secant: 迭代 { $max_iter } 次后未收敛
 msg-solvers-secant_zero_denominator = secant: 在 x={ $x } 处分母为零
 msg-solvers-simpson_depth = adaptive_simpson: 达到最大递归深度
+msg-statistics-requires_numerical_feature = ols 需要 numerical 特性（--features numerical）
 msg-statistics-ols_dimension_mismatch = ols: y 长度必须等于 X 行数
 msg-statistics-arg_count = { $name }() 需要 { $expected } 个参数，得到 { $actual }
 msg-statistics-expected_scalar_argument = 期望标量参数
