@@ -208,6 +208,8 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
                 "tan" => Ok(SymbolicExpr::Tan(unary)),
                 "ln" | "log" => Ok(SymbolicExpr::Ln(unary)),
                 "exp" => Ok(SymbolicExpr::Exp(unary)),
+                // sqrt(f) 统一表示为 f^(1/2)，供假设感知规则识别。
+                "sqrt" => Ok(SymbolicExpr::Pow(unary, Box::new(SymbolicExpr::Const(0.5)))),
                 _ => Err(CalcError::domain(format!(
                     "function not supported in symbolic expressions: {}",
                     name
@@ -586,14 +588,121 @@ fn is_var(expr: &SymbolicExpr, var: &str) -> bool {
 
 /// 表达式化简：贪心化简 +（可选）E-graph 饱和提取。
 pub fn simplify(expr: &SymbolicExpr) -> SymbolicExpr {
+    simplify_with(expr, None)
+}
+
+/// 前提感知化简：`assumptions` 为 `None` 或空集时，输出与旧 `simplify` 完全一致。
+pub fn simplify_with(
+    expr: &SymbolicExpr,
+    assumptions: Option<&crate::math::assumptions::AssumptionSet>,
+) -> SymbolicExpr {
     let greedy = simplify_greedy(expr);
+    let contextual = match assumptions {
+        Some(set) if !set.is_empty() => apply_assumptions(&greedy, set),
+        _ => greedy,
+    };
     #[cfg(feature = "egraph")]
     {
-        crate::math::egraph::saturate(&greedy).unwrap_or(greedy)
+        crate::math::egraph::saturate(&contextual).unwrap_or(contextual)
     }
     #[cfg(not(feature = "egraph"))]
     {
-        greedy
+        contextual
+    }
+}
+
+/// 递归应用变量前提：sqrt(x²)→|x| 判据、sin(nπ)→0、非零分母消去。
+fn apply_assumptions(
+    expr: &SymbolicExpr,
+    set: &crate::math::assumptions::AssumptionSet,
+) -> SymbolicExpr {
+    use crate::math::assumptions::Assumption;
+    match expr {
+        // sqrt(x^2) = |x|；Positive / NonNegative 归 x，LessThan(0) 归 -x。
+        SymbolicExpr::Pow(base, exp)
+            if exp.as_const() == Some(0.5)
+                && let SymbolicExpr::Pow(inner, power) = base.as_ref()
+                && power.as_const() == Some(2.0)
+                && let SymbolicExpr::Var(name) = inner.as_ref() =>
+        {
+            match set.get(name) {
+                Some(list)
+                    if list
+                        .iter()
+                        .any(|a| matches!(a, Assumption::Positive | Assumption::NonNegative)) =>
+                {
+                    SymbolicExpr::Var(name.clone())
+                }
+                Some(list)
+                    if list
+                        .iter()
+                        .any(|a| matches!(a, Assumption::LessThan(v) if *v == 0.0)) =>
+                {
+                    SymbolicExpr::Neg(Box::new(SymbolicExpr::Var(name.clone())))
+                }
+                _ => expr.clone(),
+            }
+        }
+        // sin(n*pi) = 0，n 为整数时成立（含常数在左的形态）。
+        SymbolicExpr::Sin(inner)
+            if let SymbolicExpr::Mul(l, r) = inner.as_ref()
+                && let (Some(name), Some(pi)) = (as_var(l), r.as_const())
+                && pi == std::f64::consts::PI
+                && set
+                    .get(name)
+                    .is_some_and(|list| list.iter().any(|a| matches!(a, Assumption::Integer))) =>
+        {
+            SymbolicExpr::Const(0.0)
+        }
+        // (x*a)/x = a，x 非零时成立。
+        SymbolicExpr::Div(num, den)
+            if let SymbolicExpr::Var(name) = den.as_ref()
+                && set
+                    .get(name)
+                    .is_some_and(|list| list.iter().any(|a| matches!(a, Assumption::NonZero)))
+                && let SymbolicExpr::Mul(l, r) = num.as_ref()
+                && (as_var(l) == Some(name.as_str()) || as_var(r) == Some(name.as_str())) =>
+        {
+            if as_var(l) == Some(name.as_str()) {
+                (**r).clone()
+            } else {
+                (**l).clone()
+            }
+        }
+        SymbolicExpr::Add(l, r) => SymbolicExpr::Add(
+            Box::new(apply_assumptions(l, set)),
+            Box::new(apply_assumptions(r, set)),
+        ),
+        SymbolicExpr::Sub(l, r) => SymbolicExpr::Sub(
+            Box::new(apply_assumptions(l, set)),
+            Box::new(apply_assumptions(r, set)),
+        ),
+        SymbolicExpr::Mul(l, r) => SymbolicExpr::Mul(
+            Box::new(apply_assumptions(l, set)),
+            Box::new(apply_assumptions(r, set)),
+        ),
+        SymbolicExpr::Div(l, r) => SymbolicExpr::Div(
+            Box::new(apply_assumptions(l, set)),
+            Box::new(apply_assumptions(r, set)),
+        ),
+        SymbolicExpr::Pow(l, r) => SymbolicExpr::Pow(
+            Box::new(apply_assumptions(l, set)),
+            Box::new(apply_assumptions(r, set)),
+        ),
+        SymbolicExpr::Neg(e) => SymbolicExpr::Neg(Box::new(apply_assumptions(e, set))),
+        SymbolicExpr::Sin(e) => SymbolicExpr::Sin(Box::new(apply_assumptions(e, set))),
+        SymbolicExpr::Cos(e) => SymbolicExpr::Cos(Box::new(apply_assumptions(e, set))),
+        SymbolicExpr::Tan(e) => SymbolicExpr::Tan(Box::new(apply_assumptions(e, set))),
+        SymbolicExpr::Ln(e) => SymbolicExpr::Ln(Box::new(apply_assumptions(e, set))),
+        SymbolicExpr::Exp(e) => SymbolicExpr::Exp(Box::new(apply_assumptions(e, set))),
+        SymbolicExpr::Const(_) | SymbolicExpr::Var(_) => expr.clone(),
+    }
+}
+
+fn as_var(expr: &SymbolicExpr) -> Option<&str> {
+    match expr {
+        SymbolicExpr::Var(name) => Some(name.as_str()),
+        _ => None,
     }
 }
 
@@ -1468,5 +1577,36 @@ mod tests {
         assert_eq!(factorial(0), 1.0);
         assert_eq!(factorial(1), 1.0);
         assert_eq!(factorial(5), 120.0);
+    }
+    #[test]
+    fn test_simplify_with_positive_assumption_sqrt() {
+        use crate::core::parse;
+        use crate::math::assumptions::AssumptionSet;
+        let expr = ast_to_symbolic(&parse("sqrt(x^2)").unwrap()).unwrap();
+        let set = AssumptionSet::parse("x > 0").unwrap();
+        let got = simplify_with(&expr, Some(&set));
+        assert_eq!(got, SymbolicExpr::Var("x".to_string()));
+        assert_ne!(simplify(&expr), got);
+    }
+
+    #[test]
+    fn test_simplify_with_integer_assumption_sin_n_pi() {
+        use crate::core::parse;
+        use crate::math::assumptions::AssumptionSet;
+        let expr = ast_to_symbolic(&parse("sin(n*pi)").unwrap()).unwrap();
+        let set = AssumptionSet::parse("n is integer").unwrap();
+        assert_eq!(simplify_with(&expr, Some(&set)), SymbolicExpr::Const(0.0));
+    }
+
+    #[test]
+    fn test_simplify_with_nonzero_div_cancellation() {
+        use crate::core::parse;
+        use crate::math::assumptions::AssumptionSet;
+        let expr = ast_to_symbolic(&parse("x*y/x").unwrap()).unwrap();
+        let set = AssumptionSet::parse("x != 0").unwrap();
+        assert_eq!(
+            simplify_with(&expr, Some(&set)),
+            SymbolicExpr::Var("y".to_string())
+        );
     }
 }
