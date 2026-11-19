@@ -37,8 +37,8 @@ impl CalculationDomain for SymbolicDomain {
         contains_symbolic_function(ast)
     }
 
-    fn evaluate(&self, ast: &AstNode, _ctx: &EvalContext) -> Result<EvalResult, CalcError> {
-        self.eval_node(ast)
+    fn evaluate(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
+        self.eval_node(ast, ctx)
     }
 }
 
@@ -50,9 +50,9 @@ impl Default for SymbolicDomain {
 
 impl SymbolicDomain {
     /// 递归求值 AST 节点。
-    fn eval_node(&self, ast: &AstNode) -> Result<EvalResult, CalcError> {
+    fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
-            AstNode::FunctionCall(name, args) => self.eval_function(name, args),
+            AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             _ => Err(CalcError::domain(format!(
                 "symbolic domain expects function call, got: {:?}",
                 ast
@@ -65,7 +65,12 @@ impl SymbolicDomain {
     }
 
     /// 求值符号函数调用：按函数名分发到对应的处理方法。
-    fn eval_function(&self, name: &str, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+    fn eval_function(
+        &self,
+        name: &str,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
         if !SYMBOLIC_FUNCTIONS.contains(&name) {
             return Err(CalcError::domain(format!(
                 "unsupported function in symbolic domain: {}",
@@ -79,7 +84,7 @@ impl SymbolicDomain {
         match name {
             "diff" => self.eval_diff(args),
             "integrate" => self.eval_integrate(args),
-            "simplify" => self.eval_simplify(args),
+            "simplify" => self.eval_simplify(args, ctx),
             "limit" => self.eval_limit(args),
             "taylor" => self.eval_taylor(args),
             _ => unreachable!("checked above"),
@@ -123,7 +128,7 @@ impl SymbolicDomain {
     }
 
     /// simplify(expr)：符号化简。
-    fn eval_simplify(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+    fn eval_simplify(&self, args: &[AstNode], ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         if args.len() != 1 {
             return Err(CalcError::domain(format!(
                 "simplify() requires exactly 1 argument, got {}",
@@ -135,7 +140,7 @@ impl SymbolicDomain {
             ));
         }
         let expr = ast_to_symbolic(&args[0])?;
-        let result = math_sym::simplify(&expr);
+        let result = math_sym::simplify_with(&expr, Some(&ctx.assumptions));
         Ok(EvalResult::Symbolic(math_sym::symbolic_to_string(&result)))
     }
 

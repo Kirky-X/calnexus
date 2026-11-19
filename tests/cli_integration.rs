@@ -1683,3 +1683,28 @@ fn test_ols_cli_json_domain() {
     assert!(stdout.contains("\"domain\":\"statistics\""), "{stdout}");
     assert!(stdout.contains("r_squared"), "{stdout}");
 }
+
+#[test]
+fn test_cli_assume_simplifies_sqrt_square() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let out = cmd
+        .arg("--assume")
+        .arg("x > 0")
+        .arg("simplify(sqrt(x^2))")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(String::from_utf8(out).unwrap().trim(), "x");
+}
+
+#[test]
+fn test_cli_assume_bad_syntax_is_usage_error() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--assume")
+        .arg("x ??? 0")
+        .arg("1+1")
+        .assert()
+        .code(2);
+}

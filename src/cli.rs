@@ -25,6 +25,10 @@ struct Cli {
     #[arg(long = "var")]
     vars: Vec<String>,
 
+    /// Symbol assumption: --assume "x > 0" (can be repeated)
+    #[arg(long = "assume")]
+    assumptions: Vec<String>,
+
     /// Output result as JSON with domain and cache metadata
     #[arg(long, conflicts_with_all = ["latex", "canonical", "steps"])]
     json: bool,
@@ -146,7 +150,7 @@ pub fn run() -> i32 {
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
 
-    let mut ctx = match parse_vars(&cli.vars) {
+    let mut ctx = match build_context(&cli) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
@@ -260,7 +264,7 @@ fn run_server_mode(cli: &Cli, i18n: &crate::i18n::I18n) -> i32 {
 
 /// --repl 模式：解析变量绑定并启动交互式 REPL。
 fn run_repl_mode(cli: &Cli, i18n: &crate::i18n::I18n, timeout_secs: f64, cache_budget: u64) -> i32 {
-    let mut ctx = match parse_vars(&cli.vars) {
+    let mut ctx = match build_context(cli) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
     };
@@ -278,7 +282,7 @@ fn run_batch_mode(
     timeout_secs: f64,
     cache_budget: u64,
 ) -> i32 {
-    let mut ctx = match parse_vars(&cli.vars) {
+    let mut ctx = match build_context(cli) {
         Ok(ctx) => ctx,
         Err(e) => return handle_error(&e, cli, i18n),
     };
@@ -556,6 +560,15 @@ fn resolve_bind(i18n: &crate::i18n::I18n, cli_value: Option<String>) -> Result<S
             Err(_) => Ok(DEFAULT_BIND.to_string()),
         },
     }
+}
+
+/// 构建 CLI 求值上下文：变量绑定 + 符号假设。
+fn build_context(cli: &Cli) -> Result<EvalContext, CalcError> {
+    let mut ctx = parse_vars(&cli.vars)?;
+    for spec in &cli.assumptions {
+        ctx.assumptions.insert(spec)?;
+    }
+    Ok(ctx)
 }
 
 fn parse_vars(vars: &[String]) -> Result<EvalContext, CalcError> {
