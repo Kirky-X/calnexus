@@ -7,6 +7,8 @@
 
 mod canonical;
 mod latex;
+#[cfg(feature = "plot")]
+pub mod plot;
 mod steps;
 
 #[cfg(feature = "cli")]
