@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- 新增四个 server 工具，HTTP 与 MCP 双协议可用：`explain`（分步推导）、`to_latex`（表达式转 LaTeX）、`verify`（恒等判定与数值反例）、`lint`（表达式静态诊断）。每个工具均含请求校验（共用 4096 字符上限）、30 秒超时与本地化错误映射。
+- 终端绘图（`plot` feature，零依赖）：`calnexus --plot 'sin(x)'` 以盲文渲染曲线，y 范围自适应并留 8% 边距；`--x-range a:b` 选择 x 窗口；`--heatmap` 将矩阵渲染为强度图。非有限采样点跳过；常量表达式按用法错误拒绝。
+- 数学谜题生成器（`puzzle` feature，零依赖）：`--puzzle number-theory|arithmetic|calculus` 生成可复现题目、答案与步骤；`--puzzle-level 0-3` 控制难度，`--seed N` 经 SplitMix64 使输出逐字节确定。
 
 ## [0.2.0] - 2026-11-14
 

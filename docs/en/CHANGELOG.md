@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Four new server tools available on both HTTP and MCP: `explain` (step-by-step derivation), `to_latex` (expression-to-LaTeX bridge), `verify` (equivalence check with numeric counterexample), and `lint` (static expression diagnostics). Each has a request `validate()` with the shared 4096-char expression limit, a 30-second timeout, and i18n-aware error mapping.
+- Terminal plotting (`plot` feature, zero dependency): `calnexus --plot 'sin(x)'` renders a Braille curve with adaptive y-range and 8% margin; `--x-range a:b` selects the x window; `--heatmap` renders a matrix as an intensity map. Non-finite samples are skipped; constant expressions are rejected as usage errors.
+- Math puzzle generator (`puzzle` feature, zero dependency): `--puzzle number-theory|arithmetic|calculus` produces reproducible questions with answers and steps; `--puzzle-level 0-3` sets difficulty and `--seed N` makes generation byte-deterministic via SplitMix64.
 
 ## [0.2.0] - 2026-11-14
 

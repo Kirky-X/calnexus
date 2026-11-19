@@ -124,6 +124,19 @@ $ calnexus 'gcd(12, 18)'
 6
 ```
 
+### 终端绘图与谜题生成（可选 feature）
+
+以 `--features plot` / `--features puzzle` 构建（均零依赖）。旗标：
+
+| 旗标 | Feature | 说明 |
+| ---- | ------- | ---- |
+| `--plot` | `plot` | 将表达式渲染为盲文曲线；表达式须含一个自由变量。 |
+| `--x-range a:b` | `plot` | `--plot` 的 x 范围（默认 `-10:10`，要求 `a < b`）。 |
+| `--heatmap` | `plot` | 将矩阵结果渲染为终端热图。 |
+| `--puzzle <kind>` | `puzzle` | 生成谜题：`number-theory`、`arithmetic` 或 `calculus`。 |
+| `--puzzle-level 0-3` | `puzzle` | 难度（默认 1）。 |
+| `--seed N` | `puzzle` | 确定性种子；同 seed 输出逐字节一致。 |
+
 ### 变量绑定与隐式乘法
 
 `--assume "x > 0"` 注入符号假设（可重复，如 `> 0`、`>= 0`、`!= 0`、`is integer`），仅影响 `simplify`。

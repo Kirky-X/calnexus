@@ -125,6 +125,24 @@ $ calnexus 'gcd(12, 18)'
 6
 ```
 
+### Terminal Plotting and Puzzle Generation (opt-in features)
+
+Build with `--features plot` / `--features puzzle` (both zero-dependency). Flags:
+
+| Flag | Feature | Description |
+| ---- | ------- | ----------- |
+| `--plot` | `plot` | Render the expression as a Braille curve; expression must contain one free variable. |
+| `--x-range a:b` | `plot` | X range for `--plot` (default `-10:10`, requires `a < b`). |
+| `--heatmap` | `plot` | Render a matrix result as a terminal heatmap. |
+| `--puzzle <kind>` | `puzzle` | Generate a puzzle: `number-theory`, `arithmetic` or `calculus`. |
+| `--puzzle-level 0-3` | `puzzle` | Difficulty (default 1). |
+| `--seed N` | `puzzle` | Deterministic seed; same seed reproduces byte-identical output. |
+
+```bash
+$ calnexus --features plot --plot 'sin(x)'
+$ calnexus --puzzle number-theory --seed 42
+```
+
 ### Variable Binding and Implicit Multiplication
 
 `--assume "x > 0"` injects a symbol assumption (repeatable, e.g. `> 0`, `>= 0`, `!= 0`, `is integer`); affects `simplify` only.
