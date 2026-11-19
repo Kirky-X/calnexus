@@ -124,6 +124,9 @@ impl MockFxDomain {
 
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(CalcError::domain(
+                "comparison not supported in fx mock".to_string(),
+            )),
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
             AstNode::BigNumber(s) => s
                 .parse::<f64>()

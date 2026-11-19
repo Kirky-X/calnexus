@@ -940,3 +940,141 @@ mod tests {
         assert_eq!(symbolic_str_to_latex("42"), "42");
     }
 }
+
+/// 将表达式 AST 直接渲染为 LaTeX（server `to_latex` tool 的核心能力）。
+///
+/// 已知函数名映射为 LaTeX 算子（如 `\sin`），未知函数名用 `\operatorname{name}`；
+/// Matrix / List / BigNumber / Complex 委托既有格式化器，保证与求值输出一致。
+#[allow(dead_code)] // server `to_latex` tool（T004）消费；无 server 特性时为死代码
+pub fn format_latex_ast(ast: &AstNode) -> Result<String, crate::core::CalcError> {
+    use crate::core::{BinaryOp, CompareOp, UnaryOp};
+
+    fn render(node: &AstNode) -> Result<String, crate::core::CalcError> {
+        match node {
+            AstNode::Number(v) => Ok(format_latex_scalar(*v)),
+            AstNode::BigNumber(s) => {
+                let big = s.parse::<num_bigint::BigInt>().map_err(|_| {
+                    crate::core::CalcError::parse(format!("invalid big number literal: {s}"))
+                })?;
+                Ok(format_latex_bigint(&big))
+            }
+            AstNode::Complex(re, im) => Ok(format_latex_complex(*re, *im)),
+            AstNode::Variable(name) => Ok(name.clone()),
+            AstNode::Str(text) => Ok(format!("\\text{{{text}}}")),
+            AstNode::BinaryOp(op, l, r) => {
+                let lhs = render(l)?;
+                let rhs = render(r)?;
+                Ok(match op {
+                    BinaryOp::Add => format!("{lhs}+{rhs}"),
+                    BinaryOp::Sub => format!("{lhs}-{rhs}"),
+                    BinaryOp::Mul => format!("{lhs} \\cdot {rhs}"),
+                    BinaryOp::Div => format!("\\frac{{{lhs}}}{{{rhs}}}"),
+                    BinaryOp::Pow => {
+                        // 单符号底数无需花括号；复合底数须括号保证幂作用范围。
+                        let needs_braces = lhs.chars().count() > 1
+                            && !lhs.chars().all(|c| c.is_ascii_alphanumeric());
+                        if needs_braces {
+                            format!("{{{lhs}}}^{{{rhs}}}")
+                        } else {
+                            format!("{lhs}^{{{rhs}}}")
+                        }
+                    }
+                    BinaryOp::Mod => format!("{lhs} \\bmod {rhs}"),
+                })
+            }
+            AstNode::Compare(op, l, r) => {
+                let symbol = match op {
+                    CompareOp::Lt => "<",
+                    CompareOp::Le => "\\leq",
+                    CompareOp::Gt => ">",
+                    CompareOp::Ge => "\\geq",
+                };
+                Ok(format!("{} {} {}", render(l)?, symbol, render(r)?))
+            }
+            AstNode::UnaryOp(op, e) => {
+                let inner = render(e)?;
+                Ok(match op {
+                    UnaryOp::Neg => format!("-{inner}"),
+                    UnaryOp::Factorial => format!("{inner}!"),
+                    UnaryOp::Abs => format!("\\left|{inner}\\right|"),
+                })
+            }
+            AstNode::FunctionCall(name, args) => {
+                let rendered: Vec<String> = args.iter().map(render).collect::<Result<_, _>>()?;
+                let joined = rendered.join(", ");
+                let safe_name = name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                if !safe_name {
+                    return Err(crate::core::CalcError::parse(format!(
+                        "invalid LaTeX function name: {name}"
+                    )));
+                }
+                Ok(match name.as_str() {
+                    "sin" | "cos" | "tan" | "ln" | "log" | "exp" | "sqrt" => {
+                        format!("\\{name}({joined})")
+                    }
+                    _ => format!("\\operatorname{{{name}}}({joined})"),
+                })
+            }
+            AstNode::Matrix(rows) => {
+                let values: Vec<Vec<f64>> = rows
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(|cell| match cell {
+                                AstNode::Number(v) => Ok(*v),
+                                _ => Err(crate::core::CalcError::parse(
+                                    "LaTeX matrix cells must be numeric".to_string(),
+                                )),
+                            })
+                            .collect()
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(format_latex_matrix(&values))
+            }
+            AstNode::List(elements) => {
+                let values: Vec<f64> = elements
+                    .iter()
+                    .map(|cell| match cell {
+                        AstNode::Number(v) => Ok(*v),
+                        _ => Err(crate::core::CalcError::parse(
+                            "LaTeX list elements must be numeric".to_string(),
+                        )),
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(format_latex_vector(&values))
+            }
+        }
+    }
+    render(ast)
+}
+
+#[cfg(test)]
+mod latex_ast_tests {
+    use super::*;
+    use crate::core::parse;
+
+    #[test]
+    fn test_format_latex_ast_polynomial() {
+        let got = format_latex_ast(&parse("x^2+1").unwrap()).unwrap();
+        assert_eq!(got, "x^{2}+1");
+    }
+
+    #[test]
+    fn test_format_latex_ast_unknown_function() {
+        let got = format_latex_ast(&parse("foo(x)").unwrap()).unwrap();
+        assert_eq!(got, "\\operatorname{foo}(x)");
+    }
+
+    #[test]
+    fn test_format_latex_ast_known_function() {
+        let got = format_latex_ast(&parse("sin(x)").unwrap()).unwrap();
+        assert_eq!(got, "\\sin(x)");
+    }
+
+    #[test]
+    fn test_format_latex_ast_matrix() {
+        let got = format_latex_ast(&parse("[[1,2],[3,4]]").unwrap()).unwrap();
+        assert!(got.contains("1"), "{got}");
+        assert!(got.contains("4"), "{got}");
+    }
+}
