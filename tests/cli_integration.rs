@@ -1708,3 +1708,38 @@ fn test_cli_assume_bad_syntax_is_usage_error() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn test_cli_definite_integrate_exact_fraction() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let out = cmd
+        .arg("integrate(x^2, x, 0, 1)")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(String::from_utf8(out).unwrap().trim(), "1/3");
+}
+
+#[test]
+fn test_cli_definite_integrate_json_bigrational() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let out = cmd
+        .arg("--json")
+        .arg("integrate(x^2, x, 0, 1)")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(out).unwrap();
+    assert!(stdout.contains("\"domain\":\"symbolic\""), "{stdout}");
+    assert!(stdout.contains("1/3"), "{stdout}");
+}
+
+#[test]
+fn test_cli_integrate_three_args_is_error() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("integrate(x^2, x, 1)").assert().failure().code(1);
+}

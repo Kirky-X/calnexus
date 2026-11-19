@@ -121,11 +121,11 @@ impl SymbolicDomain {
         Ok(EvalResult::Symbolic(math_sym::symbolic_to_string(&result)))
     }
 
-    /// integrate(expr, var)：符号不定积分。
+    /// integrate(expr, var) 不定积分 / integrate(expr, var, a, b) 定积分。
     fn eval_integrate(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
-        if args.len() != 2 {
+        if args.len() != 2 && args.len() != 4 {
             return Err(CalcError::domain(format!(
-                "integrate() requires exactly 2 arguments, got {}",
+                "integrate() requires 2 or 4 arguments, got {}",
                 args.len()
             ))
             .with_i18n(
@@ -135,6 +135,11 @@ impl SymbolicDomain {
         }
         let expr = ast_to_symbolic(&args[0])?;
         let var = extract_variable_name(&args[1])?;
+        if args.len() == 4 {
+            let a = extract_number(&args[2])?;
+            let b = extract_number(&args[3])?;
+            return math_sym::integrate_definite(&expr, &var, a, b);
+        }
         let result = math_sym::simplify(&math_sym::integrate(&expr, &var)?);
         Ok(EvalResult::Symbolic(math_sym::symbolic_to_string(&result)))
     }
