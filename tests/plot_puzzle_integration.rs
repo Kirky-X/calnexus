@@ -87,8 +87,7 @@ fn test_puzzle_output_contains_question_and_answer() {
 fn test_puzzle_seed_is_byte_deterministic() {
     let run = || {
         let mut cmd = Command::cargo_bin("calnexus").unwrap();
-        let out = cmd
-            .arg("--puzzle")
+        cmd.arg("--puzzle")
             .arg("number-theory")
             .arg("--seed")
             .arg("42")
@@ -96,8 +95,7 @@ fn test_puzzle_seed_is_byte_deterministic() {
             .success()
             .get_output()
             .stdout
-            .clone();
-        out
+            .clone()
     };
     assert_eq!(run(), run());
 }

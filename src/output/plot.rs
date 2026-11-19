@@ -4,8 +4,7 @@
 //! 终端绘图输出（Braille 曲线与矩阵热图），仅 `plot` feature 下编译。
 //!
 //! Braille 字符 U+2800 起，每个字符承载 2 列 × 4 行共 8 个点位；零外部依赖。
-// CLI --plot/--heatmap 分发（T005/T006）尚未接入前，这些纯函数暂未被非测试代码消费。
-#![allow(dead_code)]
+// CLI --plot/--heatmap 分发在 src/cli.rs 消费（run_plot_mode / run_heatmap_mode）。
 
 use crate::core::CalcError;
 
