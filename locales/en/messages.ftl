@@ -203,6 +203,7 @@ msg-output-steps_no_list = steps mode does not support lists as sub-expressions
 msg-output-steps_no_matrix = steps mode does not support matrices
 msg-output-steps_no_string = steps mode does not support string literals in arithmetic
 msg-output-unknown_function = unknown function '{ $name }' with { $actual } args in steps
+msg-optimize-invalid_interval = invalid minimization interval or tolerance
 msg-polynomial-cannot_eval_scalar = polynomial domain cannot evaluate scalar from: { $node }
 msg-polynomial-expected_poly_result = expected polynomial result from nested call, got: { $node }
 msg-polynomial-exponent_non_negative = polynomial exponent must be non-negative integer

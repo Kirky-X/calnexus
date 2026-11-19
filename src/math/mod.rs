@@ -12,6 +12,7 @@ pub mod complex;
 pub mod egraph;
 pub mod matrix;
 pub mod number_theory;
+pub mod optimize;
 pub mod polynomial;
 pub mod precision;
 pub mod scientific;
