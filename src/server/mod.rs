@@ -10,6 +10,7 @@ mod catalog;
 mod evaluate;
 mod explain;
 mod lang;
+mod latex_convert;
 mod types;
 
 #[cfg(all(feature = "fx", feature = "mcp"))]

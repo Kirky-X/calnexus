@@ -12,7 +12,9 @@ mod steps;
 #[cfg(feature = "cli")]
 pub(crate) use canonical::format_canonical;
 #[cfg(any(feature = "cli", feature = "server"))]
-#[allow(unused_imports)] // server `to_latex` tool（T004）消费
+#[allow(unused_imports)] // 仅 cli 构建中由输出层消费
 pub(crate) use latex::format_latex;
+#[cfg(feature = "server")]
+pub(crate) use latex::format_latex_ast;
 #[cfg(any(feature = "cli", feature = "server"))]
 pub(crate) use steps::generate_steps;
