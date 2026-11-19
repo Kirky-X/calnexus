@@ -79,6 +79,21 @@ pub fn evaluate_with_router(
 
 `AstNode::Compare(CompareOp, Box<AstNode>, Box<AstNode>)` 由 `<`、`<=`、`>`、`>=` 解析得到；`CompareOp` 从 crate 根重新导出。比较节点仅由 `solve_ineq` 域消费，其余域返回域错误。裸 `=` 仅在 `solve`、`solve_system`、`solve_ineq` 参数内合法，解析为内部 `eq(lhs, rhs)` 节点。
 
+### 求解、优化与回归表达式函数
+
+`solve`、`optimize`、`matrix` 与 `statistics` 域新增以下表达式函数：
+
+| 函数 | 结果 | 说明 |
+| ---- | ---- | ---- |
+| `solve(lhs=rhs, var)` | 根向量或复数列表 | ≤4 次精确根，更高次数数值根 |
+| `solve(eq, var, [a,b])` | 数值根向量 | 区间定界 + Newton 精修 |
+| `solve_system([eqs], [vars], [x0])` | JSON `{solution, residual}` | 有限差分 Jacobian + 阻尼 Newton |
+| `solve_ineq(ineq, var)` | JSON `{intervals, roots}` | 支持 `< <= > >=` 比较 |
+| `minimize(f, var, [a,b])` | `[x*, f(x*)]` | Brent 极小化 |
+| `lp(c, A_ub, b_ub)` | JSON `{status, x, objective}` | 两阶段单纯形，Bland 规则 |
+| `lstsq(A, b)` | 解向量 | 需要 `numerical` 特性 |
+| `ols(y, X)` | JSON `{coefficients, r_squared, std_errors}` | 需要 `numerical` 特性 |
+
 ### CalNexus 门面
 
 `CalNexus` 是直接 API 的门面结构体，持有变量上下文，提供 5 个分组访问器：

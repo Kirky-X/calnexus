@@ -79,6 +79,21 @@ pub fn evaluate_with_router(
 
 `AstNode::Compare(CompareOp, Box<AstNode>, Box<AstNode>)` is parsed from `<`, `<=`, `>` and `>=`. `CompareOp` is re-exported at the crate root. Comparison nodes are consumed only by the `solve_ineq` domain; other domains return a domain error. A bare `=` is valid only inside `solve`, `solve_system` and `solve_ineq` arguments, and is parsed as an internal `eq(lhs, rhs)` node.
 
+### Solve, optimization and regression expression functions
+
+The `solve`, `optimize`, `matrix` and `statistics` domains expose these expression functions:
+
+| Function | Result | Notes |
+| -------- | ------ | ----- |
+| `solve(lhs=rhs, var)` | root vector or complex list | exact roots up to degree 4, numeric beyond |
+| `solve(eq, var, [a,b])` | numeric root vector | bracketed interval with Newton refinement |
+| `solve_system([eqs], [vars], [x0])` | JSON `{solution, residual}` | finite-difference Jacobian, damped Newton |
+| `solve_ineq(ineq, var)` | JSON `{intervals, roots}` | supports `< <= > >=` comparisons |
+| `minimize(f, var, [a,b])` | `[x*, f(x*)]` | Brent minimizer |
+| `lp(c, A_ub, b_ub)` | JSON `{status, x, objective}` | two-phase simplex, Bland rule |
+| `lstsq(A, b)` | solution vector | requires `numerical` feature |
+| `ols(y, X)` | JSON `{coefficients, r_squared, std_errors}` | requires `numerical` feature |
+
 ### CalNexus Facade
 
 `CalNexus` is the facade struct of the direct API, holding the variable context and providing 5 group accessors:
