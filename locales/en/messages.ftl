@@ -1,3 +1,4 @@
+msg-assume-unsupported = unsupported assumption syntax
 # CalNexus message catalog (en) — Fluent FTL.
 # Migrated from locales/en.json by specmark change `unify-rust-i18n` (T006).
 # Key mapping: JSON dot keys ("msg.unbound_variable") -> FTL dash ids ("msg-unbound_variable").

@@ -6,6 +6,7 @@
 //! 依赖方向：`math/` → `core/`（仅 types/error），不依赖 `domains/` 或 `api/`。
 
 pub mod arithmetic;
+pub mod assumptions;
 pub mod combinatorics;
 pub mod complex;
 #[cfg(feature = "egraph")]

@@ -1,3 +1,4 @@
+msg-assume-unsupported = 不支持的假设语法
 # CalNexus message catalog (zh) — Fluent FTL.
 # Migrated from locales/zh.json by specmark change `unify-rust-i18n` (T006).
 # Key mapping: JSON dot keys ("msg.unbound_variable") -> FTL dash ids ("msg-unbound_variable").
