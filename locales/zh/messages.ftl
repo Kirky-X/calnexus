@@ -306,6 +306,7 @@ msg-statistics-requires_non_empty_list = { $name }() 需要非空列表
 msg-statistics-requires_scalar_operand = 一元运算需要标量操作数
 msg-statistics-requires_scalar_operands = 二元运算需要标量操作数
 msg-symbolic-sym_matrix_size = 符号矩阵必须为方阵且阶数不超过 3
+msg-symbolic-sym_matrix_singular = 符号矩阵为奇异矩阵
 msg-symbolic-arg_count_1 = { $name }() 需要 1 个参数，得到 { $actual }
 msg-symbolic-bisection_requires_options = bisection 需要选项 [a, b]
 msg-symbolic-brent_requires_options = brent 需要选项 [a, b]

@@ -306,6 +306,7 @@ msg-statistics-requires_non_empty_list = { $name }() requires a non-empty list
 msg-statistics-requires_scalar_operand = unary op requires scalar operand
 msg-statistics-requires_scalar_operands = binary op requires scalar operands
 msg-symbolic-sym_matrix_size = symbolic matrix must be square with order <= 3
+msg-symbolic-sym_matrix_singular = symbolic matrix is singular
 msg-symbolic-arg_count_1 = { $name }() requires exactly 1 argument, got { $actual }
 msg-symbolic-bisection_requires_options = bisection requires options [a, b]
 msg-symbolic-brent_requires_options = brent requires options [a, b]
