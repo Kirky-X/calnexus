@@ -24,6 +24,9 @@ pub struct EvaluateRequest {
     /// 响应语言（BCP-47 标签，缺省/未知回退英文）；仅影响人可读文案，协议字段保持英文。
     #[serde(default)]
     pub lang: Option<String>,
+    /// 符号假设列表（可选，最多 16 条，每条 ≤128 字符）。
+    #[serde(default)]
+    pub assume: Option<Vec<String>>,
 }
 
 /// HTTP/MCP 求值响应（序列化 `{"result","domain","cache"}`）。
@@ -51,11 +54,18 @@ pub enum ServerError {
 impl EvaluateRequest {
     /// 将请求转换为 EvalContext（供 evaluate 函数使用）。
     pub fn to_eval_context(&self) -> EvalContext {
-        EvalContext {
+        let mut ctx = EvalContext {
             vars: self.vars.clone(),
             precision: self.precision,
             ..Default::default()
+        };
+        if let Some(specs) = &self.assume {
+            for spec in specs {
+                // 校验阶段已保证语法合法；此处仅注入，失败则忽略非法项。
+                let _ = ctx.assumptions.insert(spec);
+            }
         }
+        ctx
     }
 
     /// 校验请求安全约束（expr≤4096 / vars≤1024 / 键名≤64 / 非有限值拒绝 / precision≤10000）；违规返回 HTTP 422 `code=UNPROCESSABLE_ENTITY` / MCP `ValidationError`。
@@ -143,6 +153,34 @@ impl EvaluateRequest {
                 ),
             ));
         }
+        if let Some(specs) = &self.assume {
+            if specs.len() > MAX_ASSUMPTIONS {
+                return Err(ApiError::validation(
+                    "assume",
+                    i18n.tf(
+                        "server.validation.assume_too_many",
+                        &[
+                            ("len", &specs.len().to_string()),
+                            ("max", &MAX_ASSUMPTIONS.to_string()),
+                        ],
+                    ),
+                ));
+            }
+            for spec in specs {
+                if spec.len() > MAX_ASSUMPTION_LEN {
+                    return Err(ApiError::validation(
+                        "assume",
+                        i18n.tf(
+                            "server.validation.assume_too_long",
+                            &[
+                                ("len", &spec.len().to_string()),
+                                ("max", &MAX_ASSUMPTION_LEN.to_string()),
+                            ],
+                        ),
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -152,6 +190,10 @@ const MAX_VARS: usize = 1024;
 
 /// `vars` 单个键名最大长度（防止键名注入 / 内存攻击）。
 const MAX_VAR_NAME_LEN: usize = 64;
+
+/// `assume` 最大条数与单条最大长度。
+const MAX_ASSUMPTIONS: usize = 16;
+const MAX_ASSUMPTION_LEN: usize = 128;
 
 /// `expr` 最大长度（防止超长表达式导致 DoS）。
 /// 表达式请求最大字节长度（evaluate 与各 server tool 共用）。
@@ -284,6 +326,7 @@ mod tests {
             vars,
             precision: Some(3),
             lang: None,
+            assume: None,
         };
         let ctx = req.to_eval_context();
         assert_eq!(ctx.vars.get("x"), Some(&5.0));
@@ -453,6 +496,7 @@ mod tests {
             vars: HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         assert!(req.validate().is_ok());
     }
@@ -464,6 +508,7 @@ mod tests {
             vars: HashMap::new(),
             precision: Some(MAX_PRECISION),
             lang: None,
+            assume: None,
         };
         assert!(req.validate().is_ok());
     }
@@ -475,6 +520,7 @@ mod tests {
             vars: HashMap::new(),
             precision: Some(MAX_PRECISION + 1),
             lang: None,
+            assume: None,
         };
         let err = req.validate().unwrap_err();
         // 422 契约（HTTP code=UNPROCESSABLE_ENTITY / MCP ValidationError），field="precision"
@@ -492,6 +538,7 @@ mod tests {
             vars,
             precision: None,
             lang: None,
+            assume: None,
         };
         let err = req.validate().unwrap_err();
         // 422 契约（HTTP code=UNPROCESSABLE_ENTITY / MCP ValidationError），field="vars"
@@ -509,6 +556,7 @@ mod tests {
                 vars,
                 precision: None,
                 lang: None,
+                assume: None,
             };
             let err = req.validate().unwrap_err();
             // 422 契约（HTTP code=UNPROCESSABLE_ENTITY / MCP ValidationError），field="vars"（输入值不合法）
@@ -529,6 +577,7 @@ mod tests {
             vars: HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -544,6 +593,7 @@ mod tests {
             vars: HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -559,6 +609,7 @@ mod tests {
             vars: HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -579,6 +630,7 @@ mod tests {
             vars,
             precision: None,
             lang: None,
+            assume: None,
         };
         let err = req.validate().unwrap_err();
         assert!(
@@ -596,6 +648,7 @@ mod tests {
             vars,
             precision: None,
             lang: None,
+            assume: None,
         };
         assert!(req.validate().is_ok(), "max var name length should pass");
     }
@@ -609,6 +662,7 @@ mod tests {
             vars,
             precision: None,
             lang: None,
+            assume: None,
         };
         let err = req.validate().unwrap_err();
         assert!(

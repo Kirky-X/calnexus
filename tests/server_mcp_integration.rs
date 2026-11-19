@@ -329,3 +329,23 @@ fn test_mcp_tool_lint_findings() {
             .is_some_and(|a| { a.iter().any(|f| f["code"] == "DIV_ZERO_LITERAL") })
     );
 }
+
+#[test]
+fn test_mcp_evaluate_with_assumptions() {
+    let server = build_mcp_server();
+    let result = server
+        .call_tool_internal(
+            "evaluate",
+            Some(json!({"req": {
+                "expr": "simplify(sqrt(x^2))",
+                "assume": ["x > 0"]
+            }})),
+        )
+        .expect("evaluate tool should be registered");
+    assert_ne!(result.is_error, Some(true));
+    let body = extract_result_json(&result);
+    assert_eq!(
+        body["result"], "x",
+        "assumption should simplify sqrt(x^2): {body}"
+    );
+}

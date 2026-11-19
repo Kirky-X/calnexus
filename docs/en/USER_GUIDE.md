@@ -127,6 +127,8 @@ $ calnexus 'gcd(12, 18)'
 
 ### Variable Binding and Implicit Multiplication
 
+`--assume "x > 0"` injects a symbol assumption (repeatable, e.g. `> 0`, `>= 0`, `!= 0`, `is integer`); affects `simplify` only.
+
 `--var name=value` pre-binds variables for the expression (repeatable):
 
 ```bash

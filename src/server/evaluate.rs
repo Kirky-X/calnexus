@@ -248,6 +248,7 @@ mod tests {
             vars: std::collections::HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let result = evaluate_with_timeout(req, Duration::from_secs(5)).await;
         assert!(result.is_ok(), "simple expr should succeed within 5s");
@@ -269,6 +270,7 @@ mod tests {
             vars: std::collections::HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let result = evaluate_with_timeout(req, Duration::ZERO).await;
         assert!(result.is_err());
@@ -288,6 +290,7 @@ mod tests {
             vars: std::collections::HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let result = evaluate_with_timeout(req, Duration::from_millis(1)).await;
         assert!(result.is_err());
@@ -307,6 +310,7 @@ mod tests {
             vars: std::collections::HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let result = evaluate_with_timeout(req, Duration::from_secs(5)).await;
         assert!(result.is_err());
@@ -456,6 +460,7 @@ mod tests {
             vars: std::collections::HashMap::new(),
             precision: None,
             lang: Some("zh".into()),
+            assume: None,
         };
         let err = evaluate_with_timeout(req, Duration::from_secs(5))
             .await
@@ -482,6 +487,7 @@ mod tests {
             vars: std::collections::HashMap::new(),
             precision: None,
             lang: None,
+            assume: None,
         };
         let err = evaluate_with_timeout(req, Duration::from_secs(5))
             .await

@@ -140,7 +140,7 @@ Claude Desktop 的 `claude_desktop_config.json`：
 
 | 工具 | 参数（req 包装） | 返回 |
 |------|------------------|------|
-| `evaluate` | `expr`（必填）、`vars`（可选）、`precision`（可选）、`lang`（可选） | `{result, domain, cache}` |
+| `evaluate` | `expr`（必填）、`vars`（可选）、`precision`（可选）、`lang`（可选）、`assume`（可选，≤16 条符号假设） | `{result, domain, cache}` |
 | `list_functions` | 无（`{"req": {}}`） | 按域分组的函数目录（含 feature 门控域可见性） |
 | `explain` | `expr`、`vars`?、`lang`? | `{v, steps}` 分步推导 |
 | `to_latex` | `expr`、`lang`? | `{v, latex}` |

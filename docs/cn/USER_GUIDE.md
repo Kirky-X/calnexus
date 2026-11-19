@@ -126,6 +126,8 @@ $ calnexus 'gcd(12, 18)'
 
 ### 变量绑定与隐式乘法
 
+`--assume "x > 0"` 注入符号假设（可重复，如 `> 0`、`>= 0`、`!= 0`、`is integer`），仅影响 `simplify`。
+
 `--var name=value` 为表达式预绑定变量（可多次）：
 
 ```bash

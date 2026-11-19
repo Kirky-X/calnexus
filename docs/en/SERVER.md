@@ -140,7 +140,7 @@ Generic stdio client:
 
 | Tool | Args (req-wrapped) | Returns |
 |------|------------------|------|
-| `evaluate` | `expr` (required), `vars` (optional), `precision` (optional), `lang` (optional) | `{result, domain, cache}` |
+| `evaluate` | `expr` (required), `vars` (optional), `precision` (optional), `lang` (optional), `assume` (optional, ≤16 symbol assumptions) | `{result, domain, cache}` |
 | `list_functions` | none (`{"req": {}}`) | Function catalog grouped by domain (including feature-gated domain visibility) |
 | `explain` | `expr`, `vars`?, `lang`? | `{v, steps}` derivation steps |
 | `to_latex` | `expr`, `lang`? | `{v, latex}` |
