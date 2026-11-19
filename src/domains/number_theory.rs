@@ -55,6 +55,7 @@ impl NumberTheoryDomain {
     /// 递归求值 AST 节点，返回 EvalResult。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("number_theory", ast)),
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
@@ -113,6 +114,7 @@ impl NumberTheoryDomain {
     /// 将 AST 求值为 BigInt，支持 `10^18+9` 等大数整数参数。
     fn eval_int(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigInt, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("number_theory", ast)),
             AstNode::Number(n) => f64_to_bigint(*n, "expected integer argument"),
             AstNode::BigNumber(s) => s.parse::<BigInt>().map_err(|_| {
                 CalcError::domain(format!("invalid big number: {}", s)).with_i18n(
@@ -448,6 +450,7 @@ fn evalresult_to_bigint(result: EvalResult, ast: &AstNode) -> Result<BigInt, Cal
 /// 递归检查 AST 是否含数论函数调用。
 fn contains_number_theory_function(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::FunctionCall(name, _) if NUMBER_THEORY_FUNCTIONS.contains(&name.as_str()) => true,
         AstNode::FunctionCall(_, args) => args.iter().any(contains_number_theory_function),
         AstNode::BinaryOp(_, l, r) => {

@@ -75,6 +75,10 @@ pub fn evaluate_with_router(
 - `evaluate_with_router` 允许注入自定义 `DomainRouter`（下游可扩展自定义 `CalculationDomain`）；`evaluate` 绑定进程级默认路由器。
 - 缓存经 `try_get_with` single-flight：并发相同键只真实求值一次；非确定性函数（`now` / `today` / `fx` / `fx_rate`）旁路缓存读写。
 
+### AST 比较节点
+
+`AstNode::Compare(CompareOp, Box<AstNode>, Box<AstNode>)` 由 `<`、`<=`、`>`、`>=` 解析得到；`CompareOp` 从 crate 根重新导出。比较节点仅由 `solve_ineq` 域消费，其余域返回域错误。裸 `=` 仅在 `solve`、`solve_system`、`solve_ineq` 参数内合法，解析为内部 `eq(lhs, rhs)` 节点。
+
 ### CalNexus 门面
 
 `CalNexus` 是直接 API 的门面结构体，持有变量上下文，提供 5 个分组访问器：

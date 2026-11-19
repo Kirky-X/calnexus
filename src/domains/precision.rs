@@ -71,6 +71,7 @@ impl PrecisionDomain {
     /// 递归求值 AST 节点为 `BigRational`。
     fn eval(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigRational, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("precision", ast)),
             AstNode::Number(n) => math_prec::f64_to_rational(*n),
             AstNode::BigNumber(s) => {
                 let big = BigInt::parse_bytes(s.as_bytes(), 10).ok_or_else(|| {
@@ -277,6 +278,7 @@ impl PrecisionDomain {
 /// 递归检查 AST 是否应路由至 PrecisionDomain（含 BigNumber 或 precision()）。
 fn contains_precision(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::BigNumber(_) => true,
         AstNode::FunctionCall(name, args) => {
             if name == "precision" {
@@ -312,6 +314,7 @@ const OTHER_DOMAIN_FUNCTIONS: &[&str] = &[
 /// 递归检查 AST 是否含其他域的专用函数调用。
 fn contains_other_domain_function(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::FunctionCall(name, args) => {
             OTHER_DOMAIN_FUNCTIONS.contains(&name.as_str())
                 || args.iter().any(contains_other_domain_function)

@@ -79,6 +79,9 @@ msg-core-negative_exponent = negative exponent not supported for integers
 msg-core-no_registered_domain = no registered domain supports this expression ({ $expr })
 msg-core-operation_failed = { $detail }: { $value }
 msg-core-parse_empty = expression is empty
+msg-core-parse_bare_eq_outside_solve = bare '=' is only valid in solve/solve_system/solve_ineq arguments
+msg-core-parse_chained_comparison = chained comparison is not supported
+msg-core-parse_empty_comparison_operand = comparison operator has an empty operand
 msg-core-parse_empty_matrix_literal = empty matrix literal
 msg-core-parse_expected_bracket = expected bracket literal, got: { $token }
 msg-core-parse_expected_list_row = expected list row in matrix, got: { $node }
@@ -195,6 +198,7 @@ msg-output-requires_non_negative = { $name } requires non-negative, got { $value
 msg-output-requires_positive = { $name } requires positive, got { $value }
 msg-output-requires_scalar = { $name } requires scalar arguments
 msg-output-steps_no_complex = steps mode does not support complex numbers
+msg-output-steps_no_comparison = steps mode does not support comparison nodes
 msg-output-steps_no_list = steps mode does not support lists as sub-expressions
 msg-output-steps_no_matrix = steps mode does not support matrices
 msg-output-steps_no_string = steps mode does not support string literals in arithmetic

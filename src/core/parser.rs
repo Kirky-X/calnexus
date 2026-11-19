@@ -4,7 +4,7 @@
 //! 表达式解析器：将数学表达式字符串解析为 [`AstNode`]。
 //! 基于 mathexpr crate，附加预处理/转换层与深度、长度限制（DoS 防护）。
 
-use crate::core::types::{AstNode, BinaryOp, CalcError, Span, UnaryOp};
+use crate::core::types::{AstNode, BinaryOp, CalcError, CompareOp, Span, UnaryOp};
 use regex::Regex;
 use std::cell::Cell;
 
@@ -39,6 +39,165 @@ impl Drop for LiteralDepthGuard {
     fn drop(&mut self) {
         LITERAL_PARSE_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
     }
+}
+
+/// 比较 token（预处理内部使用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonToken {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    /// 裸 `=`：仅 solve 族首参合法，转成内部 `eq(lhs, rhs)` 节点。
+    Eq,
+}
+
+/// 定位比较符左右操作数边界：最近的同层 `(`, `[`, `,` 或串首/串尾。
+/// 同一段出现第二个比较符（如 `1 < 2 < 3`）报用法错误。
+fn comparison_segment(chars: &[char], op: usize, len: usize) -> Result<(usize, usize), CalcError> {
+    let chained = || {
+        CalcError::usage("chained comparison is not supported".to_string())
+            .with_span(Span::new(op, op + len))
+            .with_i18n("msg.core.parse_chained_comparison", vec![])
+    };
+
+    let mut left = 0usize;
+    let mut depth = 0i32;
+    let mut j = op;
+    while j > 0 {
+        j -= 1;
+        match chars[j] {
+            ')' | ']' => depth += 1,
+            '(' | '[' if depth > 0 => depth -= 1,
+            '(' | '[' => {
+                left = j + 1;
+                break;
+            }
+            ',' if depth == 0 => {
+                left = j + 1;
+                break;
+            }
+            '<' | '>' | '=' if depth == 0 => return Err(chained()),
+            _ => {}
+        }
+    }
+
+    let mut right = chars.len();
+    let mut depth = 0i32;
+    let mut j = op + len;
+    while j < chars.len() {
+        match chars[j] {
+            '(' | '[' => depth += 1,
+            ')' | ']' if depth > 0 => depth -= 1,
+            ')' | ']' => {
+                right = j;
+                break;
+            }
+            ',' if depth == 0 => {
+                right = j;
+                break;
+            }
+            '<' | '>' | '=' if depth == 0 => return Err(chained()),
+            _ => {}
+        }
+        j += 1;
+    }
+
+    if left >= op || right <= op + len {
+        return Err(CalcError::usage("empty comparison operand".to_string())
+            .with_span(Span::new(op, op + len))
+            .with_i18n("msg.core.parse_empty_comparison_operand", vec![]));
+    }
+    Ok((left, right))
+}
+
+/// 判断裸 `=` 是否处于 solve / solve_system / solve_ineq 的调用参数内。
+/// 向左跳过嵌套括号与括号字面量，沿途任一外层函数属 solve 族即合法。
+fn inside_solve_call(chars: &[char], op: usize) -> bool {
+    let mut found = false;
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut j = op;
+    while j > 0 {
+        j -= 1;
+        match chars[j] {
+            ']' => bracket_depth += 1,
+            '[' if bracket_depth > 0 => bracket_depth -= 1,
+            '[' => {} // 字面量起点：继续向左找外层函数调用
+            ')' => paren_depth += 1,
+            '(' if paren_depth > 0 => paren_depth -= 1,
+            '(' => {
+                let mut start = j;
+                while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
+                    start -= 1;
+                }
+                let name: String = chars[start..j].iter().collect();
+                if matches!(name.as_str(), "solve" | "solve_system" | "solve_ineq") {
+                    found = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// 把 `<`, `<=`, `>`, `>=` 与 solve 族裸 `=` 预处理为占位符变量：
+/// mathexpr 不支持比较语法，占位符在 [`replace_placeholders`] 阶段回填为 Compare / eq 节点。
+/// 须在括号字面量预处理之前运行，保留 `=` 合法性判定所需的外层函数上下文。
+fn preprocess_comparisons(
+    input: &str,
+    placeholders: &mut std::collections::HashMap<String, AstNode>,
+) -> Result<String, CalcError> {
+    let chars: Vec<char> = input.chars().collect();
+    let mut result = String::with_capacity(input.len());
+    let mut i = 0usize;
+    let mut count = 0usize;
+
+    while i < chars.len() {
+        let (token, len) = match chars[i] {
+            '<' if chars.get(i + 1) == Some(&'=') => (ComparisonToken::Le, 2usize),
+            '<' => (ComparisonToken::Lt, 1usize),
+            '>' if chars.get(i + 1) == Some(&'=') => (ComparisonToken::Ge, 2usize),
+            '>' => (ComparisonToken::Gt, 1usize),
+            '=' => (ComparisonToken::Eq, 1usize),
+            _ => {
+                result.push(chars[i]);
+                i += 1;
+                continue;
+            }
+        };
+
+        let (left, right) = comparison_segment(&chars, i, len)?;
+
+        if token == ComparisonToken::Eq && !inside_solve_call(&chars, i) {
+            return Err(CalcError::usage(
+                "bare '=' is only valid in solve/solve_system/solve_ineq arguments".to_string(),
+            )
+            .with_span(Span::new(i, i + len))
+            .with_i18n("msg.core.parse_bare_eq_outside_solve", vec![]));
+        }
+
+        let lhs_src: String = chars[left..i].iter().collect();
+        let rhs_src: String = chars[i + len..right].iter().collect();
+        let lhs = parse(lhs_src.trim())?;
+        let rhs = parse(rhs_src.trim())?;
+        let node = match token {
+            ComparisonToken::Lt => AstNode::Compare(CompareOp::Lt, Box::new(lhs), Box::new(rhs)),
+            ComparisonToken::Le => AstNode::Compare(CompareOp::Le, Box::new(lhs), Box::new(rhs)),
+            ComparisonToken::Gt => AstNode::Compare(CompareOp::Gt, Box::new(lhs), Box::new(rhs)),
+            ComparisonToken::Ge => AstNode::Compare(CompareOp::Ge, Box::new(lhs), Box::new(rhs)),
+            ComparisonToken::Eq => AstNode::FunctionCall("eq".to_string(), vec![lhs, rhs]),
+        };
+
+        let placeholder = format!("__cmp_{}", count);
+        count += 1;
+        placeholders.insert(placeholder.clone(), node);
+        result.push_str(&placeholder);
+        i += len;
+    }
+
+    Ok(result)
 }
 
 /// 解析数学表达式字符串为 [`AstNode`]（预处理后交 mathexpr，再转换为 AstNode）。
@@ -81,11 +240,15 @@ pub fn parse(input: &str) -> Result<AstNode, CalcError> {
         (trimmed.to_string(), Default::default())
     };
 
+    // 比较运算符与 solve 族裸 `=` 预处理：须早于括号字面量，保留 `=` 的上下文判定信息
+    let mut placeholders = placeholders;
+    let without_comparisons = preprocess_comparisons(&without_strings, &mut placeholders)?;
+
     // 括号字面量替换为占位符 `__cb_N`，使矩阵/列表可出现在表达式任意位置
     let (without_brackets, mut placeholders) = if has_bracket {
-        preprocess_brackets(&without_strings, placeholders)?
+        preprocess_brackets(&without_comparisons, placeholders)?
     } else {
-        (without_strings, placeholders)
+        (without_comparisons, placeholders)
     };
 
     // 若整个表达式就是单个括号字面量，直接返回（避免 mathexpr 处理）
@@ -422,6 +585,10 @@ fn replace_placeholders(
             }
         }
         AstNode::BinaryOp(_, l, r) => {
+            replace_placeholders(l, placeholders);
+            replace_placeholders(r, placeholders);
+        }
+        AstNode::Compare(_, l, r) => {
             replace_placeholders(l, placeholders);
             replace_placeholders(r, placeholders);
         }

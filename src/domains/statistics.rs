@@ -80,6 +80,7 @@ impl StatisticsDomain {
     /// 递归求值 AST 节点，返回 EvalResult（支持标量和 JSON）。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("statistics", ast)),
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
             AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
             AstNode::BinaryOp(op, l, r) => {
@@ -607,6 +608,7 @@ impl Default for StatisticsDomain {
 /// 递归检查 AST 是否含统计函数调用。
 fn contains_statistics_function(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::FunctionCall(name, _) if STATISTICS_FUNCTIONS.contains(&name.as_str()) => true,
         AstNode::FunctionCall(_, args) => args.iter().any(contains_statistics_function),
         AstNode::BinaryOp(_, l, r) => {

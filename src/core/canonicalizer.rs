@@ -5,7 +5,7 @@
 //! 不变式：规范化幂等；L1 缓存键用折叠版 `canonicalize`，`canonicalize_no_fold` 仅供展示。
 
 use crate::core::parser::MAX_AST_DEPTH;
-use crate::core::types::{AstNode, BinaryOp, CalcError, CanonicalForm, UnaryOp};
+use crate::core::types::{AstNode, BinaryOp, CalcError, CanonicalForm, CompareOp, UnaryOp};
 use std::cell::Cell;
 use std::cmp::Ordering;
 
@@ -62,6 +62,11 @@ impl AstCanonicalizer {
     ) -> Result<AstNode, CalcError> {
         let _depth = TransformDepthGuard::enter()?;
         match ast {
+            AstNode::Compare(op, l, r) => {
+                let nl = Self::transform_inner(l, fold_constants, fold_unary)?;
+                let nr = Self::transform_inner(r, fold_constants, fold_unary)?;
+                Ok(AstNode::Compare(*op, Box::new(nl), Box::new(nr)))
+            }
             AstNode::Number(n) => {
                 if n.is_nan() || n.is_infinite() {
                     return Err(CalcError::nan_or_inf());
@@ -236,8 +241,24 @@ impl AstCanonicalizer {
     ///
     /// `Add`/`Mul` 先递归展平同运算符子树再排序，使括号结合方式不影响规范串；
     /// 其余运算符保持二元形式（不可交换/结合）。
+    /// 比较运算符的规范串符号。
+    fn cmp_symbol(op: CompareOp) -> &'static str {
+        match op {
+            CompareOp::Lt => "<",
+            CompareOp::Le => "<=",
+            CompareOp::Gt => ">",
+            CompareOp::Ge => ">=",
+        }
+    }
+
     fn serialize(ast: &AstNode) -> String {
         match ast {
+            AstNode::Compare(op, l, r) => format!(
+                "({} {} {})",
+                Self::cmp_symbol(*op),
+                Self::serialize(l),
+                Self::serialize(r)
+            ),
             AstNode::Number(n) => Self::format_number(*n),
             AstNode::BigNumber(s) => s.clone(),
             AstNode::Complex(re, im) => {
@@ -641,6 +662,7 @@ mod tests {
 
     fn ast_depth(ast: &AstNode) -> usize {
         match ast {
+            AstNode::Compare(_, l, r) => 1 + ast_depth(l).max(ast_depth(r)),
             AstNode::Number(_)
             | AstNode::Variable(_)
             | AstNode::Complex(_, _)

@@ -75,6 +75,10 @@ pub fn evaluate_with_router(
 - `evaluate_with_router` allows injecting a custom `DomainRouter` (downstream can extend custom `CalculationDomain`s); `evaluate` binds the process-wide default router.
 - Caching goes through `try_get_with` single-flight: concurrent identical keys are really evaluated once; nondeterministic functions (`now` / `today` / `fx` / `fx_rate`) bypass cache reads and writes.
 
+### AST comparison node
+
+`AstNode::Compare(CompareOp, Box<AstNode>, Box<AstNode>)` is parsed from `<`, `<=`, `>` and `>=`. `CompareOp` is re-exported at the crate root. Comparison nodes are consumed only by the `solve_ineq` domain; other domains return a domain error. A bare `=` is valid only inside `solve`, `solve_system` and `solve_ineq` arguments, and is parsed as an internal `eq(lhs, rhs)` node.
+
 ### CalNexus Facade
 
 `CalNexus` is the facade struct of the direct API, holding the variable context and providing 5 group accessors:

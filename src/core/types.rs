@@ -55,6 +55,8 @@ pub enum AstNode {
     Variable(String),
     /// 二元运算：`lhs op rhs`。
     BinaryOp(BinaryOp, Box<AstNode>, Box<AstNode>),
+    /// 比较运算：`lhs op rhs`（solve_ineq 首参专用，其余域须拒绝）。
+    Compare(CompareOp, Box<AstNode>, Box<AstNode>),
     /// 一元运算：`op expr`。
     UnaryOp(UnaryOp, Box<AstNode>),
     /// 函数调用：`name(args...)`。
@@ -76,6 +78,15 @@ pub enum BinaryOp {
     Div,
     Pow,
     Mod,
+}
+
+/// 比较运算符（solve_ineq 不等式求解；解析层保留，求值层仅求解域消费）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompareOp {
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 /// 一元运算符。

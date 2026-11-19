@@ -79,6 +79,9 @@ msg-core-negative_exponent = 整数不支持负指数
 msg-core-no_registered_domain = 没有注册的域支持此表达式（{ $expr }）
 msg-core-operation_failed = { $detail }: { $value }
 msg-core-parse_empty = 表达式为空
+msg-core-parse_bare_eq_outside_solve = 裸 '=' 仅在 solve/solve_system/solve_ineq 参数内合法
+msg-core-parse_chained_comparison = 不支持链式比较
+msg-core-parse_empty_comparison_operand = 比较运算符的操作数为空
 msg-core-parse_empty_matrix_literal = 空矩阵字面量
 msg-core-parse_expected_bracket = 期望括号字面量，得到: { $token }
 msg-core-parse_expected_list_row = 期望矩阵中的列表行，得到: { $node }
@@ -195,6 +198,7 @@ msg-output-requires_non_negative = { $name } 要求非负数，得到 { $value }
 msg-output-requires_positive = { $name } 要求正数，得到 { $value }
 msg-output-requires_scalar = { $name } 需要标量参数
 msg-output-steps_no_complex = 步骤模式不支持复数
+msg-output-steps_no_comparison = 步骤模式不支持比较节点
 msg-output-steps_no_list = 步骤模式不支持列表作为子表达式
 msg-output-steps_no_matrix = 步骤模式不支持矩阵
 msg-output-steps_no_string = 步骤模式不支持算术运算中的字符串字面量

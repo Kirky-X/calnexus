@@ -38,6 +38,9 @@ impl ArithmeticDomain {
     /// 递归求值 AST 节点。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(CalcError::domain(
+                "comparison is not an arithmetic expression".to_string(),
+            )),
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => resolve_variable(ctx, name),
             AstNode::BinaryOp(op, l, r) => {
@@ -149,6 +152,7 @@ impl Default for ArithmeticDomain {
 /// 检查 AST 是否仅包含算术运算（无科学函数、无未知函数）。
 fn is_arithmetic_only(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::Number(_) | AstNode::Variable(_) => true,
         AstNode::BinaryOp(_, l, r) => is_arithmetic_only(l) && is_arithmetic_only(r),
         AstNode::UnaryOp(_, e) => is_arithmetic_only(e),

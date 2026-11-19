@@ -48,6 +48,7 @@ impl CombinatoricsDomain {
     /// 递归求值 AST 节点，返回 EvalResult。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("combinatorics", ast)),
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
@@ -106,6 +107,7 @@ impl CombinatoricsDomain {
     /// 将 AST 求值为 BigInt（精确整数运算）。
     fn eval_int(&self, ast: &AstNode, ctx: &EvalContext) -> Result<BigInt, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("combinatorics", ast)),
             AstNode::Number(n) => {
                 if n.fract() != 0.0 {
                     return Err(
@@ -381,6 +383,7 @@ fn bigint_to_result(b: BigInt) -> EvalResult {
 /// 递归检查 AST 是否含组合函数调用。
 fn contains_combinatorics_function(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::FunctionCall(name, _) if COMBINATORICS_FUNCTIONS.contains(&name.as_str()) => true,
         AstNode::FunctionCall(_, args) => args.iter().any(contains_combinatorics_function),
         AstNode::BinaryOp(_, l, r) => {

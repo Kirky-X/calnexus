@@ -35,6 +35,10 @@ fn walk(
         return Err(CalcError::depth_exceeded());
     }
     match node {
+        AstNode::Compare(_, _, _) => Err(CalcError::domain(
+            "steps mode does not support comparison nodes".to_string(),
+        )
+        .with_i18n("msg.output.steps_no_comparison", vec![])),
         AstNode::Number(n) => Ok(*n),
         AstNode::BigNumber(s) => parse_bignumber_for_steps(s),
         AstNode::Complex(_, _) => Err(CalcError::domain(

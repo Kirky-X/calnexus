@@ -194,6 +194,7 @@ mod tests {
     /// 检查 AST 是否仅包含算术运算（无科学函数、无未知函数）。
     fn is_arithmetic_only(ast: &AstNode) -> bool {
         match ast {
+            AstNode::Compare(_, _, _) => false,
             AstNode::Number(_) | AstNode::Variable(_) => true,
             AstNode::BinaryOp(_, l, r) => is_arithmetic_only(l) && is_arithmetic_only(r),
             AstNode::UnaryOp(_, e) => is_arithmetic_only(e),

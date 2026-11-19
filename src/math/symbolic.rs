@@ -150,6 +150,13 @@ fn format_number(n: f64) -> String {
 /// 将 [`AstNode`] 转换为 [`SymbolicExpr`]，不支持的节点返回 DomainError。
 pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
     match ast {
+        AstNode::Compare(_, _, _) => Err(CalcError::domain(
+            "comparison nodes are not supported in symbolic expressions".to_string(),
+        )
+        .with_i18n(
+            "msg.symbolic.node_not_supported",
+            vec![("node".to_string(), "Compare".to_string())],
+        )),
         AstNode::Number(n) => Ok(SymbolicExpr::Const(*n)),
         AstNode::BigNumber(s) => {
             let n: f64 = s.parse().map_err(|_| {

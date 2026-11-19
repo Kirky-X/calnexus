@@ -20,7 +20,7 @@ pub use evaluator::{evaluate, evaluate_with_router};
 pub(crate) use parser::MAX_EXPR_LEN;
 pub use parser::parse;
 pub use types::{
-    AstNode, BinaryOp, CalcError, CanonicalForm, ErrorKind, EvalContext, EvalResult,
+    AstNode, BinaryOp, CalcError, CanonicalForm, CompareOp, ErrorKind, EvalContext, EvalResult,
     MAX_FACTORIAL_INPUT, MAX_POW_EXPONENT, MAX_PRECISION, Span, UnaryOp, check_pow_output_size,
 };
 // `--json` 键序重排出口：仅 CLI 与 wasm-api 两条序列化链消费它，

@@ -104,6 +104,7 @@ impl MatrixDomain {
     /// 递归求值 AST 节点，返回标量或矩阵。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<MatrixValue, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("matrix", ast)),
             AstNode::Number(n) => Ok(MatrixValue::Scalar(*n)),
             AstNode::Variable(name) => resolve_variable(ctx, name).map(MatrixValue::Scalar),
             AstNode::Matrix(rows) => self.eval_matrix_literal(rows, ctx),
@@ -611,6 +612,7 @@ fn validate_matrix_dimensions(rows: &[Vec<AstNode>]) -> Result<usize, CalcError>
 /// 递归检查 AST 是否应路由至 MatrixDomain：含 Matrix 节点或矩阵函数调用。
 fn contains_matrix(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::Matrix(_) => true,
         // 认领全集：矩阵函数走 eval_function，lu/qr/eig/svd/solve 走 numerical 短路。
         AstNode::FunctionCall(name, _) if MATRIX_NUMERICAL_FUNCTIONS.contains(&name.as_str()) => {

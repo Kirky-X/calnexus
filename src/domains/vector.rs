@@ -63,6 +63,7 @@ impl VectorDomain {
     /// 递归求值 AST 节点。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(unsupported_node_error("vector", ast)),
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
             AstNode::BigNumber(s) => {
@@ -578,6 +579,7 @@ fn is_list_node(ast: &AstNode) -> bool {
 /// 递归检查 AST 是否含向量函数调用。
 fn contains_vector_function(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::FunctionCall(name, _) if VECTOR_FUNCTIONS.contains(&name.as_str()) => true,
         AstNode::FunctionCall(_, args) => args.iter().any(contains_vector_function),
         AstNode::BinaryOp(_, l, r) => contains_vector_function(l) || contains_vector_function(r),
@@ -595,6 +597,7 @@ fn contains_vector_function(ast: &AstNode) -> bool {
 /// 检查 AST 是否含 List 节点参与的 BinaryOp(Add/Sub/Mul)（向量算术）。
 fn contains_vector_arithmetic(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::BinaryOp(op, l, r) => {
             let is_arith = matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul);
             if is_arith && (is_list_node(l) || is_list_node(r)) {

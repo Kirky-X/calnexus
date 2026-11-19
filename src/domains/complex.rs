@@ -58,6 +58,9 @@ impl ComplexDomain {
     /// 递归求值 AST 节点：abs/arg 返回标量，conj/exp/ln/complex 返回复数。
     fn eval(&self, ast: &AstNode, ctx: &EvalContext) -> Result<ComplexValue, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(CalcError::domain(
+                "comparison is not supported in complex arithmetic".to_string(),
+            )),
             AstNode::Number(n) => Ok(ComplexValue::Scalar(*n)),
             AstNode::Complex(re, im) => Ok(ComplexValue::Complex(Complex64::new(*re, *im))),
             AstNode::Variable(name) => {
@@ -271,6 +274,7 @@ impl ComplexValue {
 /// 递归检查 AST 是否路由至本域：含 Complex 节点或复数专用函数调用。
 fn contains_complex(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::Complex(_, _) => true,
         AstNode::FunctionCall(name, args) => {
             // 复数专用函数：总是路由至 ComplexDomain

@@ -40,7 +40,8 @@ pub use api::{
 };
 pub use core::{
     AstCanonicalizer, AstNode, BinaryOp, CacheKeyGen, CacheManager, CalcError, CalculationDomain,
-    CanonicalForm, DomainRouter, ErrorKind, EvalContext, EvalResult, Span, UnaryOp, parse,
+    CanonicalForm, CompareOp, DomainRouter, ErrorKind, EvalContext, EvalResult, Span, UnaryOp,
+    parse,
 };
 pub use core::{evaluate, evaluate_with_router};
 #[cfg(feature = "fx")]

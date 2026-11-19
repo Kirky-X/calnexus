@@ -42,6 +42,9 @@ impl ScientificDomain {
     /// 递归求值 AST 节点。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<f64, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(CalcError::domain(
+                "comparison is not supported in scientific evaluation".to_string(),
+            )),
             AstNode::Number(n) => Ok(*n),
             AstNode::Variable(name) => resolve_variable(ctx, name),
             AstNode::BinaryOp(op, l, r) => {
@@ -406,6 +409,7 @@ impl Default for ScientificDomain {
 /// 检查 AST 是否包含科学函数或 pi/e 常量。
 fn contains_scientific(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::Number(_) | AstNode::Complex(_, _) | AstNode::BigNumber(_) | AstNode::Str(_) => {
             false
         }

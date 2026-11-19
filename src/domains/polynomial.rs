@@ -59,6 +59,9 @@ impl PolynomialDomain {
     /// 递归求值 AST 节点。
     fn eval_node(&self, ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
         match ast {
+            AstNode::Compare(_, _, _) => Err(CalcError::domain(
+                "comparison is not supported in polynomial evaluation".to_string(),
+            )),
             AstNode::FunctionCall(name, args) => self.eval_function(name, args, ctx),
             AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
             AstNode::Variable(name) => resolve_variable(ctx, name).map(EvalResult::Scalar),
@@ -590,6 +593,7 @@ fn merge_var(a: &str, b: &str) -> Result<String, CalcError> {
 /// 递归检查 AST 是否含多项式函数调用。
 fn contains_polynomial_function(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::FunctionCall(name, _) if POLYNOMIAL_FUNCTIONS.contains(&name.as_str()) => true,
         AstNode::FunctionCall(_, args) => args.iter().any(contains_polynomial_function),
         AstNode::BinaryOp(_, l, r) => {
