@@ -284,3 +284,19 @@ fn snap_j11_json_error() {
 fn snap_j12_json_error_parse() {
     assert_json_error_snapshot("snap_j12_json_error_parse", &["--json", "(2+3"]);
 }
+
+/// `sym_eigvals([[2,1],[1,2]])` → 2×2 特征值根式输出快照。
+#[test]
+fn snap_s01_sym_eigvals_2x2() {
+    let output = calnexus()
+        .arg("sym_eigvals([[2,1],[1,2]])")
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    insta::assert_snapshot!("snap_s01_sym_eigvals_2x2", stdout);
+}

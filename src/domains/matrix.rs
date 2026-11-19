@@ -627,7 +627,12 @@ fn contains_matrix(ast: &AstNode) -> bool {
     match ast {
         AstNode::Compare(_, _, _) => false,
         // optimize 域函数（lp 含矩阵字面量参数）由 OptimizeDomain 接管，优先级更低需让路。
-        AstNode::FunctionCall(name, _) if matches!(name.as_str(), "minimize" | "lp" | "ols") => {
+        AstNode::FunctionCall(name, _)
+            if matches!(
+                name.as_str(),
+                "minimize" | "lp" | "ols" | "sym_det" | "sym_inv" | "sym_eigvals"
+            ) =>
+        {
             false
         }
         AstNode::Matrix(_) => true,

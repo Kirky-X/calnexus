@@ -8,13 +8,22 @@ use crate::core::CalculationDomain;
 use crate::core::{AstNode, CalcError, EvalContext, EvalResult, UnaryOp};
 use crate::domains::common::extract_variable_name;
 use crate::math::symbolic as math_sym;
+use crate::math::symbolic_matrix as math_sym_mat;
 
 // re-export ast_to_symbolic 供测试与其他模块使用。
 pub use crate::math::symbolic::ast_to_symbolic;
 
 /// 符号函数白名单。
-pub(crate) const SYMBOLIC_FUNCTIONS: &[&str] =
-    &["diff", "integrate", "simplify", "limit", "taylor"];
+pub(crate) const SYMBOLIC_FUNCTIONS: &[&str] = &[
+    "diff",
+    "integrate",
+    "simplify",
+    "limit",
+    "taylor",
+    "sym_det",
+    "sym_inv",
+    "sym_eigvals",
+];
 
 // ============================ AstNode ↔ SymbolicExpr 转换 ============================
 // ast_to_symbolic 实现在 math::symbolic，此处 re-export 兼容旧路径。
@@ -87,6 +96,9 @@ impl SymbolicDomain {
             "simplify" => self.eval_simplify(args, ctx),
             "limit" => self.eval_limit(args),
             "taylor" => self.eval_taylor(args),
+            "sym_det" => self.eval_sym_det(args),
+            "sym_inv" => self.eval_sym_inv(args),
+            "sym_eigvals" => self.eval_sym_eigvals(args),
             _ => unreachable!("checked above"),
         }
     }
@@ -190,6 +202,62 @@ impl SymbolicDomain {
         }
         let order = order_f as u32;
         math_sym::taylor(&expr, &var, order)
+    }
+
+    /// 从 Matrix 字面量构建符号矩阵。
+    fn to_sym_matrix(&self, ast: &AstNode) -> Result<math_sym_mat::SymMatrix, CalcError> {
+        let AstNode::Matrix(rows) = ast else {
+            return Err(CalcError::domain(
+                "symbolic matrix function expects a matrix literal".to_string(),
+            )
+            .with_i18n("msg.symbolic.sym_matrix_size", vec![]));
+        };
+        rows.iter()
+            .map(|row| {
+                row.iter()
+                    .map(ast_to_symbolic)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    fn eval_sym_det(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(
+                "sym_det expects exactly 1 argument".to_string(),
+            ));
+        }
+        let m = self.to_sym_matrix(&args[0])?;
+        let det = math_sym_mat::sym_det(&m)?;
+        Ok(EvalResult::Symbolic(math_sym::symbolic_to_string(&det)))
+    }
+
+    fn eval_sym_inv(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(
+                "sym_inv expects exactly 1 argument".to_string(),
+            ));
+        }
+        let m = self.to_sym_matrix(&args[0])?;
+        let inv = math_sym_mat::sym_inv(&m)?;
+        let rendered: Vec<String> = inv
+            .iter()
+            .map(|row| {
+                let cells: Vec<String> = row.iter().map(math_sym::symbolic_to_string).collect();
+                format!("[{}]", cells.join(","))
+            })
+            .collect();
+        Ok(EvalResult::Symbolic(format!("[{}]", rendered.join(","))))
+    }
+
+    fn eval_sym_eigvals(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 1 {
+            return Err(CalcError::domain(
+                "sym_eigvals expects exactly 1 argument".to_string(),
+            ));
+        }
+        let m = self.to_sym_matrix(&args[0])?;
+        math_sym_mat::sym_eigvals(&m)
     }
 }
 

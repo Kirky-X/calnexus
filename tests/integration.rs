@@ -1516,3 +1516,16 @@ fn test_solve_domain_routing_and_roots() {
     roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
     assert_eq!(roots, vec![-2.0, 2.0]);
 }
+
+#[test]
+fn test_sym_det_symbolic_through_cli() {
+    let ast = parse("sym_det([[a,b],[c,d]])").unwrap();
+    let router = default_router();
+    let domain = router.route(&ast).unwrap();
+    assert_eq!(domain.domain_name(), "symbolic");
+    let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+    let EvalResult::Symbolic(text) = result else {
+        panic!("expected symbolic determinant");
+    };
+    assert_eq!(text, "a*d-b*c");
+}
