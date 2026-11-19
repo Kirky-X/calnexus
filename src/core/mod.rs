@@ -16,6 +16,7 @@ pub use cache::{CacheKeyGen, CacheManager};
 pub use canonicalizer::AstCanonicalizer;
 pub use domain::{CalculationDomain, DomainRouter};
 pub use evaluator::{evaluate, evaluate_with_router};
+pub(crate) use parser::MAX_AST_DEPTH;
 #[cfg(feature = "cli")]
 pub(crate) use parser::MAX_EXPR_LEN;
 pub use parser::parse;
