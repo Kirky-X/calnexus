@@ -220,9 +220,9 @@ fn mcp_tool_catalog_and_evaluate() {
     let server = calnexus::build_mcp_server();
     // 基础工具 2 个；fx feature 追加 2 个
     #[cfg(feature = "fx")]
-    assert_eq!(server.tool_count(), 7);
+    assert_eq!(server.tool_count(), 8);
     #[cfg(not(feature = "fx"))]
-    assert_eq!(server.tool_count(), 5);
+    assert_eq!(server.tool_count(), 6);
 
     let names: Vec<String> = server
         .get_all_tools()

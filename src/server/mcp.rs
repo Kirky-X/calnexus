@@ -110,7 +110,7 @@ mod tests {
     fn test_forge_evaluate_registers_and_calls() {
         let server = build_mcp_server();
         // evaluate / list_functions / explain + fx 下 fx_budget / fx_pricing
-        let expected_count = if cfg!(feature = "fx") { 7 } else { 5 };
+        let expected_count = if cfg!(feature = "fx") { 8 } else { 6 };
         assert_eq!(
             server.tool_count(),
             expected_count,

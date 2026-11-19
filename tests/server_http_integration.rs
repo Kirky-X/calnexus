@@ -553,3 +553,14 @@ async fn test_http_verify_route() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["equal"], true);
 }
+
+#[tokio::test]
+async fn test_http_lint_route() {
+    let (status, body) = post_to("/api/v1/lint", json!({"expr": "1/0"})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["findings"]
+            .as_array()
+            .is_some_and(|a| { a.iter().any(|f| f["code"] == "DIV_ZERO_LITERAL") })
+    );
+}

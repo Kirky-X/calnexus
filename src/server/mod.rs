@@ -11,6 +11,7 @@ mod evaluate;
 mod explain;
 mod lang;
 mod latex_convert;
+mod lint;
 mod types;
 mod verify;
 

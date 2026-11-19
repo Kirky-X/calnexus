@@ -12,6 +12,7 @@ use super::ServerError;
 use super::evaluate::{REQUEST_TIMEOUT_SECS, evaluate_with_timeout};
 use super::explain::{ExplainRequest, explain_with_timeout};
 use super::latex_convert::{ToLatexRequest, to_latex_with_timeout};
+use super::lint::{LintRequest, lint_with_timeout};
 use super::verify::{VerifyRequest, verify_with_timeout};
 use crate::i18n::I18n;
 use axum::Router;
@@ -58,7 +59,8 @@ fn api_router() -> Router {
         .route("/api/v1/list_functions", post(list_functions_http_handler))
         .route("/api/v1/explain", post(explain_http_handler))
         .route("/api/v1/to_latex", post(to_latex_http_handler))
-        .route("/api/v1/verify", post(verify_http_handler));
+        .route("/api/v1/verify", post(verify_http_handler))
+        .route("/api/v1/lint", post(lint_http_handler));
 
     // fx 场景工具路由（与 fx_tools 模块同门控：fx + mcp）
     #[cfg(all(feature = "fx", feature = "mcp"))]
@@ -160,6 +162,16 @@ async fn list_functions_http_handler(
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
     match super::catalog::list_functions_inner().await {
+        Ok(resp) => axum::Json(resp).into_response(),
+        Err(api_err) => api_err.into_response(),
+    }
+}
+
+async fn lint_http_handler(
+    axum::extract::Json(req): axum::extract::Json<LintRequest>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match lint_with_timeout(req, Duration::from_secs(REQUEST_TIMEOUT_SECS)).await {
         Ok(resp) => axum::Json(resp).into_response(),
         Err(api_err) => api_err.into_response(),
     }

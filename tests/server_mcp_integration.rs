@@ -314,3 +314,18 @@ fn test_mcp_tool_verify_returns_comparison() {
     assert_eq!(body["equal"], false);
     assert_eq!(body["counterexample"]["x"], 2.0);
 }
+
+#[test]
+fn test_mcp_tool_lint_findings() {
+    let server = build_mcp_server();
+    let result = server
+        .call_tool_internal("lint", Some(json!({"req": {"expr": "1/0"}})))
+        .expect("lint tool should be registered");
+    assert_ne!(result.is_error, Some(true));
+    let body = extract_result_json(&result);
+    assert!(
+        body["findings"]
+            .as_array()
+            .is_some_and(|a| { a.iter().any(|f| f["code"] == "DIV_ZERO_LITERAL") })
+    );
+}
