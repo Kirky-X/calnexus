@@ -45,7 +45,7 @@ pub fn generate_number_theory(rng: &mut SplitMix64, level: u8) -> NumberTheoryPu
     let mut steps = Vec::new();
     let mut divisor = 2u64;
     while divisor < p.min(q) && steps.len() < 8 {
-        if n % divisor == 0 {
+        if n.is_multiple_of(divisor) {
             break;
         }
         steps.push(format!("{divisor} does not divide {n}"));

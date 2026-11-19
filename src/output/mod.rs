@@ -18,5 +18,5 @@ pub(crate) use canonical::format_canonical;
 pub(crate) use latex::format_latex;
 #[cfg(feature = "server")]
 pub(crate) use latex::format_latex_ast;
-#[cfg(any(feature = "cli", feature = "server"))]
+#[cfg(any(feature = "cli", feature = "server", feature = "puzzle"))]
 pub(crate) use steps::generate_steps;
