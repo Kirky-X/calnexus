@@ -242,6 +242,10 @@ msg-precision-precision_must_be_positive_int = precision N 必须是正整数，
 msg-precision-precision_must_be_top_level = precision() 必须在表达式顶层
 msg-precision-precision_out_of_range = precision N 超出范围: { $value }
 msg-precision-requires_integer_operand = { $ctx } 需要整数操作数，得到 { $value }
+msg-solve-bad_arity = solve 需要 2、3 或 4 个参数
+msg-solve-bad_interval_arg = 求解区间参数无效
+msg-solve-first_arg_not_equation = 首参必须是等式（lhs = rhs）
+msg-solve-bad_variable = solve 变量必须是变量名
 msg-solve-identity_infinite_roots = 恒等式有无穷多解
 msg-solve-invalid_interval = 求解区间无效
 msg-solve-no_bracket_root = 给定区间内没有变号区间，无法定界求根

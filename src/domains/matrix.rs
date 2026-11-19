@@ -615,8 +615,15 @@ fn contains_matrix(ast: &AstNode) -> bool {
         AstNode::Compare(_, _, _) => false,
         AstNode::Matrix(_) => true,
         // 认领全集：矩阵函数走 eval_function，lu/qr/eig/svd/solve 走 numerical 短路。
-        AstNode::FunctionCall(name, _) if MATRIX_NUMERICAL_FUNCTIONS.contains(&name.as_str()) => {
-            true
+        // `solve` 仅认领线性方程组形态 solve(A, b)：首参为矩阵/列表字面量；
+        // 等式形态 solve(lhs = rhs, var) 由 SolveDomain 接管（其 priority 更低，需此处让路）。
+        AstNode::FunctionCall(name, args)
+            if MATRIX_NUMERICAL_FUNCTIONS.contains(&name.as_str()) =>
+        {
+            name != "solve"
+                || args
+                    .first()
+                    .is_some_and(|a| matches!(a, AstNode::Matrix(_)))
         }
         AstNode::FunctionCall(_, args) => args.iter().any(contains_matrix),
         AstNode::BinaryOp(_, l, r) => contains_matrix(l) || contains_matrix(r),

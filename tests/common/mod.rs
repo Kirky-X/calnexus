@@ -7,8 +7,8 @@
 use assert_cmd::Command;
 use calnexus::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, DomainRouter, MatrixDomain,
-    NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, StatisticsDomain,
-    SymbolicDomain, VectorDomain,
+    NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, SolveDomain,
+    StatisticsDomain, SymbolicDomain, VectorDomain,
 };
 
 /// 构建 calnexus CLI Command（cargo-bin）。
@@ -21,7 +21,7 @@ pub fn calnexus_cli() -> Command {
     cmd
 }
 
-/// 构建默认路由器：注册全部 11 个域（按优先级降序注册）。
+/// 构建默认路由器：注册全部核心域（按优先级降序注册）。
 pub fn default_router() -> DomainRouter {
     let mut router = DomainRouter::new();
     router.register(Box::new(PrecisionDomain));
@@ -34,6 +34,7 @@ pub fn default_router() -> DomainRouter {
     router.register(Box::new(PolynomialDomain));
     router.register(Box::new(ScientificDomain));
     router.register(Box::new(StatisticsDomain));
+    router.register(Box::new(SolveDomain));
     router.register(Box::new(ArithmeticDomain));
     router
 }

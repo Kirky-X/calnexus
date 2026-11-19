@@ -242,6 +242,10 @@ msg-precision-precision_must_be_positive_int = precision N must be a positive in
 msg-precision-precision_must_be_top_level = precision() must be at expression top level
 msg-precision-precision_out_of_range = precision N out of range: { $value }
 msg-precision-requires_integer_operand = { $ctx } requires integer operand, got { $value }
+msg-solve-bad_arity = solve expects 2, 3 or 4 arguments
+msg-solve-bad_interval_arg = invalid solve interval argument
+msg-solve-first_arg_not_equation = first argument must be an equation (lhs = rhs)
+msg-solve-bad_variable = solve variable must be a variable name
 msg-solve-no_bracket_root = no root bracket found in the given interval
 msg-solve-invalid_interval = invalid solve interval
 msg-solve-identity_infinite_roots = equation is an identity with infinite roots

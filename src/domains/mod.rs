@@ -19,6 +19,7 @@ mod numerical;
 mod polynomial;
 mod precision;
 mod scientific;
+mod solve;
 mod statistics;
 mod symbolic;
 #[cfg(feature = "time")]
@@ -42,6 +43,7 @@ pub(crate) use matrix::NUMERICAL_FUNCTIONS;
 pub(crate) use number_theory::NUMBER_THEORY_FUNCTIONS;
 pub(crate) use polynomial::POLYNOMIAL_FUNCTIONS;
 pub(crate) use scientific::SCIENTIFIC_FUNCTIONS;
+pub(crate) use solve::SOLVE_FUNCTIONS;
 pub(crate) use statistics::STATISTICS_FUNCTIONS;
 pub(crate) use symbolic::SYMBOLIC_FUNCTIONS;
 
@@ -68,6 +70,7 @@ pub use precision::PrecisionDomain;
 #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
 pub use precision::format_bigrational;
 pub use scientific::ScientificDomain;
+pub use solve::SolveDomain;
 pub use statistics::StatisticsDomain;
 pub use symbolic::SymbolicDomain;
 #[cfg(feature = "time")]

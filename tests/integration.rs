@@ -1500,3 +1500,19 @@ fn test_symbolic_domain_accessible_via_domains() {
     }
     assert_eq!(domain, "symbolic");
 }
+
+// ===== solve 域路由（change: solve-optimize-domains T005） =====
+
+#[test]
+fn test_solve_domain_routing_and_roots() {
+    let ast = parse("solve(x^2-4=0, x)").unwrap();
+    let router = default_router();
+    let domain = router.route(&ast).unwrap();
+    assert_eq!(domain.domain_name(), "solve");
+    let result = domain.evaluate(&ast, &EvalContext::new()).unwrap();
+    let EvalResult::Vector(mut roots) = result else {
+        panic!("expected vector roots");
+    };
+    roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(roots, vec![-2.0, 2.0]);
+}

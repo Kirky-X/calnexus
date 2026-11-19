@@ -1613,3 +1613,39 @@ fn numeric_frontier_functions_expose_all_output_surfaces() {
     assert_eq!(obj["domain"], "scientific", "实际: {text}");
     assert_eq!(obj["result"].as_f64(), Some(1.0), "实际: {text}");
 }
+
+// ===== solve 域方程求解（change: solve-optimize-domains T005） =====
+
+#[test]
+fn test_solve_equation_cli_output() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let out = cmd
+        .arg("solve(x^2-4=0, x)")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(out).unwrap();
+    assert!(
+        stdout.contains("-2"),
+        "output should contain root -2: {stdout}"
+    );
+    assert!(
+        stdout.contains("2"),
+        "output should contain root 2: {stdout}"
+    );
+}
+
+#[test]
+fn test_solve_equation_json_domain() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    cmd.arg("--json")
+        .arg("solve(x^2-4=0, x)")
+        .assert()
+        .success()
+        .stdout(
+            r#"{"cache":"miss","domain":"solve","result":"[2,-2]","v":1}
+"#,
+        );
+}
