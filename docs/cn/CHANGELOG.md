@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 新增四个 server 工具，HTTP 与 MCP 双协议可用：`explain`（分步推导）、`to_latex`（表达式转 LaTeX）、`verify`（恒等判定与数值反例）、`lint`（表达式静态诊断）。每个工具均含请求校验（共用 4096 字符上限）、30 秒超时与本地化错误映射。
+
 ## [0.2.0] - 2026-11-14
 
 自研依赖 rc → 稳定定版，正式发布。公共 API 与 `--json` 契约（`v:1`）相对 0.2.0-rc.4 无变化。

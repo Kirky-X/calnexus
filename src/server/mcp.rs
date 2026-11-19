@@ -147,4 +147,12 @@ mod tests {
             assert_ne!(result.is_error, Some(true), "{tool} should succeed");
         }
     }
+    #[test]
+    fn test_forge_lint_tool_registers_and_calls() {
+        let server = build_mcp_server();
+        let result = server
+            .call_tool_internal("lint", Some(serde_json::json!({"req":{"expr":"1/0"}})))
+            .expect("lint tool should be registered");
+        assert_ne!(result.is_error, Some(true));
+    }
 }

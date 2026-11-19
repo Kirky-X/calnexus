@@ -39,6 +39,10 @@ calnexus --serve-http --bind 0.0.0.0:8080
 |------|------|------|
 | `/api/v1/evaluate` | POST | Expression evaluation (JSON request/response) |
 | `/api/v1/list_functions` | POST | Runtime function catalog (including feature-gated domain visibility) |
+| `/api/v1/explain` | POST | Step-by-step derivation of an expression |
+| `/api/v1/to_latex` | POST | Convert an expression to LaTeX |
+| `/api/v1/verify` | POST | Verify expression equivalence, with numeric counterexample |
+| `/api/v1/lint` | POST | Static expression diagnostics |
 | `/api/v1/fx_budget` | POST | Convert a study-abroad budget into the home currency with a ±3% FX risk band (requires `fx` + `mcp` features) |
 | `/api/v1/fx_pricing` | POST | Compute a safe selling price per currency from cost and target margin (requires `fx` + `mcp` features) |
 | `/health` | GET | Combined health check (includes L1 cache status) |
@@ -138,6 +142,10 @@ Generic stdio client:
 |------|------------------|------|
 | `evaluate` | `expr` (required), `vars` (optional), `precision` (optional), `lang` (optional) | `{result, domain, cache}` |
 | `list_functions` | none (`{"req": {}}`) | Function catalog grouped by domain (including feature-gated domain visibility) |
+| `explain` | `expr`, `vars`?, `lang`? | `{v, steps}` derivation steps |
+| `to_latex` | `expr`, `lang`? | `{v, latex}` |
+| `verify` | `lhs`, `rhs`, `var`?, `sample_points`?, `lang`? | `{v, equal, counterexample?}` |
+| `lint` | `expr`, `lang`? | `{v, findings}` with stable diagnostic codes |
 | `fx_budget` * | `tuition`, `tuition_currency`, `home_currency`, `living_cost_monthly`?, `duration_years` | Home-currency cost + ±3% risk band + `rate_date` + `rate_source` |
 | `fx_pricing` * | `cost_cny`, `target_profit_rate`, `currencies`, `platform_rate`?, `safety_buffer`? | Suggested selling price per currency + `rate_date` + `rate_source` |
 

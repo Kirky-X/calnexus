@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Four new server tools available on both HTTP and MCP: `explain` (step-by-step derivation), `to_latex` (expression-to-LaTeX bridge), `verify` (equivalence check with numeric counterexample), and `lint` (static expression diagnostics). Each has a request `validate()` with the shared 4096-char expression limit, a 30-second timeout, and i18n-aware error mapping.
+
 ## [0.2.0] - 2026-11-14
 
 In-house dependencies moved from rc to stable pinning; official release. The public API and the `--json` contract (`v:1`) are unchanged relative to 0.2.0-rc.4.

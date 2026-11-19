@@ -39,6 +39,10 @@ calnexus --serve-http --bind 0.0.0.0:8080
 |------|------|------|
 | `/api/v1/evaluate` | POST | 表达式求值（JSON 请求/响应） |
 | `/api/v1/list_functions` | POST | 运行时函数目录（含 feature 门控域可见性） |
+| `/api/v1/explain` | POST | 表达式分步推导 |
+| `/api/v1/to_latex` | POST | 表达式转 LaTeX |
+| `/api/v1/verify` | POST | 表达式恒等判定（含数值反例） |
+| `/api/v1/lint` | POST | 表达式静态检查诊断 |
 | `/api/v1/fx_budget` | POST | 留学预算换算本币并给出 ±3% 汇率风险区间（需 `fx` + `mcp` feature） |
 | `/api/v1/fx_pricing` | POST | 按成本与目标利润率计算各币种安全售价（需 `fx` + `mcp` feature） |
 | `/health` | GET | 综合健康检查（含 L1 缓存状态） |
@@ -138,6 +142,10 @@ Claude Desktop 的 `claude_desktop_config.json`：
 |------|------------------|------|
 | `evaluate` | `expr`（必填）、`vars`（可选）、`precision`（可选）、`lang`（可选） | `{result, domain, cache}` |
 | `list_functions` | 无（`{"req": {}}`） | 按域分组的函数目录（含 feature 门控域可见性） |
+| `explain` | `expr`、`vars`?、`lang`? | `{v, steps}` 分步推导 |
+| `to_latex` | `expr`、`lang`? | `{v, latex}` |
+| `verify` | `lhs`、`rhs`、`var`?、`sample_points`?、`lang`? | `{v, equal, counterexample?}` |
+| `lint` | `expr`、`lang`? | `{v, findings}` 含稳定诊断码 |
 | `fx_budget` * | `tuition`、`tuition_currency`、`home_currency`、`living_cost_monthly`?、`duration_years` | 本币费用 + ±3% 风险区间 + `rate_date` + `rate_source` |
 | `fx_pricing` * | `cost_cny`、`target_profit_rate`、`currencies`、`platform_rate`?、`safety_buffer`? | 各币种建议售价 + `rate_date` + `rate_source` |
 
