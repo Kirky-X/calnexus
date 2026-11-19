@@ -12,6 +12,7 @@ mod explain;
 mod lang;
 mod latex_convert;
 mod types;
+mod verify;
 
 #[cfg(all(feature = "fx", feature = "mcp"))]
 mod fx_tools;
