@@ -284,6 +284,7 @@ msg-solvers-newton_not_converged = newton_raphson: did not converge after { $max
 msg-solvers-secant_not_converged = secant: did not converge after { $max_iter } iterations
 msg-solvers-secant_zero_denominator = secant: zero denominator at x={ $x }
 msg-solvers-simpson_depth = adaptive_simpson: maximum recursion depth reached
+msg-statistics-ols_dimension_mismatch = ols: y length must equal X row count
 msg-statistics-arg_count = { $name }() requires { $expected } arguments, got { $actual }
 msg-statistics-expected_scalar_argument = expected scalar argument
 msg-statistics-factorial_not_supported = factorial not supported in statistics domain

@@ -1100,3 +1100,94 @@ mod tests {
         assert!(multiple_regression(&[], &[]).is_err());
     }
 }
+
+/// 普通最小二乘回归：`y = Xβ + ε`，返回系数、R² 与系数标准误。
+///
+/// 标准误由 `(XᵀX)⁻¹ σ²` 对角开方得到；`σ² = RSS/(n-p)`。
+/// 依赖 numerical feature 的 lstsq / solve，未启用时由域层返回指引错误。
+#[cfg(feature = "numerical")]
+pub fn ols(y: &[f64], x: &[Vec<f64>]) -> Result<serde_json::Value, CalcError> {
+    use nalgebra::{DMatrix, DVector};
+
+    if x.is_empty() || y.len() != x[0].len() || x.iter().any(|col| col.len() != y.len()) {
+        return Err(
+            CalcError::domain("ols: y length must equal X row count".to_string())
+                .with_i18n("msg.statistics.ols_dimension_mismatch", vec![]),
+        );
+    }
+    let n = y.len();
+    let p = x.len();
+    if n <= p {
+        return Err(
+            CalcError::domain("ols: need more observations than parameters".to_string())
+                .with_i18n("msg.statistics.ols_dimension_mismatch", vec![]),
+        );
+    }
+
+    let design = DMatrix::from_fn(n, p, |i, j| x[j][i]);
+    let response = DVector::from_vec(y.to_vec());
+    let coeffs = crate::math::numerical::lstsq(&design, &response)?;
+    let fitted = &design * &coeffs;
+
+    let mean_y = y.iter().sum::<f64>() / n as f64;
+    let rss: f64 = y
+        .iter()
+        .zip(fitted.iter())
+        .map(|(actual, &pred)| (actual - pred) * (actual - pred))
+        .sum();
+    let tss: f64 = y.iter().map(|v| (v - mean_y) * (v - mean_y)).sum::<f64>();
+    let r_squared = if tss == 0.0 { 1.0 } else { 1.0 - rss / tss };
+    let sigma_squared = rss / (n - p) as f64;
+
+    let xtx = design.transpose() * &design;
+    let mut std_errors = Vec::with_capacity(p);
+    for j in 0..p {
+        let mut unit = DVector::zeros(p);
+        unit[j] = 1.0;
+        let inv_col = crate::math::numerical::solve(&xtx, &unit)?;
+        let variance = sigma_squared * inv_col[j];
+        std_errors.push(if variance > 0.0 { variance.sqrt() } else { 0.0 });
+    }
+
+    Ok(serde_json::json!({
+        "coefficients": coeffs.iter().copied().collect::<Vec<_>>(),
+        "r_squared": r_squared,
+        "std_errors": std_errors,
+    }))
+}
+
+#[cfg(all(test, feature = "numerical"))]
+mod ols_tests {
+    use super::*;
+
+    #[test]
+    fn test_ols_exact_linear_data() {
+        let y = [1.0, 2.0, 3.0, 4.0];
+        let x = [vec![1.0; 4], vec![1.0, 2.0, 3.0, 4.0]];
+        let got = ols(&y, &x).unwrap();
+        assert!((got["r_squared"].as_f64().unwrap() - 1.0).abs() < 1e-12);
+        let coefs = got["coefficients"].as_array().unwrap();
+        assert!((coefs[0].as_f64().unwrap()).abs() < 1e-9);
+        assert!((coefs[1].as_f64().unwrap() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_ols_noisy_data_positive_std_errors() {
+        let y = [1.1, 1.9, 3.2, 3.8, 5.1];
+        let x = [vec![1.0; 5], vec![1.0, 2.0, 3.0, 4.0, 5.0]];
+        let got = ols(&y, &x).unwrap();
+        let errors = got["std_errors"].as_array().unwrap();
+        assert!(
+            errors
+                .iter()
+                .all(|v| v.as_f64().unwrap() > 0.0 && v.as_f64().unwrap().is_finite())
+        );
+        let coefs = got["coefficients"].as_array().unwrap();
+        assert!((coefs[1].as_f64().unwrap() - 1.0).abs() < 0.2);
+    }
+
+    #[test]
+    fn test_ols_dimension_mismatch() {
+        assert!(ols(&[1.0, 2.0], &[vec![1.0]]).is_err());
+    }
+}
