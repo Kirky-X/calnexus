@@ -154,7 +154,8 @@ const MAX_VARS: usize = 1024;
 const MAX_VAR_NAME_LEN: usize = 64;
 
 /// `expr` 最大长度（防止超长表达式导致 DoS）。
-const MAX_EXPR_LEN: usize = 4096;
+/// 表达式请求最大字节长度（evaluate 与各 server tool 共用）。
+pub const MAX_EXPR_LEN: usize = 4096;
 
 impl EvaluateResponse {
     /// 从 evaluate 返回值构造响应；BigRational + `fmt_prec` 时格式化为十进制字符串。

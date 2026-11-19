@@ -85,6 +85,56 @@ fn walk(
             }
             Ok(result)
         }
+        // 符号函数：步骤即符号结果本身，不要求实参可数值求值。
+        AstNode::FunctionCall(name, args)
+            if matches!(name.as_str(), "diff" | "integrate" | "simplify")
+                && args.len() >= (if name == "simplify" { 1 } else { 2 }) =>
+        {
+            use crate::math::symbolic::{
+                ast_to_symbolic, diff as symbolic_diff, integrate as symbolic_integrate,
+                simplify as symbolic_simplify, symbolic_to_string,
+            };
+            let expr = ast_to_symbolic(&args[0])?;
+            let result = match name.as_str() {
+                "diff" => {
+                    let AstNode::Variable(var) = &args[1] else {
+                        return Err(CalcError::domain(
+                            "diff variable must be a name".to_string(),
+                        ));
+                    };
+                    symbolic_diff(&expr, var)
+                }
+                "integrate" => {
+                    let AstNode::Variable(var) = &args[1] else {
+                        return Err(CalcError::domain(
+                            "integrate variable must be a name".to_string(),
+                        ));
+                    };
+                    symbolic_integrate(&expr, var)?
+                }
+                _ => symbolic_simplify(&expr),
+            };
+            let args_src: Vec<String> = args
+                .iter()
+                .map(|arg| match arg {
+                    AstNode::Variable(name) => name.clone(),
+                    AstNode::Number(v) => format_value(*v),
+                    _ => "expr".to_string(),
+                })
+                .collect();
+            steps.push(format!(
+                "{}({})={}",
+                name,
+                args_src.join(","),
+                symbolic_to_string(&result)
+            ));
+            // 符号结果在给定变量绑定下的数值（供父节点继续计算）。
+            let mut env = std::collections::HashMap::new();
+            for (key, value) in &ctx.vars {
+                env.insert(key.clone(), *value);
+            }
+            Ok(crate::math::symbolic::eval_symbolic(&result, &env).unwrap_or(0.0))
+        }
         AstNode::FunctionCall(name, args) => {
             let mut arg_values = Vec::with_capacity(args.len());
             for arg in args {

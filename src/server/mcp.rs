@@ -109,8 +109,8 @@ mod tests {
     #[test]
     fn test_forge_evaluate_registers_and_calls() {
         let server = build_mcp_server();
-        // fx feature 下 4 个 tool（evaluate/list_functions/fx_budget/fx_pricing），否则 2 个
-        let expected_count = if cfg!(feature = "fx") { 4 } else { 2 };
+        // evaluate / list_functions / explain + fx 下 fx_budget / fx_pricing
+        let expected_count = if cfg!(feature = "fx") { 5 } else { 3 };
         assert_eq!(
             server.tool_count(),
             expected_count,

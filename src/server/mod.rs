@@ -8,6 +8,7 @@
 mod cache;
 mod catalog;
 mod evaluate;
+mod explain;
 mod lang;
 mod types;
 

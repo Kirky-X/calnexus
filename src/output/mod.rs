@@ -11,7 +11,8 @@ mod steps;
 
 #[cfg(feature = "cli")]
 pub(crate) use canonical::format_canonical;
-#[cfg(feature = "cli")]
+#[cfg(any(feature = "cli", feature = "server"))]
+#[allow(unused_imports)] // server `to_latex` tool（T004）消费
 pub(crate) use latex::format_latex;
-#[cfg(feature = "cli")]
+#[cfg(any(feature = "cli", feature = "server"))]
 pub(crate) use steps::generate_steps;
