@@ -315,6 +315,61 @@ pub fn solve_equation(
     )
 }
 
+/// 中心差分数值导数：与 `domains::numerical::derivative` 同算法，
+/// 置于 math 层以避免 `math/` 反向依赖 `domains/`（分层约束）。
+fn numeric_derivative(f: impl Fn(f64) -> f64, x: f64) -> f64 {
+    let h = 1e-6 * (1.0 + x.abs());
+    (f(x + h) - f(x - h)) / (2.0 * h)
+}
+
+/// 3 参形式 `solve(f(x)=0, x, a, b)`：扫描定界 + 二分，中心差分导数做 Newton 加速。
+///
+/// Newton 步若跳出区间或导数近零则保留二分根；区间内无变号返回带
+/// `msg.solve.no_bracket_root` 键的域错误。
+pub fn solve_equation_in_interval(
+    lhs: &SymbolicExpr,
+    rhs: &SymbolicExpr,
+    var: &str,
+    a: f64,
+    b: f64,
+) -> Result<SolutionSet, CalcError> {
+    let diff = SymbolicExpr::Sub(Box::new(lhs.clone()), Box::new(rhs.clone()));
+    let bracketed = solve_in_interval(&diff, var, a, b)?;
+    let SolutionSet::Numeric(roots) = bracketed else {
+        return Ok(bracketed);
+    };
+
+    let f = |x: f64| {
+        let mut env = HashMap::new();
+        env.insert(var.to_string(), x);
+        eval_symbolic(&diff, &env).unwrap_or(f64::NAN)
+    };
+
+    let refined: Vec<f64> = roots
+        .into_iter()
+        .map(|root| {
+            let mut x = root;
+            for _ in 0..20 {
+                let fx = f(x);
+                if fx.abs() < 1e-14 {
+                    break;
+                }
+                let dfx = numeric_derivative(f, x);
+                if !dfx.is_finite() || dfx.abs() < 1e-12 {
+                    break;
+                }
+                let next = x - fx / dfx;
+                if !next.is_finite() || next < a || next > b {
+                    break;
+                }
+                x = next;
+            }
+            x
+        })
+        .collect();
+    Ok(SolutionSet::Numeric(refined))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,5 +461,39 @@ mod tests {
     fn test_exact_roots_from_vector() {
         let got = exact_roots(EvalResult::Vector(vec![2.0, -2.0]));
         assert_eq!(got, SolutionSet::Exact(vec![(2.0, 0.0), (-2.0, 0.0)]));
+    }
+    #[test]
+    fn test_solve_cos_in_bracket_interval() {
+        let got = solve_equation_in_interval(
+            &SymbolicExpr::Cos(Box::new(var("x"))),
+            &konst(0.0),
+            "x",
+            0.0,
+            std::f64::consts::PI,
+        )
+        .unwrap();
+        let SolutionSet::Numeric(roots) = got else {
+            panic!("expected numeric roots");
+        };
+        assert_eq!(roots.len(), 1);
+        assert!((roots[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-8);
+    }
+
+    #[test]
+    fn test_solve_interval_no_bracket_returns_domain_error() {
+        // x^2 + 1 在 [0, 1] 内无实根，扫描不到变号区间
+        let lhs = SymbolicExpr::Add(
+            Box::new(SymbolicExpr::Pow(Box::new(var("x")), Box::new(konst(2.0)))),
+            Box::new(konst(1.0)),
+        );
+        let err = solve_equation_in_interval(&lhs, &konst(0.0), "x", 0.0, 1.0).unwrap_err();
+        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+        assert!(err.to_string().contains("no root bracket"));
+    }
+
+    #[test]
+    fn test_solve_interval_rejects_invalid_bounds() {
+        let err = solve_equation_in_interval(&var("x"), &konst(0.0), "x", 2.0, 1.0).unwrap_err();
+        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
     }
 }
