@@ -203,6 +203,7 @@ msg-output-steps_no_list = 步骤模式不支持列表作为子表达式
 msg-output-steps_no_matrix = 步骤模式不支持矩阵
 msg-output-steps_no_string = 步骤模式不支持算术运算中的字符串字面量
 msg-output-unknown_function = 未知函数 '{ $name }'（{ $actual } 个参数）
+msg-optimize-lp_dimension_mismatch = lp 维度不匹配
 msg-optimize-bad_arity = minimize 需要 3 个参数
 msg-optimize-bad_variable = minimize 变量必须是变量名
 msg-optimize-invalid_interval = 极小化区间或容差无效

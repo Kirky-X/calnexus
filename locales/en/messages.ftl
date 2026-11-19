@@ -203,6 +203,7 @@ msg-output-steps_no_list = steps mode does not support lists as sub-expressions
 msg-output-steps_no_matrix = steps mode does not support matrices
 msg-output-steps_no_string = steps mode does not support string literals in arithmetic
 msg-output-unknown_function = unknown function '{ $name }' with { $actual } args in steps
+msg-optimize-lp_dimension_mismatch = lp dimension mismatch
 msg-optimize-bad_arity = minimize expects 3 arguments
 msg-optimize-bad_variable = minimize variable must be a variable name
 msg-optimize-invalid_interval = invalid minimization interval or tolerance
