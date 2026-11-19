@@ -7,8 +7,11 @@
 
 use super::common::{ensure_math_constants, resolve_variable, unsupported_function_error};
 use crate::core::CalculationDomain;
-use crate::core::{AstNode, CalcError, EvalContext, EvalResult};
-use crate::math::solve::{SolutionSet, solve_equation, solve_equation_in_interval, solve_system};
+use crate::core::{AstNode, CalcError, CompareOp, EvalContext, EvalResult};
+use crate::math::solve::{
+    InequalityOp, SolutionSet, solve_equation, solve_equation_in_interval, solve_inequality,
+    solve_system,
+};
 use crate::math::symbolic::{SymbolicExpr, ast_to_symbolic, symbolic_to_string};
 
 /// solve 域函数白名单（目录 / REPL 补全 / MCP list_functions 的单一事实源）。
@@ -61,7 +64,7 @@ impl SolveDomain {
         match name {
             "solve" => self.eval_solve(args, ctx),
             "solve_system" => self.eval_solve_system(args, ctx),
-            // solve_ineq 在后续任务 T009 接入。
+            "solve_ineq" => self.eval_solve_ineq(args),
             _ => Err(unsupported_function_error("solve", name)),
         }
     }
@@ -172,6 +175,32 @@ impl SolveDomain {
             "solution": solution,
             "residual": residual,
         })))
+    }
+
+    /// `solve_ineq(ineq, var)`：首参须为 Compare 节点，输出区间 JSON。
+    fn eval_solve_ineq(&self, args: &[AstNode]) -> Result<EvalResult, CalcError> {
+        if args.len() != 2 {
+            return Err(
+                CalcError::domain("solve_ineq expects 2 arguments".to_string())
+                    .with_i18n("msg.solve.bad_arity", vec![]),
+            );
+        }
+        let AstNode::Compare(cmp, lhs, rhs) = &args[0] else {
+            return Err(unsupported_function_error(
+                "solve_ineq",
+                "non-comparison first argument",
+            ));
+        };
+        let op = match cmp {
+            CompareOp::Lt => InequalityOp::Lt,
+            CompareOp::Le => InequalityOp::Le,
+            CompareOp::Gt => InequalityOp::Gt,
+            CompareOp::Ge => InequalityOp::Ge,
+        };
+        let var = equation_variable(&args[1])?;
+        let lhs = ast_to_symbolic(lhs)?;
+        let rhs = ast_to_symbolic(rhs)?;
+        Ok(EvalResult::Json(solve_inequality(&lhs, &rhs, &var, op)?))
     }
 }
 
@@ -326,6 +355,38 @@ mod tests {
     #[test]
     fn test_solve_system_domain_bad_arity() {
         let err = eval_solve_domain("solve_system([x=1], [x])").unwrap_err();
+        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+    }
+    #[test]
+    fn test_solve_ineq_domain_strict_intervals() {
+        let got = eval_solve_domain("solve_ineq(x^2-1 > 0, x)").unwrap();
+        let EvalResult::Json(value) = got else {
+            panic!("expected JSON result");
+        };
+        let intervals = value["intervals"].as_array().unwrap();
+        assert_eq!(intervals.len(), 2);
+        assert!(intervals[0]["lower"].is_null());
+        assert_eq!(intervals[0]["upper"].as_f64().unwrap(), -1.0);
+        assert!(intervals[1]["lower"].as_f64().unwrap() == 1.0);
+        assert!(intervals[1]["upper"].is_null());
+    }
+
+    #[test]
+    fn test_solve_ineq_domain_closed_interval() {
+        let got = eval_solve_domain("solve_ineq(x^2-1 <= 0, x)").unwrap();
+        let EvalResult::Json(value) = got else {
+            panic!("expected JSON result");
+        };
+        let intervals = value["intervals"].as_array().unwrap();
+        assert_eq!(intervals.len(), 1);
+        assert_eq!(intervals[0]["lower"].as_f64().unwrap(), -1.0);
+        assert_eq!(intervals[0]["upper"].as_f64().unwrap(), 1.0);
+        assert!(!intervals[0]["lower_open"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_solve_ineq_domain_rejects_non_comparison() {
+        let err = eval_solve_domain("solve_ineq(x^2-1, x)").unwrap_err();
         assert_eq!(err.kind, crate::core::ErrorKind::Domain);
     }
 }

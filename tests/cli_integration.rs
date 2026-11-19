@@ -1649,3 +1649,20 @@ fn test_solve_equation_json_domain() {
 "#,
         );
 }
+
+#[test]
+fn test_solve_ineq_cli_json_domain() {
+    let mut cmd = Command::cargo_bin("calnexus").unwrap();
+    let out = cmd
+        .arg("--json")
+        .arg("solve_ineq(x^2-1 > 0, x)")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stdout = String::from_utf8(out).unwrap();
+    assert!(stdout.contains("\"domain\":\"solve\""), "{stdout}");
+    assert!(stdout.contains("intervals"), "{stdout}");
+    assert!(stdout.contains("-1.0"), "{stdout}");
+}
