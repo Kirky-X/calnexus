@@ -190,3 +190,19 @@ fn it_cli_023_error_recovery() {
 fn repl_infrastructure_present() {
     let _session = spawn_repl();
 }
+
+/// 带 --assume 启动 REPL，求值应应用符号假设。
+#[test]
+fn it_cli_assume_repl_simplifies_sqrt_square() {
+    let bin = assert_cmd::cargo::cargo_bin("calnexus");
+    let mut cmd = std::process::Command::new(bin);
+    cmd.arg("--repl")
+        .arg("--assume")
+        .arg("x > 0")
+        .env("TERM", TERM)
+        .env("CALNEXUS_LANG", "en");
+    let mut session = Session::spawn(cmd).expect("failed to spawn calnexus --repl with --assume");
+    expect(&mut session, PROMPT, "assume REPL init");
+    send_line(&mut session, "simplify(sqrt(x^2))");
+    expect(&mut session, "x  [symbolic]", "assume REPL result");
+}
