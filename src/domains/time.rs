@@ -83,6 +83,7 @@ fn contains_time_function(ast: &AstNode) -> bool {
 /// 时间域求值入口：递归求值 AST，覆盖域内函数调用、算术包围与嵌套调用。
 fn evaluate_time(ast: &AstNode, ctx: &EvalContext) -> Result<EvalResult, CalcError> {
     match ast {
+        AstNode::Compare(_, _, _) => Err(unsupported_node_error("time", ast)),
         AstNode::FunctionCall(name, args) => eval_function(name, args, ctx),
         AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
         AstNode::BigNumber(s) => {

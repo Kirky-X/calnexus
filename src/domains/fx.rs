@@ -68,6 +68,7 @@ fn eval_with_provider(
     provider: &dyn RateProvider,
 ) -> Result<EvalResult, CalcError> {
     match ast {
+        AstNode::Compare(_, _, _) => Err(unsupported_node_error("fx", ast)),
         AstNode::FunctionCall(name, args) => eval_function(name, args, ctx, provider),
         AstNode::Number(n) => Ok(EvalResult::Scalar(*n)),
         AstNode::BigNumber(s) => s.parse::<f64>().map(EvalResult::Scalar).map_err(|_| {
@@ -304,6 +305,7 @@ fn expect_str_arg<'a>(arg: &'a AstNode, param_name: &str) -> Result<&'a str, Cal
 /// 递归检查 AST 是否含 fx/fx_rate 函数调用。
 fn contains_fx_function(ast: &AstNode) -> bool {
     match ast {
+        AstNode::Compare(_, _, _) => false,
         AstNode::FunctionCall(name, args) => {
             FX_FUNCTIONS.contains(&name.as_str()) || args.iter().any(contains_fx_function)
         }
