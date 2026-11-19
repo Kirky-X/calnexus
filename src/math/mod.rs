@@ -22,6 +22,7 @@ pub mod solve;
 pub mod solvers;
 pub mod statistics;
 pub mod symbolic;
+pub mod symbolic_matrix;
 pub mod vector;
 pub mod verify;
 
