@@ -117,9 +117,18 @@ fn build_cache_key(
     // 混入 timeout：已知 DoS 向量由常量约束，elapsed 检查捕获未知累积慢操作（第二道防线）
     let timeout_nanos = ctx.timeout.as_nanos();
 
+    // 假设非空时单独混入：无假设的键必须与改造前逐字节一致（快照兼容）。
+    let assumptions_part = if ctx.assumptions.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "|assume={}",
+            blake3::hash(ctx.assumptions.canonical().as_bytes()).to_hex()
+        )
+    };
     CanonicalForm::new(format!(
-        "{}|vars={}|timeout={}",
-        base, vars_hash_hex, timeout_nanos
+        "{}|vars={}|timeout={}{}",
+        base, vars_hash_hex, timeout_nanos, assumptions_part
     ))
 }
 
@@ -795,5 +804,32 @@ mod tests {
         let formatted = crate::domains::format_bigrational(r, Some(10));
         // 1/6 = 0.16666666666...，10 位小数四舍五入为 0.1666666667
         assert_eq!(formatted, "0.1666666667", "got {}", formatted);
+    }
+    #[test]
+    fn test_cache_key_includes_assumptions() {
+        use crate::math::assumptions::AssumptionSet;
+        let ast = parse("simplify(x^2)").unwrap();
+        let (_, cf) = AstCanonicalizer::canonicalize(&ast).unwrap();
+        let mut ctx1 = EvalContext::new();
+        ctx1.assumptions = AssumptionSet::parse("x > 0").unwrap();
+        let mut ctx2 = EvalContext::new();
+        ctx2.assumptions = AssumptionSet::parse("x < 0").unwrap();
+        let empty = EvalContext::new();
+        let k1 = build_cache_key(&cf, &ctx1, None);
+        let k2 = build_cache_key(&cf, &ctx2, None);
+        let k_empty = build_cache_key(&cf, &empty, None);
+        assert_ne!(k1, k2, "不同假设必须产生不同键");
+        assert_ne!(k1, k_empty, "有假设与无假设必须产生不同键");
+    }
+
+    #[test]
+    fn test_empty_assumptions_keep_legacy_key() {
+        let cf = CanonicalForm::new("(+ 2 3)");
+        let ctx = EvalContext::new();
+        let key = build_cache_key(&cf, &ctx, None).as_str().to_string();
+        let vars_input: Vec<u8> = Vec::new();
+        let vars_hash_hex = blake3::hash(&vars_input).to_hex();
+        let legacy = format!("(+ 2 3)|vars={}|timeout=5000000000", vars_hash_hex);
+        assert_eq!(key, legacy);
     }
 }
