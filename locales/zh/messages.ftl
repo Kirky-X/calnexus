@@ -242,6 +242,7 @@ msg-precision-precision_must_be_positive_int = precision N 必须是正整数，
 msg-precision-precision_must_be_top_level = precision() 必须在表达式顶层
 msg-precision-precision_out_of_range = precision N 超出范围: { $value }
 msg-precision-requires_integer_operand = { $ctx } 需要整数操作数，得到 { $value }
+msg-solve-system_dimension_mismatch = solve_system 维度不匹配
 msg-solve-bad_arity = solve 需要 2、3 或 4 个参数
 msg-solve-bad_interval_arg = 求解区间参数无效
 msg-solve-first_arg_not_equation = 首参必须是等式（lhs = rhs）

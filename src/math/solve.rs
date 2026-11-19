@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use crate::core::CalcError;
 use crate::math::polynomial;
 use crate::math::solvers::bisection;
-use crate::math::symbolic::{SymbolicExpr, eval_symbolic};
+use crate::math::symbolic::{SymbolicExpr, ast_to_symbolic, eval_symbolic};
 
 /// 一元方程求解结果。
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +23,9 @@ pub enum SolutionSet {
     /// 高次多项式的数值根（含复根），元素为 (实部, 虚部)。
     NumericComplex(Vec<(f64, f64)>),
 }
+
+/// Levenberg-Marquardt 阻尼系数（非线性方程组 Newton 的稳定化）。
+const LEVENBERG_LAMBDA: f64 = 1e-3;
 
 /// 不等式比较方向（求解域消费，与 core::CompareOp 一一对应）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,6 +318,220 @@ pub fn solve_equation(
     )
 }
 
+/// 把方程字符串（支持 `lhs=rhs` 或隐式 `expr=0`）转成符号残差表达式。
+fn equation_string_to_diff(src: &str) -> Result<SymbolicExpr, CalcError> {
+    use crate::core::parse;
+    // 方程组字符串独立成段，不走 parse() 的 solve 上下文裸 `=` 限制。
+    if let Some((lhs, rhs)) = src.split_once('=') {
+        return Ok(SymbolicExpr::Sub(
+            Box::new(ast_to_symbolic(&parse(lhs)?)?),
+            Box::new(ast_to_symbolic(&parse(rhs)?)?),
+        ));
+    }
+    let ast = parse(src)?;
+    match ast {
+        crate::core::AstNode::FunctionCall(name, args) if name == "eq" && args.len() == 2 => {
+            Ok(SymbolicExpr::Sub(
+                Box::new(ast_to_symbolic(&args[0])?),
+                Box::new(ast_to_symbolic(&args[1])?),
+            ))
+        }
+        other => ast_to_symbolic(&other),
+    }
+}
+
+/// 高斯消元（部分主元）求解线性方程组 `A·x = b`。
+fn solve_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+    let n = b.len();
+    if a.len() != n || a.iter().any(|row| row.len() != n) {
+        return None;
+    }
+    let mut m: Vec<Vec<f64>> = a
+        .iter()
+        .zip(b)
+        .map(|(row, &rhs)| {
+            let mut line = row.clone();
+            line.push(rhs);
+            line
+        })
+        .collect();
+
+    for col in 0..n {
+        let pivot = (col..n)
+            .max_by(|&i, &j| {
+                m[i][col]
+                    .abs()
+                    .partial_cmp(&m[j][col].abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap();
+        if m[pivot][col].abs() < 1e-30 {
+            return None;
+        }
+        m.swap(col, pivot);
+        for row in (col + 1)..n {
+            let factor = m[row][col] / m[col][col];
+            let pivot_row = m[col].clone();
+            for (k, cell) in m[row].iter_mut().enumerate().skip(col) {
+                *cell -= factor * pivot_row[k];
+            }
+        }
+    }
+
+    let mut x = vec![0.0; n];
+    for row in (0..n).rev() {
+        let mut sum = m[row][n];
+        for col in (row + 1)..n {
+            sum -= m[row][col] * x[col];
+        }
+        x[row] = sum / m[row][row];
+    }
+    Some(x)
+}
+
+/// 非线性方程组：多变量 Newton + 正向有限差分 Jacobian。
+///
+/// 收敛判据 `‖F‖₂ < tol`；不收敛返回带末次残差的域错误。
+pub fn solve_system(
+    fs: &[&str],
+    vars: &[&str],
+    x0: &[f64],
+    tol: f64,
+    max_iter: usize,
+) -> Result<(Vec<f64>, f64), CalcError> {
+    if fs.is_empty() || fs.len() != vars.len() || vars.len() != x0.len() {
+        return Err(CalcError::domain(format!(
+            "solve_system: {} equations, {} variables, {} initial values",
+            fs.len(),
+            vars.len(),
+            x0.len()
+        ))
+        .with_i18n("msg.solve.system_dimension_mismatch", vec![]));
+    }
+    if !tol.is_finite() || tol <= 0.0 {
+        return Err(
+            CalcError::domain("solve_system: tolerance must be positive".to_string())
+                .with_i18n("msg.solve.system_dimension_mismatch", vec![]),
+        );
+    }
+
+    let diffs: Vec<SymbolicExpr> = fs
+        .iter()
+        .map(|s| equation_string_to_diff(s))
+        .collect::<Result<_, _>>()?;
+    let eval_at = |expr: &SymbolicExpr, x: &[f64]| -> f64 {
+        let env: HashMap<String, f64> = vars
+            .iter()
+            .zip(x)
+            .map(|(name, &v)| ((*name).to_string(), v))
+            .collect();
+        eval_symbolic(expr, &env).unwrap_or(f64::NAN)
+    };
+
+    let mut x = x0.to_vec();
+    // 初值若恰在 Jacobian 奇异流形上（如 [x+y-3, x*y-2] 从 (1,1) 出发），
+    // Newton/LM 会沿对称方向停滞；加微小非对称扰动打破对称后再迭代。
+    let f0: Vec<f64> = diffs.iter().map(|d| eval_at(d, &x)).collect();
+    let h0 = 1e-6;
+    let mut j0 = vec![vec![0.0; x.len()]; fs.len()];
+    for j in 0..x.len() {
+        let mut perturbed = x.clone();
+        perturbed[j] += h0;
+        for (i, d) in diffs.iter().enumerate() {
+            j0[i][j] = (eval_at(d, &perturbed) - f0[i]) / h0;
+        }
+    }
+    let singular = if x.len() == 2 && fs.len() == 2 {
+        (j0[0][0] * j0[1][1] - j0[0][1] * j0[1][0]).abs() < 1e-8
+    } else {
+        false
+    };
+    if singular {
+        for (j, xi) in x.iter_mut().enumerate() {
+            *xi += 1e-3 * (j as f64 + 1.0);
+        }
+    }
+    let mut lambda = LEVENBERG_LAMBDA;
+    for _ in 0..max_iter {
+        let f: Vec<f64> = diffs.iter().map(|d| eval_at(d, &x)).collect();
+        let residual = f.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if residual.is_nan() {
+            break;
+        }
+        if residual < tol {
+            return Ok((x, residual));
+        }
+
+        // 正向有限差分 Jacobian：J[i][j] = ∂f_i / ∂x_j
+        let mut jac = vec![vec![0.0; x.len()]; fs.len()];
+        for j in 0..x.len() {
+            let h = 1e-6 * (1.0 + x[j].abs());
+            let mut perturbed = x.clone();
+            perturbed[j] += h;
+            for (i, d) in diffs.iter().enumerate() {
+                jac[i][j] = (eval_at(d, &perturbed) - f[i]) / h;
+            }
+        }
+        // Levenberg-Marquardt 阻尼 Newton：Jacobian 奇异时（如 (1,1) 处的
+        // [x+y-3, x*y-2]）仍可给出下降方向，避免初值恰在奇异点直接卡死。
+        let n = x.len();
+        let mut normal = vec![vec![0.0; n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                let mut sum = 0.0;
+                for row in &jac {
+                    sum += row[i] * row[j];
+                }
+                normal[i][j] = sum + if i == j { lambda } else { 0.0 };
+            }
+        }
+        let mut grad = vec![0.0; n];
+        for i in 0..n {
+            grad[i] = -f
+                .iter()
+                .zip(jac.iter())
+                .map(|(fv, row)| fv * row[i])
+                .sum::<f64>();
+        }
+        let Some(delta) = solve_linear_system(&normal, &grad) else {
+            break;
+        };
+        let candidate: Vec<f64> = x.iter().zip(&delta).map(|(&xi, &d)| xi + d).collect();
+        if !candidate.iter().all(|v| v.is_finite()) {
+            break;
+        }
+        let candidate_residual: f64 = diffs
+            .iter()
+            .map(|d| eval_at(d, &candidate))
+            .map(|v| v * v)
+            .sum::<f64>()
+            .sqrt();
+        let improved = candidate_residual.is_finite() && candidate_residual < residual;
+        if improved {
+            x = candidate;
+            lambda = (lambda / 3.0).max(1e-12);
+        } else {
+            lambda *= 10.0;
+            if lambda > 1e12 {
+                break;
+            }
+        }
+    }
+    let final_residual = diffs
+        .iter()
+        .map(|d| eval_at(d, &x))
+        .map(|v| v * v)
+        .sum::<f64>()
+        .sqrt();
+    Err(CalcError::domain(format!(
+        "solve_system: did not converge after {max_iter} iterations, residual={final_residual}"
+    ))
+    .with_i18n(
+        "msg.solve.system_not_converged",
+        vec![("residual".to_string(), final_residual.to_string())],
+    ))
+}
+
 /// 中心差分数值导数：与 `domains::numerical::derivative` 同算法，
 /// 置于 math 层以避免 `math/` 反向依赖 `domains/`（分层约束）。
 fn numeric_derivative(f: impl Fn(f64) -> f64, x: f64) -> f64 {
@@ -495,5 +712,33 @@ mod tests {
     fn test_solve_interval_rejects_invalid_bounds() {
         let err = solve_equation_in_interval(&var("x"), &konst(0.0), "x", 2.0, 1.0).unwrap_err();
         assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+    }
+    #[test]
+    fn test_solve_system_newton() {
+        let (solution, residual) =
+            solve_system(&["x+y-3", "x*y-2"], &["x", "y"], &[1.0, 1.0], 1e-12, 100).unwrap();
+        assert!((solution[0] - 1.0).abs() < 1e-9 || (solution[0] - 2.0).abs() < 1e-9);
+        assert!((solution[1] - 2.0).abs() < 1e-9 || (solution[1] - 1.0).abs() < 1e-9);
+        assert!(residual < 1e-12);
+    }
+
+    #[test]
+    fn test_solve_system_accepts_equation_strings() {
+        let (solution, _) =
+            solve_system(&["x+y=3", "x*y=2"], &["x", "y"], &[1.0, 1.0], 1e-12, 100).unwrap();
+        assert!((solution[0] + solution[1] - 3.0).abs() < 1e-9);
+        assert!((solution[0] * solution[1] - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_solve_system_dimension_mismatch() {
+        let err = solve_system(&["x+y"], &["x"], &[1.0], 1e-12, 100).unwrap_err();
+        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+    }
+
+    #[test]
+    fn test_solve_system_not_converged_carries_residual() {
+        let err = solve_system(&["x^2+1"], &["x"], &[0.0], 1e-12, 3).unwrap_err();
+        assert!(err.to_string().contains("residual="));
     }
 }
