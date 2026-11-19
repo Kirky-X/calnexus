@@ -4,6 +4,8 @@
 //! 终端绘图输出（Braille 曲线与矩阵热图），仅 `plot` feature 下编译。
 //!
 //! Braille 字符 U+2800 起，每个字符承载 2 列 × 4 行共 8 个点位；零外部依赖。
+// CLI --plot/--heatmap 分发（T005/T006）尚未接入前，这些纯函数暂未被非测试代码消费。
+#![allow(dead_code)]
 
 use crate::core::CalcError;
 
@@ -133,6 +135,81 @@ pub fn render_curve(samples: &[(f64, f64)], cfg: &PlotConfig) -> String {
     lines.join("\n")
 }
 
+/// 采样聚合结果：按字符列压缩后的 (x, y) 点与最终 y 范围。
+#[derive(Debug, Clone)]
+pub struct AggregatedSamples {
+    pub points: Vec<(f64, f64)>,
+    pub y_min: f64,
+    pub y_max: f64,
+}
+
+/// 等距采样按字符列取 y 的 min/max 两点聚合；y 范围缺省时按有效点自适应并留 8% 边距。
+/// 全 NaN/Inf 输入报域错误。
+pub fn aggregate_samples(
+    samples: &[(f64, f64)],
+    cfg: &PlotConfig,
+) -> Result<AggregatedSamples, CalcError> {
+    cfg.validate()?;
+    let finite: Vec<(f64, f64)> = samples
+        .iter()
+        .copied()
+        .filter(|(x, y)| x.is_finite() && y.is_finite() && *x >= cfg.x_min && *x <= cfg.x_max)
+        .collect();
+    if finite.is_empty() {
+        return Err(CalcError::domain("no finite samples to plot".to_string())
+            .with_i18n("msg.plot.no_valid_samples", vec![]));
+    }
+
+    let x_span = cfg.x_max - cfg.x_min;
+    let mut columns: Vec<Vec<f64>> = vec![Vec::new(); cfg.width.max(1)];
+    for (x, y) in &finite {
+        let ratio = (x - cfg.x_min) / x_span;
+        let idx = ((ratio * columns.len() as f64).floor() as usize).min(columns.len() - 1);
+        columns[idx].push(*y);
+    }
+
+    let (mut y_min, mut y_max) = match (cfg.y_min, cfg.y_max) {
+        (Some(lo), Some(hi)) => (lo, hi),
+        _ => {
+            let lo = finite.iter().map(|(_, y)| *y).fold(f64::INFINITY, f64::min);
+            let hi = finite
+                .iter()
+                .map(|(_, y)| *y)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let pad = if (hi - lo).abs() < 1e-15 {
+                1.0
+            } else {
+                (hi - lo) * 0.08
+            };
+            (lo - pad, hi + pad)
+        }
+    };
+    if (y_max - y_min).abs() < 1e-15 {
+        y_min -= 1.0;
+        y_max += 1.0;
+    }
+
+    let column_width = x_span / columns.len() as f64;
+    let mut points = Vec::new();
+    for (idx, values) in columns.iter().enumerate() {
+        if values.is_empty() {
+            continue;
+        }
+        let center = cfg.x_min + column_width * (idx as f64 + 0.5);
+        let lo = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let hi = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        points.push((center, lo));
+        if (hi - lo).abs() > 1e-15 {
+            points.push((center, hi));
+        }
+    }
+    Ok(AggregatedSamples {
+        points,
+        y_min,
+        y_max,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,16 +238,31 @@ mod tests {
 
     #[test]
     fn test_invalid_config_rejected() {
-        let mut cfg = PlotConfig::default();
-        cfg.width = 201;
-        assert!(cfg.validate().is_err());
-        cfg.width = 80;
-        cfg.height = 61;
-        assert!(cfg.validate().is_err());
-        cfg.height = 24;
-        cfg.x_min = 5.0;
-        cfg.x_max = 1.0;
-        assert!(cfg.validate().is_err());
+        assert!(
+            PlotConfig {
+                width: 201,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            PlotConfig {
+                height: 61,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            PlotConfig {
+                x_min: 5.0,
+                x_max: 1.0,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]
@@ -183,5 +275,30 @@ mod tests {
         let out = render_curve(&[(0.0, f64::NAN), (1.0, f64::INFINITY)], &cfg);
         assert_eq!(out.lines().count(), 4);
         assert!(out.contains("y["));
+    }
+    #[test]
+    fn test_aggregate_sin_adaptive_bounds() {
+        let cfg = PlotConfig {
+            width: 40,
+            height: 12,
+            ..Default::default()
+        };
+        let samples: Vec<(f64, f64)> = (0..=800)
+            .map(|i| {
+                let x = -10.0 + 20.0 * i as f64 / 800.0;
+                (x, x.sin())
+            })
+            .collect();
+        let agg = aggregate_samples(&samples, &cfg).unwrap();
+        assert!((agg.y_min + 1.16).abs() < 0.02, "y_min={}", agg.y_min);
+        assert!((agg.y_max - 1.16).abs() < 0.02, "y_max={}", agg.y_max);
+        assert!(!agg.points.is_empty());
+    }
+
+    #[test]
+    fn test_aggregate_all_nan_errors() {
+        let cfg = PlotConfig::default();
+        let samples = [(f64::NAN, f64::NAN), (0.0, f64::INFINITY)];
+        assert!(aggregate_samples(&samples, &cfg).is_err());
     }
 }
