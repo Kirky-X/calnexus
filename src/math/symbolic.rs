@@ -4,6 +4,7 @@
 //! 符号演算核心函数：微分/积分/化简/极限/泰勒展开与 AST 转换。
 
 use crate::core::{AstNode, BinaryOp, CalcError, EvalResult, UnaryOp};
+use num_traits::FromPrimitive;
 use std::collections::HashMap;
 
 /// 符号表达式：符号变换的中间表示，不含 Matrix/List/BigNumber 等非符号节点。
@@ -231,6 +232,157 @@ pub fn ast_to_symbolic(ast: &AstNode) -> Result<SymbolicExpr, CalcError> {
             ))
         }
     }
+}
+
+/// 定积分（牛顿-莱布尼茨）：先积分化简得 F，再算 F(b) − F(a)。
+/// 多项式 integrand + 整数边界走 BigRational 精确路径；其余走数值路径。
+pub fn integrate_definite(
+    expr: &SymbolicExpr,
+    var: &str,
+    a: f64,
+    b: f64,
+) -> Result<crate::core::EvalResult, CalcError> {
+    use crate::core::EvalResult;
+    use num_rational::BigRational;
+
+    let antiderivative = simplify(&integrate(expr, var)?);
+    if contains_forbidden(&antiderivative) {
+        return Err(CalcError::domain(
+            "definite integration does not support ln/tan antiderivative".to_string(),
+        )
+        .with_i18n("msg.symbolic.integrate_no_ln_tan", vec![]));
+    }
+
+    if a.fract() == 0.0
+        && b.fract() == 0.0
+        && a.is_finite()
+        && b.is_finite()
+        && let Some(coeffs) = rational_coeffs(expr, var)
+    {
+        let mut integral = vec![BigRational::from_integer(0.into()); coeffs.len() + 1];
+        for (i, c) in coeffs.iter().enumerate() {
+            integral[i + 1] = c / BigRational::from_integer((i + 1).into());
+        }
+        let at_b = eval_rational(&integral, BigRational::from_f64(b).unwrap());
+        let at_a = eval_rational(&integral, BigRational::from_f64(a).unwrap());
+        let value = at_b - at_a;
+        return Ok(EvalResult::BigRational(value));
+    }
+
+    let mut env = HashMap::new();
+    env.insert(var.to_string(), b);
+    let at_b = eval_symbolic(&antiderivative, &env)?;
+    env.insert(var.to_string(), a);
+    let at_a = eval_symbolic(&antiderivative, &env)?;
+    Ok(EvalResult::Scalar(at_b - at_a))
+}
+
+fn contains_forbidden(expr: &SymbolicExpr) -> bool {
+    match expr {
+        SymbolicExpr::Ln(_) | SymbolicExpr::Tan(_) => true,
+        SymbolicExpr::Add(l, r)
+        | SymbolicExpr::Sub(l, r)
+        | SymbolicExpr::Mul(l, r)
+        | SymbolicExpr::Div(l, r)
+        | SymbolicExpr::Pow(l, r) => contains_forbidden(l) || contains_forbidden(r),
+        SymbolicExpr::Neg(e)
+        | SymbolicExpr::Sin(e)
+        | SymbolicExpr::Cos(e)
+        | SymbolicExpr::Exp(e) => contains_forbidden(e),
+        SymbolicExpr::Const(_) | SymbolicExpr::Var(_) => false,
+    }
+}
+
+/// 提取多项式系数为精确有理数（非多项式返回 None）。
+// 系数按幂次下标逐项合并，显式索引比迭代器更贴合多项式定义。
+#[allow(clippy::needless_range_loop)]
+fn rational_coeffs(expr: &SymbolicExpr, var: &str) -> Option<Vec<num_rational::BigRational>> {
+    use num_rational::BigRational;
+    match expr {
+        SymbolicExpr::Const(v) => BigRational::from_f64(*v).map(|r| vec![r]),
+        SymbolicExpr::Var(name) if name == var => Some(vec![
+            BigRational::from_integer(0.into()),
+            BigRational::from_integer(1.into()),
+        ]),
+        SymbolicExpr::Var(_) => None,
+        SymbolicExpr::Add(l, r) | SymbolicExpr::Sub(l, r) => {
+            let (lc, rc) = (rational_coeffs(l, var)?, rational_coeffs(r, var)?);
+            let n = lc.len().max(rc.len());
+            let mut out = vec![BigRational::from_integer(0.into()); n];
+            for i in 0..n {
+                let l = lc
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| BigRational::from_integer(0.into()));
+                let r = rc
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| BigRational::from_integer(0.into()));
+                out[i] = if matches!(expr, SymbolicExpr::Add(_, _)) {
+                    l + r
+                } else {
+                    l - r
+                };
+            }
+            Some(out)
+        }
+        SymbolicExpr::Neg(e) => Some(rational_coeffs(e, var)?.into_iter().map(|c| -c).collect()),
+        SymbolicExpr::Mul(l, r) => {
+            let lc = rational_coeffs(l, var)?;
+            let rc = rational_coeffs(r, var)?;
+            let mut out = vec![BigRational::from_integer(0.into()); lc.len() + rc.len() - 1];
+            for (i, x) in lc.iter().enumerate() {
+                for (j, y) in rc.iter().enumerate() {
+                    out[i + j] += x * y;
+                }
+            }
+            Some(out)
+        }
+        SymbolicExpr::Div(l, r) => {
+            let k = r.as_const()?;
+            let denom = BigRational::from_f64(k)?;
+            Some(
+                rational_coeffs(l, var)?
+                    .into_iter()
+                    .map(|c| c / &denom)
+                    .collect(),
+            )
+        }
+        SymbolicExpr::Pow(base, exp) => {
+            let n = exp.as_const()?;
+            if n < 0.0 || n.fract() != 0.0 {
+                return None;
+            }
+            let bc = rational_coeffs(base, var)?;
+            let mut out = vec![BigRational::from_integer(1.into())];
+            for _ in 0..(n as usize) {
+                let mut next = vec![BigRational::from_integer(0.into()); out.len() + bc.len() - 1];
+                for (i, x) in out.iter().enumerate() {
+                    for (j, y) in bc.iter().enumerate() {
+                        next[i + j] += x * y;
+                    }
+                }
+                out = next;
+            }
+            Some(out)
+        }
+        SymbolicExpr::Sin(_)
+        | SymbolicExpr::Cos(_)
+        | SymbolicExpr::Tan(_)
+        | SymbolicExpr::Ln(_)
+        | SymbolicExpr::Exp(_) => None,
+    }
+}
+
+fn eval_rational(
+    coeffs: &[num_rational::BigRational],
+    x: num_rational::BigRational,
+) -> num_rational::BigRational {
+    let mut acc = num_rational::BigRational::from_integer(0.into());
+    for c in coeffs.iter().rev() {
+        acc = acc * &x + c;
+    }
+    acc
 }
 
 /// 提取单参数函数的符号化参数。
@@ -1095,6 +1247,7 @@ fn format_taylor_term(coeff: f64, var: &str, k: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse;
 
     fn var(name: &str) -> SymbolicExpr {
         SymbolicExpr::Var(name.to_string())
@@ -1608,5 +1761,35 @@ mod tests {
             simplify_with(&expr, Some(&set)),
             SymbolicExpr::Var("y".to_string())
         );
+    }
+    #[test]
+    fn test_integrate_definite_polynomial_exact() {
+        let expr = ast_to_symbolic(&parse("x^2").unwrap()).unwrap();
+        let got = integrate_definite(&expr, "x", 0.0, 1.0).unwrap();
+        let EvalResult::BigRational(v) = got else {
+            panic!("expected exact rational, got {got:?}");
+        };
+        assert_eq!(v, num_rational::BigRational::new(1.into(), 3.into()));
+    }
+
+    #[test]
+    fn test_integrate_definite_sin_numeric() {
+        let expr = ast_to_symbolic(&parse("sin(x)").unwrap()).unwrap();
+        let got = integrate_definite(&expr, "x", 0.0, 1.0).unwrap();
+        let EvalResult::Scalar(v) = got else {
+            panic!("expected scalar, got {got:?}");
+        };
+        assert!((v - (1.0 - 1.0_f64.cos())).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_integrate_definite_polynomial_other_bounds() {
+        // ∫₀² x dx = 2
+        let expr = ast_to_symbolic(&parse("x").unwrap()).unwrap();
+        let got = integrate_definite(&expr, "x", 0.0, 2.0).unwrap();
+        let EvalResult::BigRational(v) = got else {
+            panic!("expected exact rational");
+        };
+        assert_eq!(v, num_rational::BigRational::from_integer(2.into()));
     }
 }
