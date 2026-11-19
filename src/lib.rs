@@ -25,6 +25,8 @@ pub mod integrations;
 /// 数学纯函数层（内部 API，非 Semver 承诺；领域逻辑经 `crate::domains` 暴露）。
 pub mod math;
 mod output;
+#[cfg(feature = "puzzle")]
+pub mod puzzle;
 #[cfg(feature = "cli")]
 mod repl;
 #[cfg(any(feature = "http", feature = "mcp"))]

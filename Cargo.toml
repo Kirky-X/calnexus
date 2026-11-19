@@ -28,6 +28,8 @@ time = ["dep:jiff"]
 unit = []
 # Plot: 终端绘图（Braille 曲线 + 矩阵热图，仅 CLI；零依赖）
 plot = []
+# Puzzle: 数学谜题生成器（CLI 层编排既有域函数；零依赖）
+puzzle = []
 # FX: 汇率换算（frankfurter.dev API + 本地缓存）
 fx = ["dep:ureq", "dep:dirs", "dep:limiteron", "dep:confers"]
 # Numerical: 高级数值计算（eig/SVD 等）
