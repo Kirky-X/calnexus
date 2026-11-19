@@ -487,3 +487,4 @@ endpoint-fx_pricing-description = Cross-border e-commerce multi-currency pricing
 endpoint-list_functions-description = List all available math functions grouped by domain. Call this first to discover which functions the current build supports (feature-gated domains like time/unit/fx appear only when enabled).
 msg-plot-no_valid_samples = no finite samples to plot
 msg-plot-needs_variable = plot expression must contain a free variable
+msg-plot-needs_matrix = heatmap requires a matrix result

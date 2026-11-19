@@ -135,6 +135,34 @@ pub fn render_curve(samples: &[(f64, f64)], cfg: &PlotConfig) -> String {
     lines.join("\n")
 }
 
+/// 强度字符集（由弱到强）；矩阵元素绝对值按最大值归一后取字符。
+const HEATMAP_CHARS: [char; 10] = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
+
+/// 矩阵热图：逐元素归一到强度字符，附行列尺寸标注行。
+pub fn render_heatmap(m: &[Vec<f64>]) -> String {
+    if m.is_empty() {
+        return "0x0".to_string();
+    }
+    let peak = m.iter().flatten().map(|v| v.abs()).fold(0.0_f64, f64::max);
+    let mut lines: Vec<String> = m
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|v| {
+                    if peak == 0.0 || !v.is_finite() {
+                        HEATMAP_CHARS[0]
+                    } else {
+                        let scaled = (v.abs() / peak * 9.0).round() as usize;
+                        HEATMAP_CHARS[scaled.min(9)]
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    lines.push(format!("{}x{}", m.len(), m.first().map_or(0, Vec::len)));
+    lines.join("\n")
+}
+
 /// 采样聚合结果：按字符列压缩后的 (x, y) 点与最终 y 范围。
 #[derive(Debug, Clone)]
 pub struct AggregatedSamples {
@@ -300,5 +328,22 @@ mod tests {
         let cfg = PlotConfig::default();
         let samples = [(f64::NAN, f64::NAN), (0.0, f64::INFINITY)];
         assert!(aggregate_samples(&samples, &cfg).is_err());
+    }
+    #[test]
+    fn test_render_heatmap_diagonal_stronger() {
+        let m = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let out = render_heatmap(&m);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[2].contains("2x2"));
+        let strong = HEATMAP_CHARS
+            .iter()
+            .position(|&c| c == lines[0].chars().next().unwrap())
+            .unwrap();
+        let weak = HEATMAP_CHARS
+            .iter()
+            .position(|&c| c == lines[0].chars().nth(1).unwrap())
+            .unwrap();
+        assert!(strong > weak);
     }
 }

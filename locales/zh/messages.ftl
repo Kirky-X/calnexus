@@ -487,3 +487,4 @@ endpoint-fx_pricing-description = 跨境电商多币种定价。参数必须包�
 endpoint-list_functions-description = 按域列出当前构建支持的全部数学函数。建议首先调用此工具以发现可用函数（time/unit/fx 等按 feature 门控，仅在启用时出现).
 msg-plot-no_valid_samples = 没有可绘制的有效采样点
 msg-plot-needs_variable = 绘图表达式必须包含自由变量
+msg-plot-needs_matrix = 热图需要矩阵结果

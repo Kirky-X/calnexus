@@ -168,6 +168,11 @@ pub fn run() -> i32 {
     };
 
     #[cfg(feature = "plot")]
+    if cli.heatmap {
+        return run_heatmap_mode(&expr, &cli, &i18n, cache_budget);
+    }
+
+    #[cfg(feature = "plot")]
     if cli.plot {
         return run_plot_mode(&expr, &cli, &i18n, cache_budget);
     }
@@ -622,6 +627,30 @@ fn first_free_variable(ast: &crate::core::AstNode) -> Option<String> {
     let mut names = Vec::new();
     walk(ast, &mut names);
     names.into_iter().next()
+}
+
+/// `--heatmap` 执行流：求值结果须为矩阵。
+#[cfg(feature = "plot")]
+fn run_heatmap_mode(expr: &str, cli: &Cli, i18n: &crate::i18n::I18n, cache_budget: u64) -> i32 {
+    let ctx = match build_context(cli) {
+        Ok(ctx) => ctx,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    let cache = CacheManager::with_capacity_bytes(cache_budget);
+    let result = match crate::core::evaluate(expr, &ctx, None, &cache) {
+        Ok((result, _, _, _)) => result,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    let EvalResult::Matrix(m) = result else {
+        return handle_error(
+            &CalcError::domain("heatmap requires a matrix result".to_string())
+                .with_i18n("msg.plot.needs_matrix", vec![]),
+            cli,
+            i18n,
+        );
+    };
+    println!("{}", crate::output::plot::render_heatmap(&m));
+    0
 }
 
 /// `--plot` 执行流：等距采样 → 逐点求值 → 聚合 → Braille 渲染。
