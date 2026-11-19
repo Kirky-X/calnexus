@@ -510,3 +510,46 @@ async fn test_metrics_json_branch_has_route_count() {
         json
     );
 }
+
+/// 向任意 forge 路由发送 POST 请求并返回 (status, body)。
+async fn post_to(path: &str, body: Value) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap();
+    let response = build_router()
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json)
+}
+
+#[tokio::test]
+async fn test_http_explain_route() {
+    let (status, body) = post_to("/api/v1/explain", json!({"expr": "2+3"})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["steps"].as_array().is_some_and(|a| !a.is_empty()));
+}
+
+#[tokio::test]
+async fn test_http_to_latex_route() {
+    let (status, body) = post_to("/api/v1/to_latex", json!({"expr": "x^2+1"})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["latex"].as_str().is_some_and(|s| s.contains("^{2}")));
+}
+
+#[tokio::test]
+async fn test_http_verify_route() {
+    let (status, body) = post_to(
+        "/api/v1/verify",
+        json!({"lhs": "(x+1)^2", "rhs": "x^2+2*x+1", "var": "x"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["equal"], true);
+}

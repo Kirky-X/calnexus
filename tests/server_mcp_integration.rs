@@ -260,3 +260,57 @@ fn test_mcp_evaluate_default_lang_follows_detection() {
         );
     }
 }
+
+/// 新增三 tool 均应出现在 MCP tool list 中。
+#[test]
+fn test_mcp_tool_list_contains_explain_latex_verify() {
+    let server = build_mcp_server();
+    let names: Vec<String> = server
+        .get_all_tools()
+        .iter()
+        .map(|t| t.name.as_ref().to_string())
+        .collect();
+    for tool in ["explain", "to_latex", "verify"] {
+        assert!(
+            names.iter().any(|name| name == tool),
+            "MCP tool list should contain {tool}: {names:?}"
+        );
+    }
+}
+
+#[test]
+fn test_mcp_tool_explain_returns_steps() {
+    let server = build_mcp_server();
+    let result = server
+        .call_tool_internal("explain", Some(json!({"req": {"expr": "2+3"}})))
+        .expect("explain tool should be registered");
+    assert_ne!(result.is_error, Some(true));
+    let body = extract_result_json(&result);
+    assert!(body["steps"].as_array().is_some_and(|a| !a.is_empty()));
+}
+
+#[test]
+fn test_mcp_tool_to_latex_returns_latex() {
+    let server = build_mcp_server();
+    let result = server
+        .call_tool_internal("to_latex", Some(json!({"req": {"expr": "x^2+1"}})))
+        .expect("to_latex tool should be registered");
+    assert_ne!(result.is_error, Some(true));
+    let body = extract_result_json(&result);
+    assert!(body["latex"].as_str().is_some_and(|s| s.contains("^{2}")));
+}
+
+#[test]
+fn test_mcp_tool_verify_returns_comparison() {
+    let server = build_mcp_server();
+    let result = server
+        .call_tool_internal(
+            "verify",
+            Some(json!({"req": {"lhs": "x^2", "rhs": "x^3", "var": "x"}})),
+        )
+        .expect("verify tool should be registered");
+    assert_ne!(result.is_error, Some(true));
+    let body = extract_result_json(&result);
+    assert_eq!(body["equal"], false);
+    assert_eq!(body["counterexample"]["x"], 2.0);
+}

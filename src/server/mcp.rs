@@ -129,4 +129,22 @@ mod tests {
             .expect("vars call_tool_internal no panic");
         assert!(!r2.is_error.unwrap_or(false), "x+1 vars should succeed");
     }
+    /// 新增三 tool 的 call_tool_internal 用例：注册与调用双验证。
+    #[test]
+    fn test_forge_new_tools_register_and_call() {
+        let server = build_mcp_server();
+        for (tool, args) in [
+            ("explain", serde_json::json!({"req":{"expr":"2+3"}})),
+            ("to_latex", serde_json::json!({"req":{"expr":"x^2+1"}})),
+            (
+                "verify",
+                serde_json::json!({"req":{"lhs":"x^2","rhs":"x^3","var":"x"}}),
+            ),
+        ] {
+            let result = server
+                .call_tool_internal(tool, Some(args))
+                .unwrap_or_else(|e| panic!("{tool} call failed: {e:?}"));
+            assert_ne!(result.is_error, Some(true), "{tool} should succeed");
+        }
+    }
 }
