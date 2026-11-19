@@ -150,51 +150,88 @@ fn preprocess_comparisons(
     placeholders: &mut std::collections::HashMap<String, AstNode>,
 ) -> Result<String, CalcError> {
     let chars: Vec<char> = input.chars().collect();
-    let mut result = String::with_capacity(input.len());
-    let mut i = 0usize;
-    let mut count = 0usize;
 
-    while i < chars.len() {
-        let (token, len) = match chars[i] {
-            '<' if chars.get(i + 1) == Some(&'=') => (ComparisonToken::Le, 2usize),
+    // 两遍处理：第一遍在原串下标上定位所有比较段，第二遍按原串下标重建结果。
+    // 占位符长度与原操作数长度不同，单遍 truncate 会错位污染此前已写入的占位符。
+    let mut segments: Vec<(usize, usize, usize, ComparisonToken)> = Vec::new(); // (op, left, right, token)
+    let mut scan = 0usize;
+    while scan < chars.len() {
+        let (token, len) = match chars[scan] {
+            '<' if chars.get(scan + 1) == Some(&'=') => (ComparisonToken::Le, 2usize),
             '<' => (ComparisonToken::Lt, 1usize),
-            '>' if chars.get(i + 1) == Some(&'=') => (ComparisonToken::Ge, 2usize),
+            '>' if chars.get(scan + 1) == Some(&'=') => (ComparisonToken::Ge, 2usize),
             '>' => (ComparisonToken::Gt, 1usize),
             '=' => (ComparisonToken::Eq, 1usize),
             _ => {
-                result.push(chars[i]);
-                i += 1;
+                scan += 1;
                 continue;
             }
         };
 
-        let (left, right) = comparison_segment(&chars, i, len)?;
+        let (left, right) = comparison_segment(&chars, scan, len)?;
 
-        if token == ComparisonToken::Eq && !inside_solve_call(&chars, i) {
+        if token == ComparisonToken::Eq && !inside_solve_call(&chars, scan) {
             return Err(CalcError::usage(
                 "bare '=' is only valid in solve/solve_system/solve_ineq arguments".to_string(),
             )
-            .with_span(Span::new(i, i + len))
+            .with_span(Span::new(scan, scan + len))
             .with_i18n("msg.core.parse_bare_eq_outside_solve", vec![]));
         }
 
-        let lhs_src: String = chars[left..i].iter().collect();
-        let rhs_src: String = chars[i + len..right].iter().collect();
-        let lhs = parse(lhs_src.trim())?;
-        let rhs = parse(rhs_src.trim())?;
-        let node = match token {
-            ComparisonToken::Lt => AstNode::Compare(CompareOp::Lt, Box::new(lhs), Box::new(rhs)),
-            ComparisonToken::Le => AstNode::Compare(CompareOp::Le, Box::new(lhs), Box::new(rhs)),
-            ComparisonToken::Gt => AstNode::Compare(CompareOp::Gt, Box::new(lhs), Box::new(rhs)),
-            ComparisonToken::Ge => AstNode::Compare(CompareOp::Ge, Box::new(lhs), Box::new(rhs)),
-            ComparisonToken::Eq => AstNode::FunctionCall("eq".to_string(), vec![lhs, rhs]),
-        };
+        segments.push((scan, left, right, token));
+        scan = right.max(scan + len);
+    }
 
-        let placeholder = format!("__cmp_{}", count);
-        count += 1;
-        placeholders.insert(placeholder.clone(), node);
-        result.push_str(&placeholder);
-        i += len;
+    let mut result = String::with_capacity(input.len());
+    let mut i = 0usize;
+    let mut seg_idx = 0usize;
+    let mut count = 0usize;
+    let mut segment_start_len: Option<usize> = None;
+    while i < chars.len() {
+        // 到达当前段的左边界时记录 result 长度：占位符与原文字长度不同，
+        // 不能再用原串下标回退 result。
+        if seg_idx < segments.len() && i == segments[seg_idx].1 {
+            segment_start_len = Some(result.len());
+        }
+        if seg_idx < segments.len() && segments[seg_idx].0 == i {
+            let (op, left, right, token) = segments[seg_idx];
+            if let Some(n) = segment_start_len.take() {
+                result.truncate(n);
+            }
+            let len = match token {
+                ComparisonToken::Le | ComparisonToken::Ge => 2usize,
+                _ => 1usize,
+            };
+            let lhs_src: String = chars[left..op].iter().collect();
+            let rhs_src: String = chars[op + len..right].iter().collect();
+            let lhs = parse(lhs_src.trim())?;
+            let rhs = parse(rhs_src.trim())?;
+            let node = match token {
+                ComparisonToken::Lt => {
+                    AstNode::Compare(CompareOp::Lt, Box::new(lhs), Box::new(rhs))
+                }
+                ComparisonToken::Le => {
+                    AstNode::Compare(CompareOp::Le, Box::new(lhs), Box::new(rhs))
+                }
+                ComparisonToken::Gt => {
+                    AstNode::Compare(CompareOp::Gt, Box::new(lhs), Box::new(rhs))
+                }
+                ComparisonToken::Ge => {
+                    AstNode::Compare(CompareOp::Ge, Box::new(lhs), Box::new(rhs))
+                }
+                ComparisonToken::Eq => AstNode::FunctionCall("eq".to_string(), vec![lhs, rhs]),
+            };
+
+            let placeholder = format!("__cmp_{}", count);
+            count += 1;
+            placeholders.insert(placeholder.clone(), node);
+            result.push_str(&placeholder);
+            i = right;
+            seg_idx += 1;
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
     }
 
     Ok(result)
@@ -582,6 +619,9 @@ fn replace_placeholders(
         AstNode::Variable(name) => {
             if let Some(node) = placeholders.get(name) {
                 *ast = node.clone();
+                // 占位符可嵌套（如列表字面量 __cb_N 内含比较占位符 __cmp_N），
+                // 替换后须继续递归，否则内层占位符残留为普通变量。
+                replace_placeholders(ast, placeholders);
             }
         }
         AstNode::BinaryOp(_, l, r) => {
@@ -1026,6 +1066,116 @@ mod tests {
     }
     fn var(name: &str) -> AstNode {
         AstNode::Variable(name.to_string())
+    }
+
+    // ===== 比较运算符与 solve 族裸等式解析（T001/T002） =====
+
+    #[test]
+    fn test_parse_gt_comparison_node() {
+        let ast = parse("x^2-1 > 0").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::Compare(
+                CompareOp::Gt,
+                Box::new(binop(
+                    BinaryOp::Sub,
+                    binop(BinaryOp::Pow, var("x"), num(2.0)),
+                    num(1.0)
+                )),
+                Box::new(num(0.0))
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_le_comparison_node() {
+        let ast = parse("x <= 3").unwrap();
+        assert_eq!(
+            ast,
+            AstNode::Compare(CompareOp::Le, Box::new(var("x")), Box::new(num(3.0)))
+        );
+    }
+
+    #[test]
+    fn test_parse_all_comparison_ops() {
+        for (src, op) in [
+            ("a < b", CompareOp::Lt),
+            ("a <= b", CompareOp::Le),
+            ("a > b", CompareOp::Gt),
+            ("a >= b", CompareOp::Ge),
+        ] {
+            let ast = parse(src).unwrap();
+            assert_eq!(
+                ast,
+                AstNode::Compare(op, Box::new(var("a")), Box::new(var("b"))),
+                "failed on {src}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_chained_comparison_is_usage_error() {
+        let err = parse("1 < 2 < 3").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Usage);
+    }
+
+    #[test]
+    fn test_parse_comparison_inside_function_arg() {
+        let ast = parse("solve_ineq(x^2-1 > 0, x)").unwrap();
+        let AstNode::FunctionCall(name, args) = ast else {
+            panic!("expected function call");
+        };
+        assert_eq!(name, "solve_ineq");
+        assert!(matches!(args[0], AstNode::Compare(CompareOp::Gt, _, _)));
+        assert_eq!(args[1], var("x"));
+    }
+
+    #[test]
+    fn test_parse_bare_eq_in_solve_call() {
+        let ast = parse("solve(x^2-4=0, x)").unwrap();
+        assert_eq!(
+            ast,
+            call(
+                "solve",
+                vec![
+                    call(
+                        "eq",
+                        vec![
+                            binop(
+                                BinaryOp::Sub,
+                                binop(BinaryOp::Pow, var("x"), num(2.0)),
+                                num(4.0)
+                            ),
+                            num(0.0)
+                        ]
+                    ),
+                    var("x")
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_bare_eq_in_solve_system_list() {
+        let ast = parse("solve_system([x+y=3, x*y=2], [x,y], [1,1])").unwrap();
+        let AstNode::FunctionCall(name, args) = ast else {
+            panic!("expected function call");
+        };
+        assert_eq!(name, "solve_system");
+        let AstNode::List(eqs) = &args[0] else {
+            panic!("expected equation list");
+        };
+        assert!(matches!(eqs[0], AstNode::FunctionCall(ref n, _) if n == "eq"));
+        assert!(matches!(eqs[1], AstNode::FunctionCall(ref n, _) if n == "eq"));
+    }
+
+    #[test]
+    fn test_parse_bare_eq_outside_solve_is_usage_error() {
+        let err = parse("x=1").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Usage);
+        let err = parse("foo(x=1)").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Usage);
+        assert_eq!(err.kind.exit_code(), 2);
     }
 
     // ===== 基本四则运算解析 =====
