@@ -8,8 +8,8 @@
 use super::common::{ensure_math_constants, resolve_variable, unsupported_function_error};
 use crate::core::CalculationDomain;
 use crate::core::{AstNode, CalcError, EvalContext, EvalResult};
-use crate::math::solve::{SolutionSet, solve_equation, solve_equation_in_interval};
-use crate::math::symbolic::{SymbolicExpr, ast_to_symbolic};
+use crate::math::solve::{SolutionSet, solve_equation, solve_equation_in_interval, solve_system};
+use crate::math::symbolic::{SymbolicExpr, ast_to_symbolic, symbolic_to_string};
 
 /// solve 域函数白名单（目录 / REPL 补全 / MCP list_functions 的单一事实源）。
 pub(crate) const SOLVE_FUNCTIONS: &[&str] = &["solve", "solve_system", "solve_ineq"];
@@ -60,7 +60,8 @@ impl SolveDomain {
         }
         match name {
             "solve" => self.eval_solve(args, ctx),
-            // solve_system / solve_ineq 分别在后续任务 T007 / T009 接入。
+            "solve_system" => self.eval_solve_system(args, ctx),
+            // solve_ineq 在后续任务 T009 接入。
             _ => Err(unsupported_function_error("solve", name)),
         }
     }
@@ -103,6 +104,74 @@ impl SolveDomain {
             }
         };
         Ok(solution_to_result(set))
+    }
+
+    /// `solve_system([eq1, eq2], [x, y], [x0, y0])`：多变量 Newton，输出 JSON。
+    fn eval_solve_system(
+        &self,
+        args: &[AstNode],
+        ctx: &EvalContext,
+    ) -> Result<EvalResult, CalcError> {
+        if args.len() != 3 {
+            return Err(CalcError::domain(format!(
+                "solve_system expects 3 arguments, got {}",
+                args.len()
+            ))
+            .with_i18n("msg.solve.bad_arity", vec![]));
+        }
+        let AstNode::List(eq_nodes) = &args[0] else {
+            return Err(
+                CalcError::domain("solve_system expects an equation list".to_string())
+                    .with_i18n("msg.solve.first_arg_not_equation", vec![]),
+            );
+        };
+        let AstNode::List(var_nodes) = &args[1] else {
+            return Err(
+                CalcError::domain("solve_system expects a variable list".to_string())
+                    .with_i18n("msg.solve.system_dimension_mismatch", vec![]),
+            );
+        };
+        let AstNode::List(init_nodes) = &args[2] else {
+            return Err(CalcError::domain(
+                "solve_system expects an initial value list".to_string(),
+            )
+            .with_i18n("msg.solve.system_dimension_mismatch", vec![]));
+        };
+
+        let mut equations: Vec<String> = Vec::with_capacity(eq_nodes.len());
+        for node in eq_nodes {
+            match node {
+                AstNode::Str(text) => equations.push(text.clone()),
+                AstNode::FunctionCall(name, parts) if name == "eq" && parts.len() == 2 => {
+                    let lhs = ast_to_symbolic(&parts[0])?;
+                    let rhs = ast_to_symbolic(&parts[1])?;
+                    let diff = SymbolicExpr::Sub(Box::new(lhs), Box::new(rhs));
+                    equations.push(symbolic_to_string(&diff));
+                }
+                _ => {
+                    return Err(CalcError::domain(
+                        "solve_system equations must be equality expressions".to_string(),
+                    )
+                    .with_i18n("msg.solve.first_arg_not_equation", vec![]));
+                }
+            }
+        }
+        let vars: Vec<String> = var_nodes
+            .iter()
+            .map(equation_variable)
+            .collect::<Result<_, _>>()?;
+        let x0: Vec<f64> = init_nodes
+            .iter()
+            .map(|n| scalar_arg(n, ctx))
+            .collect::<Result<_, _>>()?;
+
+        let var_refs: Vec<&str> = vars.iter().map(String::as_str).collect();
+        let eq_refs: Vec<&str> = equations.iter().map(String::as_str).collect();
+        let (solution, residual) = solve_system(&eq_refs, &var_refs, &x0, 1e-12, 200)?;
+        Ok(EvalResult::Json(serde_json::json!({
+            "solution": solution,
+            "residual": residual,
+        })))
     }
 }
 
@@ -237,6 +306,26 @@ mod tests {
     #[test]
     fn test_solve_bad_arity() {
         let err = eval_solve_domain("solve(x=0)").unwrap_err();
+        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+    }
+    #[test]
+    fn test_solve_system_domain_json() {
+        let got = eval_solve_domain("solve_system([x+y=3, x*y=2], [x,y], [1,1])").unwrap();
+        let EvalResult::Json(value) = got else {
+            panic!("expected JSON result");
+        };
+        let solution = value["solution"].as_array().unwrap();
+        assert_eq!(solution.len(), 2);
+        let x = solution[0].as_f64().unwrap();
+        let y = solution[1].as_f64().unwrap();
+        assert!((x + y - 3.0).abs() < 1e-9);
+        assert!((x * y - 2.0).abs() < 1e-9);
+        assert!(value["residual"].as_f64().unwrap() < 1e-9);
+    }
+
+    #[test]
+    fn test_solve_system_domain_bad_arity() {
+        let err = eval_solve_domain("solve_system([x=1], [x])").unwrap_err();
         assert_eq!(err.kind, crate::core::ErrorKind::Domain);
     }
 }
