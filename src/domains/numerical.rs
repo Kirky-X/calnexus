@@ -101,6 +101,12 @@ pub fn solve(matrix: DMatrix<f64>, b: DVector<f64>) -> Result<EvalResult, CalcEr
     Ok(EvalResult::Vector(x.iter().copied().collect()))
 }
 
+/// 最小二乘解（QR 主路径 + SVD 伪逆回退），表达式层 `lstsq(A, b)` 委托入口。
+pub fn lstsq(matrix: DMatrix<f64>, b: DVector<f64>) -> Result<EvalResult, CalcError> {
+    let x = crate::math::numerical::lstsq(&matrix, &b)?;
+    Ok(EvalResult::Vector(x.iter().copied().collect()))
+}
+
 /// DMatrix → JSON 二维数组（行优先）。
 fn dmatrix_to_json(m: &DMatrix<f64>) -> Value {
     let rows: Vec<Vec<f64>> = (0..m.nrows())

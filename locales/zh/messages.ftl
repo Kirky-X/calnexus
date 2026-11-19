@@ -124,6 +124,7 @@ msg-fxscenario-profit_rate_range = target_profit_rate 必须在 0 和 1 之间�
 msg-fxscenario-safety_buffer_range = safety_buffer 必须在 [0, 0.5] 范围内
 msg-fxscenario-tuition_positive = 学费必须为正数
 msg-invalid_bignumber = 无效大数字面量: { $value }
+msg-matrix-requires_numerical_feature = lstsq 需要 numerical 特性（--features numerical）
 msg-matrix-abs_not_supported = abs() 不支持矩阵
 msg-matrix-addsub_same_dim = 矩阵加减需要两个维度相同的矩阵
 msg-matrix-arg_count_1 = { $name }() 需要 1 个参数，得到 { $actual }

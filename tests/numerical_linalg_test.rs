@@ -155,3 +155,15 @@ fn precision_wrapping_numerical_end_to_end_errors() {
         "should explain precision does not apply to f64 functions"
     );
 }
+
+#[test]
+fn lstsq_end_to_end_returns_least_squares_solution() {
+    // A=[[1,0],[0,1],[1,1]], b=[1,2,3] → 精确解 x=[1,2]
+    let r = evaluate_full("lstsq([[1,0],[0,1],[1,1]], [1,2,3])").unwrap();
+    let EvalResult::Vector(v) = r else {
+        panic!("expected EvalResult::Vector, got {r:?}");
+    };
+    assert_eq!(v.len(), 2);
+    assert!((v[0] - 1.0).abs() < 1e-9, "x[0]={}", v[0]);
+    assert!((v[1] - 2.0).abs() < 1e-9, "x[1]={}", v[1]);
+}

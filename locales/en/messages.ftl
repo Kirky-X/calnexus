@@ -124,6 +124,7 @@ msg-fxscenario-profit_rate_range = target_profit_rate must be between 0 and 1 (e
 msg-fxscenario-safety_buffer_range = safety_buffer must be in [0, 0.5]
 msg-fxscenario-tuition_positive = tuition must be positive
 msg-invalid_bignumber = Invalid bignumber literal: { $value }
+msg-matrix-requires_numerical_feature = lstsq requires the numerical feature (--features numerical)
 msg-matrix-abs_not_supported = abs() not supported for matrices
 msg-matrix-addsub_same_dim = matrix add/sub requires two matrices of the same dimension
 msg-matrix-arg_count_1 = { $name }() requires exactly 1 argument, got { $actual }
