@@ -37,6 +37,21 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["json"])]
     explain: bool,
 
+    /// Plot the expression as a Braille curve (requires `plot` feature)
+    #[cfg(feature = "plot")]
+    #[arg(long, conflicts_with_all = ["json", "batch", "repl", "latex", "canonical", "steps", "precision"])]
+    plot: bool,
+
+    /// X range for --plot as `a:b` (default -10:10)
+    #[cfg(feature = "plot")]
+    #[arg(long)]
+    x_range: Option<String>,
+
+    /// Render a matrix result as a terminal heatmap (requires `plot` feature)
+    #[cfg(feature = "plot")]
+    #[arg(long, conflicts_with_all = ["plot", "json", "batch", "repl"])]
+    heatmap: bool,
+
     /// Language for error messages: en or zh (default: auto-detect from system locale)
     #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(["en", "zh"]))]
     lang: Option<String>,
@@ -562,6 +577,31 @@ fn resolve_bind(i18n: &crate::i18n::I18n, cli_value: Option<String>) -> Result<S
     }
 }
 
+/// 解析 `--x-range a:b`：两端有限且 a < b，否则用法错误。
+#[cfg(any(test, feature = "plot"))]
+#[allow(dead_code)] // --plot 分发（T005）消费
+fn parse_x_range(spec: &str) -> Result<(f64, f64), CalcError> {
+    let err = |detail: String| {
+        CalcError::usage(format!("invalid x range '{spec}': {detail}"))
+            .with_i18n("cli.invalid_x_range", vec![])
+    };
+    let (a, b) = spec
+        .split_once(':')
+        .ok_or_else(|| err("expected a:b".to_string()))?;
+    let a: f64 = a
+        .trim()
+        .parse()
+        .map_err(|_| err("left bound is not a number".to_string()))?;
+    let b: f64 = b
+        .trim()
+        .parse()
+        .map_err(|_| err("right bound is not a number".to_string()))?;
+    if !a.is_finite() || !b.is_finite() || a >= b {
+        return Err(err("bounds must be finite and a < b".to_string()));
+    }
+    Ok((a, b))
+}
+
 /// 构建 CLI 求值上下文：变量绑定 + 符号假设。
 fn build_context(cli: &Cli) -> Result<EvalContext, CalcError> {
     let mut ctx = parse_vars(&cli.vars)?;
@@ -1040,5 +1080,21 @@ mod tests {
     fn test_format_result_handles_steps_variant() {
         let r = EvalResult::Steps(vec!["1+1=2".to_string(), "2+2=4".to_string()]);
         assert_eq!(format_result(&r, None), "1+1=2\n2+2=4");
+    }
+    #[test]
+    fn test_parse_x_range_valid() {
+        assert_eq!(parse_x_range("-10:10").unwrap(), (-10.0, 10.0));
+        assert_eq!(parse_x_range(" 0 : 1.5 ").unwrap(), (0.0, 1.5));
+    }
+
+    #[test]
+    fn test_parse_x_range_invalid() {
+        for spec in ["1", "2:1", "a:b", "1:1", "NaN:1", "1:inf"] {
+            assert!(parse_x_range(spec).is_err(), "spec={spec}");
+            assert_eq!(
+                parse_x_range(spec).unwrap_err().kind,
+                crate::core::ErrorKind::Usage
+            );
+        }
     }
 }

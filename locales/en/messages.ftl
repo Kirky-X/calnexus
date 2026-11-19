@@ -21,6 +21,7 @@ cli-error_prefix = error
 cli-invalid_bind_addr = invalid CALNEXUS_BIND_ADDR: { $reason }
 cli-invalid_cache_size_env = invalid CALNEXUS_CACHE_SIZE '{ $value }': expected positive integer
 cli-invalid_timeout_env = invalid CALNEXUS_TIMEOUT '{ $value }': expected seconds (e.g. 0.1)
+cli-invalid_x_range = invalid x range, expected a:b with finite bounds and a < b
 cli-invalid_var = invalid --var '{ $value }', expected NAME=VALUE
 cli-invalid_var_value = invalid --var value '{ $value }': { $error }
 cli-stdin_read_failed = failed to read from stdin
