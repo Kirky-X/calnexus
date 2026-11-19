@@ -5,6 +5,8 @@
 //! 退出码：0=成功，1=计算/解析错误，2=用法错误，3=超时。
 use crate::core::evaluate;
 use crate::domains::format_bigrational;
+#[cfg(feature = "plot")]
+use crate::output::plot::{PlotConfig, aggregate_samples, render_curve};
 use crate::output::{format_canonical, format_latex, generate_steps};
 use crate::{AstCanonicalizer, CacheManager, CalcError, EvalContext, EvalResult, parse};
 use sdforge::clap::{self, CommandFactory, FromArgMatches, Parser};
@@ -164,6 +166,11 @@ pub fn run() -> i32 {
         Ok(e) => e,
         Err(e) => return handle_error(&e, &cli, &i18n),
     };
+
+    #[cfg(feature = "plot")]
+    if cli.plot {
+        return run_plot_mode(&expr, &cli, &i18n, cache_budget);
+    }
 
     let mut ctx = match build_context(&cli) {
         Ok(ctx) => ctx,
@@ -575,6 +582,116 @@ fn resolve_bind(i18n: &crate::i18n::I18n, cli_value: Option<String>) -> Result<S
             Err(_) => Ok(DEFAULT_BIND.to_string()),
         },
     }
+}
+
+/// 收集表达式首个自由变量名（排除数学常量 pi/e）。
+#[cfg(any(test, feature = "plot"))]
+#[allow(dead_code)]
+fn first_free_variable(ast: &crate::core::AstNode) -> Option<String> {
+    use crate::core::AstNode;
+    fn walk(node: &AstNode, out: &mut Vec<String>) {
+        match node {
+            AstNode::Variable(name) => {
+                if name != "pi" && name != "e" && !out.contains(name) {
+                    out.push(name.clone());
+                }
+            }
+            AstNode::BinaryOp(_, l, r) | AstNode::Compare(_, l, r) => {
+                walk(l, out);
+                walk(r, out);
+            }
+            AstNode::UnaryOp(_, e) => walk(e, out),
+            AstNode::FunctionCall(_, args) | AstNode::List(args) => {
+                for arg in args {
+                    walk(arg, out);
+                }
+            }
+            AstNode::Matrix(rows) => {
+                for row in rows {
+                    for cell in row {
+                        walk(cell, out);
+                    }
+                }
+            }
+            AstNode::Number(_)
+            | AstNode::BigNumber(_)
+            | AstNode::Complex(_, _)
+            | AstNode::Str(_) => {}
+        }
+    }
+    let mut names = Vec::new();
+    walk(ast, &mut names);
+    names.into_iter().next()
+}
+
+/// `--plot` 执行流：等距采样 → 逐点求值 → 聚合 → Braille 渲染。
+#[cfg(feature = "plot")]
+fn run_plot_mode(expr: &str, cli: &Cli, i18n: &crate::i18n::I18n, cache_budget: u64) -> i32 {
+    let (x_min, x_max) = match &cli.x_range {
+        Some(spec) => match parse_x_range(spec) {
+            Ok(pair) => pair,
+            Err(e) => return handle_error(&e, cli, i18n),
+        },
+        None => (-10.0, 10.0),
+    };
+    let ast = match crate::core::parse(expr) {
+        Ok(ast) => ast,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    let Some(var) = first_free_variable(&ast) else {
+        return handle_error(
+            &CalcError::usage("plot expression must contain a free variable".to_string())
+                .with_i18n("msg.plot.needs_variable", vec![]),
+            cli,
+            i18n,
+        );
+    };
+
+    let cfg = PlotConfig {
+        width: 80,
+        height: 24,
+        x_min,
+        x_max,
+        y_min: None,
+        y_max: None,
+    };
+    let mut base_ctx = match build_context(cli) {
+        Ok(ctx) => ctx,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    base_ctx.timeout = std::time::Duration::from_secs(5);
+    let cache = CacheManager::with_capacity_bytes(cache_budget);
+    let steps = cfg.width * 4;
+    let mut samples = Vec::with_capacity(steps + 1);
+    for i in 0..=steps {
+        let x = x_min + (x_max - x_min) * i as f64 / steps as f64;
+        let mut ctx = base_ctx.clone();
+        ctx.vars.insert(var.clone(), x);
+        if let Ok((result, _, _, _)) = crate::core::evaluate(expr, &ctx, None, &cache)
+            && let Some(y) = result.as_scalar()
+        {
+            samples.push((x, y));
+        }
+    }
+    if samples.is_empty() {
+        return handle_error(
+            &CalcError::domain("no finite samples to plot".to_string())
+                .with_i18n("msg.plot.no_valid_samples", vec![]),
+            cli,
+            i18n,
+        );
+    }
+    let agg = match aggregate_samples(&samples, &cfg) {
+        Ok(agg) => agg,
+        Err(e) => return handle_error(&e, cli, i18n),
+    };
+    let render_cfg = PlotConfig {
+        y_min: Some(agg.y_min),
+        y_max: Some(agg.y_max),
+        ..cfg
+    };
+    println!("{}", render_curve(&agg.points, &render_cfg));
+    0
 }
 
 /// 解析 `--x-range a:b`：两端有限且 a < b，否则用法错误。

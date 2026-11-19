@@ -191,6 +191,11 @@ required-features = ["cli", "time", "unit", "fx"]
 name = "numerical_linalg_test"
 required-features = ["cli", "numerical"]
 
+
+[[test]]
+name = "plot_puzzle_integration"
+required-features = ["cli", "plot"]
+
 [[test]]
 name = "kit_module_test"
 required-features = ["kit"]
