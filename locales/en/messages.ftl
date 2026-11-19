@@ -242,6 +242,7 @@ msg-precision-precision_must_be_positive_int = precision N must be a positive in
 msg-precision-precision_must_be_top_level = precision() must be at expression top level
 msg-precision-precision_out_of_range = precision N out of range: { $value }
 msg-precision-requires_integer_operand = { $ctx } requires integer operand, got { $value }
+msg-solve-ineq_non_polynomial = solve_ineq supports polynomial inequalities only
 msg-solve-system_dimension_mismatch = solve_system dimension mismatch
 msg-solve-bad_arity = solve expects 2, 3 or 4 arguments
 msg-solve-bad_interval_arg = invalid solve interval argument

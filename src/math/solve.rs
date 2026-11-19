@@ -318,6 +318,124 @@ pub fn solve_equation(
     )
 }
 
+/// 多项式不等式求解：实根排序 → 区间符号表 → 命中比较方向的区间集。
+///
+/// 输出 JSON `{"intervals": [{lower, upper, lower_open, upper_open}], "roots": [...]}`；
+/// 无穷端点以 JSON null 表示，非严格不等式合并含公共根端点的相邻区间。
+pub fn solve_inequality(
+    lhs: &SymbolicExpr,
+    rhs: &SymbolicExpr,
+    var: &str,
+    op: InequalityOp,
+) -> Result<serde_json::Value, CalcError> {
+    let diff = SymbolicExpr::Sub(Box::new(lhs.clone()), Box::new(rhs.clone()));
+    let Some(coeffs) = symbolic_to_coeffs(&diff, var) else {
+        return Err(CalcError::domain(
+            "solve_ineq supports polynomial inequalities only".to_string(),
+        )
+        .with_i18n("msg.solve.ineq_non_polynomial", vec![]));
+    };
+    let trimmed = polynomial::trim(&coeffs);
+    if polynomial::is_zero(&trimmed) {
+        return Err(CalcError::domain("inequality is an identity".to_string())
+            .with_i18n("msg.solve.identity_infinite_roots", vec![]));
+    }
+    let degree = trimmed.len() - 1;
+
+    let mut roots: Vec<f64> = if degree <= 4 {
+        match polynomial::roots(&trimmed)? {
+            crate::core::EvalResult::Vector(v) => v,
+            crate::core::EvalResult::ComplexList(v) => v
+                .into_iter()
+                .filter(|(_, im)| im.abs() < 1e-10)
+                .map(|(re, _)| re)
+                .collect(),
+            _ => Vec::new(),
+        }
+    } else {
+        durand_kerner(&trimmed)
+            .into_iter()
+            .filter(|(_, im)| im.abs() < 1e-6)
+            .map(|(re, _)| re)
+            .collect()
+    };
+    roots.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    roots.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+
+    let strict = matches!(op, InequalityOp::Lt | InequalityOp::Gt);
+    let sign_hit = |v: f64| match op {
+        InequalityOp::Lt => v < 0.0,
+        InequalityOp::Le => v <= 0.0,
+        InequalityOp::Gt => v > 0.0,
+        InequalityOp::Ge => v >= 0.0,
+    };
+
+    #[derive(Clone)]
+    struct Interval {
+        lower: Option<f64>,
+        upper: Option<f64>,
+        lower_open: bool,
+        upper_open: bool,
+    }
+    let mut intervals: Vec<Interval> = Vec::new();
+    for k in 0..=roots.len() {
+        let probe = if k == 0 {
+            roots.first().copied().unwrap_or(0.0) - 1.0
+        } else if k == roots.len() {
+            roots.last().copied().unwrap_or(0.0) + 1.0
+        } else {
+            (roots[k - 1] + roots[k]) / 2.0
+        };
+        let value = polynomial::eval(&trimmed, probe).unwrap_or(f64::NAN);
+        if !sign_hit(value) {
+            continue;
+        }
+        intervals.push(Interval {
+            lower: if k == 0 { None } else { Some(roots[k - 1]) },
+            upper: if k == roots.len() {
+                None
+            } else {
+                Some(roots[k])
+            },
+            lower_open: strict && k > 0,
+            upper_open: strict && k < roots.len(),
+        });
+    }
+
+    // 非严格不等式：相邻区间共享满足等号的根，合并为闭区间。
+    if !strict {
+        let mut merged: Vec<Interval> = Vec::new();
+        for interval in intervals {
+            if let Some(last) = merged.last_mut()
+                && last.upper.is_some()
+                && last.upper == interval.lower
+            {
+                last.upper = interval.upper;
+                last.upper_open = interval.upper_open;
+            } else {
+                merged.push(interval);
+            }
+        }
+        intervals = merged;
+    }
+
+    let interval_values: Vec<serde_json::Value> = intervals
+        .into_iter()
+        .map(|i| {
+            serde_json::json!({
+                "lower": i.lower,
+                "upper": i.upper,
+                "lower_open": i.lower_open,
+                "upper_open": i.upper_open,
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "intervals": interval_values,
+        "roots": roots,
+    }))
+}
+
 /// 把方程字符串（支持 `lhs=rhs` 或隐式 `expr=0`）转成符号残差表达式。
 fn equation_string_to_diff(src: &str) -> Result<SymbolicExpr, CalcError> {
     use crate::core::parse;
@@ -740,5 +858,51 @@ mod tests {
     fn test_solve_system_not_converged_carries_residual() {
         let err = solve_system(&["x^2+1"], &["x"], &[0.0], 1e-12, 3).unwrap_err();
         assert!(err.to_string().contains("residual="));
+    }
+    #[test]
+    fn test_solve_inequality_strict_greater() {
+        let lhs = SymbolicExpr::Sub(
+            Box::new(SymbolicExpr::Pow(Box::new(var("x")), Box::new(konst(2.0)))),
+            Box::new(konst(1.0)),
+        );
+        let got = solve_equation_ineq_helper(&lhs, InequalityOp::Gt);
+        let intervals = got["intervals"].as_array().unwrap();
+        assert_eq!(intervals.len(), 2);
+        assert!(intervals[0]["lower"].is_null());
+        assert_eq!(intervals[0]["upper"].as_f64().unwrap(), -1.0);
+        assert!(intervals[0]["upper_open"].as_bool().unwrap());
+        assert!(intervals[1]["lower"].as_f64().unwrap() == 1.0);
+        assert!(intervals[1]["upper"].is_null());
+    }
+
+    #[test]
+    fn test_solve_inequality_non_strict_closed_interval() {
+        let lhs = SymbolicExpr::Sub(
+            Box::new(SymbolicExpr::Pow(Box::new(var("x")), Box::new(konst(2.0)))),
+            Box::new(konst(1.0)),
+        );
+        let got = solve_equation_ineq_helper(&lhs, InequalityOp::Le);
+        let intervals = got["intervals"].as_array().unwrap();
+        assert_eq!(intervals.len(), 1);
+        assert_eq!(intervals[0]["lower"].as_f64().unwrap(), -1.0);
+        assert_eq!(intervals[0]["upper"].as_f64().unwrap(), 1.0);
+        assert!(!intervals[0]["lower_open"].as_bool().unwrap());
+        assert!(!intervals[0]["upper_open"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_solve_inequality_rejects_transcendental() {
+        let err = solve_inequality(
+            &SymbolicExpr::Sin(Box::new(var("x"))),
+            &konst(0.0),
+            "x",
+            InequalityOp::Gt,
+        )
+        .unwrap_err();
+        assert_eq!(err.kind, crate::core::ErrorKind::Domain);
+    }
+
+    fn solve_equation_ineq_helper(lhs: &SymbolicExpr, op: InequalityOp) -> serde_json::Value {
+        solve_inequality(lhs, &konst(0.0), "x", op).unwrap()
     }
 }
