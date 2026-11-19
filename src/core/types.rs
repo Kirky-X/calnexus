@@ -719,6 +719,8 @@ pub struct EvalContext {
     pub precision: Option<usize>,
     /// 计算超时时间。
     pub timeout: Duration,
+    /// 符号假设集合（`--assume` 注入，默认空集；不改变无假设路径行为）。
+    pub assumptions: crate::math::assumptions::AssumptionSet,
 }
 
 impl Default for EvalContext {
@@ -727,6 +729,7 @@ impl Default for EvalContext {
             vars: HashMap::new(),
             precision: None,
             timeout: Duration::from_secs(5),
+            assumptions: crate::math::assumptions::AssumptionSet::default(),
         }
     }
 }
@@ -774,6 +777,11 @@ pub fn sort_json_keys(value: serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_default_context_has_empty_assumptions() {
+        assert!(EvalContext::new().assumptions.is_empty());
+    }
 
     #[test]
     fn ast_node_number_construct_and_match() {
