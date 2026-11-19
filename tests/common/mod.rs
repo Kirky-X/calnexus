@@ -7,8 +7,8 @@
 use assert_cmd::Command;
 use calnexus::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, DomainRouter, MatrixDomain,
-    NumberTheoryDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, SolveDomain,
-    StatisticsDomain, SymbolicDomain, VectorDomain,
+    NumberTheoryDomain, OptimizeDomain, PolynomialDomain, PrecisionDomain, ScientificDomain,
+    SolveDomain, StatisticsDomain, SymbolicDomain, VectorDomain,
 };
 
 /// 构建 calnexus CLI Command（cargo-bin）。
@@ -35,6 +35,7 @@ pub fn default_router() -> DomainRouter {
     router.register(Box::new(ScientificDomain));
     router.register(Box::new(StatisticsDomain));
     router.register(Box::new(SolveDomain));
+    router.register(Box::new(OptimizeDomain));
     router.register(Box::new(ArithmeticDomain));
     router
 }

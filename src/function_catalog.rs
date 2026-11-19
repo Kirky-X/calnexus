@@ -18,6 +18,7 @@ pub const DOMAIN_FUNCTIONS: &[(&str, &[&str])] = &[
     ("vector", crate::domains::VECTOR_FUNCTIONS),
     ("symbolic", crate::domains::SYMBOLIC_FUNCTIONS),
     ("solve", crate::domains::SOLVE_FUNCTIONS),
+    ("optimize", crate::domains::OPTIMIZE_FUNCTIONS),
     // ---- 可选域（feature 门控） ----
     #[cfg(feature = "time")]
     ("time", crate::domains::TIME_FUNCTIONS),
@@ -63,6 +64,7 @@ mod tests {
             "vector",
             "symbolic",
             "solve",
+            "optimize",
         ] {
             assert!(domains.contains(&required), "目录应含已注册域 {}", required);
         }
@@ -84,6 +86,7 @@ mod tests {
                 "vector" => crate::domains::VECTOR_FUNCTIONS,
                 "symbolic" => crate::domains::SYMBOLIC_FUNCTIONS,
                 "solve" => crate::domains::SOLVE_FUNCTIONS,
+                "optimize" => crate::domains::OPTIMIZE_FUNCTIONS,
                 #[cfg(feature = "time")]
                 "time" => crate::domains::TIME_FUNCTIONS,
                 #[cfg(feature = "unit")]

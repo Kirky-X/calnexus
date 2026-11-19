@@ -52,8 +52,8 @@ pub use domains::TimeDomain;
 pub use domains::UnitDomain;
 pub use domains::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
-    PolynomialDomain, PrecisionDomain, ScientificDomain, SolveDomain, StatisticsDomain,
-    SymbolicDomain, VectorDomain,
+    OptimizeDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, SolveDomain,
+    StatisticsDomain, SymbolicDomain, VectorDomain,
 };
 pub use i18n::{I18n, Lang};
 

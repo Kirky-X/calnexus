@@ -17,8 +17,8 @@ use super::TimeDomain;
 use super::UnitDomain;
 use super::{
     ArithmeticDomain, CombinatoricsDomain, ComplexDomain, MatrixDomain, NumberTheoryDomain,
-    PolynomialDomain, PrecisionDomain, ScientificDomain, SolveDomain, StatisticsDomain,
-    SymbolicDomain, VectorDomain,
+    OptimizeDomain, PolynomialDomain, PrecisionDomain, ScientificDomain, SolveDomain,
+    StatisticsDomain, SymbolicDomain, VectorDomain,
 };
 
 /// 构建默认路由器：注册全部 14 个域（11 核心 + 3 可选），进程级 OnceLock 缓存。
@@ -37,6 +37,7 @@ pub(crate) fn build_default_router() -> &'static DomainRouter {
         router.register(Box::new(ScientificDomain));
         router.register(Box::new(StatisticsDomain));
         router.register(Box::new(SolveDomain));
+        router.register(Box::new(OptimizeDomain));
         router.register(Box::new(ArithmeticDomain));
         #[cfg(feature = "time")]
         router.register(Box::new(TimeDomain));
@@ -91,6 +92,7 @@ mod tests {
         assert_eq!(VectorDomain.priority(), 30);
         assert_eq!(SymbolicDomain.priority(), 30);
         assert_eq!(SolveDomain.priority(), 25);
+        assert_eq!(OptimizeDomain.priority(), 25);
         #[cfg(feature = "time")]
         assert_eq!(TimeDomain.priority(), 30);
         #[cfg(feature = "unit")]

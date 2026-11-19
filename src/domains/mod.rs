@@ -16,6 +16,7 @@ mod matrix;
 mod number_theory;
 #[cfg(feature = "numerical")]
 mod numerical;
+mod optimize;
 mod polynomial;
 mod precision;
 mod scientific;
@@ -41,6 +42,7 @@ pub(crate) use matrix::MATRIX_FUNCTIONS;
 #[cfg(feature = "numerical")]
 pub(crate) use matrix::NUMERICAL_FUNCTIONS;
 pub(crate) use number_theory::NUMBER_THEORY_FUNCTIONS;
+pub(crate) use optimize::OPTIMIZE_FUNCTIONS;
 pub(crate) use polynomial::POLYNOMIAL_FUNCTIONS;
 pub(crate) use scientific::SCIENTIFIC_FUNCTIONS;
 pub(crate) use solve::SOLVE_FUNCTIONS;
@@ -65,6 +67,7 @@ pub use fx::FxDomain;
 pub use fx_provider::RateProvider;
 pub use matrix::MatrixDomain;
 pub use number_theory::NumberTheoryDomain;
+pub use optimize::OptimizeDomain;
 pub use polynomial::PolynomialDomain;
 pub use precision::PrecisionDomain;
 #[cfg(any(feature = "cli", feature = "http", feature = "mcp"))]
