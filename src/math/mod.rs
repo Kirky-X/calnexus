@@ -21,6 +21,7 @@ pub mod solvers;
 pub mod statistics;
 pub mod symbolic;
 pub mod vector;
+pub mod verify;
 
 // feature-gated 可选域
 #[cfg(feature = "fx")]
