@@ -93,7 +93,7 @@ tracing = { version = "0.1", default-features = false, optional = true }
 # 生产日志（observability）：inklog 接管，CLI 纯构建保持 tokio-free
 inklog = { version = "0.3", default-features = false, optional = true }
 # jiff: 日期时间库（tzdb-bundle-always 内嵌 IANA tzdb，跨平台一致；仅 time feature 启用）
-jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
+jiff = { version = "1.0", default-features = false, features = ["std", "tzdb-bundle-always"], optional = true }
 # ureq: 同步 HTTP 客户端（rustls TLS，无 tokio 耦合；仅 fx feature 启用）
 ureq = { version = "3.4", default-features = false, features = ["rustls"], optional = true }
 # dirs: 跨平台缓存目录（仅 fx；7.x 稳定，仅用 cache_dir）
